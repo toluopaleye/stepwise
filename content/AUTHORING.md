@@ -59,6 +59,7 @@ sub-lesson goes deep into one type: its own diagram-like animation, its own oper
 - Show, then explain: a tiny code block, its output (use an ```` ```output ```` fence), then what happened and why.
 - Use concrete, friendly examples (scores, shopping lists, temperatures, names). Avoid foo/bar.
 - Use callouts (`> text`) for common mistakes and important warnings.
+- Draw diagrams (trees, folder listings) in a ```` ```text ```` fence: it's shown as plain monospaced text.
 - Tables are good for comparing cases (`| Code | Output | Why |`).
 - Keep each learn step to roughly 60–180 words plus code. Prefer more small steps over one big one.
 - Don't use emoji. Don't write "simply", "just", "easy", "obviously".
@@ -325,7 +326,7 @@ Views (`view:` lines; you can stack several views, one per line):
 | `dict d` / `set s` | dictionary table / set bubbles | `hit=key_var` highlights that key |
 | `buckets table` | list of lists as hash buckets | `hit=idx_var` |
 | `linked head` | linked list of objects with `.val`/`.next` | `ptr=cur,prev` |
-| `tree root` | binary tree of objects with `.val/.left/.right` | `ptr=node`, `visited=order_list` |
+| `tree root` | binary tree of objects with `.val/.left/.right` | `ptr=node`, `visited=order_list`; `kids=children` draws an n-ary tree whose nodes keep a list of children |
 | `heap h` | list drawn as a binary heap + array | `ptr=i` |
 | `graph g` | dict of adjacency lists (or (nbr, weight) tuples) | `pos=A:60,40;B:160,40` (x,y), `visited=var`, `frontier=var`, `current=var`, `dist=var`, `directed=1` |
 | `callstack` | the stack of function calls with their variables | |
@@ -333,6 +334,7 @@ Views (`view:` lines; you can stack several views, one per line):
 | `chart` | growth curves (no code; frames are values of n) | `fns=1,log2(n),n,n*log2(n),n**2 labels=O(1),O(log_n),... n=1..64 scale=log` (no spaces inside options: write `_` for a space in labels) |
 
 Expressions in `ptr=`, `range=` etc. support names, integers, `len`, `+` and `-` (e.g. `done=len-i:`).
+Any view takes `title=Some_title` (underscores become spaces), which helps when two views of the same kind are stacked.
 `show:` limits which variables are traced (`show: nums i j`). For `chart`, put the caption on line `1:` and
 use `{n}` and `{LABEL}` placeholders (e.g. `1: At n = {n}, O(n²) takes {O(n²)} steps.`).
 
