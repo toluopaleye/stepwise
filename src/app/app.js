@@ -643,7 +643,8 @@
         tabs = `<button class="tab" aria-pressed="true">${T.code ? 'trace.py' : 'trace'}</button>`;
         const n = T.answer ? T.answer.length : 0;
         const labels = T.labels || Array.from({ length: n }, (_, i) => String(i));
-        const startRow = T.start ? `<div class="answer-h">Before</div><div class="cellrow">${T.start.map((v, i) => `<div class="cellcol"><div class="cellbox">${esc(v)}</div><small>${esc(labels[i] || '')}</small></div>`).join('')}</div>` : '';
+        const rowCls = cellRowClass(labels);
+        const startRow = T.start ? `<div class="answer-h">Before</div><div class="${rowCls}">${T.start.map((v, i) => `<div class="cellcol"><div class="cellbox">${esc(v)}</div><small>${esc(labels[i] || '')}</small></div>`).join('')}</div>` : '';
         const marks = ts.result && ts.result.cellMarks;
         // every box is wide enough for the longest answer (and grows while typing), so values like "HelloHello" stay readable
         const minLen = Math.max(4, ...(T.answer || []).map((a) => String(a).length));
@@ -651,7 +652,7 @@
           const w = cellWidth(minLen, ts.cells[i]);
           return `<div class="cellcol"><label class="sr" for="cell-${i}">Value at ${esc(labels[i] || i)}</label><input class="cellin${marks ? (marks[i] ? ' ok' : ' bad') : ''}" id="cell-${i}" data-cell="${i}" data-minlen="${minLen}"${w ? ` style="width:${w}"` : ''} value="${esc(ts.cells[i] || '')}" autocomplete="off" spellcheck="false"${locked ? ' readonly' : ''}><small>${esc(labels[i] || '')}</small></div>`;
         }).join('');
-        body = (T.code ? `<div class="codearea">${codeRows(T.code)}</div>` : '<div style="height:18px"></div>') + `<div class="answer">${startRow}<div class="answer-h">Your answer</div><div class="cellrow">${inputs}</div></div>`;
+        body = (T.code ? `<div class="codearea">${codeRows(T.code)}</div>` : '<div style="height:18px"></div>') + `<div class="answer">${startRow}<div class="answer-h">Your answer</div><div class="${rowCls}">${inputs}</div></div>`;
         break;
       }
       case 'order': {
@@ -663,6 +664,11 @@
     }
     const res = resultsHTML(L, T, ts);
     return `<div class="toolbar"><div class="tabs">${tabs}</div><div class="spacer"></div>${submitButtons(T, ts)}</div>${body}${res ? `<div class="results" id="results">${res}</div>` : ''}`;
+  }
+
+  // labels longer than a box (like "y after line 4") get more space between the boxes, so each label clearly belongs to its box
+  function cellRowClass(labels) {
+    return (labels || []).some((l) => String(l).length > 7) ? 'cellrow wide' : 'cellrow';
   }
 
   // CSS width for a "Trace it" box: the default box fits 4 characters, longer values get a wider one ('' = default)
@@ -749,7 +755,7 @@
       case 'predict': inner = `<pre class="console">${esc(T.expected)}</pre>`; break;
       case 'fill': inner = `<div class="codearea" style="padding:8px 0;background:var(--bg);border-radius:8px">${codeRows(T.code.split('??').map((p, i, a) => p + (i < a.length - 1 ? T.answers[i] : '')).join(''))}</div>`; break;
       case 'parsons': inner = `<div class="codearea" style="padding:8px 0;background:var(--bg);border-radius:8px">${codeRows(T.lines.map((l) => '    '.repeat(l.indent) + l.text).join('\n'))}</div>`; break;
-      case 'cells': inner = `<div class="cellrow">${T.answer.map((v, i) => `<div class="cellcol"><div class="cellbox">${esc(v)}</div><small>${esc((T.labels || [])[i] || i)}</small></div>`).join('')}</div>`; break;
+      case 'cells': inner = `<div class="${cellRowClass(T.labels)}">${T.answer.map((v, i) => `<div class="cellcol"><div class="cellbox">${esc(v)}</div><small>${esc((T.labels || [])[i] || i)}</small></div>`).join('')}</div>`; break;
       case 'order': inner = `<ol style="margin:0;padding-left:20px;color:var(--fg2)">${T.items.map((it) => `<li>${it}</li>`).join('')}</ol>`; break;
       case 'mcq': case 'multi': inner = `<div class="prose"><p>The correct ${T.type === 'mcq' ? 'answer is' : 'answers are'} marked in green above, with an explanation under each option.</p></div>`; break;
     }
