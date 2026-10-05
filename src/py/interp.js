@@ -790,7 +790,11 @@ class Interp {
       return sig instanceof Ret ? sig.v : NONE;
     } catch (e) {
       // the browser's own stack ran out first: report it as Python would, with the frames so far
-      if (e instanceof RangeError) throw pyErr('RecursionError', 'maximum recursion depth exceeded');
+      if (e instanceof RangeError) {
+        const t = pyErr('RecursionError', 'maximum recursion depth exceeded');
+        t.jsOverflow = true; // the browser's stack ran out before Python's limit: the traceback is completed when it's shown
+        throw t;
+      }
       throw e;
     } finally {
       this.depth--;

@@ -61,12 +61,29 @@ def harness_depth():
     return d
 
 
+_real_getlimit = sys.getrecursionlimit
+_real_setlimit = sys.setrecursionlimit
+HARNESS_EXTRA = [0]
+
+
+def _user_getlimit():
+    return _real_getlimit() - HARNESS_EXTRA[0]
+
+
+def _user_setlimit(n):
+    _real_setlimit(n + HARNESS_EXTRA[0])
+
+
 def run_src(src, ns, filename="main.py"):
     out = io.StringIO()
     error = None
     LAST_TB[0] = None
-    # give the program the same recursion room it would have when run as a file
-    sys.setrecursionlimit(1000 + harness_depth())
+    # give the program the same recursion room it would have when run as a file, and let
+    # sys.getrecursionlimit() / setrecursionlimit() see the limit a program run as a file would see
+    HARNESS_EXTRA[0] = harness_depth()
+    _real_setlimit(1000 + HARNESS_EXTRA[0])
+    sys.getrecursionlimit = _user_getlimit
+    sys.setrecursionlimit = _user_setlimit
     signal.alarm(5)
     try:
         with contextlib.redirect_stdout(out):

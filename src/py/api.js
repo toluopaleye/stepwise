@@ -48,6 +48,25 @@ function caretLine(text, loc, stmt, line) {
   return '    ' + ' '.repeat(Math.max(0, start - indent)) + marks;
 }
 
+// The browser's own stack can run out before Python's limit of 1000 frames is reached. CPython would have gone on
+// repeating the same calls up to the limit, so finish the repeating pattern the same way, giving the same
+// "[Previous line repeated N more times]" as Python. The deepest frame was stopped part-way through a line, so drop it.
+function padRecursion(tb, maxDepth) {
+  if (!maxDepth || tb.length >= maxDepth || tb.length < 8) return tb;
+  const body = tb.slice(0, -1);
+  const key = (fr) => `${fr.src}\0${fr.line}\0${fr.name}\0${fr.loc ? fr.loc.col + ':' + fr.loc.endCol : ''}`;
+  for (let p = 1; p <= 8; p++) {
+    if (body.length < 3 * p + 1) break;
+    let ok = true;
+    for (let k = 1; k <= 2 * p && ok; k++) if (key(body[body.length - k]) !== key(body[body.length - k - p])) ok = false;
+    if (!ok) continue;
+    const unit = body.slice(-p);
+    for (let i = 0; body.length < maxDepth; i++) body.push(unit[i % p]);
+    return body;
+  }
+  return tb;
+}
+
 Interp.prototype.describeError = function (e, filename) {
   if (e instanceof SyntaxErr) {
     const srcLines = this.sources.get(filename) || [];
@@ -81,7 +100,8 @@ Interp.prototype.describeError = function (e, filename) {
     let msg;
     try { msg = withVM(this, () => pyStr(exc)); } catch (err) { msg = '<error while formatting message>'; }
     if (exc.suggestion) msg += exc.suggestion;
-    const tb = e.tb && e.tb.length ? e.tb : [{ name: '<module>', line: this.currentLine(), src: filename }];
+    let tb = e.tb && e.tb.length ? e.tb : [{ name: '<module>', line: this.currentLine(), src: filename }];
+    if (e.jsOverflow && type === 'RecursionError') tb = padRecursion(tb, this.maxDepth);
     const last = tb[tb.length - 1];
     const lines = ['Traceback (most recent call last):'];
     // CPython collapses runs of the same frame: after 3 repeats it prints "[Previous line repeated N more times]"

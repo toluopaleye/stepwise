@@ -305,6 +305,14 @@ CASES = [
     'class A:\n    def __init__(self):\n        return 5\nA()',
     'class Node:\n    def __init__(self, val, next=None):\n        self.val = val\n        self.next = next\na = Node(1, Node(2))\nprint(a.next.next.val)',
 
+    'def factorial(n):\n    if n == 1:\n        return 1\n    return n * factorial(n - 1)\n\nprint(factorial(0))',
+    'def reverse(s):\n    return reverse(s[1:]) + s[0]\n\nprint(reverse("abc"))',
+    'def total(nums):\n    return nums[0] + total(nums[1:])\n\nprint(total([1, 2]))',
+    'def countdown(n):\n    print(n)\n    countdown(n - 1)\n\ncountdown(3)',
+    'def f(n):\n    if n == 0:\n        return 0\n    return f(n - 2)\n\nprint(f(5))',
+    'def a(n):\n    return b(n)\ndef b(n):\n    return a(n)\na(1)',
+    'def fib(n):\n    return fib(n - 1) + fib(n - 2)\nprint(fib(3))',
+
 ]
 
 
