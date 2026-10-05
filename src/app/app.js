@@ -645,7 +645,12 @@
         const labels = T.labels || Array.from({ length: n }, (_, i) => String(i));
         const startRow = T.start ? `<div class="answer-h">Before</div><div class="cellrow">${T.start.map((v, i) => `<div class="cellcol"><div class="cellbox">${esc(v)}</div><small>${esc(labels[i] || '')}</small></div>`).join('')}</div>` : '';
         const marks = ts.result && ts.result.cellMarks;
-        const inputs = Array.from({ length: n }, (_, i) => `<div class="cellcol"><label class="sr" for="cell-${i}">Value at ${esc(labels[i] || i)}</label><input class="cellin${marks ? (marks[i] ? ' ok' : ' bad') : ''}" id="cell-${i}" data-cell="${i}" value="${esc(ts.cells[i] || '')}" autocomplete="off" spellcheck="false"${locked ? ' readonly' : ''}><small>${esc(labels[i] || '')}</small></div>`).join('');
+        // every box is wide enough for the longest answer (and grows while typing), so values like "HelloHello" stay readable
+        const minLen = Math.max(4, ...(T.answer || []).map((a) => String(a).length));
+        const inputs = Array.from({ length: n }, (_, i) => {
+          const w = cellWidth(minLen, ts.cells[i]);
+          return `<div class="cellcol"><label class="sr" for="cell-${i}">Value at ${esc(labels[i] || i)}</label><input class="cellin${marks ? (marks[i] ? ' ok' : ' bad') : ''}" id="cell-${i}" data-cell="${i}" data-minlen="${minLen}"${w ? ` style="width:${w}"` : ''} value="${esc(ts.cells[i] || '')}" autocomplete="off" spellcheck="false"${locked ? ' readonly' : ''}><small>${esc(labels[i] || '')}</small></div>`;
+        }).join('');
         body = (T.code ? `<div class="codearea">${codeRows(T.code)}</div>` : '<div style="height:18px"></div>') + `<div class="answer">${startRow}<div class="answer-h">Your answer</div><div class="cellrow">${inputs}</div></div>`;
         break;
       }
@@ -658,6 +663,12 @@
     }
     const res = resultsHTML(L, T, ts);
     return `<div class="toolbar"><div class="tabs">${tabs}</div><div class="spacer"></div>${submitButtons(T, ts)}</div>${body}${res ? `<div class="results" id="results">${res}</div>` : ''}`;
+  }
+
+  // CSS width for a "Trace it" box: the default box fits 4 characters, longer values get a wider one ('' = default)
+  function cellWidth(minLen, value) {
+    const len = Math.min(26, Math.max(minLen, (value || '').length));
+    return len > 4 ? `calc(${len + 2}ch + 20px)` : '';
   }
 
   function outputBlock(r) {
@@ -1389,7 +1400,7 @@
     if (S.step > 0) {
       const ts = TS(S.lesson, S.step);
       if (t.classList.contains('blank')) { ts.fills[+t.dataset.blank] = t.value; t.style.width = Math.max(6, t.value.length + 4) + 'ch'; }
-      if (t.classList.contains('cellin')) ts.cells[+t.dataset.cell] = t.value;
+      if (t.classList.contains('cellin')) { ts.cells[+t.dataset.cell] = t.value; t.style.width = cellWidth(+t.dataset.minlen || 4, t.value); }
       if (t.id === 'predict-in') ts.text = t.value;
       if (t.id === 'ask-in' && ts.ask) ts.ask.draft = t.value;
     }
