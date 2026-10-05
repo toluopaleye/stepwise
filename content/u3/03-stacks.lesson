@@ -1,0 +1,1149 @@
+=== lesson
+id: ds-stacks
+title: Stacks
+summary: A stack only lets you reach its top: the last item pushed is the first one popped. You'll use a Python list as a stack, wrap it in a class, and use stacks for undo and redo, for checking that brackets match, for evaluating postfix expressions, and to see how Python runs function calls. Every stack operation is O(1).
+
+=== learn
+### Last in, first out
+A **stack** is a pile: you add things to the top and take them from the top, like a pile of plates. The last thing put on is the first thing taken off. That's called **LIFO**: last in, first out.
+
+| Operation | What it does |
+| --- | --- |
+| push(x) | put x on top |
+| pop() | take the top item off and return it |
+| peek() | look at the top item without taking it off |
+| is_empty() | is there nothing on the stack? |
+| size() | how many items are on the stack |
+
+Only the top item can be reached. That restriction is the point: it's exactly the order that undo, a browser's back button, matching brackets and function calls need.
+
+### A Python list is a stack
+A Python list works as a stack, with its **end** as the top:
+```python
+stack = []
+stack.append("a")
+stack.append("b")
+stack.append("c")
+print(stack, stack[-1])
+print(stack.pop(), stack.pop())
+print(stack, len(stack))
+```
+```output
+['a', 'b', 'c'] c
+c b
+['a'] 1
+```
+- push is `append(x)`, pop is `pop()`, peek is `stack[-1]` and size is `len(stack)`.
+- They're all O(1): `pop()` with no index takes the last item, so nothing shifts, and `append` is O(1) amortized (from the Dynamic arrays lesson).
+- Popping from an empty list raises `IndexError: pop from empty list`, and `stack[-1]` raises an `IndexError` too. Check first: an empty list is falsy, so `if stack:` means "is there anything on it?".
+
+The top must be the **end**. Using the front, with `insert(0, x)` and `pop(0)`, gives the same last-in-first-out order, but every push and pop shifts all the other items: O(n). A singly linked list also makes a good stack: push and pop at its head, both O(1).
+
+### A Stack class
+A class gives the operations their names and keeps the list inside it, so no code reaches into the middle by accident:
+```python
+class Stack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, x):
+        self.items.append(x)
+
+    def pop(self):
+        return self.items.pop()
+
+    def peek(self):
+        return self.items[-1]
+
+    def is_empty(self):
+        return len(self.items) == 0
+
+    def size(self):
+        return len(self.items)
+
+s = Stack()
+for x in [1, 2, 3]:
+    s.push(x)
+print(s.pop(), s.peek(), s.size(), s.is_empty())
+```
+```output
+3 2 2 False
+```
+3 went on last, so it comes off first. After that, 2 is on top, and two items are left.
+
+### Undo and redo
+An editor's Undo is a stack: every change is pushed, and Undo pops the most recent change and reverses it. Redo is a second stack: each undone change is pushed onto it, and Redo pops it back. Typing something new empties the redo stack, because the undone changes no longer fit after it.
+
+| Action | Text | Undo stack (top at the right) | Redo stack (top at the right) |
+| --- | --- | --- | --- |
+| type "I" | I | I | (empty) |
+| type "am" | I am | I, am | (empty) |
+| type "here" | I am here | I, am, here | (empty) |
+| Undo | I am | I, am | here |
+| Undo | I | I | here, am |
+| Redo | I am | I, am | here |
+| type "there" | I am there | I, am, there | (empty) |
+
+The second Undo pushes "am" on top of "here", so Redo brings back "am" first: the last change undone is the first one redone. Example 1 builds this editor.
+
+### Matching brackets
+Brackets in code and in maths must match: every opening bracket, `(`, `[` or `{`, is closed later by the same kind, and pairs can't cross. `([])` is fine, but `([)]` isn't. A stack checks this in one pass:
+
+1. An opening bracket is pushed.
+2. A closing bracket must match the top of the stack: pop it and compare. If the stack is empty, or the top is a different kind, the brackets don't match.
+3. At the end, the stack must be empty: anything left was opened and never closed.
+```python
+def balanced(text):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    return not stack
+
+for t in ["([]{})", "([)]", "(()", "a[b(c)d]e", "())"]:
+    print(t, balanced(t))
+```
+```output
+([]{}) True
+([)] False
+(() False
+a[b(c)d]e True
+()) False
+```
+`pairs` maps each closing bracket to its opening one. In `not stack or stack.pop() != pairs[ch]`, `or` stops at the first True: if the stack is empty, the function returns False without popping. Characters that aren't brackets, like `a`, are skipped. Here is `([)]`:
+
+| Character | What happens | Stack after |
+| --- | --- | --- |
+| `(` | push | `(` |
+| `[` | push | `( [` |
+| `)` | pop `[`, but `)` needs `(` | mismatch: False |
+
+The most recently opened bracket has to be closed first: that's last in, first out. Animation 1 checks a string that matches.
+
+### Evaluating postfix expressions
+In **postfix** notation, also called Reverse Polish notation, each operator comes after its two numbers: `3 4 +` means 3 + 4, and `3 4 + 2 *` means (3 + 4) × 2. There are no brackets and no rules about which operator goes first, and a stack works it out in one pass:
+
+- a number is pushed,
+- an operator pops two numbers, works out the answer, and pushes it back.
+```python
+def eval_postfix(tokens):
+    stack = []
+    for t in tokens:
+        if t in ["+", "-", "*"]:
+            b = stack.pop()
+            a = stack.pop()
+            if t == "+":
+                stack.append(a + b)
+            elif t == "-":
+                stack.append(a - b)
+            else:
+                stack.append(a * b)
+        else:
+            stack.append(int(t))
+    return stack.pop()
+
+print(eval_postfix("3 4 + 2 *".split()))
+print(eval_postfix("10 2 3 * -".split()))
+```
+```output
+14
+4
+```
+The first pop gives the **second** number, `b`, because it was pushed last. For `+` and `*` the order doesn't matter, but for `-` it does: `10 2 3 * -` is 10 − (2 × 3) = 4, so it's `a - b`. Calculators and programming languages use this idea: an ordinary expression is turned into postfix, then a stack evaluates it. Animation 2 evaluates `3 4 + 2 *`.
+
+### The call stack
+Python runs functions with a stack. Each call pushes a **frame**, which holds that call's local variables. When the call returns, its frame is popped, and the function that called it carries on where it left off. So the most recent call always finishes first. You traced the call stack in the Recursion lesson. It's also why a recursive function with no base case fails with `RecursionError`: the call stack keeps growing until it reaches Python's limit, about 1,000 frames. Any recursive function can be rewritten as a loop with a stack of your own, which is how depth-first search works in Unit 4.
+
+### The cost table
+
+| Operation | Cost |
+| --- | --- |
+| push, pop, peek | O(1) (push is O(1) amortized on a Python list) |
+| is empty?, size | O(1) |
+| reverse n items: push them all, then pop them all | O(n) |
+| check the brackets of n characters | O(n) |
+| evaluate a postfix expression of n tokens | O(n) |
+| space for n items | O(n) |
+
+=== keypoints
+- A stack is LIFO: push puts an item on top, pop takes the top item off, and peek looks at it. Only the top can be reached.
+- In Python, use a list with its end as the top: `append(x)`, `pop()`, `stack[-1]`, `len(stack)`, all O(1). Don't use the front: `insert(0, x)` and `pop(0)` are O(n).
+- Check that a stack isn't empty before popping or peeking: an empty list is falsy, so `if stack:`.
+- Matching brackets: push each opening bracket; a closing bracket must match the top, which is popped; the stack must end empty.
+- Postfix: push numbers; an operator pops `b`, then `a`, and pushes `a op b`.
+- Undo and redo, the back button, and Python's call stack are all stacks.
+
+=== example: Undo and redo
+intro: An editor that keeps the words typed so far as a stack, so Undo can pop the last word, and a second stack of undone words for Redo.
+```python
+class Editor:
+    def __init__(self):
+        self.words = []
+        self.undone = []
+
+    def type_word(self, w):
+        self.words.append(w)
+        self.undone = []
+
+    def undo(self):
+        if self.words:
+            self.undone.append(self.words.pop())
+
+    def redo(self):
+        if self.undone:
+            self.words.append(self.undone.pop())
+
+    def text(self):
+        return " ".join(self.words)
+
+e = Editor()
+for w in ["I", "am", "here"]:
+    e.type_word(w)
+e.undo()
+e.undo()
+print(e.text(), e.undone)
+e.redo()
+print(e.text(), e.undone)
+e.type_word("there")
+print(e.text(), e.undone)
+```
+1-4: Two stacks: the words typed so far, and the words undone.
+6-8: Typing pushes a word, and empties the redo stack: the undone words no longer fit.
+10-12: Undo moves the top word from one stack to the other. `if self.words:` skips it when there's nothing to undo.
+14-16: Redo moves it back.
+21-30: After two undos, "am" is on top of the redo stack, so Redo brings back "am" first. Typing "there" empties the redo stack.
+
+=== example: Reversing with a stack
+intro: Pushing items in order and popping them all reverses them, whether they're numbers, the letters of a word, or the words of a sentence.
+```python
+def reverse(items):
+    stack = []
+    for x in items:
+        stack.append(x)
+    result = []
+    while stack:
+        result.append(stack.pop())
+    return result
+
+print(reverse([1, 2, 3, 4]))
+print("".join(reverse("stack")))
+print(" ".join(reverse("the cat sat".split())))
+```
+1-4: Push every item: the last item ends up on top.
+5-8: Pop until the stack is empty (`while stack:`), so the items come off last first.
+10-12: A string is a sequence of characters, so `reverse` works on it too; `"".join` glues the characters back together. Each item is pushed once and popped once: O(n).
+
+=== animation: Checking brackets
+view: stack stack
+vars ch ok
+intro: Checking `([]{})`. Watch each opening bracket go on the stack, and each closing bracket take its partner off the top.
+```python
+text = "([]{})"
+pairs = {")": "(", "]": "[", "}": "{"}
+stack = []
+ok = True
+for ch in text:
+    if ch in "([{":
+        stack.append(ch)
+    elif stack and stack[-1] == pairs[ch]:
+        stack.pop()
+    else:
+        ok = False
+        break
+print(ok and not stack)
+```
+1: The text to check.
+2: Each closing bracket's partner.
+3: The stack starts empty.
+4: So far, nothing has gone wrong.
+5: Take the next character.
+6: Is {ch!r} an opening bracket? {'Yes.' if ch in '([{' else 'No, it closes one.'}
+7: Push {ch!r}: it waits on the stack for its partner.
+8: {ch!r} needs {pairs[ch]!r} on top. {('The top is ' + repr(stack[-1]) + '.') if stack else 'The stack is empty.'}
+9: They match: pop {stack[-1]!r}.
+10: No match: the brackets are wrong.
+13: Every bracket matched and the stack is empty: {ok and not stack}.
+
+=== animation: Evaluating postfix
+view: stack stack
+vars t a b
+intro: Evaluating `3 4 + 2 *`, which means (3 + 4) × 2. Numbers go on the stack; each operator takes two off and puts its answer back.
+```python
+tokens = ["3", "4", "+", "2", "*"]
+stack = []
+for t in tokens:
+    if t == "+":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a + b)
+    elif t == "*":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a * b)
+    else:
+        stack.append(int(t))
+print(stack.pop())
+```
+1: The expression, split into tokens.
+2: The stack starts empty.
+3: Take the next token.
+4: Is it `+`? {'Yes.' if t == '+' else 'No.'}
+5: Pop the second number: b = {stack[-1]}.
+6: Pop the first number: a = {stack[-1]}.
+7: Push {a} + {b} = {a + b}.
+8: Is it `*`? {'Yes.' if t == '*' else 'No.'}
+9: Pop the second number: b = {stack[-1]}.
+10: Pop the first number: a = {stack[-1]}.
+11: Push {a} × {b} = {a * b}.
+13: A number: push {t}.
+14: One number is left on the stack: the answer, {stack[-1]}.
+
+=== task: predict easy
+title: Push, push, push, pop
+code:
+```python
+stack = []
+stack.append(1)
+stack.append(2)
+stack.append(3)
+x = stack.pop()
+stack.append(4)
+print(x, stack, stack[-1])
+```
+wrong[1 [2, 3, 4] 4]: `pop()` takes the item pushed last, 3, not the first one.
+wrong[3 [1, 2, 3, 4] 4]: `pop()` removes the 3, so it's no longer in the list when 4 is pushed.
+wrong[3 [1, 2, 4] 1]: `stack[-1]` is the top, which is the end of the list: 4.
+hint: The top of the stack is the end of the list.
+hint: After the pop, the stack is `[1, 2]`.
+right: 3 comes off, 4 goes on in its place, and the top is now 4: last in, first out.
+wrong: Pushes give `[1, 2, 3]`; `pop()` returns 3 and leaves `[1, 2]`; pushing 4 gives `[1, 2, 4]`, whose top is 4.
+
+=== task: mcq easy
+title: Which plate comes off?
+prompt: Plates numbered 1, 2 and 3 are pushed onto a stack in that order. Which plate does the first pop take off?
+* 3 :: Right. It went on last, so it's on top.
+- 1 :: The first one in being the first one out is a queue, not a stack.
+- 2 :: A stack can only reach its top item.
+- Any of them :: Only the top item can be taken.
+hint: Which plate is on top?
+hint: Last in, first out.
+right: A stack is LIFO: the last plate pushed, 3, is the first one popped.
+wrong: Pushing 1, 2, 3 leaves 3 on top, and pop always takes the top: 3.
+
+=== task: fill easy
+title: Peek at the top
+prompt: Fill in the blank so that the program shows the top of the stack without removing it, and prints:
+
+```output
+c 3
+```
+code:
+```python
+stack = ["a", "b", "c"]
+print(stack[??], len(stack))
+```
+answer: -1
+wrong[0]: Index 0 is the bottom of the stack, "a". The top is the end of the list.
+wrong[3]: The list has indexes 0 to 2, so `stack[3]` raises an IndexError.
+hint: The top of the stack is the last item of the list.
+hint: Which index always means the last item?
+right: `stack[-1]` reads the top in O(1), and the stack keeps all 3 items, because nothing was popped.
+wrong: The top is the last item, `stack[-1]`, which is "c". Peeking doesn't remove it, so the length is still 3.
+
+=== task: code easy
+title: Reverse with a stack
+prompt: Write `reverse_list(items)` that returns a new list with the items in reverse order, using a stack: push every item, then pop them all into the result. Don't use slicing, `reversed` or `.reverse()`.
+
+For example, `reverse_list([1, 2, 3])` returns `[3, 2, 1]`.
+starter:
+```python
+def reverse_list(items):
+    stack = []
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def reverse_list(items):
+    stack = []
+    result = []
+    for x in items:
+        stack.append(x)
+    while stack:
+        result.append(stack.pop())
+    return result
+```
+tests:
+- reverse_list([1, 2, 3])
+- reverse_list([])
+- reverse_list(["x"])
+- reverse_list(["a", "b", "c", "d"])
+forbid[[::-1]]: Use the stack: push every item, then pop them.
+forbid[reversed(]: Use the stack: push every item, then pop them.
+forbid[.reverse(]: Use the stack: push every item, then pop them.
+fail[1]: Push 1, 2, 3; the pops then give 3, 2, 1.
+fail[3]: One item reversed is the same one item.
+hint: First loop: push every item with `stack.append(x)`.
+hint: Then `while stack:`, append `stack.pop()` to the result.
+right: Every item is pushed once and popped once: O(n). The last item pushed comes off first, which is exactly what reversing needs.
+wrong: Push all the items, then pop until the stack is empty, appending each popped item to the result.
+
+=== task: predict easy
+title: Balanced or not?
+code:
+```python
+def balanced(text):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    return not stack
+
+print(balanced("{[]}"), balanced("[(])"), balanced("[["), balanced("]"))
+```
+wrong[True True False False]: In `[(])`, the `]` arrives while `(` is on top: the pairs cross, so it's False.
+wrong[True False True False]: `[[` opens two brackets and closes none, so the stack isn't empty at the end: False.
+wrong[True False False True]: `]` arrives with an empty stack: there's nothing for it to close, so False.
+hint: A closing bracket must match the top of the stack.
+hint: At the end, the stack must be empty.
+right: Only `{[]}` passes. `[(])` crosses its pairs, `[[` never closes, and `]` closes something that was never opened.
+wrong: `{[]}`: each closer matches the top, and the stack ends empty: True. `[(])`: `]` meets `(`: False. `[[`: two left over: False. `]`: empty stack: False.
+
+=== task: multi easy
+title: Stacks in the wild
+prompt: Choose **every** situation that works like a stack.
+* An editor's Undo :: Right. The most recent change is undone first.
+* A browser's Back button :: Right. The page you visited last is the first one you go back to.
+* Python's call stack :: Right. The most recent call finishes first.
+* A pile of plates in a cupboard :: Right. You take the top one, which went on last.
+- People queuing at a shop :: First come, first served: that's a queue.
+- A printer printing documents in the order they were sent :: That's first in, first out: a queue too.
+hint: In which ones does the most recent thing come out first?
+hint: Four of them are stacks.
+right: Undo, Back, the call stack and a pile of plates are all last in, first out. Queues are first in, first out.
+wrong: Stacks: Undo, Back, the call stack, the plates. The shop queue and the printer serve the oldest first, so they're queues.
+
+=== task: parsons easy
+title: A Stack class
+prompt: Arrange the lines so that the class works as a stack, with the end of the list as the top, and the program prints:
+
+```output
+z y
+```
+
+Not every line is needed.
+lines:
+```python
+class Stack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, x):
+        self.items.append(x)
+
+    def pop(self):
+        return self.items.pop()
+
+    def peek(self):
+        return self.items[-1]
+
+s = Stack()
+s.push("x")
+s.push("y")
+s.push("z")
+print(s.pop(), s.peek())
+```
+distractors:
+```python
+        return self.items.pop(0)
+        return self.items[0]
+```
+hint: The top is the end of the list.
+hint: `pop()` with no index and `[-1]` both work at the end.
+right: z went on last, so it comes off first, and y is the new top. `pop(0)` and `[0]` would work at the bottom of the stack instead.
+wrong: `push` appends, `pop` returns `self.items.pop()`, and `peek` returns `self.items[-1]`. Then push x, y, z, pop once and peek.
+
+=== task: cells easy
+title: The top after each step
+prompt: A stack starts empty. What's on top after each step?
+labels: push 5 | push 7 | pop | push 2
+answer: 5 | 7 | 5 | 2
+wrong[5 | 5 | 7 | 7]: The newest item is always the top: after pushing 7, the top is 7.
+wrong[5 | 7 | 7 | 2]: `pop` takes the top, 7, off, so 5 is on top again.
+hint: Each push puts the new item on top.
+hint: A pop uncovers the item underneath.
+right: 5, then 7 on top of it; popping 7 uncovers 5; then 2 goes on top.
+wrong: push 5: top 5. push 7: top 7. pop removes 7: top 5. push 2: top 2.
+
+=== task: mcq easy
+title: Why the end of the list?
+prompt: Why should a Python list that's used as a stack push and pop at its end, rather than at its front?
+* At the end, `append` and `pop()` are O(1); at the front, `insert(0, x)` and `pop(0)` shift every other item, which is O(n) :: Right. Both ends give last in, first out, but only the end is fast.
+- `pop(0)` doesn't work :: It works, but it moves every other item one place left.
+- A list can only grow at its end :: `insert(0, x)` adds at the front, but it shifts everything else.
+- It makes no difference :: For a big stack, it's O(1) against O(n) on every push and pop.
+hint: What happens to the other items when you insert or remove at the front?
+hint: Think back to the Arrays lesson.
+right: The end of an array is the only place where adding and removing move nothing else. That's why a list's top is its end.
+wrong: Working at the front shifts all the other items on every push and pop: O(n). At the end nothing shifts: O(1).
+
+=== task: predict easy
+title: Popping carefully
+code:
+```python
+stack = [1]
+for i in range(3):
+    if stack:
+        print(stack.pop())
+    else:
+        print("empty")
+```
+wrong[1\n1\n1]: `pop()` removes the item, so after the first pass the list is empty.
+wrong[1]: The loop runs 3 times. On the second and third passes the `else` prints "empty".
+wrong[1\nempty]: `range(3)` gives 3 passes: one pop and two "empty"s.
+hint: What's left in the list after the first pop?
+hint: An empty list is falsy.
+right: One pop, then the empty list makes `if stack:` False twice. Checking first avoids `IndexError: pop from empty list`.
+wrong: Pass 1: the stack is `[1]`, so it pops and prints 1. Passes 2 and 3: the stack is empty, so it prints "empty".
+
+=== task: code medium
+title: Which brackets pair up?
+prompt: A string `s` holds only `(` and `)`, and every bracket has a partner. Write `bracket_pairs(s)` that returns a list of `(open_index, close_index)` tuples, one for each pair, in the order the pairs **close**. Push the index of each `(`; each `)` pairs with the index on top of the stack.
+
+For example, `bracket_pairs("(()())")` returns `[(1, 2), (3, 4), (0, 5)]`.
+starter:
+```python
+def bracket_pairs(s):
+    stack = []
+    pairs = []
+    # your code here
+    return pairs
+```
+solution:
+```python
+def bracket_pairs(s):
+    stack = []
+    pairs = []
+    for i in range(len(s)):
+        if s[i] == "(":
+            stack.append(i)
+        else:
+            pairs.append((stack.pop(), i))
+    return pairs
+```
+tests:
+- bracket_pairs("(()())")
+- bracket_pairs("()")
+- bracket_pairs("")
+- bracket_pairs("((()))")
+- bracket_pairs("()()")
+fail[1]: Push the index of each `(`. Each `)` pairs with the index on top: the most recent `(` that's still open.
+fail[4]: Nested brackets close from the inside out, so the innermost pair, (2, 3), comes first.
+fail[5]: Two pairs side by side: (0, 1), then (2, 3).
+error[IndexError]: Only pop at a `)`, and push the index at every `(`.
+hint: Loop over the indexes with `range(len(s))`.
+hint: At `(`, push i. At `)`, pop the top index and append `(popped, i)`.
+right: Each `(` waits on the stack until its `)` arrives, and the most recent one is always the one that closes next: O(n) for the whole string.
+wrong: Push the index of every `(`. At every `)`, pop the index on top and record the pair (that index, the current index).
+
+=== task: code medium
+title: Evaluate postfix
+prompt: Write `eval_postfix(tokens)` that evaluates a postfix expression given as a list of strings. Each token is a whole number (which may be negative, like "-3") or one of the operators "+", "-" and "*". Push numbers; for an operator, pop b, then pop a, and push `a op b`. Return the one number left at the end.
+
+For example, `eval_postfix(["3", "4", "+", "2", "*"])` returns 14.
+starter:
+```python
+def eval_postfix(tokens):
+    stack = []
+    # your code here
+    return 0
+```
+solution:
+```python
+def eval_postfix(tokens):
+    stack = []
+    for t in tokens:
+        if t in ["+", "-", "*"]:
+            b = stack.pop()
+            a = stack.pop()
+            if t == "+":
+                stack.append(a + b)
+            elif t == "-":
+                stack.append(a - b)
+            else:
+                stack.append(a * b)
+        else:
+            stack.append(int(t))
+    return stack.pop()
+```
+tests:
+- eval_postfix(["3", "4", "+", "2", "*"])
+- eval_postfix(["10", "2", "3", "*", "-"])
+- eval_postfix(["7"])
+- eval_postfix(["5", "8", "-"])
+- eval_postfix(["2", "3", "4", "*", "+", "5", "-"])
+- eval_postfix(["-3", "4", "*"])
+fail[1]: 3 4 + gives 7, and 7 2 * gives 14.
+fail[2]: 2 3 * gives 6, then 10 6 - gives 4. The first pop is the second number.
+fail[4]: 5 8 - means 5 − 8 = −3: pop b (8) first, then a (5), and push a − b.
+fail[6]: "-3" is a number, not the "-" operator: only the exact token "-" is an operator.
+error[ValueError]: Only call `int(t)` on numbers: check for the operators first.
+error[IndexError]: An operator pops two numbers, so push every number with `stack.append(int(t))`.
+hint: Loop over the tokens. Numbers: `stack.append(int(t))`.
+hint: Operators: `b = stack.pop()`, then `a = stack.pop()`, then push the result.
+hint: Return `stack.pop()` at the end.
+right: Each token is handled once, with O(1) stack work: O(n). The pop order matters for `-`: the number pushed last is the one taken away.
+wrong: Push each number as an int. For an operator, pop b and then a, and push `a + b`, `a - b` or `a * b`. The last number on the stack is the answer.
+
+=== task: predict medium
+title: Order matters
+code:
+```python
+tokens = "8 3 - 2 *".split()
+stack = []
+for t in tokens:
+    if t == "-":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a - b)
+    elif t == "*":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a * b)
+    else:
+        stack.append(int(t))
+print(stack)
+```
+wrong[[-10]]: `b` is popped first, so it's the 3: `a - b` is 8 − 3 = 5, and then 5 × 2 = 10.
+wrong[10]: `print(stack)` shows the whole list, which holds one number: `[10]`.
+wrong[[5, 2]]: The `*` pops 2 and 5 and pushes their product, so one number is left.
+hint: After `8 3 -` the stack is `[5]`.
+hint: Then 2 is pushed, and `*` multiplies 5 by 2.
+right: `[10]`: (8 − 3) × 2. Each operator replaces the top two numbers with one, so a correct expression ends with exactly one number.
+wrong: Push 8 and 3; `-` pops 3 (b) and 8 (a) and pushes 5; push 2; `*` pops 2 and 5 and pushes 10. The stack is `[10]`.
+
+=== task: fill medium
+title: Which way round?
+prompt: Fill in the blanks so that the program works out the first number minus the second, the way postfix `10 4 -` does, and prints:
+
+```output
+6
+```
+code:
+```python
+stack = [10, 4]
+b = stack.pop()
+a = stack.pop()
+print(?? - ??)
+```
+answer: a | b
+wrong[b | a]: `b` was popped first, so it's the 4: 4 − 10 = −6.
+hint: The first pop takes the number that was pushed last: 4.
+hint: 10 − 4 is the first number minus the second.
+right: `a - b`: `a` is the number that was pushed first, 10, and `b` the one pushed second, 4.
+wrong: The pops come out in reverse: `b` is 4 and `a` is 10. The expression is `a - b`.
+
+=== task: cells medium
+title: The stack while checking
+prompt: The bracket checker from the lesson runs on `(()[`. What does the stack hold after each character? Write it from bottom to top, like `([`.
+labels: after the 1st ( | after the 2nd ( | after ) | after [
+answer: ( | (( | ( | ([
+wrong[( | (( | (( | (([]: A closing bracket pops its partner off the stack: after `)`, one `(` is left.
+wrong[( | (( | ( | []: `[` is pushed on top of what's already there; the `(` stays underneath.
+hint: Opening brackets are pushed; `)` pops the top `(`.
+hint: After `)` only one `(` is left.
+right: `(`, then `((`, then `(` again, then `([`. The stack isn't empty at the end, so `(()[` isn't balanced.
+wrong: Push `(`, push `(`, `)` pops one, push `[`: the stack ends as `([`.
+
+=== task: order medium
+title: An operator in postfix
+prompt: Put the steps for handling an operator in a postfix expression in order.
+items:
+- Pop the top number: it's b, the second number
+- Pop the next number: it's a, the first number
+- Work out a op b
+- Push the answer
+hint: The number on top was pushed last.
+hint: The answer goes back on the stack for the next operator.
+right: Pop b, pop a, compute `a op b`, push the result: the stack ends one number shorter than it started.
+wrong: First pop b (the top), then pop a, then work out a op b, then push it.
+
+=== task: predict medium
+title: Undo twice, redo once
+code:
+```python
+done = []
+undone = []
+for w in ["red", "green", "blue"]:
+    done.append(w)
+undone.append(done.pop())
+undone.append(done.pop())
+done.append(undone.pop())
+print(done, undone)
+```
+wrong[['red', 'blue'] ['green']]: The second undo pushed "green" on top of "blue", so the redo brings back "green" first.
+wrong[['red'] ['blue', 'green']]: The last line moves "green" back from `undone` to `done`.
+wrong[['red', 'green', 'blue'] []]: Two words were undone, and only one was redone: "blue" is still on the redo stack.
+hint: The two undos pop "blue", then "green".
+hint: Redo pops the top of `undone`: the word undone last.
+right: Undo moved blue, then green, onto `undone`; redo moved green back. The last word undone is the first one redone.
+wrong: After the undos: done `['red']`, undone `['blue', 'green']`. The redo pops "green" back: done `['red', 'green']`, undone `['blue']`.
+
+=== task: mcq medium
+title: Left over
+prompt: After the bracket checker has gone through every character, its stack still holds `(`. What does that mean?
+* A `(` was opened and never closed, so the text isn't balanced :: Right. Every opening bracket must be popped by its partner.
+- A `)` came with nothing to close :: That's caught at the `)` itself, when the stack is empty.
+- The text is balanced, because nothing went wrong on the way :: Leftover openers mean some brackets were never closed.
+- The last character of the text was `(` :: Not necessarily: in `(()`, the last character is `)`.
+hint: What does each item on the stack wait for?
+hint: When is the stack empty at the end?
+right: Each opener on the stack is still waiting for its partner. A balanced text ends with an empty stack.
+wrong: Something left on the stack is an opening bracket that never met its closing bracket: not balanced.
+
+=== task: multi medium
+title: O(1) on a list stack
+prompt: Choose **every** operation that is O(1) on a Python list used as a stack.
+* `stack.append(x)` :: Right. O(1) amortized.
+* `stack.pop()` :: Right. It removes the last item; nothing shifts.
+* `stack[-1]` :: Right. Reading one item.
+* `len(stack)` :: Right. The length is stored.
+- `stack.pop(0)` :: Every other item shifts left: O(n).
+- `x in stack` :: It checks the items one by one: O(n).
+hint: Which ones work at the end, or on a stored number?
+hint: Four of them are.
+right: Push, pop, peek and size all work at the end or read the stored length. The front and searching touch every item.
+wrong: O(1): append, pop(), [-1], len. O(n): pop(0) shifts everything, and `in` searches.
+
+=== task: code medium
+title: Cancel the pairs
+prompt: Write `remove_adjacent(s)` that removes pairs of equal letters standing next to each other, again and again, until none are left, and returns what remains. A removal can bring two equal letters together, and they go too: "abba" → "aa" → "".
+
+Use a stack of letters: if a letter equals the top of the stack, pop the top (the pair cancels); otherwise push the letter. It must be O(n): searching the string again after every removal would make it O(n²).
+
+For example, `remove_adjacent("abbaca")` returns "ca".
+starter:
+```python
+def remove_adjacent(s):
+    stack = []
+    # your code here
+    return "".join(stack)
+```
+solution:
+```python
+def remove_adjacent(s):
+    stack = []
+    for ch in s:
+        if stack and stack[-1] == ch:
+            stack.pop()
+        else:
+            stack.append(ch)
+    return "".join(stack)
+```
+tests:
+- remove_adjacent("abbaca")
+- remove_adjacent("abba")
+- remove_adjacent("abc")
+- remove_adjacent("")
+- remove_adjacent("aaa")
+- remove_adjacent("azxxzy")
+speed: setup=s = "ab" * n + "ba" * n | call=remove_adjacent(s) | target=O(n)
+slow:
+```python
+def remove_adjacent(s):
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(s) - 1):
+            if s[i] == s[i + 1]:
+                s = s[:i] + s[i + 2:]
+                changed = True
+                break
+    return s
+```
+fail[1]: "bb" goes first, which brings the two a's together, and they go too: "ca".
+fail[2]: In "abba" the b's cancel, then the a's: nothing is left.
+fail[3]: No two neighbours are equal, so nothing is removed.
+fail[5]: In "aaa" the first two a's cancel, and the third has no partner: "a".
+fail[6]: "xx" cancels, which brings "zz" together, and then those cancel: "ay".
+error[IndexError]: Check that the stack isn't empty before reading `stack[-1]`.
+hint: Go through the letters with a stack.
+hint: If the stack isn't empty and its top equals the letter, pop; otherwise push the letter.
+hint: At the end, join the stack into a string: `"".join(stack)`.
+right: Each letter is pushed at most once and popped at most once: O(n). A pair that forms after a removal is caught straight away, because the letter before it is on top of the stack.
+wrong: For each letter: if it matches the top, pop (the pair cancels), otherwise push. Return the stack joined into a string.
+
+=== task: code hard
+title: A stack that knows its minimum
+prompt: Write a class `MinStack` with `push(x)`, `pop()` (which returns the top), `top()` (which returns the top without removing it) and `get_min()` (which returns the smallest value on the stack). All four must be O(1), so don't search the stack for the minimum.
+
+Keep a second stack, `mins`, the same height as `items`, whose top is always the minimum of everything on the stack: when you push x, also push `min(x, current minimum)` onto `mins`; when you pop, pop `mins` too. Assume `pop`, `top` and `get_min` are only called when the stack isn't empty.
+starter:
+```python
+class MinStack:
+    def __init__(self):
+        self.items = []
+        self.mins = []
+
+    # your code here
+```
+solution:
+```python
+class MinStack:
+    def __init__(self):
+        self.items = []
+        self.mins = []
+
+    def push(self, x):
+        self.items.append(x)
+        if self.mins:
+            self.mins.append(min(x, self.mins[-1]))
+        else:
+            self.mins.append(x)
+
+    def pop(self):
+        self.mins.pop()
+        return self.items.pop()
+
+    def top(self):
+        return self.items[-1]
+
+    def get_min(self):
+        return self.mins[-1]
+```
+tests:
+- (lambda s: [s.push(5), s.push(3), s.push(7), s.get_min(), s.pop(), s.get_min(), s.pop(), s.get_min()][3:])(MinStack())
+- (lambda s: [s.push(2), s.push(2), s.push(1), s.pop(), s.get_min(), s.pop(), s.get_min()][3:])(MinStack())
+- (lambda s: [s.push(-1), s.top(), s.get_min()][1:])(MinStack())
+- (lambda s: [s.push(4), s.push(9), s.top(), s.get_min()][2:])(MinStack())
+- (lambda s: [s.push(3), s.push(1), s.push(2), s.pop(), s.pop(), s.get_min(), s.top()][3:])(MinStack())
+speed: setup=s = MinStack(); [s.push(n - i) for i in range(n)] | call=[s.get_min() for i in range(n)] | target=O(n)
+slow:
+```python
+class MinStack:
+    def __init__(self):
+        self.items = []
+        self.mins = []
+
+    def push(self, x):
+        self.items.append(x)
+
+    def pop(self):
+        return self.items.pop()
+
+    def top(self):
+        return self.items[-1]
+
+    def get_min(self):
+        return min(self.items)
+```
+fail[1]: After pushing 5, 3 and 7, the minimum is 3. Popping 7 leaves it at 3; popping 3 brings back 5.
+fail[2]: Equal values: after popping 1 the minimum is 2 again, and after popping one 2 it's still 2.
+fail[3]: With one value, it's both the top and the minimum.
+fail[5]: Popping 2 and then 1 leaves only 3, which is both the minimum and the top.
+error[IndexError]: Push onto `mins` every time you push onto `items`, and pop both together.
+error[AttributeError]: Define all four methods: `push`, `pop`, `top` and `get_min`.
+hint: In `push`, append x to `items`, and append `min(x, self.mins[-1])` to `mins` (or x itself, if `mins` is empty).
+hint: In `pop`, pop both stacks, and return the value popped from `items`.
+hint: `top` is `self.items[-1]` and `get_min` is `self.mins[-1]`.
+right: `mins` remembers the minimum at every height of the stack, so popping brings the old minimum back for free. Every method is O(1); `min(self.items)` would be O(n) on every call.
+wrong: Keep `mins` the same height as `items`, each entry being the minimum of everything at or below it. Push and pop both together; `get_min` reads the top of `mins`.
+
+=== task: code hard
+title: Simplify a path
+prompt: Write `simplify_path(path)` that simplifies a file path that starts with `/`:
+- the parts are separated by `/`; empty parts (from `//`) and `.` (the current folder) are skipped,
+- `..` goes up one folder; at the top folder, `/`, it does nothing,
+- the result starts with `/`, has one `/` between folder names, and doesn't end with `/`.
+
+Use a stack of folder names. For example, `simplify_path("/home//user/./docs/../pics/")` returns `"/home/user/pics"`.
+starter:
+```python
+def simplify_path(path):
+    stack = []
+    # your code here
+    return "/" + "/".join(stack)
+```
+solution:
+```python
+def simplify_path(path):
+    stack = []
+    for part in path.split("/"):
+        if part == "" or part == ".":
+            continue
+        if part == "..":
+            if stack:
+                stack.pop()
+        else:
+            stack.append(part)
+    return "/" + "/".join(stack)
+```
+tests:
+- simplify_path("/home//user/./docs/../pics/")
+- simplify_path("/../")
+- simplify_path("/a/b/c/../../d")
+- simplify_path("/")
+- simplify_path("/x/./y/.")
+- simplify_path("/a/../../b")
+fail[1]: "home", "user" and "docs" go on the stack, `..` pops "docs", and "pics" goes on: /home/user/pics.
+fail[2]: `..` at the top folder stays at the top: "/".
+fail[3]: The two `..` pop "c" and then "b", and "d" goes on after "a".
+fail[5]: `.` means "this folder", so it's skipped: /x/y.
+fail[6]: The second `..` comes when the stack is already empty, so it does nothing: /b.
+error[IndexError]: Only pop for `..` when the stack isn't empty.
+hint: `path.split("/")` gives the parts. Skip "" and ".".
+hint: ".." pops the stack, if it isn't empty; any other part is pushed.
+hint: Return `"/" + "/".join(stack)`.
+right: One pass over the parts, each pushed and popped at most once: O(n). The stack holds the folders you're inside, the deepest on top, so `..` is one pop.
+wrong: Split on "/", skip empty parts and ".", pop for ".." (when there's something to pop), push everything else, then join the stack with "/" after a leading "/".
+
+=== task: code hard
+title: Decode the string
+prompt: In an encoded string, `k[text]` means text repeated k times, and these can be nested: "3[a2[c]]" means "3[acc]", which is "accaccacc". Write `decode_string(s)`. Each k is a whole number of one or more digits; everything else is lowercase letters and brackets.
+
+Keep `current`, the text built so far, and `count`, the number being read. At `[`, push `(current, count)` onto a stack and start again with `current = ""` and `count = 0`. At `]`, pop `(before, times)`, and the text becomes `before + current * times`.
+
+For example, `decode_string("3[a]2[bc]")` returns "aaabcbc".
+starter:
+```python
+def decode_string(s):
+    stack = []
+    current = ""
+    count = 0
+    # your code here
+    return current
+```
+solution:
+```python
+def decode_string(s):
+    stack = []
+    current = ""
+    count = 0
+    for ch in s:
+        if ch.isdigit():
+            count = count * 10 + int(ch)
+        elif ch == "[":
+            stack.append((current, count))
+            current = ""
+            count = 0
+        elif ch == "]":
+            before, times = stack.pop()
+            current = before + current * times
+        else:
+            current += ch
+    return current
+```
+tests:
+- decode_string("3[a]2[bc]")
+- decode_string("3[a2[c]]")
+- decode_string("2[abc]3[cd]ef")
+- decode_string("abc")
+- decode_string("10[x]")
+- decode_string("")
+- decode_string("2[2[2[b]]]")
+fail[1]: 3[a] is "aaa" and 2[bc] is "bcbc".
+fail[2]: The inner 2[c] becomes "cc" first; then 3[acc] repeats it: "accaccacc".
+fail[3]: Letters after the last `]` are added too: "...ef".
+fail[4]: Without brackets, the text stays as it is.
+fail[5]: "10" is one number: build it digit by digit, `count = count * 10 + int(ch)`.
+error[IndexError]: Push at every `[` and pop at every `]`: the brackets always match.
+error[TypeError]: Turn each digit into a number with `int(ch)` before using it in `count`.
+hint: A digit: `count = count * 10 + int(ch)`. A letter: `current += ch`.
+hint: At `[`: push `(current, count)`, then reset `current = ""` and `count = 0`.
+hint: At `]`: `before, times = stack.pop()`, then `current = before + current * times`.
+right: The stack remembers, for every open bracket, the text before it and how many times to repeat what's inside. The innermost bracket closes first, so it's expanded first: last opened, first closed.
+wrong: Read numbers digit by digit and letters into `current`. A `[` saves `(current, count)` on the stack and starts fresh; a `]` pops them and repeats the current piece after the saved text.
+
+=== task: code hard
+title: Asteroid collisions
+prompt: Asteroids fly along a line, all at the same speed. Each one is a number: its size, with the sign giving its direction (positive moves right, negative moves left). When a right-moving asteroid meets a left-moving one, the smaller one explodes; if they're the same size, both explode. Asteroids moving the same way never meet, and a left-mover never meets a right-mover that's further right than it. Write `collide(asteroids)` that returns the asteroids left after every collision, in order.
+
+Use a stack of the survivors so far. A left-moving asteroid fights the right-moving asteroids on top of the stack, one at a time.
+
+For example, `collide([5, 10, -5])` returns `[5, 10]`.
+starter:
+```python
+def collide(asteroids):
+    stack = []
+    # your code here
+    return stack
+```
+solution:
+```python
+def collide(asteroids):
+    stack = []
+    for a in asteroids:
+        alive = True
+        while alive and a < 0 and stack and stack[-1] > 0:
+            if stack[-1] < -a:
+                stack.pop()
+            elif stack[-1] == -a:
+                stack.pop()
+                alive = False
+            else:
+                alive = False
+        if alive:
+            stack.append(a)
+    return stack
+```
+tests:
+- collide([5, 10, -5])
+- collide([8, -8])
+- collide([10, 2, -5])
+- collide([-2, -1, 1, 2])
+- collide([1, -2, -2, -2])
+- collide([])
+- collide([3, 5, -6, 2])
+fail[1]: -5 meets 10 first and explodes, so 5 and 10 are left.
+fail[2]: Equal sizes: both explode.
+fail[3]: -5 destroys 2, then meets 10 and explodes.
+fail[4]: The left-movers are on the left and the right-movers on the right: they never meet.
+fail[5]: The first -2 destroys 1; nothing is left to stop the other two -2s.
+fail[7]: -6 destroys 5 and then 3, and 2 moves right, away from it.
+error[IndexError]: Check that the stack isn't empty before reading `stack[-1]`.
+hint: Push right-movers. A left-mover `a` keeps fighting while the top of the stack is a right-mover.
+hint: Top smaller than `-a`: pop it and fight on. Equal: pop it, and `a` explodes too. Bigger: `a` explodes.
+hint: If `a` survives every fight, push it.
+right: Each asteroid is pushed once and popped at most once: O(n), even though one asteroid can destroy many in a row.
+wrong: Keep survivors on a stack. A left-mover pops smaller right-movers off the top; it stops when it meets a bigger one (it explodes), an equal one (both explode), or no right-mover (it survives and is pushed).
+
+=== task: predict hard
+title: The call stack at work
+code:
+```python
+def f(n):
+    if n == 0:
+        print("base")
+        return 0
+    print("push", n)
+    r = f(n - 1) + n
+    print("pop", n, r)
+    return r
+
+f(2)
+```
+wrong[push 2\npop 2 2\npush 1\npop 1 1\nbase]: f(2) can't finish until f(1) returns: the whole of f(1) runs in the middle of f(2).
+wrong[push 2\npush 1\nbase\npop 2 3\npop 1 1]: The most recent call finishes first: f(1) prints "pop" before f(2) does.
+wrong[push 2\npush 1\nbase\npop 1 1\npop 2 2]: f(2) adds its own n to what f(1) returned: 1 + 2 = 3.
+hint: Each call prints "push" before calling the next one, and "pop" after that call returns.
+hint: The calls finish in the opposite order to the one they started in.
+right: The calls pile up on the call stack, 2, then 1, then 0, and come off in reverse: 0, then 1, then 2. Last in, first out.
+wrong: f(2) prints push 2 and calls f(1), which prints push 1 and calls f(0), which prints base and returns 0. f(1) returns 0 + 1 = 1 (pop 1 1), and f(2) returns 1 + 2 = 3 (pop 2 3).
+
+=== task: predict hard
+title: Token by token
+code:
+```python
+tokens = "6 2 3 + -".split()
+stack = []
+for t in tokens:
+    if t == "+":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a + b)
+    elif t == "-":
+        b = stack.pop()
+        a = stack.pop()
+        stack.append(a - b)
+    else:
+        stack.append(int(t))
+    print(stack)
+```
+wrong[[6]\n[6, 2]\n[6, 2, 3]\n[8, 3]\n[5]]: `+` adds the **top** two numbers, 2 and 3, not the bottom two.
+wrong[[6]\n[6, 2]\n[6, 2, 3]\n[6, 5]\n[-1]]: `b` is the top (5) and `a` is under it (6): a − b = 6 − 5 = 1.
+wrong[[6]\n[2]\n[3]\n[5]\n[1]]: Numbers are pushed on top of the others; they don't replace them.
+hint: The stack is printed after every token.
+hint: `+` turns `[6, 2, 3]` into `[6, 5]`.
+right: 6 − (2 + 3) = 1. Postfix needs no brackets: the order of the tokens decides that the + happens first.
+wrong: Push 6, 2 and 3. `+` pops 3 and 2 and pushes 5: `[6, 5]`. `-` pops 5 (b) and 6 (a) and pushes 6 − 5 = 1: `[1]`.
+
+=== task: cells hard
+title: Undo and redo, step by step
+prompt: The `Editor` from the lesson's first example runs these lines. What does `e.text()` show after each step?
+
+```python
+e = Editor()
+e.type_word("a")
+e.type_word("b")
+e.undo()               # step 1
+e.type_word("c")       # step 2
+e.undo()               # step 3
+e.redo()               # step 4
+```
+labels: after step 1 | after step 2 | after step 3 | after step 4
+answer: a | a c | a | a c
+wrong[a | a c | a | a b]: Typing "c" in step 2 emptied the redo stack, so "b" can't come back. Step 4 redoes the last undo, which removed "c".
+wrong[a | a b c | a b | a b c]: Step 1 undid "b", so it isn't in the text when "c" is typed.
+hint: Typing a word empties the redo stack.
+hint: After step 3, the redo stack holds only "c".
+right: a → a c → a → a c. Once something new is typed, the old undone words are gone for good: the redo stack only ever holds what was undone since the last typing.
+wrong: Step 1 undoes "b": "a". Step 2 types "c" and empties the redo stack: "a c". Step 3 undoes "c": "a". Step 4 redoes "c": "a c".
+
+=== task: mcq hard
+title: Why RecursionError?
+prompt: Why does a recursive function with no base case stop with a `RecursionError`, instead of running forever?
+* Every call pushes a frame onto the call stack, and none ever returns, so the stack grows until it reaches Python's limit, about 1,000 frames :: Right. The limit is on how many calls are waiting at the same time.
+- Python only allows a function to be called 1,000 times in a program :: A function can be called millions of times, as long as the calls return. The limit is on calls that are waiting at once.
+- The computer runs out of time :: It's not about time: the error comes from how deep the call stack is.
+- Recursion is a kind of loop, and Python stops loops after 1,000 passes :: Loops have no such limit. This is about the call stack.
+hint: What happens on the call stack each time the function calls itself?
+hint: Which calls are still waiting when the error happens?
+right: Without a base case, no call ever returns, so frames pile up on the call stack until Python refuses to push another one.
+wrong: Each call waits on the call stack for the call it made. With no base case none of them finish, and Python stops when about 1,000 are waiting.
+
+=== task: multi hard
+title: Jobs for a stack
+prompt: Choose **every** job that a stack is the right tool for.
+* Checking that HTML tags such as `<b>` and `</b>` are properly nested :: Right. Like brackets: the most recent open tag must close first.
+* Undoing the most recent change :: Right. The last change made is the first one undone.
+* Evaluating a postfix expression :: Right. Numbers wait on the stack for their operator.
+* Reversing the letters of a word :: Right. Push them all, then pop them all.
+- Serving customers in the order they arrived :: First in, first out: that's a queue.
+- Finding the largest number in a list :: One pass with a running maximum is enough; nothing has to wait in a last-in-first-out order.
+hint: Does the most recent thing need to come out first?
+hint: Four of them do.
+right: Stacks fit whenever the latest thing must be dealt with first: nesting, undo, postfix and reversing.
+wrong: Stack jobs: nested tags, undo, postfix, reversing. A shop queue needs first in, first out, and a maximum needs no stack.
+
+=== task: parsons hard
+title: Brackets that match
+prompt: Arrange the lines so that `balanced` checks the brackets with a stack, and the program prints:
+
+```output
+True False False
+```
+
+Not every line is needed.
+lines:
+```python
+def balanced(text):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    return not stack
+
+print(balanced("{[()]}"), balanced("(("), balanced("())"))
+```
+distractors:
+```python
+    return True
+            if stack.pop() != pairs[ch]:
+```
+hint: A closing bracket with an empty stack has nothing to match.
+hint: At the end, the brackets are balanced only if nothing is left on the stack.
+right: `return not stack` catches brackets that were never closed, like `((`, and `not stack or ...` catches a closer with nothing to close, like the last `)` in `())`.
+wrong: Push openers; for a closer, return False if the stack is empty or the popped bracket isn't its partner; at the end, `return not stack`.
