@@ -530,7 +530,13 @@
     const maxN = allFrames[allFrames.length - 1].n;
     let maxV = 1;
     allFrames.forEach((f) => f.vals.forEach((v) => { maxV = Math.max(maxV, v); }));
-    const W = 520, H = 260, L = 56, B = 34, T = 14, Rr = 120;
+    const fmt = (v) => Math.round(v).toLocaleString('en-US');
+    const ticks = log ? [1, 10, 100, 1000, 10000, 100000, 1000000].filter((t) => t <= maxV) : [0, maxV / 2, maxV];
+    // Make room for the widest tick label on the left and the widest end-of-line tag on the right.
+    const tagWidth = Math.max(0, ...labels.map((lab, si) => (lab.replace(/_/g, ' ') + ' = ' + fmt(Math.max(...allFrames.map((f) => f.vals[si])))).length));
+    const W = 520, H = 260, B = 34, T = 14;
+    const L = Math.max(56, Math.ceil(14 + 6.7 * Math.max(...ticks.map((t) => fmt(t).length))));
+    const Rr = Math.max(120, Math.ceil(16 + 7 * tagWidth));
     const xOf = (n) => L + ((n - allFrames[0].n) / Math.max(1, maxN - allFrames[0].n)) * (W - L - Rr);
     const yOf = (v) => {
       if (log) { const lv = Math.log10(Math.max(1, v)), lm = Math.log10(maxV); return H - B - (lv / Math.max(1, lm)) * (H - B - T); }
@@ -538,10 +544,9 @@
     };
     let s = `<svg class="dsv" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="growth chart">`;
     s += `<line x1="${L}" y1="${H - B}" x2="${W - Rr}" y2="${H - B}" stroke="#4A5262"/><line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#4A5262"/>`;
-    const ticks = log ? [1, 10, 100, 1000, 10000, 100000, 1000000].filter((t) => t <= maxV) : [0, maxV / 2, maxV];
     for (const t of ticks) {
       const y = yOf(t);
-      s += `<line x1="${L}" y1="${y}" x2="${W - Rr}" y2="${y}" stroke="#262B36"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#7A8496">${Math.round(t).toLocaleString('en-US')}</text>`;
+      s += `<line x1="${L}" y1="${y}" x2="${W - Rr}" y2="${y}" stroke="#262B36"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#7A8496">${fmt(t)}</text>`;
     }
     s += `<text x="${(L + W - Rr) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#7A8496">n (input size)</text>`;
     const last = upto[upto.length - 1];
@@ -551,7 +556,7 @@
       const color = SERIES[si % SERIES.length];
       s += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.2"/>`;
       s += `<circle cx="${xOf(last.n)}" cy="${yOf(last.vals[si])}" r="3.5" fill="${color}"/>`;
-      tags.push({ y: yOf(last.vals[si]) + 4, color, text: `${lab.replace(/_/g, ' ')} = ${Math.round(last.vals[si]).toLocaleString('en-US')}` });
+      tags.push({ y: yOf(last.vals[si]) + 4, color, text: `${lab.replace(/_/g, ' ')} = ${fmt(last.vals[si])}` });
     });
     tags.sort((p, q) => q.y - p.y);
     for (let k = 1; k < tags.length; k++) if (tags[k].y > tags[k - 1].y - 13) tags[k].y = tags[k - 1].y - 13;
