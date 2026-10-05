@@ -22,11 +22,9 @@
   async function config() {
     const r = await fetch('/__/firebase/init.json', { cache: 'no-cache' });
     if (!r.ok) throw new Error('Firebase settings not found (HTTP ' + r.status + ')');
-    const c = await r.json();
-    // Serve the sign-in handler from the site's own domain so the redirect flow works in browsers that block
-    // third-party storage.
-    if (/\.(web\.app|firebaseapp\.com)$/.test(location.hostname)) c.authDomain = location.hostname;
-    return c;
+    // authDomain stays the project's default (stepwise-84a2b.firebaseapp.com): Google's sign-in only accepts
+    // redirects to the handler URLs registered for the project, and that one is registered automatically.
+    return r.json();
   }
 
   const listeners = [];
