@@ -293,6 +293,18 @@ CASES = [
     'x = set().pop(1)',
     'scores = {"a": 1}\nprint(max(scores, key=scores.keys))',
 
+    'class P:\n    def __init__(self, x):\n        self.x = x\n    def __repr__(self):\n        return self.x\nprint(P(5))',
+    'class P:\n    def __init__(self, x):\n        self.x = x\n    def __repr__(self):\n        return self.x\nprint([P(5)])',
+    'class Dog:\n    def speak():\n        return "Woof"\nd = Dog()\nprint(d.speak())',
+    'class Dog:\n    def __init__(self, name):\n        name = name\nd = Dog("Rex")\nprint(d.name)',
+    'class Dog:\n    def __init__(self, name):\n        self.name = name\nd = Dog()',
+    'class Dog:\n    def __int__(self, name):\n        self.name = name\nd = Dog("Rex")',
+    'class Dog:\n    def __init__(self, name):\n        self.name = name\nd = Dog("Rex", 3)',
+    'class A:\n    def f(self):\n        return g()\n    def g(self):\n        return 1\nprint(A().f())',
+    'class Dog:\n    def bark(self):\n        print("Woof")\nDog.bark()',
+    'class A:\n    def __init__(self):\n        return 5\nA()',
+    'class Node:\n    def __init__(self, val, next=None):\n        self.val = val\n        self.next = next\na = Node(1, Node(2))\nprint(a.next.next.val)',
+
 ]
 
 

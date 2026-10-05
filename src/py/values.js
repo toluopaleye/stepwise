@@ -296,6 +296,9 @@ function pyStr(v) {
       if (a.length === 1) return isKeyErrorCls(v.cls) ? repr(a[0]) : pyStr(a[0]);
       return repr(new PyTuple(a));
     }
+    // str() falls back to __repr__, but CPython reports a bad result as coming from __str__
+    const r = VM && VM.findMethod(v, '__repr__');
+    if (r) return asStrResult(VM.callValue(r, [v], null), '__str__');
   }
   return repr(v);
 }
