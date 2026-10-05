@@ -1,0 +1,1793 @@
+=== lesson
+id: ds-linked-doubly
+title: Doubly linked lists
+summary: A doubly linked node links to the node after it and to the node before it, so the list can be walked both ways, and a node you're holding can be deleted in O(1). You'll keep the two directions in step, insert with four link changes, delete with two, use sentinel nodes to take the special cases out of both ends, and weigh what the extra link costs.
+
+=== learn
+### Two links per node
+A **doubly linked** node has two links: `next`, to the node after it, and `prev`, to the node before it. The list keeps both ends: the `head` (the first node) and the `tail` (the last node).
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+head = a
+tail = c
+
+node = head
+while node is not None:
+    print(node.val, end=" ")
+    node = node.next
+print()
+node = tail
+while node is not None:
+    print(node.val, end=" ")
+    node = node.prev
+print()
+```
+```output
+A B C
+C B A
+```
+Every connection between two neighbours is two links: `a.next = b` forwards and `b.prev = a` backwards. The first walk starts at the head and follows `next`; the second starts at the tail and follows `prev`, so the list comes out backwards without being reversed. The head's `prev` and the tail's `next` stay None: they mark the two ends.
+
+### Keeping both links in step
+Every operation must keep this rule true: **if `x.next` is `y`, then `y.prev` is `x`**. When one of the two links is forgotten, the list looks different depending on which way you walk:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def check(head):
+    node = head
+    while node is not None:
+        if node.next is not None and node.next.prev is not node:
+            return False
+        node = node.next
+    return True
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.next = c
+c.prev = b
+print(check(a))
+b.prev = a
+print(check(a))
+```
+```output
+False
+True
+```
+Until `b.prev = a` runs, a walk backwards from C stops at B, while a walk forwards still reaches all three. `check` walks forwards and tests the rule at every connection: `node.next.prev is not node` is True when the node after doesn't link back. Bugs in doubly linked code are almost always one link of a pair that wasn't updated.
+
+### Inserting after a node: four links
+Inserting a new node after `node` changes four links: two in the new node, and one in each neighbour:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def insert_after(node, x):
+    new = DNode(x)
+    new.prev = node
+    new.next = node.next
+    if node.next is not None:
+        node.next.prev = new
+    node.next = new
+    return new
+
+a = DNode("A")
+c = DNode("C")
+a.next = c
+c.prev = a
+insert_after(a, "B")
+print(a.next.val, a.next.next.val, c.prev.val, c.prev.prev.val)
+```
+```output
+B C B A
+```
+1. `new.prev = node` and `new.next = node.next`: the new node links to both of its neighbours.
+2. `node.next.prev = new`: the node after links back to the new node (if there is a node after).
+3. `node.next = new`: `node` links forward to the new node.
+
+Step 3 must come after step 2, because step 2 reaches the node after through `node.next`, which step 3 overwrites. When `node` is the tail, there's no node after it, so step 2 is skipped and the new node becomes the new tail. All four changes are O(1). Animation 1 shows them one by one.
+
+### Deleting a node you hold: O(1)
+To delete a node in the middle, its two neighbours link to each other, past it:
+```python
+def unlink(node):
+    node.prev.next = node.next
+    node.next.prev = node.prev
+```
+The node before it now links forward to the node after it, and the node after it links back to the node before it. No walk is needed, because `node.prev` is right there: O(1). In a singly linked list, the same delete needs a walk from the head to find the node before: O(n). Animation 2 shows a delete.
+
+At the ends it's messier: the head has no `prev` and the tail has no `next`, so deleting them means moving `head` or `tail` instead, with an `if` for each end. Inserting has the same problem. The next step removes those special cases.
+
+### Sentinel nodes at both ends
+Put a dummy node in front of the first real node and another after the last one. These two **sentinels** hold no values and never move, so every real node always has a real node on both sides, and inserting or deleting never meets None:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+class DoublyLinkedList:
+    def __init__(self):
+        self.front = DNode(None)
+        self.back = DNode(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.size = 0
+
+    def insert_after(self, node, x):
+        new = DNode(x)
+        new.prev = node
+        new.next = node.next
+        node.next.prev = new
+        node.next = new
+        self.size += 1
+        return new
+
+    def remove(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        self.size -= 1
+        return node.val
+
+    def push_front(self, x):
+        return self.insert_after(self.front, x)
+
+    def push_back(self, x):
+        return self.insert_after(self.back.prev, x)
+
+    def pop_front(self):
+        return self.remove(self.front.next)
+
+    def pop_back(self):
+        return self.remove(self.back.prev)
+
+    def to_list(self):
+        items = []
+        node = self.front.next
+        while node is not self.back:
+            items.append(node.val)
+            node = node.next
+        return items
+
+d = DoublyLinkedList()
+d.push_back(2)
+d.push_back(3)
+d.push_front(1)
+print(d.to_list(), d.size)
+print(d.pop_back(), d.pop_front(), d.to_list())
+```
+```output
+[1, 2, 3] 3
+3 1 [2]
+```
+- The real nodes sit between `front` and `back`. The list is empty when `front.next is back`.
+- `push_front` inserts after `front`, and `push_back` inserts after the last real node, `back.prev`. `pop_front` and `pop_back` remove `front.next` and `back.prev`.
+- So all four are `insert_after` or `remove` at the right place: O(1), with no `if` at all.
+- A walk stops when it reaches the `back` sentinel, instead of at None.
+
+(`front` and `back` would usually be called `head` and `tail`; different names make it clear that they're sentinels, not real nodes.)
+
+### What the extra link costs
+
+| | Singly linked | Doubly linked |
+| --- | --- | --- |
+| links per node | 1 | 2 |
+| links changed to insert after a node | 2 | 4 |
+| links changed to delete a node | 1 | 2 |
+| pop from the back | O(n) | O(1) |
+| delete a node you hold | O(n) | O(1) |
+| insert in front of a node you hold | O(n) | O(1) |
+| walk backwards | not possible | O(n), along `prev` |
+| read item i, search | O(n) | O(n) |
+
+The extra link costs memory (one more link per node, still O(n) in all) and care: twice as many links to keep in step on every change. It pays off when you delete or insert at a node you're holding, or move both ways: a browser's back and forward buttons, undo and redo, a music player's previous and next song. Python's `collections.deque`, coming up in the Queues lesson, is built as a doubly linked list of blocks, which is why it's O(1) at both ends.
+
+=== keypoints
+- A doubly linked node has `prev` and `next`. The list keeps a `head` and a `tail`: walk forwards from the head along `next`, and backwards from the tail along `prev`.
+- Keep the two directions in step: if `x.next` is `y`, then `y.prev` must be `x`. The head's `prev` and the tail's `next` are None.
+- Inserting after a node changes four links: the new node's `prev` and `next`, then `node.next.prev`, then `node.next`, in that order.
+- Deleting a node you hold is O(1): `node.prev.next = node.next` and `node.next.prev = node.prev`. Popping from the back is O(1) too.
+- Sentinel nodes at both ends give every real node real neighbours, so inserts and deletes need no special cases.
+- The price is a second link in every node and more links to update; it pays off for deleting held nodes and for moving both ways.
+
+=== example: Browser history
+intro: A browser keeps the pages you visit in a doubly linked list: Back follows `prev`, Forward follows `next`, and visiting a new page drops the pages you could have gone forward to.
+```python
+class Page:
+    def __init__(self, url):
+        self.url = url
+        self.prev = None
+        self.next = None
+
+class History:
+    def __init__(self, home):
+        self.current = Page(home)
+
+    def visit(self, url):
+        page = Page(url)
+        page.prev = self.current
+        self.current.next = page
+        self.current = page
+
+    def back(self):
+        if self.current.prev is not None:
+            self.current = self.current.prev
+        return self.current.url
+
+    def forward(self):
+        if self.current.next is not None:
+            self.current = self.current.next
+        return self.current.url
+
+h = History("home")
+h.visit("news")
+h.visit("sport")
+print(h.back(), h.back(), h.back())
+print(h.forward())
+h.visit("weather")
+print(h.forward(), h.back())
+```
+1-5: Each page is a node with links to the page before and the page after.
+7-9: The history starts with one page, the current one.
+11-15: A new page links back to the current page, and the current page links forward to it. This replaces any old forward link, so those pages can't be reached any more.
+17-25: Back and Forward move one node along `prev` or `next`, if there's a node there: O(1).
+27-33: home, news, sport. Back three times stops at home. Forward goes to news. Visiting weather from news drops sport, so Forward has nowhere to go.
+
+=== example: Checking the links
+intro: A helper that sets both links of a connection at once, and a check that walks the list and tests that every pair of neighbours agrees.
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def link(x, y):
+    x.next = y
+    y.prev = x
+
+def check(head):
+    node = head
+    while node is not None:
+        if node.next is not None and node.next.prev is not node:
+            return False
+        node = node.next
+    return True
+
+a = DNode(1)
+b = DNode(2)
+c = DNode(3)
+link(a, b)
+link(b, c)
+print(check(a))
+c.prev = a
+print(check(a))
+link(b, c)
+print(check(a))
+```
+7-9: `link` sets both directions of a connection together, so they can't get out of step.
+11-17: Walk forwards, and at every connection check that the node after links back.
+19-24: Two connections made with `link`: the list passes the check.
+25-26: `c.prev = a` breaks the rule: `b.next` is c, but `c.prev` isn't b.
+27-28: Linking b and c again repairs it.
+
+=== animation: Inserting after a node
+view: linked a ptr=new
+linked c next=prev ptr=new
+intro: Inserting B between A and C. The top picture follows `next` from A; the bottom one follows `prev` back from C. Watch both directions get the new node.
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+c = DNode("C")
+a.next = c
+c.prev = a
+node = a
+new = DNode("B")
+new.prev = node
+new.next = node.next
+node.next.prev = new
+node.next = new
+print(a.next.val, c.prev.val)
+```
+1: The doubly linked node class.
+3: Store this node's value, {val}.
+4: No node before it yet.
+5: No node after it yet.
+7: Make the node A.
+8: Make the node C.
+9: A links forwards to C.
+10: C links back to A. A ⇄ C is a list of two nodes.
+11: We're holding A, and B will go right after it.
+12: Make B. It has no links yet.
+13: B links back to A.
+14: B links forward to the node after A, which is {node.next.val}.
+15: C links back to B. Going backwards from C now reaches B, then A.
+16: A links forward to B. Going forwards from A now reaches B, then C.
+17: Four links changed, nothing walked: O(1).
+
+=== animation: Deleting a node you hold
+view: linked a ptr=node
+linked d next=prev ptr=node
+intro: Deleting C from A ⇄ B ⇄ C ⇄ D, holding C. The top picture follows `next` from A; the bottom one follows `prev` back from D. Two link changes take C out of both.
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+d = DNode("D")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+c.next = d
+d.prev = c
+node = c
+node.prev.next = node.next
+node.next.prev = node.prev
+print(a.next.next.val, d.prev.val, node.prev.val, node.next.val)
+```
+1: The doubly linked node class.
+3: Store this node's value, {val}.
+4: No node before it yet.
+5: No node after it yet.
+7: Make the four nodes.
+11: Link them in both directions, one connection at a time.
+12: A ⇄ B is done.
+14: B ⇄ C is done.
+16: C ⇄ D is done.
+17: We're holding C.
+18: The node before C, {node.prev.val}, links forward past C to {node.next.val}.
+19: The node after C, {node.next.val}, links back past C to {node.prev.val}.
+20: C is out of the list in both directions, without a walk. C's own links still point at B and D, but nothing leads to C any more.
+
+=== task: predict easy
+title: Both directions
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode(1)
+b = DNode(2)
+c = DNode(3)
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+print(c.prev.val, c.prev.prev.val, a.next.next.val)
+print(b.prev.prev)
+```
+wrong[2 1 3\n1]: `b.prev` is a, and `a.prev` was never set: it's still None, from `__init__`.
+wrong[3 2 3\nNone]: `c.prev` is the node before c, which holds 2.
+hint: `c.prev` is b and `c.prev.prev` is a.
+hint: The first node's `prev` is None.
+right: Backwards from c: 2, then 1. Forwards from a: two steps reach 3. And the head's `prev` is None, which marks the front end.
+wrong: `c.prev` → 2, `c.prev.prev` → 1, `a.next.next` → 3. `b.prev` is a, and `a.prev` is None.
+
+=== task: mcq easy
+title: Deleting a node you hold
+prompt: You're holding a node in the middle of a list and want to delete it. Why is that O(1) in a doubly linked list, but O(n) in a singly linked list?
+* The node whose link has to change is the one before it: a doubly linked node has it in `prev`, but a singly linked list has to walk from the head to find it :: Right. With `prev` at hand, two link changes are enough.
+- A doubly linked list keeps its nodes sorted :: Nothing is sorted. The difference is the `prev` link.
+- A doubly linked list keeps its nodes side by side in memory :: Its nodes are scattered too, like any linked list's.
+- Deleting from a doubly linked list changes fewer links :: It changes more: two instead of one. What it saves is the walk.
+hint: Deleting a node changes the link of which node?
+hint: How do you get to that node?
+right: Deleting a node means changing its neighbours' links. A doubly linked node knows both neighbours, so no walk is needed.
+wrong: The node before the deleted node must link past it. In a doubly linked list that node is `node.prev`; in a singly linked list, only a walk from the head can find it.
+
+=== task: fill easy
+title: Link back
+prompt: Fill in the blank so that B is inserted between A and C in both directions, and the program prints:
+
+```output
+B B
+```
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+c = DNode("C")
+a.next = c
+c.prev = a
+node = a
+new = DNode("B")
+new.prev = node
+new.next = node.next
+node.next.prev = ??
+node.next = new
+print(a.next.val, c.prev.val)
+```
+answer: new
+wrong[node]: That sets C's `prev` back to A, which it already was: going backwards from C would skip B.
+wrong[None]: That cuts C's link back, so `c.prev.val` fails: C would no longer know the node before it.
+hint: `node.next` is C. Which node should come before C now?
+hint: The node being inserted is called `new`.
+right: `node.next.prev = new` makes C link back to B. With `node.next = new` after it, both directions go through B.
+wrong: C must link back to the new node, B: the blank is `new`.
+
+=== task: code easy
+title: Backwards to a list
+prompt: Write `backwards(tail)` that walks from the tail of a doubly linked list along `prev` and returns the values in that order. An empty list has tail None. The starter includes `build(items)`, which builds a list and returns `(head, tail)`.
+
+For example, `backwards(build([1, 2, 3])[1])` returns `[3, 2, 1]`.
+starter:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def backwards(tail):
+    items = []
+    # your code here
+    return items
+```
+solution:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def backwards(tail):
+    items = []
+    node = tail
+    while node is not None:
+        items.append(node.val)
+        node = node.prev
+    return items
+```
+tests:
+- backwards(build([1, 2, 3])[1])
+- backwards(build(["x"])[1])
+- backwards(None)
+- backwards(build([5, 6, 7, 8])[1])
+fail[1]: Start at the tail, 3, and follow `prev`: 3, 2, 1.
+fail[2]: A one-node list gives one value.
+error[AttributeError]: Stop when `node` is None: the head's `prev` is None.
+error[NameError]: Keep the `build` helper from the starter: the tests use it.
+hint: Start with `node = tail`.
+hint: While `node is not None`, append `node.val` and move to `node.prev`.
+right: One walk backwards, O(n), and nothing is reversed. A singly linked list can't do this without reversing its links first.
+wrong: Walk from the tail: while `node` is not None, append its value and step to `node.prev`.
+
+=== task: predict easy
+title: Two links per connection
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def link(x, y):
+    x.next = y
+    y.prev = x
+
+nodes = [DNode(i) for i in range(5)]
+count = 0
+for i in range(4):
+    link(nodes[i], nodes[i + 1])
+    count += 2
+print(count, nodes[4].prev.prev.val, nodes[0].next.next.next.val)
+```
+wrong[4 2 3]: Each `link` sets two links, `next` and `prev`, so 4 connections make 8 links.
+wrong[8 3 3]: `nodes[4].prev` is the node holding 3, and its `prev` holds 2.
+wrong[8 2 4]: Three `.next`s from the node holding 0 reach 3.
+hint: `link` sets one link in each direction.
+hint: The values are 0, 1, 2, 3, 4 in order.
+right: 5 nodes have 4 connections, and each connection is 2 links: 8. Backwards from 4, two steps reach 2; forwards from 0, three steps reach 3.
+wrong: 4 calls to `link` set 2 links each: 8. `nodes[4].prev.prev` is the node holding 2, and `nodes[0].next.next.next` the node holding 3.
+
+=== task: multi easy
+title: O(1) with both ends
+prompt: A doubly linked list keeps its `head` and its `tail`. Choose **every** operation that is O(1).
+* Adding at either end :: Right. The new node links to the end node, and `head` or `tail` moves.
+* Removing from either end :: Right. Popping from the back uses `tail.prev`, the node before the tail.
+* Deleting a node you're holding :: Right. Its `prev` and `next` are both known.
+* Stepping back from a node you're holding to the node before it :: Right. That's `node.prev`.
+- Reading item i :: Getting there is a walk: O(i) from the head.
+- Finding a value :: Every node may have to be checked: O(n).
+hint: Which ones need a walk?
+hint: Four of them are O(1).
+right: Anything at an end, or next to a node you hold, is O(1). Reaching a position or a value still needs a walk.
+wrong: O(1): both ends, deleting a held node, stepping back. O(n): reading item i and finding a value.
+
+=== task: parsons easy
+title: Insert after a node
+prompt: Arrange the lines so that `insert_after` puts a new node between `node` and the node after it, in both directions, and the program prints:
+
+```output
+B B C
+```
+
+Not every line is needed.
+lines:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def insert_after(node, x):
+    new = DNode(x)
+    new.prev = node
+    new.next = node.next
+    node.next.prev = new
+    node.next = new
+
+a = DNode("A")
+c = DNode("C")
+a.next = c
+c.prev = a
+insert_after(a, "B")
+print(a.next.val, c.prev.val, a.next.next.val)
+```
+distractors:
+```python
+    node.next.prev = node
+    new.next = node
+```
+hint: The new node links to both neighbours first.
+hint: Then the node after links back to the new node, and last `node` links forward to it.
+right: Four links: the new node's two, C's `prev` and A's `next`. `node.next.prev = new` has to come before `node.next = new`, while `node.next` is still C.
+wrong: In `insert_after`: make the node, set `new.prev = node` and `new.next = node.next`, then `node.next.prev = new`, then `node.next = new`.
+
+=== task: cells easy
+title: After unlinking
+prompt: `unlink(b)` runs on the list A ⇄ B ⇄ C:
+
+```python
+def unlink(node):
+    node.prev.next = node.next
+    node.next.prev = node.prev
+```
+
+Which node does each link hold afterwards? Write its letter.
+labels: a.next | c.prev | b.next | b.prev
+answer: C | A | C | A
+wrong[C | A | None | None]: `unlink` changes only the neighbours' links. B's own links aren't touched, so they still point at C and A, but nothing leads to B any more.
+wrong[B | B | C | A]: `node.prev.next = node.next` sets A's `next` to C, and `node.next.prev = node.prev` sets C's `prev` to A.
+hint: The first line changes A's `next`; the second changes C's `prev`.
+hint: Nothing changes B's own links.
+right: A and C now link to each other in both directions, so B is out of the list. B still remembers its old neighbours, which makes it possible to put it back later.
+wrong: A's `next` becomes C and C's `prev` becomes A. B's own `next` and `prev` stay C and A.
+
+=== task: mcq easy
+title: What the sentinels buy
+prompt: A `DoublyLinkedList` has two sentinel nodes, `front` and `back`, which hold no values. What do they buy?
+* Every real node always has a node before it and after it, so inserting and deleting need no special cases at the ends :: Right. `insert_after` and `remove` work the same everywhere.
+- They store the size of the list :: A `size` counter does that. The sentinels hold no values.
+- They keep the values sorted :: The sentinels don't look at the values at all.
+- They make the list use less memory :: They add two nodes, so they use a little more.
+hint: What would `node.prev` be for the first real node without them?
+hint: Which `if`s do they remove?
+right: Without sentinels, the first and last nodes have None on one side, so every insert and delete needs `if`s for the ends. With them, there's always a node there.
+wrong: The sentinels sit in front of the first real node and after the last one, so no real node ever has None as a neighbour.
+
+=== task: predict easy
+title: Two steps back
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def link(x, y):
+    x.next = y
+    y.prev = x
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+d = DNode("D")
+link(a, b)
+link(b, c)
+link(c, d)
+node = d
+node = node.prev.prev
+print(node.val, node.next.val, node.prev.val)
+```
+wrong[C D B]: `node.prev.prev` goes back two nodes from D: to C, then to B.
+wrong[B A C]: From B, `next` goes forwards to C and `prev` goes back to A.
+hint: From D, one step back is C.
+hint: Two steps back is B.
+right: Two steps back from D is B, whose neighbours are C (after) and A (before).
+wrong: D → C → B, so `node` is B. Then `node.next` is C and `node.prev` is A.
+
+=== task: code medium
+title: Insert after a node
+prompt: Write `insert_after(node, x)` that inserts a new node holding x right after `node`, in both directions, and returns the new node. `node` may be the last node, with no node after it. The starter includes `build`, which returns `(head, tail)`, and `both_ways(head)`, which returns the values forwards from the head and backwards from the last node.
+
+For example, inserting 99 after the 2 in 1 ⇄ 2 ⇄ 3 makes `both_ways` give `[[1, 2, 99, 3], [3, 99, 2, 1]]`.
+starter:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def both_ways(head):
+    forward = []
+    last = None
+    node = head
+    while node is not None:
+        forward.append(node.val)
+        last = node
+        node = node.next
+    backward = []
+    node = last
+    while node is not None:
+        backward.append(node.val)
+        node = node.prev
+    return [forward, backward]
+
+def insert_after(node, x):
+    new = DNode(x)
+    # your code here
+    return new
+```
+solution:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def both_ways(head):
+    forward = []
+    last = None
+    node = head
+    while node is not None:
+        forward.append(node.val)
+        last = node
+        node = node.next
+    backward = []
+    node = last
+    while node is not None:
+        backward.append(node.val)
+        node = node.prev
+    return [forward, backward]
+
+def insert_after(node, x):
+    new = DNode(x)
+    new.prev = node
+    new.next = node.next
+    if node.next is not None:
+        node.next.prev = new
+    node.next = new
+    return new
+```
+tests:
+- both_ways((lambda h: [insert_after(h.next, 99), h][1])(build([1, 2, 3])[0]))
+- both_ways((lambda h: [insert_after(h.next.next, 4), h][1])(build([1, 2, 3])[0]))
+- both_ways((lambda h: [insert_after(h, 0), h][1])(build([5])[0]))
+- insert_after(build([1, 2])[0], 9).prev.val
+- insert_after(build([1, 2])[0], 9).next.val
+fail[1]: Both directions must include 99: forwards 1, 2, 99, 3 and backwards 3, 99, 2, 1. If the backward list skips 99, the node after it (3) doesn't link back to it.
+fail[2]: Inserting after the last node: there's no node after it, so there's no `prev` to update there.
+fail[4]: The new node's `prev` must be `node`.
+fail[5]: The new node's `next` must be the node that came after `node`.
+error[AttributeError]: When `node` is the last node, `node.next` is None: only set `node.next.prev` if `node.next is not None`.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: Set the new node's own links first: `new.prev = node` and `new.next = node.next`.
+hint: If `node.next` isn't None, set `node.next.prev = new`.
+hint: Last, set `node.next = new`.
+right: Four links, in an order that never loses the node after: O(1), wherever the node is.
+wrong: Link the new node to `node` and to `node.next`; if there is a node after, make it link back to the new node; then make `node` link forward to it.
+
+=== task: code medium
+title: Remove a node
+prompt: Write `remove(head, node)` that deletes `node` from a doubly linked list without walking, and returns the head of the list afterwards (it changes when `node` is the head; it's None when the list becomes empty). Keep both directions right: the new first node's `prev` and the new last node's `next` must be None. The starter includes `build` and `both_ways`.
+
+For example, removing the 2 from 1 ⇄ 2 ⇄ 3 makes `both_ways` give `[[1, 3], [3, 1]]`.
+starter:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def both_ways(head):
+    forward = []
+    last = None
+    node = head
+    while node is not None:
+        forward.append(node.val)
+        last = node
+        node = node.next
+    backward = []
+    node = last
+    while node is not None:
+        backward.append(node.val)
+        node = node.prev
+    return [forward, backward]
+
+def remove(head, node):
+    # your code here
+    return head
+```
+solution:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def both_ways(head):
+    forward = []
+    last = None
+    node = head
+    while node is not None:
+        forward.append(node.val)
+        last = node
+        node = node.next
+    backward = []
+    node = last
+    while node is not None:
+        backward.append(node.val)
+        node = node.prev
+    return [forward, backward]
+
+def remove(head, node):
+    if node.prev is not None:
+        node.prev.next = node.next
+    else:
+        head = node.next
+    if node.next is not None:
+        node.next.prev = node.prev
+    return head
+```
+tests:
+- both_ways((lambda h: remove(h, h.next))(build([1, 2, 3])[0]))
+- both_ways((lambda h: remove(h, h))(build([1, 2, 3])[0]))
+- both_ways((lambda h: remove(h, h.next.next))(build([1, 2, 3])[0]))
+- (lambda h: remove(h, h))(build([7])[0])
+- both_ways((lambda h: remove(h, h.next))(build([4, 5])[0]))
+fail[1]: The 2 is in the middle: 1 and 3 must link to each other, both ways.
+fail[2]: Removing the head: the next node becomes the head, and its `prev` must become None. If the backward list still reaches 1, `node.next.prev` wasn't updated.
+fail[3]: Removing the last node: the node before it must now link to None.
+fail[4]: Removing the only node leaves an empty list: return None.
+error[AttributeError]: The head has no `prev` and the last node has no `next`: check for None before following them.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: If `node.prev` isn't None, set `node.prev.next = node.next`; otherwise `node` was the head, so the head becomes `node.next`.
+hint: If `node.next` isn't None, set `node.next.prev = node.prev`.
+hint: Return the head.
+right: Two links (or one link and the head) change, and nothing is walked: O(1). The two `if`s are the special cases that sentinels would remove.
+wrong: Link the neighbours past `node`: the node before (or the head) skips forward to `node.next`, and the node after (if any) skips back to `node.prev`.
+
+=== task: predict medium
+title: A forgotten link
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.next = c
+c.prev = b
+node = c
+while node is not None:
+    print(node.val, end=" ")
+    node = node.prev
+```
+wrong[C B A]: `b.prev` was never set, so it's still None: the walk backwards stops after B.
+wrong[A B C]: The walk starts at c and follows `prev`, so it goes backwards.
+wrong[C]: `c.prev = b` was set, so the walk gets from C to B.
+hint: Which `prev` links were set?
+hint: `b.prev` is None.
+right: C B: forwards, A → B → C works, but backwards the walk stops at B, because one link of the A–B pair was never set.
+wrong: From C, `c.prev` is B. From B, `b.prev` is None, because only `a.next = b` was set. So the walk prints C and B.
+
+=== task: fill medium
+title: Link back past it
+prompt: Fill in the blank so that B is deleted from A ⇄ B ⇄ C in both directions, and the program prints:
+
+```output
+C A
+```
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+node = b
+node.prev.next = node.next
+node.next.prev = ??
+print(a.next.val, c.prev.val)
+```
+answer: node.prev
+wrong[node]: That sets C's `prev` to B, which it already was: going backwards from C would still reach B.
+wrong[node.next]: That makes C link back to itself.
+hint: C should link back to the node before B.
+hint: The node before B is `node.prev`.
+right: `node.next.prev = node.prev` makes C link back to A. Together with A linking forward to C, B is out in both directions.
+wrong: The node after B (C) must link back to the node before B (A), which is `node.prev`.
+
+=== task: cells medium
+title: Walking `prev` through memory
+prompt: Each row is a node of a doubly linked list in memory. The tail is at address 100. Walking backwards along Prev, which values come, in order?
+
+| Address | Value | Prev | Next |
+| --- | --- | --- | --- |
+| 100 | 5 | 300 | None |
+| 200 | 8 | None | 400 |
+| 300 | 2 | 400 | 100 |
+| 400 | 9 | 200 | 300 |
+labels: 1st | 2nd | 3rd | 4th
+answer: 5 | 2 | 9 | 8
+wrong[8 | 9 | 2 | 5]: That's the forwards order, from the head at 200. Backwards starts at the tail, 100.
+wrong[5 | 8 | 2 | 9]: That's the order of the addresses. Follow Prev: 100 → 300 → 400 → 200.
+hint: Start at 100 and follow its Prev, 300.
+hint: The node whose Prev is None is the head, and comes last.
+right: 100 → 300 → 400 → 200 gives 5, 2, 9, 8: exactly the forwards order (8, 9, 2, 5) reversed.
+wrong: Start at the tail, 100 (5). Its Prev is 300 (2), then 400 (9), then 200 (8), whose Prev is None.
+
+=== task: order medium
+title: Inserting after `node`
+prompt: Put the steps of inserting a new node right after `node` in a doubly linked list (with a node after it) in order.
+items:
+- Make the new node
+- Set the new node's `prev` to `node` and its `next` to `node.next`
+- Set `node.next.prev` to the new node
+- Set `node.next` to the new node
+hint: The new node has to copy `node.next` before that link changes.
+hint: `node.next.prev` must be set while `node.next` is still the old next node.
+right: The new node's links first, then the old next node's `prev`, and `node.next` last, because the earlier steps reach the old next node through it.
+wrong: Make the node and set its two links; then make the node after link back to it; last, make `node` link forward to it.
+
+=== task: predict medium
+title: Between the sentinels
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def insert_after(node, x):
+    new = DNode(x)
+    new.prev = node
+    new.next = node.next
+    node.next.prev = new
+    node.next = new
+
+front = DNode(None)
+back = DNode(None)
+front.next = back
+back.prev = front
+insert_after(front, 1)
+insert_after(back.prev, 2)
+insert_after(front, 0)
+node = front.next
+while node is not back:
+    print(node.val, end=" ")
+    node = node.next
+```
+wrong[1 2 0]: `insert_after(front, 0)` puts 0 right after the front sentinel: at the start.
+wrong[None 0 1 2 None]: The walk starts at `front.next` and stops at `back`, so the sentinels themselves are never printed.
+wrong[0 2 1]: `back.prev` is the last real node, 1, so 2 goes after it, at the end.
+hint: Inserting after `front` puts a node at the start; inserting after `back.prev` puts it at the end.
+hint: The walk skips both sentinels.
+right: 0 1 2: inserting after `front` adds at the start and after `back.prev` adds at the end, with the same function and no special cases.
+wrong: After the first insert: 1. After the second, after the last real node: 1, 2. After the third, after `front`: 0, 1, 2.
+
+=== task: mcq medium
+title: The memory cost
+prompt: A doubly linked list and a singly linked list hold the same n numbers. How do their memory needs compare?
+* The doubly linked list stores n more links, so it needs more memory, but both are O(n) :: Right. One extra link per node is a constant amount per node.
+- They need the same memory :: Every doubly linked node has a second link, `prev`.
+- The doubly linked list needs O(n²) memory :: Each node has 2 links, not n.
+- The doubly linked list needs less, because it can walk both ways :: Walking both ways is what the extra memory pays for.
+hint: How many links does each node hold?
+hint: Is the extra amount per node fixed, or does it grow with n?
+right: 2 links per node instead of 1: n extra links in all. That's more memory, but still O(n).
+wrong: Each doubly linked node holds `prev` as well as `next`, so there are n more links: more memory, the same Big O.
+
+=== task: multi medium
+title: The rule both ways
+prompt: The rule of a doubly linked list is: if `x.next` is `y`, then `y.prev` is `x`. Choose **every** true sentence about it.
+* Inserting a node in the middle sets four links to keep the rule true :: Right. Two in the new node, one in each neighbour.
+* After a correct delete, the deleted node's neighbours link to each other in both directions :: Right. That's the two link changes.
+* If the rule is broken, walking forwards and walking backwards can give different lists :: Right. The two walks follow different links.
+* The head's `prev` and the tail's `next` are None :: Right. Those mark the two ends.
+- Python keeps the rule true by itself :: Python only stores what you assign: your code must set both links.
+- Only `next` matters; `prev` can be fixed later :: Any walk backwards, and every delete, depends on `prev` being right.
+hint: Which links does each operation change?
+hint: Four of them are true.
+right: Every change to a doubly linked list must update both directions together. Bugs come from setting one link of a pair and forgetting the other.
+wrong: True: four links for an insert, neighbours linked both ways after a delete, different walks when broken, None at the ends. False: Python doesn't maintain it, and `prev` matters as much as `next`.
+
+=== task: code medium
+title: Both ends in O(1)
+prompt: Finish the class `DoublyLinkedList` from the starter, which has the two sentinels, a `size` and `to_list`. Write:
+- `push_front(x)` and `push_back(x)`: add x at the start or the end,
+- `pop_front()` and `pop_back()`: remove the first or last value and return it (assume the list isn't empty).
+
+All four must be O(1): use `self.front.next` and `self.back.prev` instead of walking. Keep `size` right.
+starter:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+class DoublyLinkedList:
+    def __init__(self):
+        self.front = DNode(None)
+        self.back = DNode(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.size = 0
+
+    def to_list(self):
+        items = []
+        node = self.front.next
+        while node is not self.back:
+            items.append(node.val)
+            node = node.next
+        return items
+
+    # your code here
+```
+solution:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+class DoublyLinkedList:
+    def __init__(self):
+        self.front = DNode(None)
+        self.back = DNode(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.size = 0
+
+    def to_list(self):
+        items = []
+        node = self.front.next
+        while node is not self.back:
+            items.append(node.val)
+            node = node.next
+        return items
+
+    def insert_after(self, node, x):
+        new = DNode(x)
+        new.prev = node
+        new.next = node.next
+        node.next.prev = new
+        node.next = new
+        self.size += 1
+
+    def remove(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        self.size -= 1
+        return node.val
+
+    def push_front(self, x):
+        self.insert_after(self.front, x)
+
+    def push_back(self, x):
+        self.insert_after(self.back.prev, x)
+
+    def pop_front(self):
+        return self.remove(self.front.next)
+
+    def pop_back(self):
+        return self.remove(self.back.prev)
+```
+tests:
+- (lambda d: [d.push_back(1), d.push_back(2), d.push_front(0), d.to_list(), d.size][3:])(DoublyLinkedList())
+- (lambda d: [d.push_back(1), d.push_back(2), d.push_back(3), d.pop_back(), d.pop_front(), d.to_list(), d.size][3:])(DoublyLinkedList())
+- (lambda d: [d.push_front(5), d.pop_back(), d.to_list(), d.front.next is d.back, d.back.prev is d.front][1:])(DoublyLinkedList())
+- (lambda d: [d.push_back("a"), d.push_front("b"), d.pop_front(), d.pop_front(), d.size][2:])(DoublyLinkedList())
+- (lambda d: [[d.push_back(i) for i in range(4)], d.pop_back(), d.pop_back(), d.to_list(), d.back.prev.val][1:])(DoublyLinkedList())
+speed: setup=d = DoublyLinkedList(); [d.push_back(i) for i in range(n)] | call=[d.pop_back() for i in range(n)] | target=O(n)
+slow:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+class DoublyLinkedList:
+    def __init__(self):
+        self.front = DNode(None)
+        self.back = DNode(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.size = 0
+
+    def to_list(self):
+        items = []
+        node = self.front.next
+        while node is not self.back:
+            items.append(node.val)
+            node = node.next
+        return items
+
+    def push_front(self, x):
+        new = DNode(x)
+        new.prev = self.front
+        new.next = self.front.next
+        self.front.next.prev = new
+        self.front.next = new
+        self.size += 1
+
+    def push_back(self, x):
+        last = self.front
+        while last.next is not self.back:
+            last = last.next
+        new = DNode(x)
+        new.prev = last
+        new.next = self.back
+        self.back.prev = new
+        last.next = new
+        self.size += 1
+
+    def pop_front(self):
+        node = self.front.next
+        self.front.next = node.next
+        node.next.prev = self.front
+        self.size -= 1
+        return node.val
+
+    def pop_back(self):
+        last = self.front
+        while last.next is not self.back:
+            last = last.next
+        last.prev.next = self.back
+        self.back.prev = last.prev
+        self.size -= 1
+        return last.val
+```
+fail[1]: Pushing 1 and 2 at the back and 0 at the front gives 0, 1, 2, and the size is 3.
+fail[2]: `pop_back` returns 3 and `pop_front` returns 1, leaving 2: size 1.
+fail[3]: After the only value is popped, the sentinels must link straight to each other again.
+fail[4]: Values come off the front in order: "b" (pushed to the front last), then "a".
+fail[5]: Popping twice from the back of 0, 1, 2, 3 returns 3 and 2, and the last real node is then 1.
+error[AttributeError]: Use the sentinels: the first real node is `self.front.next` and the last is `self.back.prev`.
+hint: Write a helper `insert_after(node, x)` (four links, and `size += 1`) and a helper `remove(node)` (two links, `size -= 1`, return the value).
+hint: `push_front` inserts after `self.front`; `push_back` inserts after `self.back.prev`.
+hint: `pop_front` removes `self.front.next`; `pop_back` removes `self.back.prev`.
+right: With sentinels, both ends are always one link away, so all four are O(1). Walking from the front to find the last node would make popping n items O(n²).
+wrong: Use two helpers: insert after a node, and remove a node. Push at the start after `front` and at the end after `back.prev`; pop `front.next` or `back.prev`.
+
+=== task: code hard
+title: Browser history
+prompt: Write a class `BrowserHistory`:
+- `BrowserHistory(home)` starts with one page, `home`, which is the current page,
+- `visit(url)` opens `url` right after the current page, drops any pages you could have gone forward to, and makes `url` the current page,
+- `back(steps)` moves back up to `steps` pages, stopping at the first page, and returns the current url,
+- `forward(steps)` moves forward up to `steps` pages, stopping at the last page, and returns the current url.
+
+Use the `Page` class from the starter, which has `url`, `prev` and `next`.
+starter:
+```python
+class Page:
+    def __init__(self, url):
+        self.url = url
+        self.prev = None
+        self.next = None
+
+class BrowserHistory:
+    def __init__(self, home):
+        self.current = Page(home)
+
+    # your code here
+```
+solution:
+```python
+class Page:
+    def __init__(self, url):
+        self.url = url
+        self.prev = None
+        self.next = None
+
+class BrowserHistory:
+    def __init__(self, home):
+        self.current = Page(home)
+
+    def visit(self, url):
+        page = Page(url)
+        page.prev = self.current
+        self.current.next = page
+        self.current = page
+
+    def back(self, steps):
+        for i in range(steps):
+            if self.current.prev is None:
+                break
+            self.current = self.current.prev
+        return self.current.url
+
+    def forward(self, steps):
+        for i in range(steps):
+            if self.current.next is None:
+                break
+            self.current = self.current.next
+        return self.current.url
+```
+tests:
+- (lambda h: [h.visit("a"), h.visit("b"), h.visit("c"), h.back(2), h.back(5), h.forward(1)][3:])(BrowserHistory("home"))
+- (lambda h: [h.visit("a"), h.visit("b"), h.back(1), h.visit("x"), h.forward(3), h.back(1), h.back(1)][4:])(BrowserHistory("home"))
+- (lambda h: [h.back(3), h.forward(3)])(BrowserHistory("home"))
+- (lambda h: [h.visit("a"), h.back(1), h.forward(1), h.forward(1)][1:])(BrowserHistory("home"))
+fail[1]: The pages are home, a, b, c. Back 2 from c is a; back 5 stops at home; forward 1 is a.
+fail[2]: Visiting x from a drops b, so forward has nowhere to go and stays on x. Then back 1 is a, and back 1 again is home.
+fail[3]: With only one page, back and forward both stay on home.
+error[AttributeError]: Before each step, check that there's a page there: `self.current.prev is not None` (or `.next`).
+hint: `visit`: link a new page after the current one in both directions, and make it current. Its `next` stays None, which drops the old forward pages.
+hint: `back`: up to `steps` times, move to `self.current.prev`, stopping early if it's None.
+hint: `forward` works the same way along `next`. Both return `self.current.url`.
+right: Visiting is O(1), and each step back or forward is one link: O(steps), however long the history is.
+wrong: `visit` links a new page after the current one, both ways, and moves to it. `back` and `forward` step along `prev` or `next` up to `steps` times, stopping at an end, and return the url.
+
+=== task: code hard
+title: An LRU cache
+prompt: An **LRU cache** ("least recently used") holds at most `capacity` keys. Finish the class `LRUCache`:
+- `get(key)` returns the key's value, or -1 if it isn't there. A successful `get` makes the key the most recently used one.
+- `put(key, value)` stores the value (replacing any old value for that key) and makes the key the most recently used one. If there are now more than `capacity` keys, it removes the least recently used one.
+
+Both must be O(1). The starter keeps a dictionary `self.nodes` from each key to its node, and a doubly linked list of nodes between two sentinels, most recently used at the front. It also has `unlink(node)` and `add_front(node)`.
+starter:
+```python
+class Node:
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        self.prev = None
+        self.next = None
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.nodes = {}
+        self.front = Node(None, None)
+        self.back = Node(None, None)
+        self.front.next = self.back
+        self.back.prev = self.front
+
+    def unlink(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+    def add_front(self, node):
+        node.prev = self.front
+        node.next = self.front.next
+        self.front.next.prev = node
+        self.front.next = node
+
+    def get(self, key):
+        # your code here
+        return -1
+
+    def put(self, key, value):
+        # your code here
+        pass
+```
+solution:
+```python
+class Node:
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        self.prev = None
+        self.next = None
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.nodes = {}
+        self.front = Node(None, None)
+        self.back = Node(None, None)
+        self.front.next = self.back
+        self.back.prev = self.front
+
+    def unlink(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+    def add_front(self, node):
+        node.prev = self.front
+        node.next = self.front.next
+        self.front.next.prev = node
+        self.front.next = node
+
+    def get(self, key):
+        if key not in self.nodes:
+            return -1
+        node = self.nodes[key]
+        self.unlink(node)
+        self.add_front(node)
+        return node.value
+
+    def put(self, key, value):
+        if key in self.nodes:
+            node = self.nodes[key]
+            node.value = value
+            self.unlink(node)
+            self.add_front(node)
+            return
+        node = Node(key, value)
+        self.nodes[key] = node
+        self.add_front(node)
+        if len(self.nodes) > self.capacity:
+            last = self.back.prev
+            self.unlink(last)
+            del self.nodes[last.key]
+```
+tests:
+- (lambda c: [c.put(1, "a"), c.put(2, "b"), c.get(1), c.put(3, "c"), c.get(2), c.get(3), c.get(1)][2:])(LRUCache(2))
+- (lambda c: [c.put(1, 1), c.put(1, 10), c.put(2, 2), c.put(3, 3), c.get(1), c.get(2), c.get(3)][4:])(LRUCache(2))
+- (lambda c: [c.get(5)])(LRUCache(1))
+- (lambda c: [c.put("x", 1), c.put("y", 2), c.get("x"), c.get("y")][2:])(LRUCache(1))
+- (lambda c: [c.put(1, 1), c.put(2, 2), c.put(3, 3), c.get(1), c.put(4, 4), c.get(2), c.get(3), c.get(4), c.get(1)][3:])(LRUCache(3))
+speed: setup=c = LRUCache(n) | call=[c.put(i, i) for i in range(n)] + [c.get(i) for i in range(n)] | target=O(n)
+slow:
+```python
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.values = {}
+        self.order = []
+
+    def get(self, key):
+        if key not in self.values:
+            return -1
+        self.order.remove(key)
+        self.order.insert(0, key)
+        return self.values[key]
+
+    def put(self, key, value):
+        if key in self.values:
+            self.order.remove(key)
+        self.values[key] = value
+        self.order.insert(0, key)
+        if len(self.order) > self.capacity:
+            old = self.order.pop()
+            del self.values[old]
+```
+fail[1]: After `get(1)`, key 2 is the least recently used, so `put(3, "c")` removes 2: `get(2)` is -1.
+fail[2]: Putting an existing key replaces its value and makes it the most recent. Then `put(3, 3)` removes the least recent key, which is 1.
+fail[3]: A key that was never put gives -1.
+fail[4]: With capacity 1, putting y removes x.
+fail[5]: `get(1)` makes 1 the most recent, so `put(4, 4)` removes 2, the least recently used.
+error[KeyError]: Check `key in self.nodes` before reading `self.nodes[key]`.
+hint: `get`: if the key isn't in `self.nodes`, return -1. Otherwise unlink its node, add it at the front, and return its value.
+hint: `put`: if the key is there, update its node's value and move the node to the front. Otherwise make a node, store it in `self.nodes`, and add it at the front.
+hint: If there are now more than `capacity` keys, the least recently used node is `self.back.prev`: unlink it, and `del self.nodes[last.key]`.
+right: The dictionary finds a key's node in O(1), and the doubly linked list moves or removes that node in O(1). Keeping the order in a Python list instead would make every move O(n).
+wrong: `get` moves a found node to the front and returns its value. `put` updates and moves an existing node, or adds a new one at the front, then removes `self.back.prev` if there are too many keys.
+
+=== task: code hard
+title: A palindrome from both ends
+prompt: Write `is_palindrome(head, tail)` for a doubly linked list: return True if its values read the same forwards and backwards. Walk `left` forwards from the head and `right` backwards from the tail, comparing their values, until they meet (an odd number of nodes) or cross (an even number). An empty list, with head and tail None, is a palindrome. Don't copy the values into a Python list.
+
+The starter includes `build` and `check(items)`, which builds a list and calls your function. The tests use `check`.
+starter:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def is_palindrome(head, tail):
+    # your code here
+    return True
+
+def check(items):
+    head, tail = build(items)
+    return is_palindrome(head, tail)
+```
+solution:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def build(items):
+    head = None
+    tail = None
+    for x in items:
+        node = DNode(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+            node.prev = tail
+        tail = node
+    return head, tail
+
+def is_palindrome(head, tail):
+    left = head
+    right = tail
+    while left is not None and left is not right and left.prev is not right:
+        if left.val != right.val:
+            return False
+        left = left.next
+        right = right.prev
+    return True
+
+def check(items):
+    head, tail = build(items)
+    return is_palindrome(head, tail)
+```
+tests:
+- check([1, 2, 1])
+- check([1, 2, 2, 1])
+- check([1, 2])
+- check([7])
+- check([])
+- check([1, 2, 3, 1])
+- check(["r", "a", "c", "e", "c", "a", "r"])
+- check([1, 1, 2])
+forbid[append(]: Don't copy the values into a Python list: compare the nodes themselves.
+forbid[[::-1]]: Don't reverse a copy: walk backwards along `prev` instead.
+fail[2]: With an even number of nodes the two walks cross instead of meeting: stop when `left.prev is right`.
+fail[3]: 1 and 2 differ: False.
+fail[5]: An empty list reads the same both ways: True.
+fail[6]: 1, 2, 3, 1: the 2 and the 3 don't match.
+fail[8]: 1, 1, 2: the first and last values already differ.
+error[AttributeError]: Stop as soon as `left` and `right` meet or cross. For an empty list, `left` is None from the start.
+error[NameError]: Keep `build` and `check` from the starter: the tests use them.
+hint: Start with `left = head` and `right = tail`.
+hint: Loop while `left is not None and left is not right and left.prev is not right`: they haven't met or crossed.
+hint: Inside, return False on a mismatch; otherwise move `left` to `left.next` and `right` to `right.prev`.
+right: Each pair is compared once: O(n) time and O(1) extra space. The singly linked version had to reverse half the list to walk backwards; `prev` makes that unnecessary.
+wrong: Walk inwards from both ends at once, comparing values, until the two walks meet or cross. Any mismatch means False.
+
+=== task: code hard
+title: A text editor
+prompt: A text editor keeps its text as a doubly linked list of characters between two sentinels, and `self.cursor`: the node the cursor sits right after (the `front` sentinel when the cursor is at the start). Finish the class with these methods, each O(1):
+- `insert(ch)`: put ch right after the cursor, and move the cursor onto it,
+- `backspace()`: delete the character right before the cursor, which is the cursor node itself, and move the cursor back one; do nothing at the start,
+- `left()`: move the cursor back one character, unless it's at the start,
+- `right()`: move the cursor forward one character, unless it's at the end.
+
+`text()` is given.
+starter:
+```python
+class Node:
+    def __init__(self, ch):
+        self.ch = ch
+        self.prev = None
+        self.next = None
+
+class Editor:
+    def __init__(self):
+        self.front = Node(None)
+        self.back = Node(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.cursor = self.front
+
+    def text(self):
+        chars = []
+        node = self.front.next
+        while node is not self.back:
+            chars.append(node.ch)
+            node = node.next
+        return "".join(chars)
+
+    # your code here
+```
+solution:
+```python
+class Node:
+    def __init__(self, ch):
+        self.ch = ch
+        self.prev = None
+        self.next = None
+
+class Editor:
+    def __init__(self):
+        self.front = Node(None)
+        self.back = Node(None)
+        self.front.next = self.back
+        self.back.prev = self.front
+        self.cursor = self.front
+
+    def text(self):
+        chars = []
+        node = self.front.next
+        while node is not self.back:
+            chars.append(node.ch)
+            node = node.next
+        return "".join(chars)
+
+    def insert(self, ch):
+        new = Node(ch)
+        new.prev = self.cursor
+        new.next = self.cursor.next
+        self.cursor.next.prev = new
+        self.cursor.next = new
+        self.cursor = new
+
+    def backspace(self):
+        if self.cursor is self.front:
+            return
+        node = self.cursor
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        self.cursor = node.prev
+
+    def left(self):
+        if self.cursor is not self.front:
+            self.cursor = self.cursor.prev
+
+    def right(self):
+        if self.cursor.next is not self.back:
+            self.cursor = self.cursor.next
+```
+tests:
+- (lambda e: [e.insert("c"), e.insert("t"), e.left(), e.insert("a"), e.text()][4])(Editor())
+- (lambda e: [e.insert("a"), e.insert("b"), e.insert("c"), e.backspace(), e.text()][4])(Editor())
+- (lambda e: [e.insert("x"), e.left(), e.backspace(), e.left(), e.text()][4])(Editor())
+- (lambda e: [e.insert("a"), e.insert("b"), e.left(), e.left(), e.right(), e.right(), e.right(), e.insert("c"), e.text()][8])(Editor())
+- (lambda e: [e.insert("h"), e.insert("i"), e.left(), e.backspace(), e.insert("o"), e.text()][5])(Editor())
+speed: setup=e = Editor(); [e.insert("a") for i in range(n)]; [e.left() for i in range(n // 2)] | call=[e.insert("b") for i in range(n)] | target=O(n)
+slow:
+```python
+class Editor:
+    def __init__(self):
+        self.chars = []
+        self.pos = 0
+
+    def text(self):
+        return "".join(self.chars)
+
+    def insert(self, ch):
+        self.chars.insert(self.pos, ch)
+        self.pos += 1
+
+    def backspace(self):
+        if self.pos > 0:
+            self.chars.pop(self.pos - 1)
+            self.pos -= 1
+
+    def left(self):
+        if self.pos > 0:
+            self.pos -= 1
+
+    def right(self):
+        if self.pos < len(self.chars):
+            self.pos += 1
+```
+fail[1]: Typing c and t gives "ct". Moving left puts the cursor between c and t, so a goes there: "cat".
+fail[2]: Backspace deletes the character before the cursor, the c: "ab".
+fail[3]: At the start there's nothing before the cursor, so backspace does nothing: "x" stays.
+fail[4]: `right()` can't go past the end, so the cursor stops after b, and c goes at the end.
+fail[5]: With the cursor after h, backspace deletes the h and moves the cursor to the start, so o goes first: "oi".
+error[AttributeError]: The `front` sentinel has no `prev`: check `self.cursor is self.front` before moving back or deleting.
+hint: `insert`: link a new node in after `self.cursor` (four links), then make it the cursor.
+hint: `backspace`: unless the cursor is `self.front`, unlink the cursor node (two links) and move the cursor to its `prev`.
+hint: `left` moves to `self.cursor.prev` unless the cursor is `self.front`; `right` moves to `self.cursor.next` unless that's `self.back`.
+right: Every keystroke changes a few links next to the cursor: O(1), however long the text is. A Python list or string would shift everything after the cursor on every keystroke: O(n) each.
+wrong: Insert links a node in after the cursor and moves onto it; backspace unlinks the cursor node and steps back; left and right step along `prev` and `next`, stopping at the sentinels.
+
+=== task: predict hard
+title: The wrong order
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+c = DNode("C")
+a.next = c
+c.prev = a
+new = DNode("B")
+new.prev = a
+new.next = a.next
+a.next = new
+a.next.prev = new
+print(a.next.val, c.prev.val, new.prev.val)
+```
+wrong[B B A]: That's what the right order gives. Here `a.next = new` runs first, so `a.next.prev` is the new node's own `prev`.
+wrong[B A A]: `a.next.prev = new` runs after `a.next` has become B, so it sets B's `prev` to B, not to A.
+hint: After `a.next = new`, which node is `a.next`?
+hint: `a.next.prev = new` changes that node's `prev`.
+right: B A B: forwards, A → B → C works, but C still links back to A, and B's `prev` points at B itself. Update the old neighbour's `prev` before overwriting `node.next`.
+wrong: `a.next = new` makes `a.next` the new node. So `a.next.prev = new` sets B's own `prev` to B, and C's `prev` is never changed: it's still A.
+
+=== task: predict hard
+title: Taking a node out, and putting it back
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+node = b
+node.prev.next = node.next
+node.next.prev = node.prev
+print(a.next.val, c.prev.val)
+node.prev.next = node
+node.next.prev = node
+print(a.next.val, c.prev.val)
+```
+wrong[C A\nC A]: The removed node still has its own links to A and C, so `node.prev.next = node` makes A link to B again, and `node.next.prev = node` makes C link back to B.
+wrong[C A\nAttributeError]: Removing B didn't change B's own links: `node.prev` is still A and `node.next` is still C.
+wrong[B B\nB B]: The first two link changes take B out: A links to C and C links back to A.
+hint: Unlinking changes A's and C's links. Does it change B's?
+hint: B still knows its old neighbours.
+right: C A, then B B: B was taken out, and because it still remembered A and C, two link changes put it back exactly where it was. This "undo" trick is used by some search programs.
+wrong: The first two changes make A and C skip B. B's own `prev` and `next` still hold A and C, so the last two changes make A and C link to B again.
+
+=== task: cells hard
+title: Push and pop at both ends
+prompt: A `DoublyLinkedList` (with the sentinels from this lesson) goes through these steps. What does it hold after each one? Write the values from front to back, separated by commas, like `5, 6`.
+
+```python
+d = DoublyLinkedList()
+d.push_back(1)                # step 1
+d.push_front(2)               # step 2
+d.push_back(3)                # step 3
+d.pop_front()                 # step 4
+d.push_front(d.pop_back())    # step 5
+```
+labels: after step 1 | after step 2 | after step 3 | after step 4 | after step 5
+answer: 1 | 2, 1 | 2, 1, 3 | 1, 3 | 3, 1
+wrong[1 | 1, 2 | 1, 2, 3 | 2, 3 | 3, 2]: `push_front` puts a value at the start, before the 1: 2, 1.
+wrong[1 | 2, 1 | 2, 1, 3 | 2, 1 | 1, 2]: `pop_front` removes the first value, 2, not the last.
+wrong[1 | 2, 1 | 2, 1, 3 | 1, 3 | 1, 3]: Step 5 pops the last value, 3, and pushes it back at the front: 3, 1.
+hint: Step 5 runs `d.pop_back()` first, then pushes what it returned at the front.
+hint: After step 4 the list is 1, 3.
+right: 1 → 2, 1 → 2, 1, 3 → 1, 3 → 3, 1. Each step is one insert or remove next to a sentinel: O(1).
+wrong: push_back 1: 1. push_front 2: 2, 1. push_back 3: 2, 1, 3. pop_front removes 2: 1, 3. pop_back removes 3, and push_front puts it at the start: 3, 1.
+
+=== task: mcq hard
+title: Inside an LRU cache
+prompt: An LRU cache keeps a dictionary from keys to nodes, and a doubly linked list of the nodes in order of use. Why a doubly linked list?
+* The dictionary finds a key's node in O(1), and with `prev` and `next` that node can be unlinked and moved to the front in O(1) :: Right. A singly linked list would need a walk to find the node before it.
+- Because it keeps the keys sorted :: The order is the order of use, not of the keys.
+- Because it uses less memory than a dictionary :: It's used together with the dictionary, not instead of it.
+- Because a Python list can't hold nodes :: A list could hold them, but moving one from the middle to the front would shift the others: O(n).
+hint: When you `get` a key, what happens to its node?
+hint: What does moving a node out of the middle need?
+right: Moving a node to the front means unlinking it from the middle. With both links, that's O(1) once the dictionary has found the node.
+wrong: Each `get` or `put` moves a node to the front. The dictionary finds the node, and `prev` makes unlinking it O(1).
+
+=== task: multi hard
+title: What `prev` makes O(1)
+prompt: Choose **every** operation that is O(1) in a doubly linked list with a head and a tail, but O(n) in a singly linked list with a head and a tail.
+* Removing the last node :: Right. The node before the tail is `tail.prev`.
+* Deleting a node you're holding :: Right. Both neighbours are known.
+* Inserting a new node in front of a node you're holding :: Right. The node before it is `node.prev`.
+* Stepping from a node you're holding to the node before it :: Right. That's one link: `node.prev`.
+- Reading item i :: Both need a walk: O(n).
+- Adding at the front :: Both do that in O(1).
+hint: Which ones need the node **before** another node?
+hint: Four of them do.
+right: Everything that needs the node before another node becomes O(1) with `prev`. Reaching a position by index is a walk in both.
+wrong: `prev` helps whenever the node before is needed: removing the last node, deleting or inserting in front of a held node, stepping back. Reading item i is a walk in both, and adding at the front is O(1) in both.
+
+=== task: parsons hard
+title: Reverse a doubly linked list
+prompt: To reverse a doubly linked list, swap `prev` and `next` in every node. Arrange the lines so that `reverse` does that and returns the new head, and the program prints:
+
+```output
+C B A
+True
+```
+
+Not every line is needed.
+lines:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def link(x, y):
+    x.next = y
+    y.prev = x
+
+def reverse(head):
+    node = head
+    new_head = None
+    while node is not None:
+        node.prev, node.next = node.next, node.prev
+        new_head = node
+        node = node.prev
+    return new_head
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+link(a, b)
+link(b, c)
+head = reverse(a)
+print(head.val, head.next.val, head.next.next.val)
+print(head.prev is None)
+```
+distractors:
+```python
+        node = node.next
+    return head
+```
+hint: `node.prev, node.next = node.next, node.prev` swaps the two links at once.
+hint: After the swap, the old `next` is in `prev`, so that's the way forward.
+right: Every node's links swap, so `next` now leads backwards through the old order. The last node visited, C, is the new head, and its `prev` (its old `next`) is None. One pass: O(n).
+wrong: In the loop, swap `prev` and `next`, remember the node as `new_head`, then move to `node.prev`, which holds the old `next`. Return `new_head`.
