@@ -1,0 +1,1077 @@
+=== lesson
+id: ds-queues-deque
+title: Deques
+summary: A deque (double-ended queue) adds and removes at both ends in O(1), so one structure can be a stack, a queue, or both at once. You'll use all four end operations, rotate a deque, cap its length with `maxlen`, check palindromes from both ends, and keep a deque in decreasing order to find the maximum of every window of a list in O(n).
+
+=== learn
+### Both ends
+A **deque** (say "deck") is a double-ended queue: items can be added and removed at **both** ends, each in O(1). Python's `collections.deque` has four end operations:
+
+| Operation | What it does |
+| --- | --- |
+| `d.append(x)` | add x at the right end |
+| `d.appendleft(x)` | add x at the left end |
+| `d.pop()` | remove and return the item at the right end |
+| `d.popleft()` | remove and return the item at the left end |
+
+`d[0]` and `d[-1]` read the two ends, and `len(d)` gives the length. All of these are O(1).
+```python
+from collections import deque
+
+d = deque([2, 3])
+d.append(4)
+d.appendleft(1)
+print(d)
+print(d.pop(), d.popleft(), d)
+print(d[0], d[-1], len(d))
+```
+```output
+deque([1, 2, 3, 4])
+4 1 deque([2, 3])
+2 3 2
+```
+An empty deque is falsy, and popping from it raises `IndexError: pop from an empty deque`, so check `if d:` first.
+
+### A stack, a queue, or both
+Which pair of operations you use decides what the deque is:
+
+- **stack**: `append` and `pop` (or `appendleft` and `popleft`): the same end in and out, last in, first out,
+- **queue**: `append` and `popleft`: in at one end, out at the other, first in, first out,
+- **both**: a deque can do all four at once, for example a to-do list where urgent jobs jump to the front with `appendleft`, normal jobs join the back with `append`, and work always comes from the front with `popleft`.
+```python
+from collections import deque
+
+jobs = deque()
+jobs.append("email")
+jobs.append("report")
+jobs.appendleft("server down!")
+while jobs:
+    print(jobs.popleft())
+```
+```output
+server down!
+email
+report
+```
+
+### More deque tools
+```python
+from collections import deque
+
+d = deque([1, 2, 3, 4, 5])
+d.rotate(2)
+print(d)
+d.rotate(-3)
+print(d)
+d.extendleft([7, 8])
+print(d)
+recent = deque(maxlen=3)
+for x in [10, 20, 30, 40]:
+    recent.append(x)
+print(recent)
+```
+```output
+deque([4, 5, 1, 2, 3])
+deque([2, 3, 4, 5, 1])
+deque([8, 7, 2, 3, 4, 5, 1])
+deque([20, 30, 40], maxlen=3)
+```
+- `d.rotate(k)` moves the last k items round to the front: the items turn right k places. `d.rotate(-k)` turns them left. It costs O(k).
+- `d.extend(items)` appends each item on the right. `d.extendleft(items)` adds each one on the left in turn, so they end up in **reverse** order: 8 is left of 7.
+- `deque(maxlen=3)` can hold at most 3 items: appending to a full one drops an item from the other end, like the overwriting ring buffer in the Circular queues lesson.
+
+### The middle is slow
+A deque is built from blocks of items linked both ways, like a doubly linked list, so it's fast at its ends and slow in the middle:
+
+| Operation | list | deque |
+| --- | --- | --- |
+| add or remove at the right end | O(1) (amortized) | O(1) |
+| add or remove at the left end | O(n) | O(1) |
+| read or write item i in the middle | O(1) | O(n) |
+| insert or delete in the middle | O(n) | O(n) |
+
+`d[i]` works on a deque, but reaching the middle means walking from an end. So use a list when you mostly read by index, and a deque when you work at both ends.
+
+### Palindromes from both ends
+A word is a **palindrome** if it reads the same both ways, like "level". A deque checks it by taking letters off both ends and comparing them, until one or none is left:
+```python
+from collections import deque
+
+def is_palindrome(word):
+    d = deque(word)
+    while len(d) > 1:
+        if d.popleft() != d.pop():
+            return False
+    return True
+
+for w in ["level", "racecar", "deque", "noon", "a"]:
+    print(w, is_palindrome(w))
+```
+```output
+level True
+racecar True
+deque False
+noon True
+a True
+```
+`deque(word)` makes a deque of the word's letters. Each pass removes one letter from each end, so the loop runs about n / 2 times: O(n). Animation 1 checks "racecar".
+
+### The maximum of every window
+Given a list and a window size k, what's the biggest number in each run of k numbers in a row? For `[1, 3, -1, -3, 5, 3, 6, 7]` and k = 3, the windows are `[1, 3, -1]`, `[3, -1, -3]`, ..., and their maximums are 3, 3, 5, 5, 6, 7. Taking `max` of every window costs O(k) each, O(n × k) in all. A deque does it in O(n):
+
+- The deque holds **indexes**, and their values **decrease** from front to back, so the front is always the window's maximum.
+- When `nums[i]` arrives, pop from the back every index whose value is at most `nums[i]`: those can never be a maximum again, because `nums[i]` is at least as big and stays in the window longer. Then append i.
+- If the index at the front has slid out of the window (it's `i - k` or less), pop it from the front.
+```python
+from collections import deque
+
+def window_max(nums, k):
+    d = deque()
+    result = []
+    for i in range(len(nums)):
+        while d and nums[d[-1]] <= nums[i]:
+            d.pop()
+        d.append(i)
+        if d[0] <= i - k:
+            d.popleft()
+        if i >= k - 1:
+            result.append(nums[d[0]])
+    return result
+
+print(window_max([1, 3, -1, -3, 5, 3, 6, 7], 3))
+```
+```output
+[3, 3, 5, 5, 6, 7]
+```
+It's the monotonic stack from the Monotonic stacks lesson, with one more door: values leave from the back when a bigger one arrives, and indexes leave from the front when they're too old. Each index is appended once and popped at most once, so it's O(n). The first full window ends at i = k − 1, which is when answers start. The Sliding window lessons in Unit 4 build on this. Animation 2 runs it.
+
+### The cost table
+
+| Operation on a deque | Cost |
+| --- | --- |
+| `append`, `appendleft`, `pop`, `popleft` | O(1) |
+| `d[0]`, `d[-1]`, `len(d)` | O(1) |
+| `d[i]` in the middle | O(n) |
+| `rotate(k)` | O(k) |
+| `x in d` | O(n) |
+| palindrome check, window maximums | O(n) |
+
+=== keypoints
+- A deque adds and removes at both ends in O(1): `append`, `appendleft`, `pop`, `popleft`. `d[0]` and `d[-1]` read the ends.
+- The operations you use decide its job: `append` + `pop` is a stack, `append` + `popleft` is a queue.
+- `rotate(k)` turns the items right k places (`-k` turns them left); `extendleft` adds items in reverse order; `deque(maxlen=k)` drops from the other end when full.
+- A deque is slow in the middle: `d[i]` is O(n). Use a list for reading by index, a deque for working at both ends.
+- Palindromes: pop from both ends and compare, until one or no letter is left.
+- Window maximums: keep indexes with decreasing values; pop smaller values from the back, old indexes from the front; the front is the maximum. O(n).
+
+=== example: An undo history with a limit
+intro: An editor keeps only the last 3 changes for Undo. A deque with `maxlen=3` used as a stack drops the oldest change by itself when a fourth arrives.
+```python
+from collections import deque
+
+history = deque(maxlen=3)
+for change in ["type A", "type B", "bold", "delete"]:
+    history.append(change)
+    print(list(history))
+print("undo:", history.pop())
+print("undo:", history.pop())
+print(list(history))
+```
+3: At most 3 changes are kept.
+4-6: Each change is pushed on the right. When the fourth arrives, "type A" falls off the left end.
+7-8: Undo pops from the right, so the newest change goes first: a stack with a size limit.
+9: One change is left to undo.
+
+=== example: Taking turns with rotate
+intro: Players take turns in a circle. `rotate(-1)` moves the player who has had their turn to the back, so the next player is always at the front.
+```python
+from collections import deque
+
+players = deque(["Ann", "Ben", "Cy"])
+for turn in range(5):
+    print("turn", turn + 1, ":", players[0])
+    players.rotate(-1)
+players.rotate(2)
+print(players)
+```
+3: The player at the front, `players[0]`, has the next turn.
+4-6: After each turn, `rotate(-1)` moves the front player to the back: Ann, Ben, Cy, Ann, Ben.
+7-8: After 5 turns it's Cy's turn. `rotate(2)` turns the circle back two places, to Ann at the front.
+
+=== animation: Palindrome from both ends
+view: queue d
+vars left right
+intro: Checking "racecar" by taking one letter off each end at a time. Watch the deque shrink from both ends until one letter is left.
+```python
+from collections import deque
+
+d = deque("racecar")
+ok = True
+while len(d) > 1:
+    left = d.popleft()
+    right = d.pop()
+    if left != right:
+        ok = False
+        break
+print(ok)
+```
+1: Get the deque from the collections module.
+3: A deque of the letters of "racecar".
+4: So far, every pair has matched.
+5: More than one letter left? {len(d)} letters: {'yes.' if len(d) > 1 else 'no, so stop.'}
+6: Take the leftmost letter, {d[0]!r}.
+7: Take the rightmost letter, {d[-1]!r}.
+8: Do {left!r} and {right!r} match? {left == right}.
+11: The middle letter needs no partner: "racecar" is a palindrome.
+
+=== animation: The maximum of every window
+view: array nums ptr=i
+queue d
+array result
+intro: Window maximums for windows of 3. The deque holds indexes whose values decrease from front to back; watch small values leave from the back and old indexes leave from the front.
+```python
+from collections import deque
+
+nums = [1, 3, -1, -3, 5, 3]
+k = 3
+d = deque()
+result = []
+for i in range(len(nums)):
+    while d and nums[d[-1]] <= nums[i]:
+        d.pop()
+    d.append(i)
+    if d[0] <= i - k:
+        d.popleft()
+    if i >= k - 1:
+        result.append(nums[d[0]])
+print(result)
+```
+1: Get the deque from the collections module.
+3: The numbers.
+4: Windows of 3 numbers in a row.
+5: The deque of indexes starts empty.
+6: The window maximums.
+7: Move on to the next index, if any are left.
+8: nums[{i}] = {nums[i]}. {('Is the value at the back, nums[' + str(d[-1]) + '] = ' + str(nums[d[-1]]) + ', at most ' + str(nums[i]) + '? ' + ('Yes.' if nums[d[-1]] <= nums[i] else 'No.')) if d else 'The deque is empty.'}
+9: Pop index {d[-1]} from the back: {nums[d[-1]]} can never be a maximum while {nums[i]} is in the window.
+10: Append index {i} at the back.
+11: Has the front index, {d[0]}, slid out of the window? {d[0] <= i - k}.
+12: Pop index {d[0]} from the front: it's too old.
+13: Is the first window full yet? {i >= k - 1}.
+14: The front holds the maximum of this window: nums[{d[0]}] = {nums[d[0]]}.
+15: One maximum per window: 3, 3, 5, 5.
+
+=== task: predict easy
+title: Both ends
+code:
+```python
+from collections import deque
+
+d = deque([5])
+d.append(6)
+d.appendleft(4)
+d.append(7)
+print(d.popleft(), d.pop(), list(d))
+```
+wrong[7 4 [5, 6]]: `popleft()` takes from the left end, where `appendleft` put the 4; `pop()` takes from the right end, the 7.
+wrong[4 7 [4, 5, 6, 7]]: Popping removes the items, so 4 and 7 are no longer in the deque.
+wrong[5 7 [4, 6]]: `appendleft(4)` put 4 to the left of 5, so 4 is the leftmost item.
+hint: After the appends, the deque is 4, 5, 6, 7.
+hint: `popleft` takes the left end and `pop` the right end.
+right: 4 comes off the left and 7 off the right, leaving 5 and 6: both ends, each in O(1).
+wrong: The deque becomes 4, 5, 6, 7. `popleft()` returns 4, `pop()` returns 7, and `[5, 6]` is left.
+
+=== task: mcq easy
+title: Fast at which end?
+prompt: At which positions can a `deque` add and remove items in O(1)?
+* At both ends :: Right. That's what "double-ended" means.
+- Only at the right end :: That's a Python list: its left end is O(n).
+- Only at the left end :: A deque is fast at the right end too.
+- Anywhere, including the middle :: The middle is O(n): a deque has to walk to reach it.
+hint: What does "double-ended" mean?
+hint: Think about the blocks a deque is built from.
+right: Both ends are O(1). The middle isn't: reaching it means walking from one end.
+wrong: A deque is a double-ended queue: `append`, `appendleft`, `pop` and `popleft` are all O(1). Only the middle is slow.
+
+=== task: fill easy
+title: Add at the left
+prompt: Fill in the blank so that 0 is added at the left end, and the program prints:
+
+```output
+deque([0, 1, 2])
+```
+code:
+```python
+from collections import deque
+
+d = deque([1, 2])
+d.??(0)
+print(d)
+```
+answer: appendleft
+wrong[append]: `append` adds at the right end: the deque would be 1, 2, 0.
+hint: Which method adds at the left?
+hint: It's `append` with "left" on the end.
+right: `appendleft` adds at the left end in O(1). A list would need `insert(0, x)`, which shifts every item.
+wrong: To add at the left end, use `appendleft`.
+
+=== task: code easy
+title: Reverse with a deque
+prompt: Write `reverse_with_deque(items)` that returns a list of the items in reverse order: add each item at the **left** end of a deque with `appendleft`, then turn the deque into a list. Don't use slicing, `reversed` or `.reverse()`.
+
+For example, `reverse_with_deque([1, 2, 3])` returns `[3, 2, 1]`.
+starter:
+```python
+from collections import deque
+
+def reverse_with_deque(items):
+    d = deque()
+    # your code here
+    return list(d)
+```
+solution:
+```python
+from collections import deque
+
+def reverse_with_deque(items):
+    d = deque()
+    for x in items:
+        d.appendleft(x)
+    return list(d)
+```
+tests:
+- reverse_with_deque([1, 2, 3])
+- reverse_with_deque([])
+- reverse_with_deque(["a"])
+- reverse_with_deque(["x", "y", "z", "w"])
+forbid[[::-1]]: Use the deque: add each item at the left end.
+forbid[reversed(]: Use the deque: add each item at the left end.
+forbid[.reverse(]: Use the deque: add each item at the left end.
+fail[1]: Each new item goes in front of the earlier ones: 1, then 2 in front of it, then 3 in front of that.
+hint: Loop over the items.
+hint: `d.appendleft(x)` puts each one in front of the items before it.
+right: Every item goes in at the left in O(1), so reversing n items is O(n). With a list, `insert(0, x)` would make it O(n²).
+wrong: For each item, `d.appendleft(x)`; then return `list(d)`.
+
+=== task: predict easy
+title: extendleft
+code:
+```python
+from collections import deque
+
+d = deque([3])
+d.extendleft([2, 1])
+d.extend([4, 5])
+print(list(d))
+```
+wrong[[2, 1, 3, 4, 5]]: `extendleft` adds the items one at a time on the left: 2 first, then 1 in front of it.
+wrong[[1, 2, 3, 5, 4]]: `extend` adds on the right in the order given: 4, then 5.
+wrong[[4, 5, 1, 2, 3]]: `extend` adds at the right end, not the left.
+hint: `extendleft([2, 1])` does `appendleft(2)`, then `appendleft(1)`.
+hint: `extend([4, 5])` does `append(4)`, then `append(5)`.
+right: 1, 2, 3, 4, 5: `extendleft` reverses the items it adds, because each one goes in front of the one before it.
+wrong: `appendleft(2)` gives 2, 3; `appendleft(1)` gives 1, 2, 3; then 4 and 5 are added on the right.
+
+=== task: multi easy
+title: True about deques
+prompt: Choose **every** true sentence about Python's `deque`.
+* It can be used as a stack :: Right. `append` and `pop` work at the same end.
+* It can be used as a queue :: Right. `append` and `popleft` work at opposite ends.
+* Adding and removing at both ends is O(1) :: Right. That's what it's for.
+* With `maxlen`, adding to a full deque drops an item from the other end :: Right. It keeps the newest items.
+- Reading the middle item, `d[len(d) // 2]`, is O(1) :: Reaching the middle means walking from an end: O(n).
+- `extendleft` keeps the items in the order given :: Each item goes in front of the one before it, so they end up reversed.
+hint: Think about the ends, the middle, and `maxlen`.
+hint: Four of them are true.
+right: A deque is a stack, a queue, or both, fast at both ends, with an optional size limit. Its middle is slow, and `extendleft` reverses.
+wrong: True: stack, queue, O(1) at both ends, `maxlen` drops from the other end. False: the middle is O(n), and `extendleft` reverses the order.
+
+=== task: parsons easy
+title: A palindrome check
+prompt: Arrange the lines so that `is_palindrome` takes letters off both ends of a deque and compares them, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def is_palindrome(word):
+    d = deque(word)
+    while len(d) > 1:
+        if d.popleft() != d.pop():
+            return False
+    return True
+
+print(is_palindrome("level"), is_palindrome("deque"))
+```
+distractors:
+```python
+        if d.popleft() != d.popleft():
+    while len(d) > 0:
+```
+hint: Compare one letter from each end.
+hint: Stop when one letter or none is left.
+right: Each pass takes the outermost pair of letters; a word reads the same both ways if every pair matches. Two `popleft`s would compare neighbours instead.
+wrong: Make `d = deque(word)`; while more than one letter is left, return False if `d.popleft() != d.pop()`; after the loop, return True.
+
+=== task: cells easy
+title: The deque after each step
+prompt: A deque starts empty. What does it hold after each step? Write the items from left to right, separated by commas.
+labels: append(1) | appendleft(2) | append(3) | popleft()
+answer: 1 | 2, 1 | 2, 1, 3 | 1, 3
+wrong[1 | 1, 2 | 1, 2, 3 | 2, 3]: `appendleft(2)` puts 2 at the left end, in front of the 1.
+wrong[1 | 2, 1 | 2, 1, 3 | 2, 1]: `popleft()` removes the leftmost item, 2, not the rightmost.
+hint: `appendleft` adds at the left end.
+hint: `popleft` removes the leftmost item.
+right: 1 → 2, 1 → 2, 1, 3 → 1, 3: two ends, each with its own add and remove.
+wrong: append 1: 1. appendleft 2: 2, 1. append 3: 2, 1, 3. popleft removes 2: 1, 3.
+
+=== task: mcq easy
+title: A deque as a stack
+prompt: Which pair of operations makes a deque work as a stack?
+* `append` and `pop` :: Right. Both work at the right end: last in, first out.
+- `append` and `popleft` :: In at one end and out at the other: that's a queue.
+- `appendleft` and `pop` :: Also opposite ends: a queue going the other way.
+- `rotate` and `pop` :: `rotate` moves items round; it doesn't add any.
+hint: A stack adds and removes at the same end.
+hint: Which pair works at the same end?
+right: Adding and removing at the same end gives last in, first out. (`appendleft` and `popleft` work too, at the left end.)
+wrong: A stack uses one end for both: `append` and `pop` at the right end.
+
+=== task: predict easy
+title: A size limit
+code:
+```python
+from collections import deque
+
+d = deque(maxlen=2)
+for x in "abcd":
+    d.append(x)
+print(list(d), len(d))
+```
+wrong[['a', 'b'] 2]: A full deque with `maxlen` doesn't refuse new items: it drops the oldest from the other end.
+wrong[['a', 'b', 'c', 'd'] 4]: `maxlen=2` means it never holds more than 2 items.
+wrong[['d', 'c'] 2]: Items are appended on the right, so the order stays c, d.
+hint: When the deque is full, `append` drops an item from the left end.
+hint: Which two letters were added last?
+right: `['c', 'd'] 2`: a deque with `maxlen` keeps the newest items, like an overwriting ring buffer.
+wrong: After a and b, it's full. Appending c drops a; appending d drops b. The deque holds c and d.
+
+=== task: code medium
+title: Palindromes in sentences
+prompt: Write `is_palindrome(text)` that returns True if the letters of `text` read the same forwards and backwards, ignoring case, spaces and punctuation. Put the lowercase letters (those with `ch.isalpha()`) into a deque, then compare letters from both ends.
+
+For example, `is_palindrome("A man, a plan, a canal: Panama")` returns True.
+starter:
+```python
+from collections import deque
+
+def is_palindrome(text):
+    d = deque()
+    # your code here
+    return True
+```
+solution:
+```python
+from collections import deque
+
+def is_palindrome(text):
+    d = deque()
+    for ch in text:
+        if ch.isalpha():
+            d.append(ch.lower())
+    while len(d) > 1:
+        if d.popleft() != d.pop():
+            return False
+    return True
+```
+tests:
+- is_palindrome("Racecar")
+- is_palindrome("A man, a plan, a canal: Panama")
+- is_palindrome("hello")
+- is_palindrome("")
+- is_palindrome("No lemon, no melon")
+- is_palindrome("ab")
+fail[1]: Ignore case: "R" and "r" count as the same letter.
+fail[2]: Only the letters count: "amanaplanacanalpanama" reads the same both ways.
+fail[3]: "h" and "o" differ, so it's not a palindrome.
+fail[6]: "a" and "b" differ.
+hint: Loop over the characters; append `ch.lower()` when `ch.isalpha()`.
+hint: Then, while more than one letter is left, compare `d.popleft()` with `d.pop()`.
+hint: Any mismatch means False; otherwise True.
+right: One pass to collect the letters and one to compare them from both ends: O(n). The deque makes taking from both ends O(1).
+wrong: Keep only the letters, in lowercase, in a deque. Then pop one letter from each end at a time and compare them.
+
+=== task: code medium
+title: A limited undo history
+prompt: Write a class `History(limit)` that remembers at most `limit` changes, newest last, using a deque with `maxlen`:
+- `add(change)`: remember a change; if there are already `limit`, the oldest is forgotten,
+- `undo()`: remove and return the newest change, or return None if there's nothing to undo,
+- `items()`: return the remembered changes as a list, oldest first.
+starter:
+```python
+from collections import deque
+
+class History:
+    def __init__(self, limit):
+        self.changes = deque(maxlen=limit)
+
+    # your code here
+```
+solution:
+```python
+from collections import deque
+
+class History:
+    def __init__(self, limit):
+        self.changes = deque(maxlen=limit)
+
+    def add(self, change):
+        self.changes.append(change)
+
+    def undo(self):
+        if self.changes:
+            return self.changes.pop()
+        return None
+
+    def items(self):
+        return list(self.changes)
+```
+tests:
+- (lambda h: [h.add("a"), h.add("b"), h.add("c"), h.add("d"), h.items()][4])(History(3))
+- (lambda h: [h.add("a"), h.add("b"), h.undo(), h.items()][2:])(History(3))
+- (lambda h: [h.undo(), h.items()])(History(2))
+- (lambda h: [h.add(1), h.add(2), h.add(3), h.undo(), h.undo(), h.undo(), h.items()][3:])(History(2))
+fail[1]: With a limit of 3, adding a fourth change forgets the oldest, "a".
+fail[2]: Undo removes and returns the newest change, "b".
+fail[3]: With nothing to undo, `undo()` returns None.
+fail[4]: Only 2 and 3 were kept, so the third undo finds nothing: None.
+error[IndexError]: Check `if self.changes:` before popping.
+error[AttributeError]: Define `add`, `undo` and `items`.
+hint: `add` is `self.changes.append(change)`: `maxlen` forgets the oldest by itself.
+hint: `undo` pops from the right end, the newest, if there's anything there.
+hint: `items` returns `list(self.changes)`.
+right: A deque with `maxlen` used as a stack: undo takes the newest change, and the oldest is forgotten automatically once the limit is reached. Every method except `items` is O(1).
+wrong: Append changes on the right; undo pops from the right if the deque isn't empty; `maxlen` drops the oldest from the left.
+
+=== task: predict medium
+title: Turning a deque
+code:
+```python
+from collections import deque
+
+d = deque([1, 2, 3, 4])
+d.rotate(1)
+print(list(d))
+d.rotate(-2)
+print(list(d))
+```
+wrong[[2, 3, 4, 1]\n[4, 1, 2, 3]]: `rotate(1)` turns the items to the **right**: the last item, 4, comes round to the front.
+wrong[[4, 1, 2, 3]\n[3, 4, 1, 2]]: `rotate(-2)` turns them to the left: the first two items go round to the back.
+wrong[[4, 1, 2, 3]\n[2, 3, 1, 4]]: A rotation keeps the items in their circular order; it never swaps two of them.
+hint: `rotate(1)` moves the last item to the front.
+hint: `rotate(-2)` moves the first two items to the back.
+right: Rotating right by 1 and then left by 2 adds up to left by 1: 2, 3, 4, 1.
+wrong: `rotate(1)`: 4 moves to the front: 4, 1, 2, 3. `rotate(-2)`: 4 and 1 move to the back: 2, 3, 4, 1.
+
+=== task: fill medium
+title: Next player
+prompt: Fill in the blank so that the player at the front has their turn and then moves to the back, and the program prints:
+
+```output
+deque(['Ben', 'Cy', 'Ann'])
+```
+code:
+```python
+from collections import deque
+
+players = deque(["Ann", "Ben", "Cy"])
+players.rotate(??)
+print(players)
+```
+answer: -1
+wrong[1]: `rotate(1)` turns right: the last player, Cy, would come to the front.
+hint: Moving the front item to the back is a turn to the left.
+hint: Left turns use negative numbers.
+right: `rotate(-1)` moves Ann from the front to the back, so Ben is next: O(1) for a turn of one place.
+wrong: A turn to the left by one place moves the front item to the back: `rotate(-1)`.
+
+=== task: cells medium
+title: Who's at the front?
+prompt: Each time, `d = deque([1, 2, 3, 4, 5])` is rotated by k. Which value is at the front afterwards?
+labels: k = 1 | k = 2 | k = -1 | k = 7
+answer: 5 | 4 | 2 | 4
+wrong[2 | 3 | 5 | 3]: Positive k turns the items to the **right**: the last k items come round to the front.
+wrong[5 | 4 | 2 | 1]: 7 turns right is a full turn of 5 plus 2 more, the same as k = 2.
+hint: `rotate(1)` brings the last item, 5, to the front.
+hint: For k = 7, only 7 % 5 = 2 matters.
+right: Right by 1: 5. Right by 2: 4. Left by 1: 2. Right by 7, which is right by 2: 4.
+wrong: k = 1: 5, 1, 2, 3, 4. k = 2: 4, 5, 1, 2, 3. k = -1: 2, 3, 4, 5, 1. k = 7 is the same as 2: 4 at the front.
+
+=== task: order medium
+title: A new index arrives
+prompt: Put the steps for handling index i in `window_max` (window size k) in order.
+items:
+- Pop indexes from the back while their values are at most `nums[i]`
+- Append i at the back
+- If the front index is `i - k` or less, pop it from the front
+- If `i >= k - 1`, record `nums` at the front index as this window's maximum
+hint: Smaller values must leave before i joins, so the deque stays decreasing.
+hint: The answer is read last, once the deque is up to date.
+right: Back pops, append, front pop, then read the front: after these steps the front is always the maximum of the window ending at i.
+wrong: Pop smaller values from the back, append i, drop the front index if it's too old, then record the front's value once the first window is full.
+
+=== task: predict medium
+title: Both ends at once
+code:
+```python
+from collections import deque
+
+d = deque("level")
+while len(d) > 1:
+    print(d.popleft(), d.pop())
+print(list(d))
+```
+wrong[l e\nv e\n['l']]: `popleft()` and `pop()` take from opposite ends: the first pass gives the two l's.
+wrong[l l\ne e\nv v\n[]]: When one letter, v, is left, the loop stops: it has no partner.
+wrong[l l\ne e\n[]]: The v is left in the deque.
+hint: The first pass takes the first and last letters.
+hint: The loop stops when one letter is left.
+right: l with l, e with e, and v in the middle: the pairs match, so "level" is a palindrome.
+wrong: Pass 1: popleft l, pop l. Pass 2: e and e. Then only v is left, so the loop stops and `['v']` is printed.
+
+=== task: mcq medium
+title: Why the middle is slow
+prompt: `d[0]` and `d[-1]` are O(1) on a deque, but `d[len(d) // 2]` is O(n). Why?
+* A deque is built from blocks linked one after another, so reaching the middle means walking from one end :: Right. Only the ends are kept at hand.
+- Python has to sort the deque first :: Nothing is sorted.
+- The middle item has to be copied out :: Reading one item copies nothing.
+- It isn't: indexing is always O(1) :: That's true for lists, which are arrays. A deque is linked.
+hint: How is a deque built?
+hint: Which parts of a linked structure can be reached directly?
+right: Like a linked list, a deque reaches its ends directly and everything else by walking. Use a list when you need fast indexing.
+wrong: A deque is a chain of linked blocks: the ends are one step away, the middle about n / 2 steps.
+
+=== task: multi medium
+title: List or deque?
+prompt: Choose **every** job where a deque is a better choice than a list.
+* A queue of print jobs, served first come first served :: Right. `popleft` is O(1); a list's `pop(0)` is O(n).
+* Keeping the last 100 events and forgetting older ones :: Right. `deque(maxlen=100)` does it by itself.
+* Adding urgent jobs at the front and normal jobs at the back :: Right. Both ends are O(1).
+* A stack that sometimes also takes the oldest item off the bottom :: Right. `pop` and `popleft` are both O(1).
+- Reading item 5,000 of a long sequence by its index :: A list does that in O(1); a deque has to walk.
+- Binary search through sorted numbers :: Binary search jumps to the middle again and again: it needs a list.
+hint: Is the work at the ends, or in the middle?
+hint: Four of them are deque jobs.
+right: Deques win at the ends: queues, limited histories, two-ended job lists. Lists win in the middle: indexing and binary search.
+wrong: Deque: the print queue, the last 100 events, urgent-and-normal jobs, the two-ended stack. List: indexing and binary search.
+
+=== task: code medium
+title: Dealing cards
+prompt: A magician deals a pile of cards like this: put the top card on the table, then move the next top card to the bottom of the pile, and repeat until the pile is empty. Write `deal(cards)` that returns the cards in the order they land on the table. `cards` lists the pile from top to bottom. Use a deque: the top is the left end.
+
+For example, `deal([1, 2, 3, 4])` returns `[1, 3, 2, 4]`.
+starter:
+```python
+from collections import deque
+
+def deal(cards):
+    pile = deque(cards)
+    table = []
+    # your code here
+    return table
+```
+solution:
+```python
+from collections import deque
+
+def deal(cards):
+    pile = deque(cards)
+    table = []
+    while pile:
+        table.append(pile.popleft())
+        if pile:
+            pile.append(pile.popleft())
+    return table
+```
+tests:
+- deal([1, 2, 3, 4])
+- deal([1, 2, 3, 4, 5, 6])
+- deal([])
+- deal([9])
+- deal(["a", "b", "c"])
+fail[1]: 1 to the table, 2 to the bottom; 3 to the table, 4 to the bottom; 2 to the table, 4 to the bottom; 4 to the table.
+fail[3]: No cards, nothing dealt.
+fail[4]: One card goes straight to the table.
+error[IndexError]: After putting a card on the table, only move the next card if the pile isn't empty.
+hint: While the pile isn't empty, `table.append(pile.popleft())`.
+hint: Then, if cards are left, move the top one to the bottom: `pile.append(pile.popleft())`.
+right: Each card is dealt once, and each move is O(1) at an end of the deque: about 2n moves in all, O(n). A list's `pop(0)` would shift the whole pile every time.
+wrong: Loop while the pile has cards: deal the top card, then move the new top card to the bottom if there is one.
+
+=== task: code hard
+title: The maximum of every window
+prompt: Write `window_max(nums, k)` that returns the maximum of every run of k numbers in a row, in order. It must be O(n), whatever k is: keep a deque of indexes whose values decrease from front to back. For each i, pop indexes from the back while their values are at most `nums[i]`, append i, pop the front index if it's `i - k` or less, and from `i = k - 1` on, record `nums[d[0]]`.
+
+For example, `window_max([1, 3, -1, -3, 5, 3, 6, 7], 3)` returns `[3, 3, 5, 5, 6, 7]`.
+starter:
+```python
+from collections import deque
+
+def window_max(nums, k):
+    d = deque()
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+from collections import deque
+
+def window_max(nums, k):
+    d = deque()
+    result = []
+    for i in range(len(nums)):
+        while d and nums[d[-1]] <= nums[i]:
+            d.pop()
+        d.append(i)
+        if d[0] <= i - k:
+            d.popleft()
+        if i >= k - 1:
+            result.append(nums[d[0]])
+    return result
+```
+tests:
+- window_max([1, 3, -1, -3, 5, 3, 6, 7], 3)
+- window_max([4, 2, 5, 1], 2)
+- window_max([2, 1, 4, 3, 1, 5], 3)
+- window_max([7], 1)
+- window_max([5, 4, 3, 2, 1], 2)
+- window_max([1, 2, 3], 3)
+speed: setup=nums = list(range(n, 0, -1)); k = n // 2 | call=window_max(nums, k) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def window_max(nums, k):
+    d = deque()
+    result = []
+    for i in range(k - 1, len(nums)):
+        best = nums[i]
+        for j in range(i - k + 1, i):
+            if nums[j] > best:
+                best = nums[j]
+        result.append(best)
+    return result
+```
+fail[1]: The windows [1, 3, -1], [3, -1, -3], [-1, -3, 5], [-3, 5, 3], [5, 3, 6] and [3, 6, 7] have maximums 3, 3, 5, 5, 6, 7.
+fail[2]: Windows of 2: [4, 2] → 4, [2, 5] → 5, [5, 1] → 5.
+fail[5]: In a list that only goes down, each window's maximum is its first number, so old indexes must leave from the front.
+fail[6]: One window covering everything: its maximum is 3.
+error[IndexError]: Check that the deque isn't empty before reading `d[-1]`.
+hint: For each i: while `d` isn't empty and `nums[d[-1]] <= nums[i]`, `d.pop()`. Then `d.append(i)`.
+hint: If `d[0] <= i - k`, the front index has left the window: `d.popleft()`.
+hint: When `i >= k - 1`, append `nums[d[0]]` to the result.
+right: Each index is appended once and popped at most once, from one end or the other: O(n). Checking all k numbers of every window would be O(n × k).
+wrong: Keep the deque decreasing: pop smaller values from the back before appending i, pop the front when it's too old, and read the front once the first window is complete.
+
+=== task: code hard
+title: The first negative in each window
+prompt: Write `first_negatives(nums, k)` that returns, for every run of k numbers in a row, the first negative number in it, or 0 if it has none. It must be O(n): keep a deque of the indexes of the negative numbers seen so far; drop indexes from the front once they leave the window, and the front (if any) is the window's first negative.
+
+For example, `first_negatives([12, -1, -7, 8, -15, 30, 16, 28], 3)` returns `[-1, -1, -7, -15, -15, 0]`.
+starter:
+```python
+from collections import deque
+
+def first_negatives(nums, k):
+    d = deque()
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+from collections import deque
+
+def first_negatives(nums, k):
+    d = deque()
+    result = []
+    for i in range(len(nums)):
+        if nums[i] < 0:
+            d.append(i)
+        if d and d[0] <= i - k:
+            d.popleft()
+        if i >= k - 1:
+            if d:
+                result.append(nums[d[0]])
+            else:
+                result.append(0)
+    return result
+```
+tests:
+- first_negatives([12, -1, -7, 8, -15, 30, 16, 28], 3)
+- first_negatives([1, 2, 3], 2)
+- first_negatives([-5, -6], 1)
+- first_negatives([], 2)
+- first_negatives([-1, 2, 3, -4], 2)
+speed: setup=nums = [-1] + [1] * (n - 1); k = n // 2 | call=first_negatives(nums, k) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def first_negatives(nums, k):
+    d = deque()
+    result = []
+    for i in range(k - 1, len(nums)):
+        found = 0
+        for j in range(i - k + 1, i + 1):
+            if nums[j] < 0:
+                found = nums[j]
+                break
+        result.append(found)
+    return result
+```
+fail[1]: The windows' first negatives are -1, -1, -7, -15, -15, and the last window, [30, 16, 28], has none: 0.
+fail[2]: No negative numbers anywhere: every answer is 0.
+fail[3]: With k = 1, each window is one number: -5, then -6.
+fail[5]: Windows of 2: [-1, 2] → -1, [2, 3] → 0, [3, -4] → -4.
+error[IndexError]: Check that the deque isn't empty before reading `d[0]`.
+hint: Append i to the deque when `nums[i] < 0`.
+hint: If the front index is `i - k` or less, pop it: it's outside the window.
+hint: From `i = k - 1` on, record `nums[d[0]]` if the deque has anything, otherwise 0.
+right: Each negative index joins the deque once and leaves it once: O(n). The deque holds the window's negatives in order, so the front is the first one.
+wrong: Keep a deque of negative indexes; drop old ones from the front; each full window's answer is the front's value, or 0 if the deque is empty.
+
+=== task: code hard
+title: A snake on a grid
+prompt: In a snake game, the snake is a list of cells, head first, stored in a deque: `body[0]` is the head. Each move adds a new head next to the old one (moving "U" up, "D" down, "L" left or "R" right, where up is row − 1 and left is column − 1). If the new head lands on food, the snake grows: the food is eaten and the tail stays. Otherwise the tail cell is removed, so the length stays the same. The snake starts as `[(0, 0)]`.
+
+Write `snake(moves, food)`, where `moves` is a string of letters and `food` is a set of `(row, column)` cells, that returns the body after all the moves, as a list, head first. Each move must be O(1).
+
+For example, `snake("RR", {(0, 1)})` returns `[(0, 2), (0, 1)]`.
+starter:
+```python
+from collections import deque
+
+def snake(moves, food):
+    body = deque([(0, 0)])
+    food = set(food)
+    dirs = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
+    # your code here
+    return list(body)
+```
+solution:
+```python
+from collections import deque
+
+def snake(moves, food):
+    body = deque([(0, 0)])
+    food = set(food)
+    dirs = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
+    for m in moves:
+        dr, dc = dirs[m]
+        r, c = body[0]
+        head = (r + dr, c + dc)
+        body.appendleft(head)
+        if head in food:
+            food.remove(head)
+        else:
+            body.pop()
+    return list(body)
+```
+tests:
+- snake("RR", {(0, 1)})
+- snake("RDL", set())
+- snake("", set())
+- snake("UUR", {(-1, 0), (-2, 0)})
+- snake("RL", {(0, 1)})
+fail[1]: The first move eats the food at (0, 1), so the snake grows to 2 cells; the second move doesn't, so the tail moves on.
+fail[2]: Without food the snake stays 1 cell long: right, down, left ends at (1, 0).
+fail[4]: Two pieces of food make it 3 cells long; the last move, without food, moves the tail.
+fail[5]: After eating at (0, 1) the snake is 2 cells; moving left puts the head back on (0, 0) and the tail moves up behind it.
+error[KeyError]: Look up each move's direction in `dirs`.
+hint: For each move: work out the new head from `body[0]` and the direction.
+hint: `body.appendleft(head)`.
+hint: If the head is on food, remove the food; otherwise `body.pop()` removes the tail.
+right: A move adds at the head end and removes at the tail end, both O(1) on a deque. A list would shift the whole snake for every move.
+wrong: For each move, put a new head on the left of the deque; then either eat the food (and keep the tail) or pop the tail from the right.
+
+=== task: code hard
+title: Cards in the right order
+prompt: The magician from "Dealing cards" wants the cards to land on the table in increasing order. Write `reveal_order(deck)` that returns the pile (top to bottom) to start with, so that dealing it (top card to the table, next card to the bottom, repeat) puts the cards on the table smallest first.
+
+Simulate the deal on positions instead of cards: make a deque of the positions 0 to n − 1. For each card, from the smallest up: the card goes into the position at the front of the deque (`popleft`), then the next position moves to the back, as the deal would do.
+
+For example, `reveal_order([17, 13, 11, 2, 3, 5, 7])` returns `[2, 13, 3, 11, 5, 17, 7]`.
+starter:
+```python
+from collections import deque
+
+def reveal_order(deck):
+    n = len(deck)
+    positions = deque(range(n))
+    result = [None] * n
+    # your code here
+    return result
+```
+solution:
+```python
+from collections import deque
+
+def reveal_order(deck):
+    n = len(deck)
+    positions = deque(range(n))
+    result = [None] * n
+    for card in sorted(deck):
+        result[positions.popleft()] = card
+        if positions:
+            positions.append(positions.popleft())
+    return result
+```
+tests:
+- reveal_order([17, 13, 11, 2, 3, 5, 7])
+- reveal_order([1, 2, 3, 4])
+- reveal_order([5])
+- reveal_order([])
+- reveal_order([4, 3, 2, 1])
+fail[1]: Dealing `[2, 13, 3, 11, 5, 17, 7]` puts 2, 3, 5, 7, 11, 13, 17 on the table.
+fail[2]: Dealing `[1, 3, 2, 4]` gives 1, 2, 3, 4.
+fail[3]: One card is its own answer.
+fail[5]: The cards come in any order; sort them first, so the smallest is placed first.
+error[IndexError]: Move a position to the back only if any are left.
+hint: Go through `sorted(deck)`, smallest first.
+hint: Each card goes into `result[positions.popleft()]`: the next position the deal would put on the table.
+hint: Then, if positions are left, move one to the back: `positions.append(positions.popleft())`, as the deal moves a card to the bottom.
+right: The deque replays the deal on positions, so the k-th card dealt is placed where the k-th position comes off: O(n log n) for the sort, O(n) for the replay.
+wrong: Sort the cards. Replay the deal on a deque of positions: each card fills the position at the front, then the next position goes to the back.
+
+=== task: predict hard
+title: The window deque, traced
+code:
+```python
+from collections import deque
+
+nums = [4, 2, 5, 1]
+k = 2
+d = deque()
+result = []
+for i in range(len(nums)):
+    while d and nums[d[-1]] <= nums[i]:
+        d.pop()
+    d.append(i)
+    if d[0] <= i - k:
+        d.popleft()
+    if i >= k - 1:
+        result.append(nums[d[0]])
+print(result, list(d))
+```
+wrong[[4, 5, 5] [2]]: The 1 at index 3 is smaller than 5, so it doesn't pop index 2: it joins behind it.
+wrong[[2, 5, 5] [2, 3]]: The maximum of the window [4, 2] is 4: index 0 is still at the front.
+wrong[[4, 5, 1] [3]]: Index 2 (value 5) is still in the window [5, 1], so it stays at the front and the maximum is 5.
+hint: When 5 arrives, it pops indexes 1 and 0.
+hint: When 1 arrives, it waits behind 5.
+right: `[4, 5, 5] [2, 3]`: the windows [4, 2], [2, 5] and [5, 1] have maximums 4, 5 and 5, and the deque ends holding indexes 2 and 3.
+wrong: i = 0: [0]. i = 1: [0, 1], record 4. i = 2: 5 pops 1 and 0: [2], record 5. i = 3: [2, 3], index 2 is still in the window, record 5.
+
+=== task: predict hard
+title: Which end is dropped?
+code:
+```python
+from collections import deque
+
+d = deque([1, 2, 3], maxlen=3)
+d.appendleft(0)
+print(list(d))
+d.append(4)
+print(list(d))
+d.rotate(1)
+print(list(d))
+```
+wrong[[0, 1, 2, 3]\n[0, 1, 2, 3, 4]\n[4, 0, 1, 2, 3]]: `maxlen=3` means the deque never holds more than 3 items: each add to a full deque drops one from the other end.
+wrong[[1, 2, 3]\n[2, 3, 4]\n[4, 2, 3]]: Adding at the left drops from the right: `appendleft(0)` drops the 3, not the 0.
+wrong[[0, 1, 2]\n[0, 1, 4]\n[4, 0, 1]]: `append(4)` adds at the right, so it drops from the left: the 0 goes.
+hint: An add on the left drops from the right, and the other way round.
+hint: `rotate` doesn't add anything, so nothing is dropped.
+right: `[0, 1, 2]`, then `[1, 2, 4]`, then `[4, 1, 2]`: a full deque with `maxlen` always drops from the end opposite the one being added to.
+wrong: `appendleft(0)` drops 3: 0, 1, 2. `append(4)` drops 0: 1, 2, 4. `rotate(1)` brings 4 to the front: 4, 1, 2.
+
+=== task: cells hard
+title: Window maximums
+prompt: What does `window_max([2, 1, 4, 3, 1, 5], 3)` return for each window, in order?
+labels: window 1 | window 2 | window 3 | window 4
+answer: 4 | 4 | 4 | 5
+wrong[2 | 4 | 4 | 5]: The first window is [2, 1, 4]: its maximum is 4, which comes last in it.
+wrong[4 | 4 | 3 | 5]: The third window is [4, 3, 1]: the 4 is still in it.
+hint: The windows are [2, 1, 4], [1, 4, 3], [4, 3, 1] and [3, 1, 5].
+hint: The 4 at index 2 is in the first three windows.
+right: 4, 4, 4, 5: the 4 stays at the front of the deque until it leaves the window, and then the 5 arrives.
+wrong: [2, 1, 4] → 4, [1, 4, 3] → 4, [4, 3, 1] → 4, [3, 1, 5] → 5.
+
+=== task: mcq hard
+title: Popped for good
+prompt: In `window_max`, when `nums[i]` arrives, indexes at the back whose values are at most `nums[i]` are popped and never come back. Why is that safe?
+* `nums[i]` is at least as big as them and came later, so it stays in every future window at least as long: they can never be a window's maximum again :: Right. Anything they could be the maximum of, `nums[i]` is too.
+- Because they're smaller than every other number in the list :: They're only compared with `nums[i]`, not with the whole list.
+- Because the deque can only hold k indexes :: The deque's size isn't fixed; it can hold fewer than k.
+- Because popped indexes are added back later :: Popped indexes never return.
+hint: Compare an old smaller value with the newer, bigger one: which leaves the window first?
+hint: Can the old value ever beat the newer one?
+right: An older, smaller value is "dominated": in every window that still holds it, the newer bigger value is there too. That's why the deque can throw it away, and why each index is popped at most once.
+wrong: The newer value is at least as big and outlives the older one in every window, so the older one can never be the maximum again.
+
+=== task: multi hard
+title: The window deque
+prompt: Choose **every** true sentence about the deque in `window_max`.
+* Its values decrease from front to back :: Right. Smaller-or-equal values are popped from the back before a new index joins.
+* The front holds the index of the current window's maximum :: Right. That's why the answer is `nums[d[0]]`.
+* Each index is appended once and popped at most once :: Right. That's what makes it O(n).
+* Indexes that have slid out of the window leave from the front :: Right. The oldest index is at the front.
+- It always holds exactly k indexes :: It can hold fewer: everything dominated by a bigger, newer value is gone.
+- Its indexes decrease from front to back :: Indexes are appended in order, so they increase from front to back.
+hint: Values decrease from front to back; what about the indexes?
+hint: Four of them are true.
+right: Values decrease and indexes increase from front to back; the front is the maximum and the oldest; and each index is handled at most twice: O(n).
+wrong: True: decreasing values, the front is the maximum, appended once and popped at most once, old indexes leave from the front. False: it doesn't always hold k, and its indexes increase.
+
+=== task: parsons hard
+title: Window maximums
+prompt: Arrange the lines so that `window_max` returns the maximum of every window of k numbers in O(n), and the program prints:
+
+```output
+[3, 3, 5, 5, 6, 7]
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def window_max(nums, k):
+    d = deque()
+    result = []
+    for i in range(len(nums)):
+        while d and nums[d[-1]] <= nums[i]:
+            d.pop()
+        d.append(i)
+        if d[0] <= i - k:
+            d.popleft()
+        if i >= k - 1:
+            result.append(nums[d[0]])
+    return result
+
+print(window_max([1, 3, -1, -3, 5, 3, 6, 7], 3))
+```
+distractors:
+```python
+        while d and nums[d[-1]] >= nums[i]:
+            result.append(nums[d[-1]])
+```
+hint: Smaller values leave from the back, so the deque stays decreasing.
+hint: The maximum is at the front, `d[0]`.
+right: Pop smaller values from the back, append the new index, drop the front when it's too old, and read the front: each index joins and leaves once.
+wrong: In the loop: pop from the back while `nums[d[-1]] <= nums[i]`, append i, pop the front if `d[0] <= i - k`, and once `i >= k - 1` append `nums[d[0]]`.
