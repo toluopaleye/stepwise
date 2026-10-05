@@ -316,7 +316,7 @@
     const idx = objIndex(frame);
     return '<div class="callstack">' + st.map((sf, i) => {
       const vars = Object.keys(sf.vars || {}).filter((k) => !(sf.vars[k] && (sf.vars[k].$fn || sf.vars[k].$cls)));
-      const shown = vars.slice(0, 4).map((k) => esc(k) + '=' + esc(briefRepr(sf.vars[k], idx))).join(', ');
+      const shown = vars.slice(0, 4).map((k) => k + '=' + briefRepr(sf.vars[k], idx)).join(', ');
       const name = sf.fn === '<module>' ? 'main program' : sf.fn + '(' + shown + ')';
       return `<div class="fr ${i === st.length - 1 ? 'ontop' : ''}"><b>${esc(name)}</b>${sf.line ? ' · line ' + sf.line : ''}</div>`;
     }).join('') + '</div>';
@@ -405,10 +405,30 @@
     walk(root, 0, null);
     return out;
   }
+  // n-ary tree: each node keeps a list of children in one field (e.g. kids=children). Leaves get the next
+  // column; a parent sits centred above its first and last child.
+  function treeLayoutN(root, idx, kidsF) {
+    const out = [];
+    let x = 0;
+    const seen = new Set();
+    const walk = (n, d, parent) => {
+      n = deref(n, idx);
+      if (!n || n.$o === undefined || seen.has(n.$o) || out.length > 40) return null;
+      seen.add(n.$o);
+      const rec = { n, d, parent, x: 0 };
+      out.push(rec);
+      const kids = [];
+      for (const k of seq(n.f[kidsF]) || []) { const kr = walk(k, d + 1, rec); if (kr) kids.push(kr); }
+      rec.x = kids.length ? (kids[0].x + kids[kids.length - 1].x) / 2 : x++;
+      return rec;
+    };
+    walk(root, 0, null);
+    return out;
+  }
   function drawTree(recs, opts) {
     if (!recs.length) return `<div class="emptyv">${esc(opts.emptyText || 'empty tree (None)')}</div>`;
     const maxD = Math.max(...recs.map((r) => r.d));
-    const cols = recs.length;
+    const cols = Math.max(...recs.map((r) => r.x)) + 1;
     const dx = 50, dy = 64, R = 18;
     const W = Math.max(220, cols * dx + 40), H = (maxD + 1) * dy + 44;
     let s = `<svg class="dsv" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="tree">`;
@@ -430,14 +450,18 @@
     const idx = objIndex(frame);
     const r = lookup(frame, name);
     const leftF = spec.left || 'left', rightF = spec.right || 'right', valF = spec.val || 'val';
-    const recs = r.found ? treeLayout(r.v, idx, leftF, rightF) : [];
+    const recs = !r.found ? [] : spec.kids ? treeLayoutN(r.v, idx, spec.kids) : treeLayout(r.v, idx, leftF, rightF);
     const ptrNames = spec.ptr ? spec.ptr.split(',') : [];
     const ptrAt = {};
     for (const p of ptrNames) { const pr = lookup(frame, p); if (pr.found) { const id = objId(pr.v); if (id !== null) (ptrAt[id] = ptrAt[id] || []).push(p); } }
     let visitedVals = null;
     if (spec.visited) { const vr = lookup(frame, spec.visited); if (vr.found) visitedVals = new Set((seq(vr.v) || []).map((x) => JSON.stringify(x))); }
     return drawTree(recs, {
-      text: (rec) => shortRepr(rec.n.f[valF]),
+      text: (rec) => {
+        const v = rec.n.f[valF];
+        if (typeof v === 'string') return v.length > 5 ? v.slice(0, 4) + '…' : v;
+        return shortRepr(v);
+      },
       hit: (rec) => !!ptrAt[rec.n.$o],
       visited: (rec) => !!visitedVals && visitedVals.has(JSON.stringify(rec.n.f[valF])),
       label: (rec) => (ptrAt[rec.n.$o] || []).join(','),

@@ -1,0 +1,1278 @@
+=== lesson
+id: ds-trees-nary
+title: N-ary trees
+summary: In an n-ary tree, a node can have any number of children, kept in a list. Folders, org charts and comment threads all have this shape. You'll build n-ary trees, count their nodes and measure their height with recursion that loops over the children, find how deep a node is, and print a tree as an indented outline.
+
+=== learn
+### Any number of children
+A binary tree's node has two named slots, `left` and `right`. Many real hierarchies don't fit into two slots: a folder can hold any number of files, a manager can have any number of people reporting to them, and a comment can get any number of replies. In an **n-ary tree**, each node keeps its children in a **list**, which can be as long as it needs to be:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+root = Node("Ann", [
+    Node("Ben", [Node("Dan"), Node("Eve")]),
+    Node("Cat", [Node("Fay", [Node("Gus")])]),
+    Node("Hal"),
+])
+print(root.val, len(root.children))
+print([c.val for c in root.children])
+print(root.children[1].children[0].children[0].val)
+```
+```output
+Ann 3
+['Ben', 'Cat', 'Hal']
+Gus
+```
+This is a company's org chart: Ann runs the company; Ben, Cat and Hal report to her; Dan and Eve report to Ben; Fay reports to Cat, and Gus to Fay. A leaf, like Hal, has an empty list of children. `root.children[1]` is Cat, the second child, and following `.children[0]` twice more reaches Gus.
+
+### Why the default is None
+`children=None` and then `children = []` may look roundabout. Why not write `children=[]` in the `def` line? Because Python makes a default value **once**, when the function is defined, and every call that leaves out the argument gets that same object. With `children=[]`, every leaf would share one list, so adding a child to one leaf would add it to all of them:
+```python
+class Bad:
+    def __init__(self, val, children=[]):
+        self.val = val
+        self.children = children
+
+a = Bad("a")
+b = Bad("b")
+a.children.append(Bad("c"))
+print(len(a.children), len(b.children), a.children is b.children)
+```
+```output
+1 1 True
+```
+> Never use a list (or any other value that can be changed) as a default. Use None, and make a fresh list inside the function.
+
+### Counting the nodes
+Recursion on an n-ary tree loops over the children. To count a tree's nodes, start with 1 for the node itself and add the count of every child's subtree:
+```python
+def count(node):
+    total = 1
+    for child in node.children:
+        total += count(child)
+    return total
+
+print(count(root), count(root.children[0]), count(root.children[2]))
+```
+```output
+8 3 1
+```
+There's no `if node is None` here. A missing child is not in the list at all, and a leaf's list is empty, so the loop runs zero times and the call returns 1: the leaf is the base case. Ben's subtree is Ben, Dan and Eve: 3 nodes. Animation 1 counts a smaller chart call by call. (The code in each step uses the `Node` class and `root` from the first step.)
+
+### The height
+The height is the number of edges on the longest path from the root down to a leaf. A node's height is 1 more than its tallest child's:
+```python
+def height(node):
+    best = -1
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+
+print(height(root), height(root.children[1]), height(root.children[2]))
+```
+```output
+3 2 0
+```
+`best` starts at −1, so a leaf, whose loop never runs, gets −1 + 1 = 0. The longest path is Ann → Cat → Fay → Gus: 3 edges. Starting `best` at −1 also avoids calling `max` on an empty list, which would stop with `ValueError`. Animation 2 measures a height step by step.
+
+### How deep is a node?
+The depth of a node is the number of edges from the root down to it. To find a value's depth, pass the depth down as a parameter, one more at each level, and stop as soon as the value is found:
+```python
+def depth_of(node, target, depth):
+    if node.val == target:
+        return depth
+    for child in node.children:
+        found = depth_of(child, target, depth + 1)
+        if found != -1:
+            return found
+    return -1
+
+print(depth_of(root, "Gus", 0), depth_of(root, "Eve", 0), depth_of(root, "Zed", 0))
+```
+```output
+3 2 -1
+```
+The loop tries the children one at a time. As soon as one subtree finds the value, its answer is returned straight away, and the remaining children are never searched. If no child finds it, the answer is −1, which means "not here".
+
+### Printing an outline
+Printing each node indented by its depth, before its children, gives the outline that file browsers show for folders:
+```python
+def show(node, depth):
+    print("    " * depth + node.val)
+    for child in node.children:
+        show(child, depth + 1)
+
+show(root, 0)
+```
+```output
+Ann
+    Ben
+        Dan
+        Eve
+    Cat
+        Fay
+            Gus
+    Hal
+```
+Each call prints its own node first, then hands every child the next depth. A child's whole subtree is printed before the next child starts, which is why Dan and Eve appear under Ben before Cat.
+
+### Leaves and the widest node
+The number of children a node has is its **degree**. Leaves have degree 0, which a recursive function can test with `not node.children`:
+```python
+def leaves(node):
+    if not node.children:
+        return 1
+    total = 0
+    for child in node.children:
+        total += leaves(child)
+    return total
+
+def widest(node):
+    best = len(node.children)
+    for child in node.children:
+        best = max(best, widest(child))
+    return best
+
+print(leaves(root), widest(root))
+```
+```output
+4 3
+```
+The leaves are Dan, Eve, Gus and Hal. `widest` finds the largest degree in the tree: Ann has 3 children, more than anyone else.
+
+### Wide or deep
+Each function in this lesson calls itself once per node, and its loops step along every edge once. A tree has n − 1 edges, so they're all O(n). But n-ary trees come in very different shapes. Here are 8 nodes arranged as a **star**, one root with 7 children, and as a **chain**, each node with a single child:
+```python
+star = Node(0, [Node(i) for i in range(1, 8)])
+chain = Node(0)
+node = chain
+for i in range(1, 8):
+    node.children.append(Node(i))
+    node = node.children[0]
+print(count(star), height(star), widest(star))
+print(count(chain), height(chain), widest(chain))
+```
+```output
+8 1 7
+8 7 1
+```
+The star has height 1 and the chain has height 7, with the same number of nodes. A wide tree keeps paths short, which is why file systems and databases use trees whose nodes have many children: with 100 children per node, three levels below the root hold 1,000,000 leaves.
+
+A binary tree is an n-ary tree whose nodes have at most 2 children. It keeps them in named slots instead of a list, because for a binary tree the side matters: a left child and a right child mean different things.
+
+=== keypoints
+- An n-ary tree node keeps its children in a list, so it can have any number of them: folders, org charts, comment threads. A leaf has an empty list.
+- Write `children=None` and make a new list inside `__init__`. A default `children=[]` is made once and shared by every node that uses it.
+- Recursion loops over the children: `count` is 1 plus the counts of all the children's subtrees. A leaf's empty loop is the base case, so there are no None checks.
+- `height` starts `best` at −1 and keeps the tallest child's height, so a leaf gets 0. Depth is passed down as a parameter, one more for each level.
+- A node's degree is its number of children. Every function here visits each node once and follows each of the n − 1 edges once: O(n).
+- The same n nodes can form a wide tree (a star of height 1) or a deep one (a chain of height n − 1). Many children per node keep a tree shallow.
+
+=== example: Folder sizes
+intro: Folders and files as an n-ary tree. A file has a size; a folder's size is the total of everything inside it, worked out from the bottom up.
+```python
+class Node:
+    def __init__(self, name, size=0, children=None):
+        self.name = name
+        self.size = size
+        if children is None:
+            children = []
+        self.children = children
+
+def total_size(node):
+    total = node.size
+    for child in node.children:
+        total += total_size(child)
+    return total
+
+def show(node, depth):
+    print("  " * depth + node.name, total_size(node))
+    for child in node.children:
+        show(child, depth + 1)
+
+home = Node("home", 0, [
+    Node("photos", 0, [Node("beach.jpg", 300), Node("cat.jpg", 200)]),
+    Node("docs", 0, [Node("cv.pdf", 50), Node("notes", 0, [Node("list.txt", 2)])]),
+    Node("song.mp3", 400),
+])
+show(home, 0)
+```
+1-7: Each node has a name, its own size (0 for a folder) and a list of children.
+9-13: A node's total is its own size plus the totals of everything below it. A file has no children, so its total is its own size.
+15-18: Print each node, indented by its depth, with its total size. This works out each folder's total separately, so a big tree would be better served by `total_size` storing its answers; here the tree is small.
+20-24: home holds two folders and a file; docs holds a file and another folder.
+25: home's 952 is photos' 500 plus docs' 52 plus the song's 400.
+
+=== example: A comment thread
+intro: A comment and its replies, where each reply can get replies of its own. Three recursive functions answer questions about the thread.
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def count(node):
+    total = 1
+    for child in node.children:
+        total += count(child)
+    return total
+
+def height(node):
+    best = -1
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+
+def most_replies(node):
+    best = node
+    for child in node.children:
+        candidate = most_replies(child)
+        if len(candidate.children) > len(best.children):
+            best = candidate
+    return best
+
+thread = Node("Great post!", [
+    Node("Thanks!", [Node("You're welcome")]),
+    Node("I disagree", [
+        Node("Why?", [Node("It's too long", [Node("Fair point")])]),
+        Node("Same here"),
+        Node("Me too"),
+    ]),
+])
+print(count(thread) - 1, height(thread))
+print(most_replies(thread).val)
+```
+1-6: An n-ary node: a value and a list of children.
+8-18: `count` and `height` from this lesson.
+20-26: Returns the node with the most direct replies. Each child's subtree reports its own winner, and the node keeps whichever has more children, starting from itself.
+28-35: The original comment has 2 replies. "I disagree" has 3, and one of those starts a chain of replies 2 deep.
+36: 9 comments in all, so 8 replies. The deepest reply, "Fair point", is 4 levels below the original comment.
+37: "I disagree" has 3 direct replies, more than any other comment.
+
+=== animation: Counting an org chart
+view: tree root kids=children ptr=node
+callstack
+intro: `count` on an org chart of 6 people. Each call starts at 1 for its own person, then adds the count from each child in turn. Watch the leaves return 1 straight away.
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def count(node):
+    total = 1
+    for child in node.children:
+        total += count(child)
+    return total
+
+root = Node("Ann", [Node("Ben", [Node("Dan"), Node("Eve")]), Node("Cat", [Node("Fay")])])
+print(count(root))
+```
+1: The n-ary node class.
+3: A new node for {val}.
+4: Were any children given? {children is not None}.
+5: No: give this node a fresh, empty list.
+6: {val} has {len(children)} {'child' if len(children) == 1 else 'children'}.
+8: Defines count. Nothing runs yet.
+9: A call of count for {node.val}: the total starts at 1, for {node.val}.
+10: Take {node.val}'s next child, if any are left.
+11: Count {child.val}'s part of the chart, and add it to {node.val}'s total, {total} so far.
+12: {node.val}'s part of the chart has {total} {'person' if total == 1 else 'people'}.
+14: Ann at the top; Ben and Cat report to her; Dan and Eve report to Ben, and Fay to Cat.
+15: Count from the root. When every call has come back, 6 is printed.
+
+=== animation: Measuring a height
+view: tree root kids=children ptr=node
+callstack
+intro: `height` on a tree whose middle branch goes deepest. Each node starts `best` at −1 and keeps the tallest height it gets back from its children.
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def height(node):
+    best = -1
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+
+root = Node("a", [Node("b"), Node("c", [Node("d", [Node("e")])]), Node("f")])
+print(height(root))
+```
+1: The n-ary node class.
+3: A new node for {val}.
+4: Were any children given? {children is not None}.
+5: No: give this node a fresh, empty list.
+6: {val} has {len(children)} {'child' if len(children) == 1 else 'children'}.
+8: Defines height. Nothing runs yet.
+9: A call of height for {node.val}. No child seen yet, so best starts at -1.
+10: Take {node.val}'s next child, if any are left.
+11: Get {child.val}'s height and keep the bigger of it and {best}.
+12: {node.val}'s height is {best} + 1 = {best + 1}.
+14: a has three children; c's branch goes down through d to e.
+15: The longest path is a → c → d → e: 3 edges.
+
+=== task: mcq easy
+title: Where the children go
+prompt: How does a node in an n-ary tree keep track of its children?
+* In a list, so that it can have any number of them :: Right. A leaf has an empty list.
+- In two fields, `left` and `right` :: That's a binary tree, which allows at most two children.
+- In a set :: A set has no order, so the children couldn't be kept in a fixed order, like the files in a folder.
+- In a dictionary from each child to its parent :: That stores links upwards. An n-ary node keeps links down to its children.
+hint: The number of children isn't fixed.
+hint: Which Python structure grows to any length and keeps an order?
+right: Each node's `children` list holds links to its children, in order. Any number fits, including none.
+wrong: An n-ary node has a `children` list: it can hold any number of child nodes, in order, and it's empty for a leaf.
+
+=== task: predict easy
+title: A small team
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+team = Node("Mia", [Node("Leo"), Node("Ava", [Node("Kai")]), Node("Zoe")])
+print(len(team.children), team.children[1].val, team.children[1].children[0].val, len(team.children[2].children))
+```
+wrong[3 Leo Kai 0]: `children[1]` is the second child: Ava. Indexes start at 0.
+wrong[4 Ava Kai 0]: Kai is Ava's child, not Mia's, so Mia has 3 children.
+wrong[3 Ava Kai 1]: Zoe was made without children, so her list is empty: 0.
+hint: Mia's list holds Leo, Ava and Zoe.
+hint: Ava's list holds Kai.
+right: `3 Ava Kai 0`: Mia has 3 children, the second is Ava, Ava's first child is Kai, and Zoe is a leaf.
+wrong: Mia's children are [Leo, Ava, Zoe]: 3. children[1] is Ava, whose children[0] is Kai. children[2] is Zoe, with an empty list.
+
+=== task: cells easy
+title: How many children?
+prompt: The **degree** of a node is its number of children. What is the degree of each node?
+
+```text
+            A
+       /    |    \
+      B     C     D
+    / | \         |
+   E  F  G        H
+```
+labels: A | B | C | D | E
+answer: 3 | 3 | 0 | 1 | 0
+wrong[3 | 3 | 0 | 1 | 1]: E is a leaf: it has no children, so its degree is 0.
+wrong[7 | 3 | 0 | 1 | 0]: The degree counts only the direct children: A has B, C and D.
+hint: Count the lines going down from each node.
+hint: A leaf has degree 0.
+right: 3, 3, 0, 1 and 0: the length of each node's children list.
+wrong: A has B, C and D (3). B has E, F and G (3). C has none (0). D has H (1). E has none (0).
+
+=== task: code easy
+title: Add up an n-ary tree
+prompt: Write `total(node)` that returns the sum of all the values in the n-ary tree whose root is `node`. The tree is never empty.
+
+For example, `total(Node(1, [Node(2), Node(3), Node(4)]))` returns 10.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def total(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def total(node):
+    result = node.val
+    for child in node.children:
+        result += total(child)
+    return result
+```
+tests:
+- total(Node(5))
+- total(Node(1, [Node(2), Node(3), Node(4)]))
+- total(Node(10, [Node(-3, [Node(2)]), Node(1)]))
+- total(Node(0, [Node(0, [Node(7)])]))
+fail[1]: A single node adds up to its own value.
+fail[2]: 1 + 2 + 3 + 4 = 10: add every child's total to the node's own value.
+fail[3]: Go all the way down: 10 − 3 + 2 + 1 = 10.
+fail[4]: 7 is two levels down.
+hint: Start with the node's own value.
+hint: For each child, add `total(child)`. A leaf's loop doesn't run, so it returns its own value.
+right: One loop over the children: each node adds its value to its children's totals. O(n).
+wrong: Start from `node.val`, add `total(child)` for every child, and return the result.
+
+=== task: fill easy
+title: Count each child
+prompt: Fill in the blank so that `count` returns the number of nodes, and the program prints:
+
+```output
+5
+```
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def count(node):
+    total = 1
+    for child in node.children:
+        total += count(??)
+    return total
+
+print(count(Node("a", [Node("b", [Node("d")]), Node("c"), Node("e")])))
+```
+answer: child
+wrong[node.children]: `count` expects one node, but this passes the whole list, which has no `.children`: `AttributeError: 'list' object has no attribute 'children'`.
+hint: The loop gives you one child at a time.
+hint: Each child's subtree must be counted.
+right: `count(child)` counts each child's subtree, and adding them to 1 for the node itself gives 5.
+wrong: Pass the loop variable, `child`: count that child's subtree and add it to the total.
+
+=== task: multi easy
+title: True for n-ary trees
+prompt: Choose **every** true statement about n-ary trees.
+* A leaf's list of children is empty :: Right. That empty list is what ends the recursion.
+* A node can have any number of children, including none :: Right. That's what the list is for.
+* The root is the only node with no parent :: Right. Every other node is in exactly one children list.
+- A node can appear in two different children lists :: Then it would have two parents, which isn't a tree.
+- Every node needs at least one child :: Leaves have none.
+hint: What does a leaf's `children` hold?
+hint: How many parents can a node have in a tree?
+right: Empty list for a leaf, any number of children otherwise, and exactly one parent for every node but the root.
+wrong: A leaf has an empty list; nodes can have any number of children; and each node except the root is in exactly one parent's list.
+
+=== task: parsons easy
+title: The height
+prompt: Arrange the lines so that `height` returns the height of an n-ary tree, and the program prints:
+
+```output
+2 0
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def height(node):
+    best = -1
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+
+print(height(Node("a", [Node("b", [Node("c")]), Node("d")])), height(Node("x")))
+```
+distractors:
+```python
+    best = 0
+        best = height(child)
+```
+hint: A leaf must come out as 0, and its loop never runs.
+hint: Keep the tallest child's height, not the last one's.
+right: a → b → c is 2 edges, and a single node has height 0: starting at −1 and keeping the maximum gives both.
+wrong: Start `best` at −1, keep the larger of `best` and each child's height, and return `best + 1`.
+
+=== task: predict easy
+title: Counting a subtree
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def count(node):
+    total = 1
+    for child in node.children:
+        total += count(child)
+    return total
+
+t = Node(1, [Node(2), Node(3, [Node(4), Node(5), Node(6)]), Node(7)])
+print(count(t), count(t.children[1]), len(t.children))
+```
+wrong[7 3 3]: `count` includes the node it starts at: 3, 4, 5 and 6 make 4.
+wrong[6 4 3]: The root, 1, counts too: 7 nodes in all.
+wrong[7 4 6]: `len(t.children)` counts only the root's direct children: 2, 3 and 7.
+hint: `t.children[1]` is the node 3.
+hint: `count` counts a whole subtree; `len` counts one list.
+right: `7 4 3`: the whole tree, the subtree of 3, and the root's 3 direct children.
+wrong: The tree has 7 nodes. 3's subtree is 3, 4, 5 and 6: 4. The root's list holds 2, 3 and 7: 3.
+
+=== task: order easy
+title: Counting step by step
+prompt: Put the steps of `count(node)` for an n-ary tree in order.
+items:
+- Start the total at 1, for the node itself
+- Take each child in turn
+- Add the count of that child's subtree to the total
+- After the last child, return the total
+hint: The node counts itself before looking at its children.
+hint: The total is returned only after every child has been counted.
+right: 1 for itself, plus each child's subtree, then return: a leaf skips the loop and returns 1.
+wrong: Start at 1, loop over the children adding each child's count, and return the total when the loop ends.
+
+=== task: mcq easy
+title: A shared default
+prompt: What goes wrong if a node class is written `def __init__(self, val, children=[]):`?
+* Every node made without a children list shares the same list, so adding a child to one of them adds it to all of them :: Right. Python makes the default list once, when the function is defined.
+- Python doesn't allow a list as a default value :: It allows it, which is why the bug is hard to spot.
+- The list is emptied every time the node is used :: The opposite: the same list is kept and reused.
+- Nothing: it does the same as `children=None` and making a list inside :: With None, each node gets its own new list; with `[]`, they share one.
+hint: When does Python create a default value: once, or at every call?
+hint: What happens if two nodes hold the same list object?
+right: The default `[]` is made once and reused by every call that leaves it out. Writing `children=None` and making a new list inside gives each node its own.
+wrong: A default value is created once, when the `def` runs. Every node that relies on it gets that one list, so they all share their children.
+
+=== task: code medium
+title: The height of an n-ary tree
+prompt: Write `height(node)` that returns the height of an n-ary tree: the number of edges on the longest path from the root down to a leaf. A single node has height 0. The tree is never empty.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def height(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def height(node):
+    best = -1
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+```
+tests:
+- height(Node(1))
+- height(Node(1, [Node(2), Node(3)]))
+- height(Node(1, [Node(2), Node(3, [Node(4, [Node(5)])]), Node(6)]))
+- height(Node(1, [Node(2, [Node(3)])]))
+fail[2]: Both children are leaves: 1 edge down.
+fail[3]: The longest path is 1 → 3 → 4 → 5: 3 edges. Keep the tallest child, not the first or the last.
+fail[4]: A chain of 3 nodes has height 2.
+error[ValueError]: `max` of an empty list fails for a leaf. Start `best` at −1 and compare one child at a time.
+hint: Start `best` at −1.
+hint: For each child, `best = max(best, height(child))`.
+hint: Return `best + 1`: a leaf gives −1 + 1 = 0.
+right: Each node is 1 edge above its tallest child. Starting at −1 makes leaves 0 without a special case: O(n).
+wrong: Keep the largest height among the children (−1 if there are none) and add 1 for the edge down to it.
+
+=== task: code medium
+title: The leaves in order
+prompt: Write `leaf_values(node)` that returns a list of the values of all the leaves in an n-ary tree, from left to right. The tree is never empty.
+
+For example, for the org chart Ann → (Ben → (Dan, Eve), Cat → (Fay → (Gus)), Hal), it returns `['Dan', 'Eve', 'Gus', 'Hal']`.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def leaf_values(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def leaf_values(node):
+    if not node.children:
+        return [node.val]
+    result = []
+    for child in node.children:
+        result += leaf_values(child)
+    return result
+```
+tests:
+- leaf_values(Node(1))
+- leaf_values(Node(1, [Node(2), Node(3)]))
+- leaf_values(Node("Ann", [Node("Ben", [Node("Dan"), Node("Eve")]), Node("Cat", [Node("Fay", [Node("Gus")])]), Node("Hal")]))
+- leaf_values(Node(1, [Node(2, [Node(3, [Node(4)])])]))
+fail[1]: A single node is a leaf: [1].
+fail[2]: The root has children, so it isn't a leaf; its children are.
+fail[3]: Collect the leaves of each child's subtree in order: Dan and Eve from Ben, Gus from Cat, then Hal.
+fail[4]: A chain has one leaf, at the bottom.
+hint: A node with no children is a leaf: return a list holding its value.
+hint: Otherwise, start an empty list and add the leaves of each child's subtree in turn: `result += leaf_values(child)`.
+right: Each leaf reports itself, and each parent joins its children's lists in order, so the leaves come out from left to right.
+wrong: Return `[node.val]` for a leaf. For any other node, join together the leaf lists of its children, first child first.
+
+=== task: predict medium
+title: An outline
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def show(node, depth):
+    print("  " * depth + node.val)
+    for child in node.children:
+        show(child, depth + 1)
+
+show(Node("src", [Node("app", [Node("main.py")]), Node("README")]), 0)
+```
+wrong[src\n  app\n  README\n    main.py]: A child's whole subtree is printed before the next child: main.py comes before README.
+wrong[src\napp\nmain.py\nREADME]: Each line is indented by two spaces for every level of depth.
+wrong[src\n  app\n  main.py\n  README]: main.py is a level below app: depth 2, four spaces.
+hint: Each call prints its own node first, then each child's subtree in turn.
+hint: The indent is two spaces per level.
+right: The outline lists each folder, then everything inside it, indented one level more.
+wrong: show(src, 0) prints src, then show(app, 1) prints "  app" and show(main.py, 2) prints "    main.py". Last, show(README, 1) prints "  README".
+
+=== task: cells medium
+title: Heights of subtrees
+prompt: What is the height of the subtree that starts at each of these nodes?
+
+```text
+          r
+       /  |  \
+      a   b   c
+     / \      |
+    d   e     f
+              |
+              g
+```
+labels: r | a | b | c | f
+answer: 3 | 1 | 0 | 2 | 1
+wrong[4 | 2 | 1 | 3 | 2]: That counts nodes. Height counts edges, so a leaf like b has height 0.
+wrong[3 | 2 | 0 | 2 | 1]: a's children d and e are leaves, so a is only 1 above them.
+hint: A leaf has height 0.
+hint: Each node is 1 more than its tallest child.
+right: 3, 1, 0, 2, 1: the deepest path is r → c → f → g.
+wrong: g: 0, so f: 1 and c: 2. d and e: 0, so a: 1. b: 0. r: 1 + max(1, 0, 2) = 3.
+
+=== task: fill medium
+title: Where best starts
+prompt: Fill in the blank so that `height` gives a leaf the height 0, and the program prints:
+
+```output
+2 0
+```
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def height(node):
+    best = ??
+    for child in node.children:
+        best = max(best, height(child))
+    return best + 1
+
+print(height(Node("a", [Node("b"), Node("c", [Node("d")])])), height(Node("z")))
+```
+answer: -1
+wrong[0]: A leaf's loop doesn't run, so it would return 0 + 1 = 1, and every height would be 1 too big: `3 1`.
+hint: For a leaf, `best` is never changed.
+hint: A leaf must return `best + 1` = 0.
+right: −1 + 1 = 0 for a leaf, and every parent adds one edge to its tallest child: a → c → d is 2.
+wrong: A leaf returns `best + 1` with `best` untouched, so `best` must start at −1.
+
+=== task: mcq medium
+title: How many loop steps?
+prompt: `count` runs on an n-ary tree of n nodes. Over all the calls together, how many times does the line `total += count(child)` run?
+* n − 1: once for every edge, because every node except the root is exactly one node's child :: Right.
+- n: once for every node :: The root is nobody's child, so it's never counted by this line.
+- n²: each node loops over every other node :: Each node loops only over its own children.
+- It depends on how many children the widest node has :: However the children are spread out, the lists hold n − 1 nodes in total.
+hint: The line runs once for each child in each list.
+hint: Which node is in no children list?
+right: The children lists hold every node except the root, so the loop runs n − 1 times in all: count is O(n) whatever the shape.
+wrong: Every node but the root appears in exactly one parent's children list, and the line runs once per entry: n − 1 times.
+
+=== task: predict medium
+title: The shared list
+code:
+```python
+class Node:
+    def __init__(self, val, children=[]):
+        self.val = val
+        self.children = children
+
+a = Node("a")
+b = Node("b")
+a.children.append(Node("c"))
+b.children.append(Node("d"))
+print(len(a.children), [x.val for x in b.children])
+```
+wrong[1 ['d']]: Both nodes were made without a children list, so both use the one default list: c and d both went into it.
+wrong[2 ['d']]: b's list is the same list as a's, so it holds c as well as d.
+wrong[1 ['c', 'd']]: a's list is that same shared list, so it holds 2 items too.
+hint: The default `[]` is made once, when the `def` runs.
+hint: a.children and b.children are the same list.
+right: `2 ['c', 'd']`: one shared list for every node made without children. That's why the lesson's class uses `children=None`.
+wrong: a and b both got the default list, which is a single list. Appending c through a and d through b puts both into it, so each node sees 2 children.
+
+=== task: multi medium
+title: Wide and deep
+prompt: Choose **every** true statement about n-ary trees with n nodes.
+* A star, a root with n − 1 children, has height 1 :: Right. Every leaf is one edge from the root.
+* A chain, where each node has one child, has height n − 1 :: Right. It's a line.
+* `count` is O(n) whatever the shape :: Right. It visits each node once and follows each edge once.
+- A wide tree has more edges than a deep tree with the same number of nodes :: Every tree of n nodes has n − 1 edges.
+- The node with the most children always has the most nodes below it :: A node with one child can sit above a long chain.
+hint: How many edges does any tree of n nodes have?
+hint: Compare the star and the chain from the lesson.
+right: Shape changes the height (1 for a star, n − 1 for a chain) but not the number of edges, and not the O(n) cost of visiting everything.
+wrong: Star: height 1. Chain: height n − 1. Both have n − 1 edges, and count is O(n) for both. Having more children doesn't mean having more descendants.
+
+=== task: parsons medium
+title: Find the depth
+prompt: Arrange the lines so that `depth_of` passes the depth down and returns the depth of a value, or −1, and the program prints:
+
+```output
+2 -1
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def depth_of(node, target, depth):
+    if node.val == target:
+        return depth
+    for child in node.children:
+        found = depth_of(child, target, depth + 1)
+        if found != -1:
+            return found
+    return -1
+
+team = Node("Mia", [Node("Leo"), Node("Ava", [Node("Kai")]), Node("Zoe")])
+print(depth_of(team, "Kai", 0), depth_of(team, "Zed", 0))
+```
+distractors:
+```python
+            return found + 1
+        found = depth_of(child, target, depth)
+```
+hint: Each child is one level deeper than its parent.
+hint: `found` is already the full depth, so pass it straight up.
+right: Kai is found at depth 2 (Mia → Ava → Kai), and that number comes straight back up. Zed isn't anywhere, so −1.
+wrong: Return `depth` when the node holds the target. Otherwise search each child with `depth + 1`, return the first answer that isn't −1, and return −1 after the loop.
+
+=== task: code medium
+title: The widest node
+prompt: Write `widest(node)` that returns the largest number of children that any single node in the tree has. A tree of one node returns 0.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def widest(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def widest(node):
+    best = len(node.children)
+    for child in node.children:
+        best = max(best, widest(child))
+    return best
+```
+tests:
+- widest(Node(1))
+- widest(Node(1, [Node(2), Node(3)]))
+- widest(Node(1, [Node(2, [Node(4), Node(5), Node(6)]), Node(3)]))
+- widest(Node(1, [Node(2, [Node(3, [Node(4)])])]))
+fail[2]: The root has 2 children.
+fail[3]: The widest node isn't the root: node 2 has 3 children.
+fail[4]: In a chain, every node has at most 1 child.
+hint: Start with the node's own number of children, `len(node.children)`.
+hint: Compare it with the widest node in each child's subtree, keeping the biggest.
+right: Each node offers its own degree and its subtrees' answers, and the largest wins: O(n).
+wrong: Start from `len(node.children)`, then keep the larger of that and `widest(child)` for every child.
+
+=== task: code hard
+title: Depth, answered upwards
+prompt: Write `depth_of(node, target)` that returns the depth of the value `target` in an n-ary tree (the root has depth 0), or −1 if it isn't there. Don't pass the depth down: if a child's subtree finds the value at depth d, it's at depth d + 1 from this node. `make()` builds the org chart from this lesson. Values are all different.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def depth_of(node, target):
+    # your code here
+    return -1
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def depth_of(node, target):
+    if node.val == target:
+        return 0
+    for child in node.children:
+        d = depth_of(child, target)
+        if d != -1:
+            return d + 1
+    return -1
+```
+tests:
+- depth_of(make(), "Ann")
+- depth_of(make(), "Eve")
+- depth_of(make(), "Gus")
+- depth_of(make(), "Zed")
+- depth_of(make(), "Hal")
+fail[1]: The root is at depth 0.
+fail[2]: Eve is 2 edges down: Ann → Ben → Eve.
+fail[3]: Gus is 3 edges down: Ann → Cat → Fay → Gus. The 0 found at Gus becomes 1, 2 and then 3 on the way up.
+fail[4]: Zed isn't in the chart: −1. Don't add 1 to −1.
+hint: If this node holds the target, return 0.
+hint: Ask each child in turn. As soon as one returns d other than −1, return d + 1.
+hint: If no child finds it, return −1.
+right: The depth is built on the way back up, one level per return. −1 means "not here" and is passed over, never added to.
+wrong: Return 0 at the target. Otherwise try each child; the first one that finds it at depth d means depth d + 1 here. Return −1 if none does.
+
+=== task: code hard
+title: How many at each depth?
+prompt: Write `count_at_depth(node, d)` that returns how many nodes of an n-ary tree are exactly d edges below `node`. `make()` builds the org chart from this lesson.
+
+For example, `count_at_depth(make(), 2)` returns 3: Dan, Eve and Fay.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def count_at_depth(node, d):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def count_at_depth(node, d):
+    if d == 0:
+        return 1
+    total = 0
+    for child in node.children:
+        total += count_at_depth(child, d - 1)
+    return total
+```
+tests:
+- count_at_depth(make(), 0)
+- count_at_depth(make(), 1)
+- count_at_depth(make(), 2)
+- count_at_depth(make(), 3)
+- count_at_depth(make(), 4)
+fail[1]: Depth 0 is the node itself: 1.
+fail[2]: Ben, Cat and Hal are 1 edge down.
+fail[3]: Dan, Eve and Fay are 2 edges down.
+fail[4]: Only Gus is 3 edges down.
+fail[5]: Nothing is 4 edges down: 0.
+hint: When d is 0, this node is the one being counted: return 1.
+hint: Otherwise, a node d edges below this one is d − 1 edges below one of its children.
+hint: Add up `count_at_depth(child, d - 1)` over the children.
+right: Each level down takes 1 off d, and only the calls that reach d = 0 count anything. Leaves with d left over return 0 because their loop doesn't run.
+wrong: Return 1 when d is 0. Otherwise add up, over the children, the number of nodes d − 1 edges below each child.
+
+=== task: code hard
+title: Size of every folder
+prompt: In this tree of folders and files, each node has a `name`, its own `size` and a list of `children`. Write `folder_sizes(node)` that returns a dictionary from the name of every **folder** (a node with children) to its total size: its own size plus everything inside it. Do it in one pass, with a helper that returns a node's total and records each folder's total in the dictionary on the way. `make_home()` builds the folders from this lesson's example.
+starter:
+```python
+class Node:
+    def __init__(self, name, size=0, children=None):
+        self.name = name
+        self.size = size
+        if children is None:
+            children = []
+        self.children = children
+
+def make_home():
+    return Node("home", 0, [
+        Node("photos", 0, [Node("beach.jpg", 300), Node("cat.jpg", 200)]),
+        Node("docs", 0, [Node("cv.pdf", 50), Node("notes", 0, [Node("list.txt", 2)])]),
+        Node("song.mp3", 400),
+    ])
+
+def folder_sizes(node):
+    sizes = {}
+    # your code here
+    return sizes
+```
+solution:
+```python
+class Node:
+    def __init__(self, name, size=0, children=None):
+        self.name = name
+        self.size = size
+        if children is None:
+            children = []
+        self.children = children
+
+def make_home():
+    return Node("home", 0, [
+        Node("photos", 0, [Node("beach.jpg", 300), Node("cat.jpg", 200)]),
+        Node("docs", 0, [Node("cv.pdf", 50), Node("notes", 0, [Node("list.txt", 2)])]),
+        Node("song.mp3", 400),
+    ])
+
+def fill(node, sizes):
+    total = node.size
+    for child in node.children:
+        total += fill(child, sizes)
+    if node.children:
+        sizes[node.name] = total
+    return total
+
+def folder_sizes(node):
+    sizes = {}
+    fill(node, sizes)
+    return sizes
+```
+tests:
+- sorted(folder_sizes(make_home()).items())
+- sorted(folder_sizes(Node("a.txt", 5)).items())
+- sorted(folder_sizes(Node("top", 1, [Node("x", 2), Node("sub", 3, [Node("y", 4)])])).items())
+fail[1]: photos is 300 + 200 = 500, notes is 2, docs is 50 + 2 = 52, and home is 500 + 52 + 400 = 952.
+fail[2]: A single file isn't a folder, so there's nothing to record.
+fail[3]: Folders can have sizes of their own too: sub is 3 + 4 = 7, and top is 1 + 2 + 7 = 10.
+hint: Write a helper `fill(node, sizes)` that returns the node's total: its own size plus `fill(child, sizes)` for every child.
+hint: Before returning, if the node has children, record `sizes[node.name] = total`.
+hint: `folder_sizes` makes the dictionary, calls the helper on the root, and returns the dictionary.
+right: Each total is worked out once, from the bottom up, and used both by the parent and by the dictionary: O(n) for the whole tree.
+wrong: Let a helper return each node's total size (its own size plus its children's totals) and store the total in the dictionary whenever the node has children.
+
+=== task: code hard
+title: The chain of command
+prompt: Write `path_to(node, target)` that returns the list of values from the root of an n-ary tree down to the value `target`, root first, or None if the value isn't in the tree. `make()` builds the org chart from this lesson. Values are all different.
+
+For example, `path_to(make(), "Gus")` returns `['Ann', 'Cat', 'Fay', 'Gus']`.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def path_to(node, target):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Node("Ann", [
+        Node("Ben", [Node("Dan"), Node("Eve")]),
+        Node("Cat", [Node("Fay", [Node("Gus")])]),
+        Node("Hal"),
+    ])
+
+def path_to(node, target):
+    if node.val == target:
+        return [node.val]
+    for child in node.children:
+        rest = path_to(child, target)
+        if rest is not None:
+            return [node.val] + rest
+    return None
+```
+tests:
+- path_to(make(), "Gus")
+- path_to(make(), "Ann")
+- path_to(make(), "Eve")
+- path_to(make(), "Zed")
+- path_to(make(), "Hal")
+fail[1]: Gus is below Fay, who is below Cat: ['Ann', 'Cat', 'Fay', 'Gus'].
+fail[2]: The root alone: ['Ann'].
+fail[4]: Zed isn't in the chart: None, not an empty list.
+error[TypeError]: A child that didn't find the value returns None, and `[node.val] + None` fails. Check for None first.
+hint: At the target, return a list holding its value.
+hint: Ask each child for its path. The first one that isn't None gets this node's value put in front: `[node.val] + rest`.
+hint: If no child finds it, return None.
+right: The path is built on the way back up: each node on it adds its value to the front. The search stops at the first child that finds the value.
+wrong: Return `[node.val]` at the target. Otherwise try the children in turn, and when one returns a path, put this node's value in front of it. Return None if none does.
+
+=== task: predict hard
+title: Which one is found first?
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def depth_of(node, target, depth):
+    if node.val == target:
+        return depth
+    for child in node.children:
+        found = depth_of(child, target, depth + 1)
+        if found != -1:
+            return found
+    return -1
+
+t = Node("x", [Node("a", [Node("b", [Node("k")])]), Node("k")])
+print(depth_of(t, "k", 0), depth_of(t, "b", 0))
+```
+wrong[1 2]: The loop searches the first child's whole subtree before it tries the second child, so the k below b is found first, at depth 3.
+wrong[3 3]: b is 2 edges down: x → a → b.
+wrong[-1 2]: k is in the tree twice; the search returns the first one it reaches.
+hint: The first child, a, is searched completely before the second child, k.
+hint: The k below b is 3 edges down: x → a → b → k.
+right: `3 2`: the search goes deep into the first child before trying the next, so it can find a deeper copy before a shallower one. Finding the shallowest copy needs a level-by-level search instead.
+wrong: x's first child is a. Searching a's subtree reaches b and then k at depth 3, and that answer is returned at once. b is at depth 2.
+
+=== task: predict hard
+title: Flipping every level
+code:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def flip(node):
+    node.children.reverse()
+    for child in node.children:
+        flip(child)
+
+def show(node, depth):
+    print("  " * depth + node.val)
+    for child in node.children:
+        show(child, depth + 1)
+
+t = Node("a", [Node("b", [Node("d"), Node("e")]), Node("c")])
+flip(t)
+show(t, 0)
+```
+wrong[a\n  c\n  b\n    d\n    e]: `flip` is called on every node, so b's children are reversed too: e before d.
+wrong[a\n  b\n    d\n    e\n  c]: `reverse()` changes the list in place, so the tree really is flipped before it's printed.
+wrong[a\n  c\n  b\n    e]: Reversing a list doesn't remove anything: d is still there, after e.
+hint: `flip` reverses the root's list, then flips each child's subtree.
+hint: After flipping: a has [c, b], and b has [e, d].
+right: Every children list is reversed, so the outline is the mirror image: c before b, and e before d.
+wrong: flip(a) makes a's children [c, b], then flips c (no children) and b, whose children become [e, d]. show prints a, c, b, e, d with their indents.
+
+=== task: cells hard
+title: Which calls finish first?
+prompt: `count` runs on this tree, visiting children from left to right. In what order do the calls for the 7 nodes **return**?
+
+```text
+        1
+     /  |  \
+    2   3   4
+   / \      |
+  5   6     7
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th | 7th
+answer: 5 | 6 | 2 | 3 | 7 | 4 | 1
+wrong[1 | 2 | 5 | 6 | 3 | 4 | 7]: That's the order the calls **start** in. A call returns only after all of its children's calls have returned.
+wrong[5 | 6 | 7 | 2 | 3 | 4 | 1]: Calls don't finish level by level: 2 returns as soon as 5 and 6 have, before 4's subtree has even started.
+hint: A call returns after all its children's calls have returned.
+hint: The children are visited from left to right.
+right: 5, 6, 2, 3, 7, 4, 1: every node finishes after its whole subtree, and the root finishes last. This is postorder.
+wrong: count(1) calls count(2), which finishes 5 and 6 and then returns. Then 3 returns. count(4) finishes 7 and then returns. count(1) returns last.
+
+=== task: mcq hard
+title: Levels of management
+prompt: A company of 1,000 people is organised as a tree, and no manager has more than 10 direct reports. What is the smallest height its org chart can have?
+* 3 :: Right. Levels can hold at most 1, 10, 100 and 1,000 people: 1 + 10 + 100 = 111 is too few, but four levels hold up to 1,111.
+- 2 :: Three levels (heights 0 to 2) hold at most 1 + 10 + 100 = 111 people.
+- 100 :: That's how many people the third level can hold, not a height.
+- 999 :: That's a chain, the tallest possible chart, not the shortest.
+hint: Each level can hold at most 10 times as many people as the level above it.
+hint: Add up 1 + 10 + 100 + ... until you reach 1,000.
+right: Height 3 gives four levels holding up to 1,111 people. Many children per node make trees shallow: the height grows like log₁₀ n.
+wrong: With up to 10 reports each, the levels hold at most 1, 10, 100, 1,000, ... people. Three levels hold only 111, so a fourth is needed: height 3.
+
+=== task: multi hard
+title: Recursion over children
+prompt: Choose **every** true statement about the recursive n-ary tree functions in this lesson.
+* They need no `if node is None` check: a leaf's loop runs zero times :: Right. The empty list is the base case.
+* `height` must avoid `max` of an empty list, for example by starting `best` at −1 :: Right. `max([])` raises a ValueError.
+* `depth_of` can stop as soon as one child's subtree finds the value :: Right. The remaining children are never searched.
+* Together, the loops over children run once per edge: n − 1 times :: Right. That's why they're O(n).
+- `count` has to check `if node is None` first :: Children are never None: a missing child is not in the list at all.
+- A node's children must be kept in sorted order :: The order is up to the program, like the files in a folder.
+hint: What does a leaf's `children` list look like?
+hint: How many entries are there in all the children lists together?
+right: Empty lists end the recursion, `max` needs a starting value, searches can stop early, and the loops follow each edge once.
+wrong: There are no None children, so no None checks. Start `height` at −1, return as soon as a search succeeds, and count n − 1 loop steps for the n − 1 edges.
+
+=== task: parsons hard
+title: Counting each level
+prompt: Arrange the lines so that `per_level` counts the nodes on each level of an n-ary tree, and the program prints:
+
+```output
+[1, 3, 3]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def per_level(node, depth, counts):
+    if depth == len(counts):
+        counts.append(0)
+    counts[depth] += 1
+    for child in node.children:
+        per_level(child, depth + 1, counts)
+
+counts = []
+per_level(Node(1, [Node(2, [Node(5), Node(6)]), Node(3), Node(4, [Node(7)])]), 0, counts)
+print(counts)
+```
+distractors:
+```python
+        per_level(child, depth, counts)
+    counts[depth] = 1
+```
+hint: The first time a depth is reached, `counts` needs a new 0 for it.
+hint: Each child is one level deeper, and each node adds 1 to its own level.
+right: 1 on level 0, then 2, 3 and 4 on level 1, then 5, 6 and 7 on level 2.
+wrong: Add a 0 to `counts` the first time a depth is reached, add 1 for this node, and pass `depth + 1` to every child.
