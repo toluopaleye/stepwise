@@ -1,0 +1,1075 @@
+=== lesson
+id: ds-arrays-static
+title: Static arrays
+summary: A static array has a fixed number of slots, chosen when it's made. You'll simulate one with a Python list that never grows, keep track of how many slots are in use, read and write by index with a bounds check, insert and delete by shifting items by hand, and see what to do when the array is full.
+
+=== learn
+### Fixed size, chosen up front
+A **static array** gets all its slots when it's created, and keeps exactly that many forever, like an egg box with 6 cups or a row of 10 cinema seats. In languages like C and Java, you say the size when you make the array. Python's lists can grow, but a list that you never append to or remove from behaves the same way. `[None] * 5` makes a list of 5 slots, each holding `None`:
+```python
+slots = [None] * 5
+slots[0] = "Ann"
+slots[1] = "Ben"
+print(slots, len(slots))
+```
+```output
+['Ann', 'Ben', None, None, None] 5
+```
+`None` marks a slot that's free. Writing into a slot doesn't change the size: there are always 5.
+
+### Capacity and count
+A static array needs two numbers:
+
+- its **capacity**: how many slots it has, which never changes,
+- its **count**: how many slots are in use, filled from the front.
+
+| Index | 0 | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- | --- |
+| Slot | "Ann" | "Ben" | None | None | None |
+| | in use | in use | free | free | free |
+
+Here the capacity is 5 and the count is 2. The used slots are always 0 to count − 1, and the next free slot is at index count.
+
+### Reading and writing, with a bounds check
+Reading or writing slot i is O(1), as with any array. But only slots 0 to count − 1 hold real items, so a careful static array checks the index first. Reading outside the used part is a mistake, and the check catches it:
+```python
+def get(slots, count, i):
+    if i < 0 or i >= count:
+        return None
+    return slots[i]
+
+slots = ["Ann", "Ben", None, None, None]
+print(get(slots, 2, 1), get(slots, 2, 3), get(slots, 2, -1))
+```
+```output
+Ben None None
+```
+Python's own lists do the same check and stop with `IndexError` when an index is out of range.
+
+### Adding at the end
+To add an item, put it in the next free slot, which is at index count, then add 1 to count: O(1). But when count equals the capacity, there is no free slot:
+```python
+def append(slots, count, x):
+    if count == len(slots):
+        return count
+    slots[count] = x
+    return count + 1
+
+slots = [None] * 3
+count = 0
+for name in ["Ann", "Ben", "Cal", "Dee"]:
+    count = append(slots, count, name)
+print(slots, count)
+```
+```output
+['Ann', 'Ben', 'Cal'] 3
+```
+"Dee" didn't fit: the array was full, so `append` left everything as it was and returned the same count.
+
+### Inserting: shift right, if there's room
+To insert at index i, every used slot from i onwards moves one place right, starting from the last one so nothing is overwritten. That needs one free slot at the end, so a full array can't take an insert either:
+```python
+def insert(slots, count, i, x):
+    if count == len(slots):
+        return count
+    j = count
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return count + 1
+
+slots = ["Ann", "Cal", None, None]
+count = insert(slots, 2, 1, "Ben")
+print(slots, count)
+```
+```output
+['Ann', 'Ben', 'Cal', None] 3
+```
+Inserting at index i moves count − i items: O(n). Animation 1 shows each move.
+
+### Deleting: shift left and free the last slot
+To delete the item at index i, every used slot after it moves one place left. The last used slot then holds a leftover copy, so it's set back to `None`, and count goes down by 1:
+```python
+def delete(slots, count, i):
+    j = i
+    while j < count - 1:
+        slots[j] = slots[j + 1]
+        j += 1
+    slots[count - 1] = None
+    return count - 1
+
+slots = ["Ann", "Ben", "Cal", None]
+count = delete(slots, 3, 0)
+print(slots, count)
+```
+```output
+['Ben', 'Cal', None, None] 2
+```
+Deleting at index i moves count − i − 1 items: O(n) at the front, O(1) at the end.
+
+### A StaticArray class
+A class can keep the slots and the count together, so they can't get out of step:
+```python
+class StaticArray:
+    def __init__(self, capacity):
+        self.slots = [None] * capacity
+        self.count = 0
+
+    def append(self, x):
+        if self.count == len(self.slots):
+            return False
+        self.slots[self.count] = x
+        self.count += 1
+        return True
+
+    def get(self, i):
+        if i < 0 or i >= self.count:
+            return None
+        return self.slots[i]
+
+seats = StaticArray(2)
+print(seats.append("Ann"), seats.append("Ben"), seats.append("Cal"))
+print(seats.get(1), seats.count, seats.slots)
+```
+```output
+True True False
+Ben 2 ['Ann', 'Ben']
+```
+`append` returns True when the item fitted and False when the array was full, so the caller knows what happened.
+
+### Why "full" is a problem
+A static array can't grow, because the memory right after it may belong to something else. When it's full, there are three choices:
+
+| Choice | What happens | Example |
+| --- | --- | --- |
+| refuse | the new item is turned away | a bus with 50 seats |
+| overwrite | the oldest item is replaced | a "last 10 messages" display (a circular queue, later in this unit) |
+| copy into a bigger array | allocate more slots, copy everything over | a dynamic array: the next lesson |
+
+### When a static array is the right choice
+
+| Operation | Cost |
+| --- | --- |
+| read or write slot i | O(1) |
+| add at the end, if not full | O(1) |
+| insert or delete at index i | O(n): count − i items move |
+| search | O(n) unsorted, O(log n) sorted |
+
+Static arrays fit things whose size is known and never changes: the 7 days of a week, the 64 squares of a chess board, a fixed-size buffer in a small device. They never waste time growing, and they use exactly the memory they need.
+
+=== keypoints
+- A static array has a fixed **capacity**, chosen when it's made; `[None] * 5` makes 5 free slots in Python.
+- The **count** says how many slots are in use: slots 0 to count − 1. The next free slot is at index count.
+- Reading and writing slot i is O(1); a bounds check makes sure 0 ≤ i < count.
+- Adding at the end is O(1), but only while count < capacity: a full static array can't take more.
+- Inserting shifts the used slots right from the end; deleting shifts them left and frees the last one: O(n).
+- When it's full, you can refuse, overwrite the oldest, or copy everything into a bigger array.
+
+=== example: Filling a row of seats
+intro: A StaticArray with 3 seats, and 4 people trying to sit down.
+```python
+class StaticArray:
+    def __init__(self, capacity):
+        self.slots = [None] * capacity
+        self.count = 0
+
+    def append(self, x):
+        if self.count == len(self.slots):
+            return False
+        self.slots[self.count] = x
+        self.count += 1
+        return True
+
+row = StaticArray(3)
+for name in ["Ann", "Ben", "Cal", "Dee"]:
+    if row.append(name):
+        print(name, "sits in seat", row.count - 1)
+    else:
+        print(name, "has no seat")
+print(row.slots)
+```
+1-4: Make all the slots up front and start with none in use.
+6-11: The next free slot is at index `count`. A full array returns False instead.
+13: Three seats, fixed forever.
+14-18: The first three people get seats 0, 1 and 2. Dee arrives when count equals the capacity: no seat.
+19: The array still has exactly 3 slots.
+
+=== example: Insert and delete by hand
+intro: Shifting the used slots to make room and to close a gap, keeping the count up to date.
+```python
+def insert(slots, count, i, x):
+    if count == len(slots):
+        return count
+    j = count
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return count + 1
+
+def delete(slots, count, i):
+    j = i
+    while j < count - 1:
+        slots[j] = slots[j + 1]
+        j += 1
+    slots[count - 1] = None
+    return count - 1
+
+slots = [10, 30, 40, None, None]
+count = 3
+count = insert(slots, count, 1, 20)
+print(slots, count)
+count = delete(slots, count, 0)
+print(slots, count)
+```
+1-3: No free slot, no insert.
+4-7: Move the used slots from the end back to i one place right.
+8-9: Write the new item and count it.
+11-16: Move the slots after i one place left, free the last used slot, and count one fewer.
+18-21: Insert 20 at index 1: 30 and 40 move right.
+22-23: Delete index 0: 20, 30 and 40 move left, and the slot they leave is set back to None.
+
+=== animation: Shifting right to insert
+view: array slots ptr=j
+vars count
+intro: Inserting "Ben" at index 1 of a static array with 2 free slots: the used slots after index 1 move right, starting from the last one.
+```python
+slots = ["Ann", "Cal", "Dee", None, None]
+count = 3
+i = 1
+j = count
+while j > i:
+    slots[j] = slots[j - 1]
+    j -= 1
+slots[i] = "Ben"
+count += 1
+print(slots, count)
+```
+1: Capacity 5, three slots in use.
+2: count is 3, so the next free slot is index 3.
+3: We'll insert at index 1.
+4: Start at the first free slot.
+5: Is slot {j} still to the right of index {i}? {j > i}.
+6: Move {slots[j - 1]!r} from slot {j - 1} into slot {j}.
+7: Step one slot left.
+8: Slot {i} is free now.
+9: One more slot in use.
+10: 2 moves to insert at index 1. Inserting at index 0 would have moved all 3.
+
+=== animation: Appending until full
+view: array slots
+vars count
+intro: Appending names to a static array of capacity 3, until a name doesn't fit.
+```python
+slots = [None] * 3
+count = 0
+for name in ["Ann", "Ben", "Cal", "Dee"]:
+    if count == len(slots):
+        print(name, "doesn't fit")
+    else:
+        slots[count] = name
+        count += 1
+print(slots)
+```
+1: Three free slots.
+2: None of them in use yet.
+3: The next name arrives.
+4: count is {count} and the capacity is {len(slots)}. Is the array full? {count == len(slots)}.
+5: Full: there's nowhere to put {name!r}.
+7: Put {name!r} in slot {count}, the next free slot.
+8: One more slot in use.
+9: Three slots, three names. A static array never grows.
+
+=== task: predict easy
+title: Four empty slots
+code:
+```python
+slots = [None] * 4
+slots[1] = "x"
+slots[3] = "y"
+print(slots, len(slots))
+```
+wrong[['x', 'y'] 2]: `[None] * 4` makes 4 slots, and writing into two of them leaves the other two as `None`.
+wrong[[None, 'x', None, 'y'] 2]: The length counts every slot, used or free: 4.
+wrong[['x', None, 'y', None] 4]: Index 1 is the second slot and index 3 the fourth.
+hint: How many slots does `[None] * 4` make?
+hint: Writing a slot doesn't change how many there are.
+right: Four fixed slots: writing into slots 1 and 3 is O(1), and the size stays 4, like a static array.
+wrong: `slots` is `[None, 'x', None, 'y']`, and its length is still 4.
+
+=== task: mcq easy
+title: The next free slot
+prompt: A static array has a capacity of 6 and a count of 4. At which index does the next appended item go?
+- Index 5, the last slot :: Items are filled from the front, so the next free slot comes right after the used ones.
+* Index 4 :: Right. Slots 0 to 3 are in use, so the next free slot is at index count = 4.
+- Index 6 :: There is no index 6: a capacity of 6 means indexes 0 to 5.
+- Index 3 :: Slot 3 is already in use.
+hint: The used slots are 0 to count − 1.
+hint: The next free slot is at index count.
+right: The next free slot is always at index `count`, so appending is O(1): one write and `count += 1`.
+wrong: With count 4, slots 0 to 3 are used, and the next item goes into slot 4.
+
+=== task: fill easy
+title: Write into the next free slot
+prompt: Fill in the blank so that each name goes into the next free slot, and the program prints:
+
+```output
+['Ann', 'Ben', None] 2
+```
+code:
+```python
+slots = [None] * 3
+count = 0
+for name in ["Ann", "Ben"]:
+    slots[??] = name
+    count += 1
+print(slots, count)
+```
+answer: count
+wrong[0]: Every name would go into slot 0, so "Ben" would replace "Ann": `['Ben', None, None]`.
+wrong[count + 1]: The first name would skip slot 0 and land in slot 1.
+hint: Which index is the next free slot?
+hint: It's the number of slots already in use.
+right: `slots[count] = name` fills the slots from the front, one O(1) write each, and `count` keeps track of where the next one goes.
+wrong: `slots[count]`. With count 0 the first name goes into slot 0, then count becomes 1 for the next.
+
+=== task: code easy
+title: Append if there's room
+prompt: Write `append_static(slots, count, x)` for a static array: if every slot is in use (`count == len(slots)`), change nothing and return `count`. Otherwise put `x` in slot `count` and return the new count. The tests call your function, then show its answer and the slots.
+starter:
+```python
+def append_static(slots, count, x):
+    # your code here
+    return count
+```
+solution:
+```python
+def append_static(slots, count, x):
+    if count == len(slots):
+        return count
+    slots[count] = x
+    return count + 1
+```
+tests:
+- (lambda s: [append_static(s, 2, 9), s])([1, 2, None])
+- (lambda s: [append_static(s, 3, 9), s])([1, 2, 3])
+- (lambda s: [append_static(s, 0, "x"), s])([None])
+- (lambda s: [append_static(s, 1, "b"), s])(["a", None, None])
+fail[1]: Slot 2 is free: 9 goes there, and the count becomes 3.
+fail[2]: The array is full: nothing changes, and the count stays 3.
+fail[4]: "b" goes into slot 1, the next free slot.
+forbid[.append(]: A static array can't grow: write into the slot instead of using `append`.
+hint: First check whether `count == len(slots)`.
+hint: If not, `slots[count] = x`.
+hint: Return `count + 1` after adding, or `count` if it was full.
+right: One check and one write: O(1). A full static array has to refuse, because it can't grow.
+wrong: If full, return `count`. Otherwise `slots[count] = x` and return `count + 1`.
+
+=== task: predict easy
+title: Inside the used part?
+code:
+```python
+def get(slots, count, i):
+    if i < 0 or i >= count:
+        return None
+    return slots[i]
+
+slots = ["red", "blue", None, None]
+print(get(slots, 2, 1), get(slots, 2, 2), get(slots, 2, 5))
+```
+wrong[blue None IndexError]: The bounds check returns None for index 5 before the list is touched, so no error happens.
+wrong[red blue None]: Index 1 is the second slot, "blue". Index 2 is outside the used part (count is 2).
+wrong[blue None None None]: There are only three calls, so three values are printed.
+hint: Which indexes are in use when count is 2?
+hint: 0 and 1.
+right: Only slots 0 and 1 are in use, so index 1 gives "blue" and indexes 2 and 5 are refused with None. The check is O(1), like the read.
+wrong: Index 1 → "blue". Index 2 isn't below count (2) → None. Index 5 → None.
+
+=== task: multi easy
+title: Cheap operations on a static array
+prompt: A static array holds `count` items and still has free slots. Choose **every** operation that is O(1).
+* Reading slot i :: Right. Address arithmetic.
+* Writing slot i :: Right. The same arithmetic.
+* Appending at index `count` :: Right. One write and one addition, with nothing to move.
+- Inserting at index 0 :: Every used slot moves one place right: O(n).
+- Deleting at index 0 :: Every used slot after it moves one place left: O(n).
+- Finding a value in the unsorted slots :: The slots have to be checked one by one: O(n).
+hint: Does anything have to move, or be checked one by one?
+hint: Three of them are O(1).
+right: Reading, writing and appending touch one slot. Inserting or deleting at the front moves the others, and searching checks them.
+wrong: O(1): read, write, append at `count`. O(n): insert or delete at the front, and search.
+
+=== task: parsons easy
+title: Append until full
+prompt: Arrange the lines so that the names are appended to a static array of capacity 2, refusing the ones that don't fit, and the program prints:
+
+```output
+Cal doesn't fit
+['Ann', 'Ben']
+```
+
+Not every line is needed.
+lines:
+```python
+slots = [None] * 2
+count = 0
+for name in ["Ann", "Ben", "Cal"]:
+    if count == len(slots):
+        print(name, "doesn't fit")
+    else:
+        slots[count] = name
+        count += 1
+print(slots)
+```
+distractors:
+```python
+        slots.append(name)
+    if count > len(slots):
+```
+hint: Check for a full array before writing.
+hint: Full means `count == len(slots)`.
+right: Ann and Ben fill slots 0 and 1; then the array is full, and Cal is refused. A static array never grows, so `slots.append` doesn't belong here.
+wrong: The check `count == len(slots)` comes first; otherwise write `slots[count] = name` and add 1 to `count`.
+
+=== task: cells easy
+title: Three operations
+prompt: A static array has 4 slots, all free. These operations run in order: append 5, append 7, then insert 2 at index 0. What does each slot hold at the end?
+code:
+```python
+slots = [None] * 4
+count = 0
+slots[count] = 5
+count += 1
+slots[count] = 7
+count += 1
+slots[2] = slots[1]
+slots[1] = slots[0]
+slots[0] = 2
+count += 1
+```
+labels: slot 0 | slot 1 | slot 2 | slot 3
+answer: 2 | 5 | 7 | None
+wrong[5 | 7 | 2 | None]: The 2 is inserted at index 0, so 5 and 7 move right to make room.
+wrong[2 | 7 | 5 | None]: The items keep their order when they shift: 5 then 7.
+hint: After the two appends: [5, 7, None, None].
+hint: Inserting at 0 moves 7, then 5, one slot right.
+right: `[2, 5, 7, None]`: 2 moves were needed to insert at the front of 2 items.
+wrong: After the appends the slots are 5, 7, None, None. Shifting right gives 5, 5, 7, None, and writing 2 into slot 0 gives 2, 5, 7, None.
+
+=== task: mcq easy
+title: When it's full
+prompt: In the `StaticArray` class from the lesson, what does `append` do when every slot is in use?
+* It returns False and leaves the array unchanged :: Right. A static array can't grow, so it refuses the new item.
+- It makes the array one slot bigger :: That's what a dynamic array does. A static array's capacity is fixed.
+- It overwrites the last item :: The lesson's class refuses instead. Overwriting is a different choice, used by circular queues.
+- It stops the program with an error :: Python's own lists raise errors for bad indexes, but this `append` returns False instead.
+hint: What does the code check before writing?
+hint: `if self.count == len(self.slots): return False`.
+right: It refuses, returning False, so the code calling it knows the item didn't fit.
+wrong: The class checks for a full array first and returns False without changing anything.
+
+=== task: predict easy
+title: Two seats, four people
+code:
+```python
+slots = [None] * 2
+count = 0
+for name in ["Ann", "Ben", "Cal", "Dee"]:
+    if count < len(slots):
+        slots[count] = name
+        count += 1
+print(count, slots)
+```
+wrong[4 ['Ann', 'Ben', 'Cal', 'Dee']]: The array has only 2 slots, and nothing adds more.
+wrong[2 ['Cal', 'Dee']]: Once both slots are in use, `count < len(slots)` is False, so Cal and Dee are skipped, not written over Ann and Ben.
+wrong[4 ['Ann', 'Ben']]: `count` only goes up when a name is written: twice.
+hint: When does `count < len(slots)` stop being True?
+hint: After Ann and Ben.
+right: Ann and Ben fill the 2 slots; Cal and Dee find the array full. The count stops at the capacity.
+wrong: count goes 0 → 1 → 2, and then the check fails for Cal and Dee: `2 ['Ann', 'Ben']`.
+
+=== task: code medium
+title: Insert into a static array
+prompt: Write `insert_static(slots, count, i, x)`: if the array is full, change nothing and return `count`. Otherwise move the used slots from index `count - 1` back to `i` one place right (start at the end), put `x` in slot `i`, and return the new count. The tests call your function, then show its answer and the slots.
+starter:
+```python
+def insert_static(slots, count, i, x):
+    if count == len(slots):
+        return count
+    # your code here
+    return count + 1
+```
+solution:
+```python
+def insert_static(slots, count, i, x):
+    if count == len(slots):
+        return count
+    j = count
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return count + 1
+```
+tests:
+- (lambda s: [insert_static(s, 2, 1, 20), s])([10, 30, None])
+- (lambda s: [insert_static(s, 2, 0, 9), s])([1, 2])
+- (lambda s: [insert_static(s, 0, 0, "a"), s])([None, None])
+- (lambda s: [insert_static(s, 1, 1, 6), s])([5, None, None])
+- (lambda s: [insert_static(s, 2, 0, "a"), s])(["b", "c", None])
+fail[1]: 30 moves right to slot 2, then 20 goes into slot 1: `[10, 20, 30]`.
+fail[2]: The array is full: nothing changes.
+fail[4]: Inserting at index `count` is like appending: nothing moves.
+fail[5]: At the front, both items move right: `["a", "b", "c"]`.
+forbid[insert(]: Move the slots yourself instead of using `insert`.
+hint: Start at the first free slot: `j = count`.
+hint: While `j > i`: `slots[j] = slots[j - 1]` and `j -= 1`.
+hint: Then `slots[i] = x`.
+right: count − i moves and one write: O(n) at the front, O(1) at the end. Starting from the end means no item is overwritten before it has moved.
+wrong: From `j = count` down to `i + 1`, copy each slot from its left neighbour; then write `x` into slot `i`.
+
+=== task: code medium
+title: Delete from a static array
+prompt: Write `delete_static(slots, count, i)`: move the used slots after index `i` one place left, set the last used slot (index `count - 1`) back to `None`, and return the new count. The tests call your function, then show its answer and the slots.
+starter:
+```python
+def delete_static(slots, count, i):
+    # your code here
+    return count - 1
+```
+solution:
+```python
+def delete_static(slots, count, i):
+    j = i
+    while j < count - 1:
+        slots[j] = slots[j + 1]
+        j += 1
+    slots[count - 1] = None
+    return count - 1
+```
+tests:
+- (lambda s: [delete_static(s, 3, 1), s])([10, 20, 30, None])
+- (lambda s: [delete_static(s, 1, 0), s])([5, None])
+- (lambda s: [delete_static(s, 3, 2), s])([1, 2, 3])
+- (lambda s: [delete_static(s, 3, 0), s])([1, 2, 3])
+fail[1]: 30 moves into slot 1, and slot 2 is freed: `[10, 30, None, None]`.
+fail[2]: The only item is deleted: its slot becomes None, and the count becomes 0.
+fail[4]: 2 and 3 move left, and the last used slot is freed: `[2, 3, None]`.
+forbid[pop(]: A static array keeps all its slots: free the last one with `None` instead of removing it.
+forbid[del slots[]: A static array keeps all its slots: free the last one with `None` instead of deleting it.
+hint: Start at the gap: `j = i`. While `j < count - 1`: `slots[j] = slots[j + 1]`.
+hint: The last used slot now holds a leftover copy.
+hint: `slots[count - 1] = None`, then return `count - 1`.
+right: count − i − 1 moves and one clear: O(n) at the front, O(1) at the end. The array keeps all its slots; only the count goes down.
+wrong: Shift the slots after i one place left, set slot `count - 1` to None, and return `count - 1`.
+
+=== task: predict medium
+title: Insert at the front
+code:
+```python
+slots = [10, 20, 30, None]
+count = 3
+moves = 0
+j = count
+while j > 0:
+    slots[j] = slots[j - 1]
+    moves += 1
+    j -= 1
+slots[0] = 5
+print(slots, moves)
+```
+wrong[[5, 20, 30, None] 3]: The items move right before 5 is written, so 10 isn't lost: it moves to slot 1.
+wrong[[5, 10, 20, 30] 4]: There are 3 items to move: from slots 2, 1 and 0.
+wrong[[5, 10, 20, 30] 2]: All three used slots move, because the insert is at index 0.
+hint: j starts at 3 and stops when it reaches 0.
+hint: 30 moves first, then 20, then 10.
+right: Inserting at the front moves every used slot: 3 moves for 3 items. That's the worst case, O(n).
+wrong: 30 → slot 3, 20 → slot 2, 10 → slot 1 (3 moves), then 5 into slot 0: `[5, 10, 20, 30]`.
+
+=== task: fill medium
+title: Free the last slot
+prompt: Fill in the blank so that the delete frees the last used slot, and the program prints:
+
+```output
+['B', 'C', None, None] 2
+```
+code:
+```python
+slots = ["A", "B", "C", None]
+count = 3
+j = 0
+while j < count - 1:
+    slots[j] = slots[j + 1]
+    j += 1
+slots[count - 1] = ??
+count -= 1
+print(slots, count)
+```
+answer: None
+wrong[0]: The freed slot would hold 0, which looks like a real item. Free slots hold None.
+hint: What does a free slot hold?
+hint: The same value the free slots started with.
+right: Slot 2 held a leftover copy of "C"; setting it to None marks it free again, and the count drops to 2.
+wrong: `None`. Free slots hold None, so the leftover copy is replaced with None.
+
+=== task: cells medium
+title: Count after each step
+prompt: A static array of capacity 3 starts empty. What is the count after each operation, in order: append "a", append "b", delete index 0, append "c", append "d", append "e"?
+labels: after a | after b | after delete | after c | after d | after e
+answer: 1 | 2 | 1 | 2 | 3 | 3
+wrong[1 | 2 | 1 | 2 | 3 | 4]: The array is full after "d" (count 3 = capacity), so "e" is refused and the count stays 3.
+wrong[1 | 2 | 2 | 3 | 3 | 3]: Deleting frees a slot, so the count goes down by 1.
+hint: Delete makes the count go down; append makes it go up, unless the array is full.
+hint: Full means count = 3.
+right: 1, 2, 1, 2, 3, 3: the delete freed a slot, and "e" didn't fit. The slots end as ["b", "c", "d"].
+wrong: Appends add 1 (a: 1, b: 2), the delete takes 1 away (1), then c: 2, d: 3, and e is refused: 3.
+
+=== task: order medium
+title: Inserting, step by step
+prompt: Put the steps for inserting x at index i into a static array in order.
+items:
+- check that the array isn't full
+- start j at the first free slot, index count
+- while j is bigger than i, move slot j − 1 into slot j and step j left
+- write x into slot i
+- add 1 to count
+hint: Nothing should move if there's no room.
+hint: The new item is written only after the gap is made.
+right: Check for room, shift from the end back to i, write x, and count it. Shifting from the end means no item is overwritten before it moves.
+wrong: Check for room first, then shift the items from the end down to i, then write x into the gap, then add 1 to count.
+
+=== task: predict medium
+title: The class in action
+code:
+```python
+class StaticArray:
+    def __init__(self, capacity):
+        self.slots = [None] * capacity
+        self.count = 0
+
+    def append(self, x):
+        if self.count == len(self.slots):
+            return False
+        self.slots[self.count] = x
+        self.count += 1
+        return True
+
+    def get(self, i):
+        if i < 0 or i >= self.count:
+            return None
+        return self.slots[i]
+
+a = StaticArray(2)
+print(a.append(4), a.append(8), a.append(9))
+print(a.get(0), a.get(2), a.slots)
+```
+wrong[True True True\n4 9 [4, 8, 9]]: The capacity is 2, so the third append finds the array full and returns False.
+wrong[True True False\n4 None [4, 8, None]]: `[None] * 2` makes only 2 slots: there's no third slot.
+wrong[True True False\n8 None [4, 8]]: `get(0)` reads slot 0, which holds 4.
+hint: How many slots does `StaticArray(2)` make?
+hint: Index 2 is outside the used part, so `get(2)` returns None.
+right: 4 and 8 fit, 9 doesn't. `get(0)` is 4 and `get(2)` is refused. The slots stay at exactly 2.
+wrong: append → True, True, False (full). `get(0)` → 4, `get(2)` → None, and the slots are `[4, 8]`.
+
+=== task: mcq medium
+title: Deleting the last item
+prompt: A static array holds `count` items. What does deleting the item at index `count - 1` cost?
+* O(1) :: Right. There are no items after it, so nothing moves: the slot is set to None and count goes down.
+- O(n) :: Only the items **after** the deleted one move, and there are none.
+- O(log n) :: Nothing is halved: it's one write and one subtraction.
+- It can't be done in a static array :: Deleting works; the slot is freed and can be used again.
+hint: How many items come after the last one?
+hint: None.
+right: Deleting at the end moves nothing: O(1). Deleting at the front moves count − 1 items: O(n).
+wrong: The last item has nothing after it, so it's freed in O(1).
+
+=== task: multi medium
+title: Good fits for a static array
+prompt: Choose **every** job where a static array is a good fit, because the number of items is known and doesn't change.
+* The 7 daily temperatures of one week :: Right. Always 7 values.
+* The 64 squares of a chess board :: Right. The board never changes size.
+* The seats on a plane with 180 seats :: Right. The seat count is fixed.
+- A shopping list you keep adding to :: It can keep growing, so a dynamic array fits better.
+- Every message sent in a chat today :: Nobody knows how many there will be.
+- The names of everyone who signs up for a club, with no limit :: The count is unknown and can grow.
+hint: Is the number of items known in advance and fixed?
+hint: Three of them are.
+right: Fixed counts (days, squares, seats) suit a static array. Lists that can keep growing need a dynamic array.
+wrong: Static arrays fit fixed sizes: 7 days, 64 squares, 180 seats. Growing lists don't fit.
+
+=== task: code medium
+title: A safe read
+prompt: Write `get_static(slots, count, i)` that returns the item in slot `i` if `i` is inside the used part of the array (0 ≤ i < count), and `None` otherwise, including for negative indexes.
+
+For example, `get_static(["a", "b", None], 2, 1)` returns `"b"`.
+starter:
+```python
+def get_static(slots, count, i):
+    # your code here
+    return slots[i]
+```
+solution:
+```python
+def get_static(slots, count, i):
+    if i < 0 or i >= count:
+        return None
+    return slots[i]
+```
+tests:
+- get_static(["a", "b", None], 2, 1)
+- get_static(["a", "b", "c"], 2, 2)
+- get_static(["a", "b", "c"], 3, -1)
+- get_static([7], 1, 0)
+- get_static(["x", "y"], 0, 0)
+fail[2]: Slot 2 still holds an old "c", but only slots 0 and 1 are in use (count is 2). Return None.
+fail[3]: In a static array, -1 is out of range, not "the last item". Return None.
+fail[5]: With count 0, no slot is in use, so every index is out of range, whatever the slots still hold.
+error[IndexError]: Check the index before reading the slot.
+hint: The index is valid when `0 <= i < count`.
+hint: Check `i < 0 or i >= count` first.
+hint: Only read `slots[i]` when the index is valid.
+right: Two comparisons and one read: O(1). The check stops a program from reading a free slot or something outside the array.
+wrong: `if i < 0 or i >= count: return None`, then `return slots[i]`.
+
+=== task: code hard
+title: A StaticArray class
+prompt: Write a class `StaticArray` with:
+- `__init__(self, capacity)`: make `self.slots`, a list of `capacity` Nones, and `self.count = 0`,
+- `append(self, x)`: return False if full; otherwise store x in the next free slot, add 1 to the count and return True,
+- `get(self, i)`: return the item at index i, or None if i is outside the used part,
+- `is_full(self)`: return True when every slot is in use.
+
+The tests make arrays and call their methods, like `(lambda a: [a.append(5), a.is_full()])(StaticArray(1))`.
+starter:
+```python
+class StaticArray:
+    def __init__(self, capacity):
+        self.slots = [None] * capacity
+        self.count = 0
+
+    # your code here
+```
+solution:
+```python
+class StaticArray:
+    def __init__(self, capacity):
+        self.slots = [None] * capacity
+        self.count = 0
+
+    def append(self, x):
+        if self.is_full():
+            return False
+        self.slots[self.count] = x
+        self.count += 1
+        return True
+
+    def get(self, i):
+        if i < 0 or i >= self.count:
+            return None
+        return self.slots[i]
+
+    def is_full(self):
+        return self.count == len(self.slots)
+```
+tests:
+- (lambda a: [a.append(5), a.append(6), a.append(7), a.get(1), a.count])(StaticArray(2))
+- (lambda a: [a.is_full(), a.append("x"), a.is_full()])(StaticArray(1))
+- (lambda a: [a.get(0), a.slots])(StaticArray(3))
+- (lambda a: [a.append(1), a.get(-1), a.get(1), a.get(0)])(StaticArray(4))
+- (lambda a: [a.is_full(), a.append(9)])(StaticArray(0))
+fail[1]: Two items fit; the third append returns False. `get(1)` is 6, and the count stays 2.
+fail[2]: An empty array of capacity 1 isn't full; after one append it is.
+fail[3]: A new array has no items in use, so `get(0)` is None, and the slots are all None.
+fail[5]: An array of capacity 0 is full from the start, so append returns False.
+error[AttributeError]: Define all three methods: `append`, `get` and `is_full`.
+hint: `is_full` returns `self.count == len(self.slots)`.
+hint: `append` can call `self.is_full()` before writing `self.slots[self.count] = x`.
+hint: `get` checks `i < 0 or i >= self.count` before reading.
+right: Every method is O(1): one check and at most one read or write. Keeping the slots and the count in one object means they always agree.
+wrong: `append`: refuse if full, else write at `self.count` and add 1; `get`: bounds check then read; `is_full`: compare `self.count` with `len(self.slots)`.
+
+=== task: code hard
+title: Insert in order
+prompt: The used slots of a static array are sorted. Write `insert_in_order(slots, count, x)` that inserts `x` so they stay sorted, and returns the new count. If the array is full, change nothing and return `count`. Start at the first free slot and move each used slot that is bigger than x one place right; then write x into the slot that's left.
+starter:
+```python
+def insert_in_order(slots, count, x):
+    if count == len(slots):
+        return count
+    j = count
+    # your code here
+    return count + 1
+```
+solution:
+```python
+def insert_in_order(slots, count, x):
+    if count == len(slots):
+        return count
+    j = count
+    while j > 0 and slots[j - 1] > x:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[j] = x
+    return count + 1
+```
+tests:
+- (lambda s: [insert_in_order(s, 3, 4), s])([1, 3, 5, None])
+- (lambda s: [insert_in_order(s, 2, 3), s])([2, 4])
+- (lambda s: [insert_in_order(s, 0, 7), s])([None, None])
+- (lambda s: [insert_in_order(s, 2, 1), s])([2, 4, None])
+- (lambda s: [insert_in_order(s, 2, 9), s])([2, 4, None])
+fail[1]: 5 is bigger than 4, so it moves right; 3 isn't, so 4 goes into slot 2: `[1, 3, 4, 5]`.
+fail[2]: The array is full, so nothing changes.
+fail[4]: 1 is the smallest: both items move right, and 1 goes into slot 0.
+fail[5]: 9 is the biggest: nothing moves, and it goes into the first free slot.
+error[TypeError]: Stop at slot 0 (`j > 0`), so you never compare x with a free slot's None.
+hint: While `j > 0` and `slots[j - 1] > x`, move slot j − 1 into slot j and step left.
+hint: When the loop stops, slot j is where x belongs.
+hint: Write `slots[j] = x`.
+right: Up to count moves: O(n) per insert. A sorted static array is quick to search (binary search) but slow to change.
+wrong: Shift the bigger items right, starting from the first free slot, then write x where the shifting stopped.
+
+=== task: code hard
+title: Close the gaps
+prompt: Some slots of an array were cleared to None in the middle, leaving gaps. Write `compact(slots)` that moves every item that isn't None to the front, keeping their order, sets all the slots after them to None, and returns how many items there are. Make it one pass: O(n).
+
+For example, after compacting `[None, 3, None, 5, 7]`, the slots are `[3, 5, 7, None, None]` and the function returns 3.
+starter:
+```python
+def compact(slots):
+    w = 0
+    # your code here
+    return w
+```
+solution:
+```python
+def compact(slots):
+    w = 0
+    for x in slots:
+        if x is not None:
+            slots[w] = x
+            w += 1
+    for k in range(w, len(slots)):
+        slots[k] = None
+    return w
+```
+tests:
+- (lambda s: [compact(s), s])([None, 3, None, 5, 7])
+- (lambda s: [compact(s), s])([])
+- (lambda s: [compact(s), s])([None, None])
+- (lambda s: [compact(s), s])([1, 2])
+- (lambda s: [compact(s), s])(["a", None, "b"])
+speed: setup=slots = [None, 1] * n | call=compact(slots) | target=O(n)
+slow:
+```python
+def compact(slots):
+    for i in range(len(slots)):
+        for j in range(len(slots) - 1):
+            if slots[j] is None and slots[j + 1] is not None:
+                slots[j] = slots[j + 1]
+                slots[j + 1] = None
+    count = 0
+    for x in slots:
+        if x is not None:
+            count += 1
+    return count
+```
+fail[1]: The items 3, 5 and 7 move to the front in order, and the last two slots become None.
+fail[3]: There are no items: the count is 0 and the slots stay None.
+fail[5]: "b" moves into slot 1, and slot 2 becomes None.
+hint: Use a write position `w`: copy each item that isn't None to `slots[w]`, then `w += 1`.
+hint: Then set every slot from `w` to the end to None.
+hint: Return `w`, the number of items.
+right: One pass to copy and one to clear: O(n). Moving items one place at a time, again and again, would be O(n²).
+wrong: Copy each non-None item to the write position and move it on; then clear the slots from `w` to the end; return `w`.
+
+=== task: code hard
+title: Remove every copy
+prompt: Write `remove_all_static(slots, count, x)` that removes every copy of `x` from the used part of a static array in **one pass**, keeping the other items in order. Set the freed slots to None and return the new count. Calling a one-item delete again and again would shift the array each time.
+starter:
+```python
+def remove_all_static(slots, count, x):
+    w = 0
+    # your code here
+    return w
+```
+solution:
+```python
+def remove_all_static(slots, count, x):
+    w = 0
+    for i in range(count):
+        if slots[i] != x:
+            slots[w] = slots[i]
+            w += 1
+    for k in range(w, count):
+        slots[k] = None
+    return w
+```
+tests:
+- (lambda s: [remove_all_static(s, 4, 3), s])([3, 1, 3, 2, None])
+- (lambda s: [remove_all_static(s, 0, 1), s])([None])
+- (lambda s: [remove_all_static(s, 2, 5), s])([5, 5])
+- (lambda s: [remove_all_static(s, 2, 9), s])([1, 2, None])
+speed: setup=slots = [0, 1] * n; count = 2 * n | call=remove_all_static(slots, count, 0) | target=O(n)
+slow:
+```python
+def remove_all_static(slots, count, x):
+    i = 0
+    while i < count:
+        if slots[i] == x:
+            j = i
+            while j < count - 1:
+                slots[j] = slots[j + 1]
+                j += 1
+            slots[count - 1] = None
+            count -= 1
+        else:
+            i += 1
+    return count
+```
+fail[1]: Both 3s go; 1 and 2 move to the front, and slots 2 and 3 are freed: `[1, 2, None, None, None]`.
+fail[3]: Every item is 5, so all are removed: count 0, all slots None.
+fail[4]: There's no 9: nothing changes, and the count stays 2.
+hint: Look only at the used part: `for i in range(count):`.
+hint: Copy each item that isn't x to `slots[w]`, then `w += 1`.
+hint: Set the slots from `w` up to `count - 1` to None, and return `w`.
+right: Each used slot is read once and written at most once: O(n). Deleting the copies one at a time shifts the rest of the array for each copy: O(n²) when x is common.
+wrong: Keep a write position; copy the items that aren't x forward; clear the slots from `w` to `count - 1`; return `w`.
+
+=== task: predict hard
+title: Insert, delete, insert
+code:
+```python
+def insert(slots, count, i, x):
+    if count == len(slots):
+        return count
+    j = count
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return count + 1
+
+def delete(slots, count, i):
+    j = i
+    while j < count - 1:
+        slots[j] = slots[j + 1]
+        j += 1
+    slots[count - 1] = None
+    return count - 1
+
+slots = [None] * 3
+count = 0
+count = insert(slots, count, 0, "b")
+count = insert(slots, count, 0, "a")
+count = delete(slots, count, 1)
+count = insert(slots, count, 1, "c")
+print(slots, count)
+```
+wrong[['a', 'b', 'c'] 3]: The delete at index 1 removes "b" before "c" is inserted.
+wrong[['b', 'c', None] 2]: Inserting "a" at index 0 pushes "b" to index 1, so index 1 holds "b" when it's deleted.
+wrong[['a', 'c', 'b'] 3]: "b" was deleted, so it isn't there to move.
+hint: After the two inserts: ['a', 'b', None], count 2.
+hint: Deleting index 1 removes "b".
+right: ['a', 'b'] → delete "b" → ['a'] → insert "c" at 1 → ['a', 'c'], with one slot still free.
+wrong: insert b → [b], insert a at 0 → [a, b], delete index 1 → [a], insert c at 1 → [a, c, None], count 2.
+
+=== task: predict hard
+title: Four inserts at the front
+code:
+```python
+def insert(slots, count, i, x):
+    j = count
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return count + 1
+
+slots = [None] * 4
+count = 0
+total = 0
+for x in [1, 2, 3, 4]:
+    total += count
+    count = insert(slots, count, 0, x)
+print(slots, total)
+```
+wrong[[1, 2, 3, 4] 6]: Each new item goes in front of the others, so the last one, 4, ends up first.
+wrong[[4, 3, 2, 1] 10]: Before each insert the count is 0, 1, 2 and 3: 6 moves in all.
+wrong[[4, 3, 2, 1] 4]: Each insert at the front moves every item already there.
+hint: How many items move for each insert at index 0?
+hint: The number of items already in the array.
+right: `[4, 3, 2, 1]` after 0 + 1 + 2 + 3 = 6 moves: filling an array from the front is O(n²).
+wrong: The moves are 0, 1, 2 and 3 (the count before each insert), and every item lands in front: `[4, 3, 2, 1]`, total 6.
+
+=== task: cells hard
+title: Moves for each operation
+prompt: A static array has capacity 10 and holds 6 items (count = 6). How many items move for each of these operations, each done on its own?
+labels: insert at 0 | insert at 6 | delete at 0 | delete at 5
+answer: 6 | 0 | 5 | 0
+wrong[6 | 1 | 5 | 1]: Inserting at index 6 (= count) is an append, and deleting index 5 (the last item) is the end: nothing moves.
+wrong[6 | 0 | 6 | 0]: Deleting at 0 moves the items after it: 5 of the 6.
+hint: Insert at i moves count − i items.
+hint: Delete at i moves count − i − 1 items.
+right: 6, 0, 5 and 0: the front is the worst case for both, and the end costs nothing.
+wrong: insert at 0: 6 − 0 = 6; insert at 6: 0; delete at 0: 6 − 0 − 1 = 5; delete at 5: 0.
+
+=== task: mcq hard
+title: An insert anywhere
+prompt: Items are inserted into a static array holding n items, at an index chosen at random from 0 to n. About how many items move on average, and what's the Big O?
+- About 1 item, so O(1) :: Only an insert at the very end moves nothing. Most inserts move many items.
+* About n / 2 items, so O(n) :: Right. Index i moves n − i items, and on average that's about half the array.
+- About log n items, so O(log n) :: Nothing is halved: the moves are spread evenly from 0 to n.
+- About n² items, so O(n²) :: One insert moves at most n items.
+hint: Insert at index i moves n − i items, for i from 0 to n.
+hint: The average of 0, 1, ..., n is n / 2.
+right: n / 2 on average, which is still O(n): inserting into the middle of an array is a linear-time job.
+wrong: The moves range from n (at the front) down to 0 (at the end), averaging about n / 2: O(n).
+
+=== task: multi hard
+title: True about static arrays
+prompt: Choose **every** true sentence.
+* The next free slot is always at index count :: Right. The used slots are 0 to count − 1.
+* A static array's capacity never changes :: Right. That's what makes it static.
+* Deleting sets the last used slot back to None, but the array keeps all its slots :: Right. Only the count goes down.
+- Appending to a full static array makes it bigger :: It can't grow: the append has to be refused (or the array copied into a bigger one).
+- Reading slot i costs more when i is large :: Every slot is found with the same address arithmetic: O(1).
+- Inserting at index count moves every item :: Index count is the first free slot: nothing moves.
+hint: Think about capacity, count, and where the free slots are.
+hint: Three of them are true.
+right: The next slot is at count, the capacity is fixed, and deleting only frees a slot. A full array can't grow, reads are O(1) everywhere, and inserting at count is an append.
+wrong: True: next slot at count, fixed capacity, deletes free a slot. False: full arrays don't grow, large indexes aren't slower, inserting at count moves nothing.
+
+=== task: parsons hard
+title: The delete function
+prompt: Arrange the lines so that `delete` removes the item at index i from a static array, frees the last used slot, and returns the new count. The program prints:
+
+```output
+['Ben', 'Cal', None, None] 2
+```
+
+Not every line is needed.
+lines:
+```python
+def delete(slots, count, i):
+    j = i
+    while j < count - 1:
+        slots[j] = slots[j + 1]
+        j += 1
+    slots[count - 1] = None
+    return count - 1
+
+slots = ["Ann", "Ben", "Cal", None]
+count = delete(slots, 3, 0)
+print(slots, count)
+```
+distractors:
+```python
+        slots[j + 1] = slots[j]
+    slots.pop()
+```
+hint: The items after i move left: each slot takes the item from the slot to its right.
+hint: A static array keeps its slots, so the last used one is set to None rather than removed.
+right: Ben and Cal move left, the leftover copy of Cal becomes None, and the count drops to 2. `slots.pop()` would shrink the array, which a static array can't do.
+wrong: `j = i`; while `j < count - 1`, copy `slots[j + 1]` into `slots[j]` and step right; then `slots[count - 1] = None` and `return count - 1`.
