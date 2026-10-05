@@ -282,6 +282,17 @@ CASES = [
     'x = [1 True]',
     'x = (1 None)',
 
+    'x = "a".count()',
+    'x = [].insert(1)',
+    'x = {}.keys(1)',
+    'x = [1].pop(0, 1)',
+    'x = "a".strip(1, 2)',
+    'x = "a".replace("a")',
+    'x = "a".split(",", 1, 2)',
+    'x = (1,).count()',
+    'x = set().pop(1)',
+    'scores = {"a": 1}\nprint(max(scores, key=scores.keys))',
+
 ]
 
 

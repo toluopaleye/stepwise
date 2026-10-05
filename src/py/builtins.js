@@ -1025,6 +1025,57 @@ const PROPERTY_METHODS = new Map(Object.entries({
 T_STR.methods = STR_METHODS; T_LIST.methods = LIST_METHODS; T_DICT.methods = DICT_METHODS; T_SET.methods = SET_METHODS;
 T_TUPLE.methods = TUPLE_METHODS; T_DEQUE.methods = DEQUE_METHODS; T_INT.methods = INT_METHODS; T_FLOAT.methods = FLOAT_METHODS;
 
+// CPython 3.13 checks how many arguments a built-in method gets before it runs, with these exact messages.
+// 'none': no arguments; 'one': exactly one; [min, max]: the "expected at least/at most" style;
+// {kw: max}: "takes at most N arguments (M given)"; {pos: [min, max]}: str.replace's own wording.
+function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+function arityError(typeName, name, rule, n) {
+  if (rule === 'none') return n > 0 ? `${typeName}.${name}() takes no arguments (${n} given)` : null;
+  if (rule === 'one') return n !== 1 ? `${typeName}.${name}() takes exactly one argument (${n} given)` : null;
+  if (Array.isArray(rule)) {
+    const [min, max] = rule;
+    if (min === max && n !== min) return `${name} expected ${plural(min, 'argument')}, got ${n}`;
+    if (n < min) return `${name} expected at least ${plural(min, 'argument')}, got ${n}`;
+    if (n > max) return `${name} expected at most ${plural(max, 'argument')}, got ${n}`;
+    return null;
+  }
+  if (rule.kw !== undefined) return n > rule.kw ? `${name}() takes at most ${plural(rule.kw, 'argument')} (${n} given)` : null;
+  if (rule.pos) {
+    const [min, max] = rule.pos;
+    if (n < min) return `${name}() takes at least ${min} positional arguments (${n} given)`;
+    if (n > max) return `${name}() takes at most ${max} arguments (${n} given)`;
+  }
+  return null;
+}
+function checkArity(table, typeName, spec) {
+  for (const [name, rule] of Object.entries(spec)) {
+    const impl = table.get(name);
+    if (!impl) continue;
+    table.set(name, function (args, kw, self) {
+      const msg = arityError(typeName, name, rule, args.length);
+      if (msg) throw pyErr('TypeError', msg);
+      return impl.call(this, args, kw, self);
+    });
+  }
+}
+const STR_NOARGS = ['upper', 'lower', 'isdigit', 'isalpha', 'isalnum', 'isspace', 'isupper', 'islower', 'istitle', 'isnumeric', 'isdecimal', 'isidentifier', 'isprintable', 'isascii', 'title', 'capitalize', 'swapcase', 'casefold'];
+checkArity(STR_METHODS, 'str', {
+  ...Object.fromEntries(STR_NOARGS.map((m) => [m, 'none'])),
+  zfill: 'one', partition: 'one', rpartition: 'one', removeprefix: 'one', removesuffix: 'one', join: 'one', format_map: 'one',
+  count: [1, 3], find: [1, 3], index: [1, 3], rfind: [1, 3], rindex: [1, 3], startswith: [1, 3], endswith: [1, 3],
+  strip: [0, 1], lstrip: [0, 1], rstrip: [0, 1], center: [1, 2], ljust: [1, 2], rjust: [1, 2],
+  split: { kw: 2 }, rsplit: { kw: 2 }, splitlines: { kw: 1 }, expandtabs: { kw: 1 }, replace: { pos: [2, 3] },
+});
+checkArity(LIST_METHODS, 'list', {
+  copy: 'none', clear: 'none', reverse: 'none', append: 'one', remove: 'one', count: 'one', extend: 'one',
+  insert: [2, 2], index: [1, 3], pop: [0, 1],
+});
+const DICT_ARITY = { keys: 'none', values: 'none', items: 'none', copy: 'none', clear: 'none', popitem: 'none', get: [1, 2], pop: [1, 2], setdefault: [1, 2], update: [0, 1] };
+checkArity(DICT_METHODS, 'dict', DICT_ARITY);
+checkArity(COUNTER_METHODS, 'dict', DICT_ARITY);
+checkArity(SET_METHODS, 'set', { copy: 'none', clear: 'none', pop: 'none', add: 'one', remove: 'one', discard: 'one', issubset: 'one', issuperset: 'one', isdisjoint: 'one' });
+checkArity(TUPLE_METHODS, 'tuple', { count: 'one', index: [1, 3] });
+
 function methodsFor(obj) {
   if (typeof obj === 'string') return STR_METHODS;
   if (obj instanceof PyList) return LIST_METHODS;
