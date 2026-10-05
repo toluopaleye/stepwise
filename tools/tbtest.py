@@ -252,6 +252,36 @@ CASES = [
     'names = ["Al"]\nprint([n for n in names and len(n) > 2])',
     'grid = [[1]]\nflat = [n for row in row for n in grid]',
 
+    'names = ["Ada"]\nscores = [1]\nreport = {n, s for n, s in zip(names, scores)}',
+    'letters = ["a"]\nd = {c, i + 1 for i, c in enumerate(letters)}',
+    'x = [a, b for a, b in [(1, 2)]]',
+    'x = [a, b\n for a, b in [(1, 2)]]',
+    'x = [a, *b for a in [1]]',
+    'x = [a, b, for a in [1]]',
+    'x = (a, b for a in [1])',
+    'print(1, x for x in [1], 2)',
+    'f(x for x in [1], )',
+    'print(x for x in [1], end="")',
+    'x = {1: 2, 3}',
+    'x = {"a": 1, "b"}',
+    'x = {"a" 1}',
+    'x = {"a": }',
+    'x = {"a": 1, "b": }',
+    'x = {"a": 1 "b": 2}',
+    'x = {"a": 1, "b" 2}',
+    'x = {1: 2, 3 for a in [1]}',
+    'x = {"a", "b": 1}',
+    'x = {"a" True}',
+    'x = {"a": , "b": 1}',
+    'prices = {"tea": 2, "cake": 4}\ncheap = {k: v for k, v in prices if v < 3}',
+    'd = [x: 0 for x in "ab"]',
+
+    'x = {"a": 1, foo}',
+    'x = {"a": 1, x + 1}',
+    'x = {"a": 1, "b"\n}',
+    'x = [1 True]',
+    'x = (1 None)',
+
 ]
 
 

@@ -999,7 +999,14 @@ class Parser {
         if (this.isOp('=')) this.error('expression cannot contain assignment, perhaps you meant "=="?', this.tok, undefined, e.col !== undefined ? e.col : est.col, this.tok.endCol);
         if (this.isKw('for')) {
           const gens = this.parseCompFor();
-          args.push(this.pos({ type: 'GeneratorExp', elt: e, generators: gens, line: e.line }, est));
+          const g = this.pos({ type: 'GeneratorExp', elt: e, generators: gens, line: e.line }, est);
+          // a generator expression without its own brackets must be the only argument: `sum(x for x in xs)`
+          if (args.length || keywords.length || this.isOp(',')) {
+            const msg = 'Generator expression must be parenthesized';
+            if (!this.noPos && g.col !== undefined && g.endCol !== undefined && g.line === (g.endLine || g.line)) this.error(msg, { line: g.line }, undefined, g.col, g.endCol);
+            this.error(msg);
+          }
+          args.push(g);
         } else {
           if (keywords.some((k) => k.arg !== null)) this.error('positional argument follows keyword argument');
           args.push(e);
@@ -1031,6 +1038,32 @@ class Parser {
     if (!this.isOp(']') && !this.isOp(':') && !this.isOp(',')) upper = this.parseTest();
     if (this.eatOp(':')) { if (!this.isOp(']') && !this.isOp(',')) step = this.parseTest(); }
     return this.pos({ type: 'Slice', lower, upper, step, line }, st);
+  }
+
+  // the value after `key:` in a dict display; `{"a": }` has none
+  dictValue() {
+    if (this.isOp('}') || this.isOp(',')) {
+      const colon = this.toks[this.i - 1];
+      this.error("expression expected after dictionary key and ':'", colon, undefined, colon.col, colon.endCol);
+    }
+    return this.parseTest();
+  }
+
+  // `{"a" 1}` or `{"a": 1 "b": 2}`: two values side by side inside braces
+  forgotComma(prev) {
+    const t = this.tok;
+    const isValueKw = t.type === 'KW' && ['True', 'False', 'None'].includes(t.value);
+    if (!(t.type === 'STRING' || t.type === 'NAME' || t.type === 'NUMBER' || isValueKw)) return;
+    if (!this.noPos && prev && prev.col !== undefined && prev.line === t.line) this.error('invalid syntax. Perhaps you forgot a comma?', t, undefined, prev.col, t.endCol);
+  }
+
+  // `[a, b for ...]`: CPython asks for brackets around the target and underlines `a, b`
+  compTargetCheck(elts) {
+    if (!this.isKw('for')) return;
+    const msg = 'did you forget parentheses around the comprehension target?';
+    const a = elts[0], b = elts[elts.length - 1];
+    if (!this.noPos && a.col !== undefined && b.endCol !== undefined && a.line === (b.endLine || b.line)) this.error(msg, { line: a.line }, undefined, a.col, b.endCol);
+    this.error(msg);
   }
 
   parseCompFor() {
@@ -1111,7 +1144,7 @@ class Parser {
           const elts = [first];
           while (this.eatOp(',')) { if (this.isOp(')')) break; elts.push(this.parseTestOrStar()); }
           if (!this.isOp(')')) {
-            if (this.tok.type === 'STRING' || this.tok.type === 'NAME' || this.tok.type === 'NUMBER') { const le = elts[elts.length - 1]; this.error('invalid syntax. Perhaps you forgot a comma?', undefined, undefined, le.col, le.col !== undefined ? this.tok.endCol : undefined); }
+            if (this.tok.type === 'STRING' || this.tok.type === 'NAME' || this.tok.type === 'NUMBER' || (this.tok.type === 'KW' && ['True', 'False', 'None'].includes(this.tok.value))) { const le = elts[elts.length - 1]; this.error('invalid syntax. Perhaps you forgot a comma?', undefined, undefined, le.col, le.col !== undefined ? this.tok.endCol : undefined); }
             this.error('invalid syntax');
           }
           this.advance();
@@ -1127,9 +1160,10 @@ class Parser {
             return { type: 'ListComp', elt: first, generators: gens, line };
           }
           const elts = [first];
-          while (this.eatOp(',')) { if (this.isOp(']')) break; elts.push(this.parseTestOrStar()); }
+          while (this.eatOp(',')) { if (this.isOp(']') || this.isKw('for')) break; elts.push(this.parseTestOrStar()); }
+          this.compTargetCheck(elts);
           if (!this.isOp(']')) {
-            if (this.tok.type === 'STRING' || this.tok.type === 'NAME' || this.tok.type === 'NUMBER') { const le = elts[elts.length - 1]; this.error('invalid syntax. Perhaps you forgot a comma?', undefined, undefined, le.col, le.col !== undefined ? this.tok.endCol : undefined); }
+            if (this.tok.type === 'STRING' || this.tok.type === 'NAME' || this.tok.type === 'NUMBER' || (this.tok.type === 'KW' && ['True', 'False', 'None'].includes(this.tok.value))) { const le = elts[elts.length - 1]; this.error('invalid syntax. Perhaps you forgot a comma?', undefined, undefined, le.col, le.col !== undefined ? this.tok.endCol : undefined); }
             this.error('invalid syntax');
           }
           this.advance();
@@ -1150,19 +1184,30 @@ class Parser {
           }
           const first = this.parseTestOrStar();
           if (this.eatOp(':')) {
-            const v = this.parseTest();
+            const v = this.dictValue();
             if (this.isKw('for')) {
               const gens = this.parseCompFor();
               this.expectOp('}');
               return { type: 'DictComp', key: first, value: v, generators: gens, line };
             }
             const keys = [first], values = [v];
+            this.forgotComma(v);
             while (this.eatOp(',')) {
               if (this.isOp('}')) break;
               if (this.eatOp('**')) { keys.push(null); values.push(this.parseOrExpr()); continue; }
-              keys.push(this.parseTest());
-              this.expectOp(':');
-              values.push(this.parseTest());
+              const k = this.parseTest();
+              // `{"a": 1, "b"}`: CPython underlines the key that has no ':' after it
+              if (!this.isOp(':')) {
+                const msg = "':' expected after dictionary key";
+                // the caret goes under the last character of the key
+                if (!this.noPos && k.endCol !== undefined) this.error(msg, { line: k.endLine || k.line }, undefined, k.endCol - 1, k.endCol);
+                this.error(msg);
+              }
+              this.advance();
+              keys.push(k);
+              const val = this.dictValue();
+              values.push(val);
+              this.forgotComma(val);
             }
             this.expectOp('}');
             return { type: 'Dict', keys, values, line };
@@ -1172,8 +1217,10 @@ class Parser {
             this.expectOp('}');
             return { type: 'SetComp', elt: first, generators: gens, line };
           }
+          this.forgotComma(first);
           const elts = [first];
-          while (this.eatOp(',')) { if (this.isOp('}')) break; elts.push(this.parseTestOrStar()); }
+          while (this.eatOp(',')) { if (this.isOp('}') || this.isKw('for')) break; elts.push(this.parseTestOrStar()); }
+          this.compTargetCheck(elts);
           this.expectOp('}');
           return { type: 'Set', elts, line };
         }
