@@ -1,0 +1,940 @@
+=== lesson
+id: bigo-python
+title: Big O of Python's built-ins
+summary: One line of Python can be one step or a whole pass: `nums.pop()` is O(1), but `nums.pop(0)` is O(n). This lesson collects the costs of the list, dictionary, set and string operations you use every day, explains why the front of a list is slow and why a set is fast, shows how to build strings, and helps you choose the right structure for the job.
+
+=== learn
+### Lists: what's O(1) and what's O(n)
+A Python list keeps its items side by side, in order, like numbered boxes. Anything that goes straight to one box is O(1). Anything that has to look through the boxes, or move them, is O(n):
+
+| Operation | Cost | Why |
+| --- | --- | --- |
+| `nums[i]`, `nums[i] = x` | O(1) | goes straight to box i |
+| `len(nums)` | O(1) | the length is stored, not counted |
+| `nums.append(x)`, `nums.pop()` | O(1) | works at the end; nothing moves |
+| `nums.insert(0, x)`, `nums.pop(0)` | O(n) | every other item moves one box |
+| `x in nums`, `nums.index(x)`, `nums.count(x)` | O(n) | checks the items one by one |
+| `nums.remove(x)` | O(n) | finds x, then moves the items after it |
+| `sum`, `min`, `max` | O(n) | looks at every item |
+| `nums[a:b]` | O(b − a) | copies that many items |
+| `sorted(nums)`, `nums.sort()` | O(n log n) | sorting |
+
+### Why the front of a list is slow
+`nums.insert(0, x)` has to make room at the front, so every item moves one box to the right. This is what happens inside it, written out as Python:
+```python
+nums = [10, 20, 30, 40]
+nums.append(0)
+i = len(nums) - 1
+while i > 0:
+    nums[i] = nums[i - 1]
+    i -= 1
+nums[0] = 5
+print(nums)
+```
+```output
+[5, 10, 20, 30, 40]
+```
+Four items moved to make room for one. `pop(0)` is the same in reverse: every item after the first moves one box left. At the **end** of the list nothing has to move, which is why `append` and `pop()` are O(1). Animation 1 shows the moves. (In Unit 3 you'll meet the **deque**, which is O(1) at both ends.)
+
+> `append` is O(1) **on average**. Now and then the list runs out of room and Python moves it to a bigger space, which copies every item, but this happens so rarely that it averages out. Unit 3 explains how.
+
+### Slices are copies
+`nums[a:b]` builds a new list and copies b − a items into it. One slice is fine, but slices inside a loop or a recursion add up:
+```python
+copied = []
+
+def total(nums):
+    if len(nums) == 0:
+        return 0
+    rest = nums[1:]
+    copied.append(len(rest))
+    return nums[0] + total(rest)
+
+print(total([5, 1, 4, 2]), sum(copied))
+```
+```output
+12 6
+```
+Each call copies all but the first item: 3 + 2 + 1 + 0 = 6 copies for 4 items, which is n(n − 1) / 2: O(n²) copying to add up n numbers. Passing a position instead, `total(nums, i)` with `i + 1` in the call, makes it O(n).
+
+### Dictionaries and sets: O(1) on average
+A dictionary or set uses each key's **hash** to work out where it's stored, so it finds a key without looking at the others:
+
+| Operation | Cost |
+| --- | --- |
+| `d[key]`, `d[key] = value`, `d.get(key)`, `key in d`, `del d[key]` | O(1) on average |
+| `s.add(x)`, `x in s`, `s.remove(x)`, `s.discard(x)` | O(1) on average |
+| `len(d)`, `len(s)` | O(1) |
+| `for key in d:`, `for x in s:`, `set(nums)`, `list(d)` | O(n) |
+
+"On average" means for typical keys. If many keys happened to land in the same place, a lookup could take O(n) steps, but Python's hashing makes that very rare. Unit 3 shows how hash tables work inside.
+
+### Strings
+Strings can't be changed once they're made. Every operation that "changes" a string builds a new one:
+
+| Operation | Cost |
+| --- | --- |
+| `s[i]`, `len(s)` | O(1) |
+| `s + t` | O(len(s) + len(t)): a new string |
+| `x in s`, `s.find(x)`, `s.count(x)`, `s.replace(a, b)` | O(n) |
+| `s.upper()`, `s.split()`, `s.strip()` | O(n) |
+| `"".join(pieces)` | O(total length) |
+
+Building a long string with `s += piece` in a loop copies the string built so far on every turn: 1 + 2 + ... + n = O(n²) characters copied, in the worst case. (CPython often avoids the copy with a clever trick, but nothing guarantees it.) The dependable way is to collect the pieces in a list and join them once:
+```python
+pieces = []
+for i in range(10):
+    pieces.append(str(i))
+print(",".join(pieces))
+```
+```output
+0,1,2,3,4,5,6,7,8,9
+```
+
+### Choosing the right structure
+
+| You need to... | Use | Because |
+| --- | --- | --- |
+| check "is x there?" many times | a set | `in` is O(1) |
+| count things, or look up a value by a key | a dictionary | `d[key]` is O(1) |
+| keep items in order and reach them by position | a list | `nums[i]` is O(1) |
+| add and remove at the end | a list | `append` and `pop()` are O(1) |
+| add or remove at the front | a deque (Unit 3) | a list's front is O(n) |
+| visit items in sorted order | sort once | `sorted` is O(n log n) |
+
+Picking the structure is often the whole speed-up: the same loop with a set instead of a list goes from O(n²) to O(n).
+
+### Hidden costs, and their fixes
+Each of these lines looks like one step, but inside a loop over n items it makes the loop O(n²):
+
+| Slow inside a loop | Faster |
+| --- | --- |
+| `if x in a_list:` | turn the list into a set once, before the loop |
+| `queue.pop(0)` | keep a position `i` and read `queue[i]`, or use a deque |
+| `nums.insert(0, x)` | `append`, then reverse once at the end |
+| `result = result + [x]` | `result.append(x)` |
+| `text.count(word)` for every word | count everything once, in a dictionary |
+| `sorted(nums)` for every item | sort once, before the loop |
+| `sum(nums[:i])` for every i | keep a running total |
+
+=== keypoints
+- List: indexing, `len`, `append` and `pop()` are O(1). `insert(0, x)`, `pop(0)`, `remove`, `in`, `index`, `count`, `sum`, `min` and `max` are O(n).
+- The front of a list is slow because every other item has to move. The end is fast.
+- Slicing copies: `nums[a:b]` costs O(b − a). Slices inside loops or recursion add up to O(n²).
+- Dictionaries and sets: getting, setting, `in`, `add` and `del` are O(1) on average. Looping over them is O(n).
+- `sorted` and `.sort()` are O(n log n). `len` is O(1) for lists, strings, dictionaries and sets.
+- Strings can't change: `s + t` builds a new string. Build long strings with `"".join(pieces)`, not `+=` in a loop.
+
+=== example: The front or the back?
+intro: The same jobs taken off a list, once from the front and once with a position that moves along.
+```python
+jobs = ["wash", "dry", "fold", "iron"]
+done = []
+while len(jobs) > 0:
+    done.append(jobs.pop(0))
+print(done)
+
+jobs = ["wash", "dry", "fold", "iron"]
+done = []
+i = 0
+while i < len(jobs):
+    done.append(jobs[i])
+    i += 1
+print(done)
+```
+1-4: `pop(0)` takes the first job, and every job behind it moves one place forward: n − 1 moves, then n − 2, then n − 3, down to 0. In all, n(n − 1) / 2 moves: O(n²).
+5: The jobs come out in order.
+7-12: The second version never removes anything. A position `i` walks along the list: O(1) per job, O(n) in all.
+13: Same order, without any items moving.
+
+=== example: Join the pieces
+intro: Two ways to build the same string. Both give the same text; the join is the one that's O(n) for sure.
+```python
+words = ["big", "o", "is", "fun"]
+
+s = ""
+for w in words:
+    s += w.upper() + " "
+s = s.strip()
+
+pieces = []
+for w in words:
+    pieces.append(w.upper())
+t = " ".join(pieces)
+
+print(s)
+print(t)
+print(s == t)
+```
+3-6: `+=` builds a new string on every turn, copying everything so far: up to O(n²) characters copied for a long text.
+8-11: Collect the pieces in a list (each `append` is O(1)), then `join` them once: O(total length).
+13-15: The same text both ways.
+
+=== animation: insert(0, x) moves everything
+view: array nums ptr=i
+intro: What `nums.insert(0, 5)` does inside: make room at the end, then move every item one place right, starting from the back.
+```python
+nums = [10, 20, 30, 40]
+nums.append(0)
+i = len(nums) - 1
+while i > 0:
+    nums[i] = nums[i - 1]
+    i -= 1
+nums[0] = 5
+print(nums)
+```
+1: Four items. We want to put 5 at the front.
+2: Make one more box at the end.
+3: Start at the last box.
+4: Is there still an item to move? i = {i}.
+5: Move {nums[i - 1]} from box {i - 1} to box {i}.
+6: Step one box to the left.
+7: Box 0 is free now: put 5 there.
+8: 4 items moved to insert 1. A list of n items needs n moves: O(n). At the end of the list, `append` moves nothing.
+
+=== animation: append against insert(0)
+view: chart fns=n,n*(n-1)/2 labels=append_n_times,insert(0)_n_times n=0..40 step=2
+intro: The total work of building a list of n items by appending to the end, and by inserting each item at the front.
+1: For n = {n} items: appending takes {append_n_times} steps, and inserting at the front moves {insert(0)_n_times} items in all.
+
+=== task: predict easy
+title: From the end, from the front
+code:
+```python
+nums = [1, 2, 3, 4]
+a = nums.pop()
+b = nums.pop(0)
+print(a, b, nums)
+```
+wrong[1 4 [2, 3]]: `pop()` with no position takes the **last** item, and `pop(0)` the first.
+wrong[4 1 [1, 2, 3, 4]]: `pop` removes the item from the list as well as returning it.
+wrong[4 2 [1, 3]]: `pop(0)` takes the item at position 0, which is 1.
+hint: Which item does `pop()` take?
+hint: Which item does `pop(0)` take?
+right: `pop()` takes the 4 from the end in O(1); `pop(0)` takes the 1 from the front, and every other item moves one place left: O(n).
+wrong: `pop()` removes and returns the last item (4), `pop(0)` the first (1), leaving `[2, 3]`.
+
+=== task: mcq easy
+title: The cost of append
+prompt: What is the cost of `nums.append(x)` for a list of n items?
+* O(1), on average :: Right. It adds at the end, where nothing has to move. An occasional resize averages out.
+- O(n), because the list has to be copied :: The list only needs copying when it runs out of room, which is rare enough to average out to O(1).
+- O(log n) :: Nothing is halved: it's one step at the end.
+- O(n), because every item moves along :: That's `insert(0, x)`. At the end, nothing moves.
+hint: Does anything move when you add at the end?
+hint: Compare with `insert(0, x)`.
+right: `append` is O(1) on average, which is why building a list with appends is O(n) in all.
+wrong: Adding at the end moves nothing: O(1). It's `insert(0, x)` that moves every item.
+
+=== task: fill easy
+title: Join with dashes
+prompt: Fill in the blank so that the program joins the words with dashes in one O(n) step:
+
+```output
+a-b-c
+```
+code:
+```python
+words = ["a", "b", "c"]
+print(??.join(words))
+```
+answer: "-"
+wrong[","]: That joins them with commas: `a,b,c`.
+wrong[""]: An empty string joins them with nothing in between: `abc`.
+hint: `join` is a string method: the string goes between the pieces.
+hint: The pieces should be separated by "-".
+right: `"-".join(words)` puts a dash between the pieces and builds the whole string at once: O(total length).
+wrong: `"-".join(words)`. The string you call `join` on goes between each pair of pieces.
+
+=== task: code easy
+title: Make a CSV line
+prompt: Write `make_csv(values)` that returns the values as one string, separated by commas, using `join`. The values are numbers, so turn each one into a string first.
+
+For example, `make_csv([3, 14, 15])` returns `"3,14,15"`.
+starter:
+```python
+def make_csv(values):
+    pieces = []
+    # your code here
+    return ""
+```
+solution:
+```python
+def make_csv(values):
+    pieces = []
+    for v in values:
+        pieces.append(str(v))
+    return ",".join(pieces)
+```
+tests:
+- make_csv([3, 14, 15])
+- make_csv([])
+- make_csv([7])
+- make_csv([1, 2, 3, 4])
+fail[1]: The pieces are "3", "14" and "15", joined by commas: "3,14,15".
+fail[2]: With no values, the result is an empty string.
+fail[3]: One value has no commas: "7".
+require[join(]: Build the string with `join`.
+error[TypeError]: `join` needs strings: turn each number into a string with `str(v)` first.
+hint: Append `str(v)` for each value to `pieces`.
+hint: `",".join(pieces)` puts commas between them.
+hint: Return the joined string.
+right: Each `append` is O(1) and `join` builds the result once: O(n) for the whole line, with no repeated copying.
+wrong: `pieces.append(str(v))` for every value, then `return ",".join(pieces)`.
+
+=== task: predict easy
+title: A slice is a copy
+code:
+```python
+nums = [10, 20, 30, 40]
+part = nums[1:3]
+part[0] = 99
+print(nums, part)
+```
+wrong[[10, 99, 30, 40] [99, 30]]: A slice is a **new** list. Changing it doesn't change `nums`.
+wrong[[10, 20, 30, 40] [99, 30, 40]]: `nums[1:3]` stops before position 3: it holds 20 and 30 only.
+wrong[[10, 20, 30, 40] [20, 99]]: `part[0]` is the first item of the slice, 20, which becomes 99.
+hint: Is `part` the same list as `nums`, or a copy?
+hint: `nums[1:3]` copies positions 1 and 2.
+right: The slice copied 20 and 30 into a new list (O(b − a) work), so changing `part` leaves `nums` alone.
+wrong: `part` is a new list `[20, 30]`; setting `part[0] = 99` gives `[99, 30]`, and `nums` is unchanged.
+
+=== task: multi easy
+title: Which are O(1)?
+prompt: `nums` is a list of n items, and `seen` is a set. Choose **every** operation that is O(1) (on average, for the set).
+* `nums[5]` :: Right. Straight to one box.
+* `nums.append(7)` :: Right. Adds at the end; nothing moves.
+* `len(nums)` :: Right. The length is stored.
+* `7 in seen` :: Right. The hash leads straight to where 7 would be.
+- `7 in nums` :: Checks the items one by one: O(n).
+- `nums.pop(0)` :: Every other item moves one place left: O(n).
+- `nums.insert(0, 7)` :: Every item moves one place right: O(n).
+hint: Does the operation look through the items, or move them?
+hint: Four of them are O(1).
+right: Indexing, `append`, `len` and set membership go straight to one place. A list search and the front of a list touch every item.
+wrong: O(1): `nums[5]`, `append`, `len` and `in` on a set. O(n): `in` on a list, `pop(0)` and `insert(0, ...)`.
+
+=== task: parsons easy
+title: Shout the words
+prompt: Arrange the lines so that the program builds the sentence from upper-case words with `join`, and prints:
+
+```output
+BIG O IS FUN
+```
+
+Not every line is needed.
+lines:
+```python
+words = ["big", "o", "is", "fun"]
+pieces = []
+for w in words:
+    pieces.append(w.upper())
+print(" ".join(pieces))
+```
+distractors:
+```python
+    pieces = pieces + w.upper()
+print(pieces.join(" "))
+```
+hint: Collect the upper-case words in a list with `append`.
+hint: `" ".join(pieces)`: the separator comes first.
+right: n appends and one join: O(n). `pieces + w.upper()` would try to add a string to a list, and `pieces.join` doesn't exist: lists have no `join`.
+wrong: `pieces = []`, then `pieces.append(w.upper())` in the loop, then `print(" ".join(pieces))`.
+
+=== task: cells easy
+title: List costs
+prompt: `nums` is a list of n items. Fill in the Big O of each operation (type it like O(1) or O(n)).
+labels: nums[5] | nums.pop(0) | nums.append(7) | 7 in nums
+answer: O(1) | O(n) | O(1) | O(n)
+wrong[O(1) | O(1) | O(1) | O(n)]: `pop(0)` removes from the front, and every other item moves one place left: O(n).
+wrong[O(1) | O(n) | O(n) | O(n)]: `append` adds at the end, where nothing moves: O(1).
+wrong[O(1) | O(n) | O(1) | O(1)]: `in` on a list checks the items one by one: O(n). It's only O(1) for sets and dictionaries.
+hint: Straight to one place is O(1); looking through or moving items is O(n).
+hint: The end of a list is cheap; the front is expensive.
+right: Indexing and `append` are O(1); `pop(0)` moves items and `in` searches: O(n).
+wrong: `nums[5]` O(1), `pop(0)` O(n), `append` O(1), `in` O(n).
+
+=== task: mcq easy
+title: in, for a set
+prompt: `names` is a set of n names. What is the cost of `"Ann" in names`?
+* O(1) on average :: Right. The hash of "Ann" tells the set where to look.
+- O(n) :: That's `in` on a list. A set doesn't look through its items.
+- O(log n) :: A set doesn't halve anything: it goes straight to the right place.
+- O(n log n) :: That's sorting. Checking one name is far cheaper.
+hint: How does a set find an item?
+hint: By its hash, not by searching.
+right: O(1) on average, which is why turning a list into a set before many lookups is such a common speed-up.
+wrong: A set uses the hash to go straight to where "Ann" would be: O(1) on average.
+
+=== task: predict easy
+title: A new string
+code:
+```python
+s = "cat"
+t = s.upper()
+print(s, t)
+```
+wrong[CAT CAT]: Strings can't change. `upper()` builds a new string and leaves `s` as it was.
+wrong[cat cat]: `t` holds the new upper-case string: "CAT".
+wrong[CAT cat]: It's the other way round: `s` is unchanged and `t` is the new string.
+hint: Does `upper()` change `s`?
+hint: It returns a new string.
+right: `s.upper()` makes a new string of n characters (O(n)) and leaves `s` unchanged, because strings can't be changed.
+wrong: `s` stays "cat", and `t` is the new string "CAT".
+
+=== task: code medium
+title: Remove every x
+prompt: Write `remove_all_x(nums, x)` that returns a new list without any item equal to `x`, keeping the rest in order. Make it O(n): build the new list in one pass, instead of calling `remove` again and again.
+
+For example, `remove_all_x([3, 1, 3, 2], 3)` returns `[1, 2]`.
+starter:
+```python
+def remove_all_x(nums, x):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def remove_all_x(nums, x):
+    result = []
+    for v in nums:
+        if v != x:
+            result.append(v)
+    return result
+```
+tests:
+- remove_all_x([3, 1, 3, 2], 3)
+- remove_all_x([], 1)
+- remove_all_x([1, 1], 1)
+- remove_all_x([1, 2], 5)
+speed: setup=nums = [0, 1] * n | call=remove_all_x(nums, 0) | target=O(n)
+slow:
+```python
+def remove_all_x(nums, x):
+    result = nums[:]
+    while x in result:
+        result.remove(x)
+    return result
+```
+fail[1]: Both 3s go, and 1 and 2 stay in their order.
+fail[3]: Every item is 1, so nothing is left.
+fail[4]: There's no 5, so every item stays.
+hint: Go through the items once.
+hint: Append every item that isn't equal to `x`.
+hint: Return the new list.
+right: One pass with O(1) work per item: O(n). `while x in result: result.remove(x)` searches and shifts the list for every copy of x: O(n²) when x appears often.
+wrong: `for v in nums: if v != x: result.append(v)`, then return `result`.
+
+=== task: code medium
+title: The most common word
+prompt: Write `most_common(words)` that returns the word that appears most often. If two words are tied, return the one that appears first in the list. Make it O(n): count the words in a dictionary in one pass, then go through the words again to find the best.
+
+For example, `most_common(["a", "b", "a"])` returns `"a"`.
+starter:
+```python
+def most_common(words):
+    counts = {}
+    # your code here
+    return words[0]
+```
+solution:
+```python
+def most_common(words):
+    counts = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    best = words[0]
+    for w in words:
+        if counts[w] > counts[best]:
+            best = w
+    return best
+```
+tests:
+- most_common(["a", "b", "a"])
+- most_common(["x"])
+- most_common(["b", "a", "a", "b"])
+- most_common(["one", "two", "three"])
+- most_common(["c", "c", "d", "d", "d"])
+speed: setup=words = ["w" + str(i % 50) for i in range(n)] | call=most_common(words) | target=O(n)
+slow:
+```python
+def most_common(words):
+    best = words[0]
+    for w in words:
+        if words.count(w) > words.count(best):
+            best = w
+    return best
+```
+fail[3]: "b" and "a" both appear twice, and "b" comes first. Only replace the best when a count is **bigger**, not equal.
+fail[5]: "d" appears 3 times, more than "c".
+error[KeyError]: Count with `counts.get(w, 0) + 1`, so a new word starts at 0.
+hint: First pass: `counts[w] = counts.get(w, 0) + 1`.
+hint: Second pass: keep `best`, and replace it when `counts[w] > counts[best]`.
+hint: Start `best` at the first word.
+right: Two passes with O(1) dictionary work per word: O(n). Calling `words.count(w)` for every word would be a full pass each time: O(n²).
+wrong: Count every word in `counts`, then go through the words and keep the first one with the biggest count.
+
+=== task: predict medium
+title: Copies add up
+code:
+```python
+copied = []
+
+def total(nums):
+    if len(nums) == 0:
+        return 0
+    rest = nums[1:]
+    copied.append(len(rest))
+    return nums[0] + total(rest)
+
+print(total([5, 1, 4, 2]), sum(copied))
+```
+wrong[12 4]: Each call copies the rest of its list, not one item: 3 + 2 + 1 + 0.
+wrong[12 10]: The slice `nums[1:]` leaves out the first item, so the copies hold 3, 2, 1 and 0 items.
+wrong[12 0]: `nums[1:]` is a new list, and making it copies its items.
+hint: How long is `rest` in each call?
+hint: 3, then 2, then 1, then 0.
+right: The total is 12, but the slices copied 3 + 2 + 1 + 0 = 6 items: n(n − 1) / 2, which is O(n²) for adding up n numbers. Passing a position instead of a slice makes it O(n).
+wrong: 5 + 1 + 4 + 2 = 12, and the slices hold 3, 2, 1 and 0 items: 6 copies.
+
+=== task: fill medium
+title: Take from the end
+prompt: Fill in the blank so that the program takes the items off the **end** of the list, which is O(1) each time, and prints:
+
+```output
+[3, 2, 1]
+```
+code:
+```python
+stack = [1, 2, 3]
+order = []
+while len(stack) > 0:
+    order.append(stack.??)
+print(order)
+```
+answer: pop()
+wrong[pop(0)]: `pop(0)` takes from the front, so the order would be `[1, 2, 3]`, and every other item would move each time.
+wrong[pop(1)]: `pop(1)` takes the second item, and fails with IndexError once only one item is left.
+hint: Which `pop` takes the last item?
+hint: `pop` with no position.
+right: `pop()` takes the last item without moving anything: O(1) per item, O(n) for the whole list.
+wrong: `stack.pop()`. With no position, `pop` takes the last item.
+
+=== task: cells medium
+title: Steps for 100 items
+prompt: `nums` is a list of 100 items, and 5 isn't one of them. About how many items does each operation touch (read or move)?
+labels: nums[99] | nums.pop() | nums.insert(0, 1) | 5 in nums
+answer: 1 | 1 | 100 | 100
+wrong[1 | 100 | 100 | 100]: `pop()` takes from the end: one item, nothing moves.
+wrong[1 | 1 | 1 | 100]: `insert(0, ...)` makes room at the front by moving all 100 items.
+wrong[1 | 1 | 100 | 1]: 5 isn't there, so `in` checks all 100 items before answering False.
+hint: Which ones work at one place, and which touch every item?
+hint: A missing item is the worst case for `in`.
+right: 1, 1, 100 and 100: indexing and `pop()` are O(1), while `insert(0, ...)` and a failed `in` are O(n).
+wrong: `nums[99]` and `pop()` touch one item; `insert(0, 1)` moves all 100; `5 in nums` checks all 100.
+
+=== task: order medium
+title: Cheapest to dearest
+prompt: `nums` is a list of 1,000,000 numbers. Put these in order, from the fewest steps to the most.
+items:
+- `nums[-1]`
+- `nums.index(x)`, where x is the last item
+- `sorted(nums)`
+- `[a + b for a in nums for b in nums]`
+hint: Write each one in Big O: O(1), O(n), O(n log n), O(n²).
+hint: The comprehension has two `for` parts: every pair.
+right: 1 step, about 1,000,000, about 20,000,000, and a trillion. The last one would never finish: n² pairs for a million items.
+wrong: `nums[-1]` is O(1), `index` is O(n), `sorted` is O(n log n), and every pair is O(n²).
+
+=== task: predict medium
+title: Two ways to build "0123"
+code:
+```python
+s = ""
+for i in range(4):
+    s += str(i)
+t = "".join(str(i) for i in range(4))
+print(s, t, s == t)
+```
+wrong[0123 0123 False]: Both build the same characters in the same order, so they're equal.
+wrong[6 0123 False]: `str(i)` turns each number into text, so `+=` joins text, not adds numbers.
+wrong[0 1 2 3 0123 False]: Nothing is added between the pieces: "0", "1", "2", "3" make "0123".
+hint: `s += str(i)` sticks the pieces together.
+hint: `"".join(...)` sticks them together with nothing in between.
+right: Both make "0123". For long strings, `join` is the dependable choice: it builds the string once, while `+=` may copy the whole string on every turn.
+wrong: Both give "0123", so `s == t` is True.
+
+=== task: mcq medium
+title: Many lookups
+prompt: You have to check 1,000 names, one by one, against a list of 100,000 members. What's the fastest plan?
+* Turn the list into a set once, then check each name with `in` :: Right. 100,000 steps to build the set, then 1,000 O(1) checks.
+- Check each name with `in` on the list :: Each check can scan 100,000 members: up to 100,000,000 steps.
+- Sort the list, then check each name with `in` :: `in` on a list still checks one by one, sorted or not.
+- Check each name with `members.count(name) > 0` :: `count` always scans the whole list, even after finding the name.
+hint: Which structure answers `in` in O(1)?
+hint: Building it once costs one pass.
+right: O(n + q) with a set, against O(n × q) with the list: about 101,000 steps instead of 100,000,000.
+wrong: Build a set of the members once (O(n)), then each check is O(1): O(n + q) in all.
+
+=== task: multi medium
+title: Which are O(n)?
+prompt: `nums` is a list of n numbers. Choose **every** operation that is O(n).
+* `x in nums` :: Right. It checks the items one by one.
+* `nums.insert(0, x)` :: Right. Every item moves one place right.
+* `nums.pop(0)` :: Right. Every remaining item moves one place left.
+* `sum(nums)` :: Right. It adds every item.
+- `nums[3]` :: Straight to one box: O(1).
+- `nums.pop()` :: From the end, nothing moves: O(1).
+hint: Does the operation look at or move every item?
+hint: Four of them do.
+right: Searching, inserting or removing at the front, and summing all touch every item. Indexing and `pop()` from the end don't.
+wrong: O(n): `in`, `insert(0, ...)`, `pop(0)`, `sum`. O(1): indexing and `pop()`.
+
+=== task: code medium
+title: Reverse without insert(0)
+prompt: Write `reversed_copy(nums)` that returns a new list with the items in reverse order, leaving `nums` unchanged. Make it O(n): don't put each item at the front with `insert(0, ...)`, which moves every item each time.
+
+For example, `reversed_copy([1, 2, 3])` returns `[3, 2, 1]`.
+starter:
+```python
+def reversed_copy(nums):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def reversed_copy(nums):
+    result = []
+    for i in range(len(nums) - 1, -1, -1):
+        result.append(nums[i])
+    return result
+```
+tests:
+- reversed_copy([1, 2, 3])
+- reversed_copy([])
+- reversed_copy([7])
+- reversed_copy(["a", "b"])
+speed: setup=nums = list(range(n)) | call=reversed_copy(nums) | target=O(n)
+slow:
+```python
+def reversed_copy(nums):
+    result = []
+    for x in nums:
+        result.insert(0, x)
+    return result
+```
+fail[1]: The last item comes first: `[3, 2, 1]`.
+fail[4]: Two items swap places: `["b", "a"]`.
+forbid[insert(]: Putting each item at the front moves all the others: O(n²). Append instead.
+hint: Go through the positions from the last to the first: `range(len(nums) - 1, -1, -1)`.
+hint: Append each item you meet.
+hint: Or append in order and reverse the result once at the end, or use a slice `nums[::-1]`.
+right: n appends at the end: O(n). Inserting each item at the front would move 0 + 1 + 2 + ... + (n − 1) items: O(n²).
+wrong: Loop backwards over the positions with `range(len(nums) - 1, -1, -1)` and append `nums[i]`.
+
+=== task: code hard
+title: Sums of every window
+prompt: Write `window_sums(nums, k)` that returns the sums of every run of k neighbouring items, from left to right. If k is bigger than the list, return an empty list. Make it O(n): work out the first sum, then slide along, adding the item that comes in and taking away the item that drops out. Adding up a slice for every window would be O(n × k).
+
+For example, `window_sums([1, 2, 3, 4, 5], 2)` returns `[3, 5, 7, 9]`.
+starter:
+```python
+def window_sums(nums, k):
+    if k > len(nums):
+        return []
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def window_sums(nums, k):
+    if k > len(nums):
+        return []
+    result = []
+    total = 0
+    for i in range(k):
+        total += nums[i]
+    result.append(total)
+    for i in range(k, len(nums)):
+        total += nums[i] - nums[i - k]
+        result.append(total)
+    return result
+```
+tests:
+- window_sums([1, 2, 3, 4, 5], 2)
+- window_sums([1, 2, 3], 3)
+- window_sums([4], 1)
+- window_sums([1, 2], 3)
+- window_sums([5, -1, 3, 0], 2)
+speed: setup=nums = list(range(n)) | call=window_sums(nums, n // 2) | target=O(n)
+slow:
+```python
+def window_sums(nums, k):
+    if k > len(nums):
+        return []
+    result = []
+    for i in range(len(nums) - k + 1):
+        result.append(sum(nums[i:i + k]))
+    return result
+```
+fail[1]: The windows are [1, 2], [2, 3], [3, 4] and [4, 5]: sums 3, 5, 7 and 9.
+fail[2]: One window covers the whole list: `[6]`.
+fail[5]: [5, -1] = 4, [-1, 3] = 2, [3, 0] = 3.
+error[IndexError]: The item that drops out is `nums[i - k]`, k places behind the new one.
+hint: First add up `nums[0]` to `nums[k - 1]`, and append that total.
+hint: For each later position i, the window gains `nums[i]` and loses `nums[i - k]`.
+hint: Append the total after each slide.
+right: k steps for the first window, then O(1) per slide: O(n) in all. `sum(nums[i:i + k])` for every window copies and adds k items each time: O(n × k), which is O(n²) when k is about n / 2.
+wrong: Sum the first k items, append it, then for i from k to the end: `total += nums[i] - nums[i - k]` and append.
+
+=== task: code hard
+title: A phone book
+prompt: Write `lookup_all(names, numbers, queries)`. `names[i]` has the phone number `numbers[i]`. Return a list with the number for each name in `queries`, or None for a name that isn't there. Make it O(n + q): build a dictionary from name to number once, then look each query up.
+
+For example, `lookup_all(["ann", "bob"], ["555-1", "555-2"], ["bob", "cal"])` returns `["555-2", None]`.
+starter:
+```python
+def lookup_all(names, numbers, queries):
+    book = {}
+    # your code here
+    return []
+```
+solution:
+```python
+def lookup_all(names, numbers, queries):
+    book = {}
+    for i in range(len(names)):
+        book[names[i]] = numbers[i]
+    result = []
+    for q in queries:
+        result.append(book.get(q))
+    return result
+```
+tests:
+- lookup_all(["ann", "bob"], ["555-1", "555-2"], ["bob", "cal", "ann"])
+- lookup_all([], [], ["x"])
+- lookup_all(["ann"], ["555-1"], [])
+- lookup_all(["a", "b", "c"], [1, 2, 3], ["c", "c"])
+speed: setup=names = ["n" + str(i) for i in range(n)]; numbers = list(range(n)); queries = ["m" + str(i) for i in range(n)] | call=lookup_all(names, numbers, queries) | target=O(n)
+slow:
+```python
+def lookup_all(names, numbers, queries):
+    result = []
+    for q in queries:
+        if q in names:
+            result.append(numbers[names.index(q)])
+        else:
+            result.append(None)
+    return result
+```
+fail[1]: bob → 555-2, cal isn't there (None), ann → 555-1.
+fail[2]: An empty book has no names: None.
+fail[4]: The same query can come twice; each gets its number.
+error[KeyError]: `book[q]` fails for a missing name. Use `book.get(q)`, which gives None.
+hint: Fill the dictionary: `book[names[i]] = numbers[i]`.
+hint: For each query, append `book.get(q)`.
+hint: Return the list of answers.
+right: n steps to build the book, then q O(1) lookups: O(n + q). Searching the `names` list for every query would be O(n × q).
+wrong: Build `book` from the two lists, then append `book.get(q)` for every query.
+
+=== task: code hard
+title: Reverse the words
+prompt: Write `reverse_words(sentence)` that returns the sentence with its words in reverse order, separated by single spaces. Make it O(n) with `split`, a reversed list, and `join`, instead of adding the words to a string one at a time.
+
+For example, `reverse_words("big o is fun")` returns `"fun is o big"`.
+starter:
+```python
+def reverse_words(sentence):
+    words = sentence.split()
+    # your code here
+    return sentence
+```
+solution:
+```python
+def reverse_words(sentence):
+    words = sentence.split()
+    backwards = []
+    for i in range(len(words) - 1, -1, -1):
+        backwards.append(words[i])
+    return " ".join(backwards)
+```
+tests:
+- reverse_words("big o is fun")
+- reverse_words("hello")
+- reverse_words("")
+- reverse_words("a b")
+- reverse_words("  two   spaces ")
+fail[1]: The words go in the opposite order: fun, is, o, big.
+fail[3]: An empty sentence has no words: the answer is an empty string.
+fail[5]: `split()` with no argument ignores extra spaces, and `join` puts single spaces back: "spaces two".
+require[join(]: Put the words back together with `join`.
+hint: `sentence.split()` gives the words.
+hint: Collect them from the last to the first.
+hint: `" ".join(...)` puts them back with single spaces.
+right: `split`, the reversal and `join` are each one pass: O(n). Adding each word to a growing string with `+` could copy the string again for every word.
+wrong: Split into words, build a list from the last word to the first, and return `" ".join` of it.
+
+=== task: code hard
+title: Group the anagrams
+prompt: Write `anagram_groups(words)` that groups words made of the same letters. Two words are in the same group when their sorted letters match, so `"".join(sorted(w))` is a good key for a dictionary of groups. Return the groups as a list of lists, in the order each group first appears, with the words of each group in their original order. Make it O(n) in the number of words, with a dictionary instead of comparing every pair of words.
+
+For example, `anagram_groups(["tea", "eat", "tan", "ate"])` returns `[["tea", "eat", "ate"], ["tan"]]`.
+starter:
+```python
+def anagram_groups(words):
+    groups = {}
+    order = []
+    # your code here
+    return [groups[key] for key in order]
+```
+solution:
+```python
+def anagram_groups(words):
+    groups = {}
+    order = []
+    for w in words:
+        key = "".join(sorted(w))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(w)
+    return [groups[key] for key in order]
+```
+tests:
+- anagram_groups(["tea", "eat", "tan", "ate", "nat", "bat"])
+- anagram_groups([])
+- anagram_groups(["a"])
+- anagram_groups(["ab", "ba", "ab"])
+speed: setup=words = ["w" + str(i) for i in range(n)] | call=anagram_groups(words) | target=O(n)
+slow:
+```python
+def anagram_groups(words):
+    groups = []
+    for w in words:
+        placed = False
+        for g in groups:
+            if sorted(g[0]) == sorted(w):
+                g.append(w)
+                placed = True
+                break
+        if not placed:
+            groups.append([w])
+    return groups
+```
+fail[1]: "tea", "eat" and "ate" share the letters a, e, t; "tan" and "nat" share a, n, t; "bat" is alone.
+fail[4]: All three words have the letters a and b, so they form one group, repeats included.
+error[KeyError]: Create the group the first time you meet a key: `groups[key] = []`.
+hint: For each word, `key = "".join(sorted(w))`.
+hint: If the key is new, start an empty group and remember the key in `order`.
+hint: Append the word to `groups[key]`.
+right: Each word costs one sort of its own letters and one O(1) dictionary step, so the time grows in proportion to the number of words. Comparing each word with every group so far would be O(n²) for n different words.
+wrong: For each word, make its key from its sorted letters; create the group if it's new (and note the key's order), then append the word.
+
+=== task: predict hard
+title: Counting the moves
+code:
+```python
+moves = 0
+nums = []
+for x in range(5):
+    moves += len(nums)
+    nums.insert(0, x)
+print(nums, moves)
+```
+wrong[[0, 1, 2, 3, 4] 10]: Each item goes in at the **front**, so the last one inserted, 4, ends up first.
+wrong[[4, 3, 2, 1, 0] 15]: Before each insert, the list holds 0, 1, 2, 3 and 4 items: 10 moves in all.
+wrong[[4, 3, 2, 1, 0] 5]: Each insert moves every item already in the list, not one item.
+hint: What's in `nums` before each insert?
+hint: The moves are 0 + 1 + 2 + 3 + 4.
+right: Inserting at the front moves every item already there: 0 + 1 + 2 + 3 + 4 = 10, which is n(n − 1) / 2, O(n²) for n inserts. With `append`, nothing would move.
+wrong: `nums` grows from the front: [0], [1, 0], ..., [4, 3, 2, 1, 0]. The moves are 0 + 1 + 2 + 3 + 4 = 10.
+
+=== task: predict hard
+title: Remove until gone
+code:
+```python
+nums = [3, 1, 3, 2, 3]
+checks = 0
+while 3 in nums:
+    nums.remove(3)
+    checks += 1
+print(nums, checks)
+```
+wrong[[1, 3, 2, 3] 1]: `remove` takes away one 3 at a time, but the loop keeps going while any 3 is left.
+wrong[[1, 2] 1]: `remove(3)` removes only the **first** 3 each time, so the loop runs three times.
+wrong[[1, 2, 3] 2]: There are three 3s, so it takes three removes to clear them all.
+hint: `remove` deletes only the first match.
+hint: How many 3s are there?
+right: Three removes leave `[1, 2]`. Each `in` and each `remove` scans the list (and `remove` moves the items after the 3), so clearing many copies this way is O(n²). One pass that keeps the other items is O(n).
+wrong: Each turn removes the first 3: [1, 3, 2, 3], then [1, 2, 3], then [1, 2]. That's 3 removes.
+
+=== task: cells hard
+title: String costs
+prompt: `s` is a string of n characters. Fill in the Big O of each operation (type it like O(1) or O(n)).
+labels: s[0] | len(s) | s.upper() | "x" in s
+answer: O(1) | O(1) | O(n) | O(n)
+wrong[O(1) | O(n) | O(n) | O(n)]: The length of a string is stored, so `len` is O(1), like for lists.
+wrong[O(1) | O(1) | O(1) | O(n)]: `upper()` builds a new string, converting every character: O(n).
+wrong[O(1) | O(1) | O(n) | O(1)]: `in` on a string searches through it: O(n). Only sets and dictionaries answer `in` in O(1).
+hint: Does the operation touch every character?
+hint: Building a new string of n characters is O(n).
+right: Indexing and `len` are O(1); `upper()` builds n new characters, and `in` searches the string: O(n).
+wrong: `s[0]` and `len(s)` are O(1); `s.upper()` and `"x" in s` are O(n).
+
+=== task: mcq hard
+title: A queue with pop(0)
+prompt: A program keeps a queue of n jobs in a list. Each turn, it takes the first job with `jobs.pop(0)` and handles it in O(1), until the queue is empty. What is the total cost?
+* O(n²) :: Right. Each `pop(0)` moves every remaining job: (n − 1) + (n − 2) + ... + 0 moves.
+- O(n) :: There are n turns, but each `pop(0)` is O(n) itself.
+- O(n log n) :: Nothing is sorted or halved: the moves add up to about n² / 2.
+- O(1) :: Each turn does work that grows with the queue.
+hint: How many jobs move on each `pop(0)`?
+hint: Add up the moves for every turn.
+right: n(n − 1) / 2 moves: O(n²). Reading the jobs with a position that moves along, or using a deque (Unit 3), makes it O(n).
+wrong: Each `pop(0)` shifts all the jobs behind it, so the total is (n − 1) + (n − 2) + ... + 0: O(n²).
+
+=== task: multi hard
+title: True about dictionaries and sets
+prompt: Choose **every** true sentence.
+* `key in d` is O(1) on average for a dictionary :: Right. The key's hash leads straight to its place.
+* Building a set from a list of n items, `set(nums)`, is O(n) :: Right. Each item is added once, in O(1) on average.
+* Looping over all the keys of a dictionary is O(n) :: Right. Every key is visited.
+* In rare cases, a dictionary lookup can take O(n) steps :: Right. If many keys land in the same place, the lookup has to check them all. Python makes this very unlikely.
+- A set keeps its items in sorted order :: Sets have no order. Use `sorted(s)` to get the items in order.
+- `len(d)` counts the keys, so it's O(n) :: The size is stored: O(1).
+hint: Think about hashing, and about what has to visit every item.
+hint: Four of them are true.
+right: Lookups are O(1) on average (with a rare O(n) worst case), building a set and looping are O(n). Sets have no order, and `len` is stored.
+wrong: True: O(1) average lookups, O(n) to build a set, O(n) to loop, and a rare O(n) worst case. False: sets aren't sorted, and `len` is O(1).
+
+=== task: parsons hard
+title: Count every word
+prompt: Arrange the lines so that `word_counts` counts each word in one pass with a dictionary (O(n)), and the program prints:
+
+```output
+{'to': 2, 'be': 2, 'or': 1, 'not': 1}
+```
+
+Not every line is needed.
+lines:
+```python
+def word_counts(text):
+    counts = {}
+    for w in text.split():
+        counts[w] = counts.get(w, 0) + 1
+    return counts
+
+print(word_counts("to be or not to be"))
+```
+distractors:
+```python
+        counts[w] = text.count(w)
+    for w in text:
+```
+hint: Loop over the words, not the characters: `text.split()`.
+hint: `counts.get(w, 0) + 1` adds one to a word's count, starting from 0.
+right: One pass with O(1) dictionary updates: O(n). `text.count(w)` would scan the whole text for every word (O(n²)), and it would also count "to" inside "tomato".
+wrong: `counts = {}`, then `for w in text.split():` with `counts[w] = counts.get(w, 0) + 1`, then `return counts`.
