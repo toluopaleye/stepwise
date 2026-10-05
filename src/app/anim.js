@@ -296,11 +296,27 @@
     }).join('') + '</tbody></table>';
   }
 
+  // A short name for a value in the call stack: an object (or a reference to one) shows its class and its
+  // first field, e.g. Node(3), so that tree and list nodes can be told apart.
+  function briefRepr(v, idx) {
+    v = deref(v, idx);
+    if (v && typeof v === 'object' && v.$o !== undefined) {
+      const f = v.f || {};
+      const keys = Object.keys(f);
+      if (!keys.length) return v.c + '()';
+      const first = f[keys[0]];
+      const inner = first && typeof first === 'object' && (first.$o !== undefined || first.$r !== undefined) ? '…' : shortRepr(first);
+      return v.c + '(' + inner + ')';
+    }
+    return shortRepr(v);
+  }
+
   function viewCallstack(spec, frame) {
     const st = frame.st || [];
+    const idx = objIndex(frame);
     return '<div class="callstack">' + st.map((sf, i) => {
       const vars = Object.keys(sf.vars || {}).filter((k) => !(sf.vars[k] && (sf.vars[k].$fn || sf.vars[k].$cls)));
-      const shown = vars.slice(0, 4).map((k) => esc(k) + '=' + esc(shortRepr(sf.vars[k]))).join(', ');
+      const shown = vars.slice(0, 4).map((k) => esc(k) + '=' + esc(briefRepr(sf.vars[k], idx))).join(', ');
       const name = sf.fn === '<module>' ? 'main program' : sf.fn + '(' + shown + ')';
       return `<div class="fr ${i === st.length - 1 ? 'ontop' : ''}"><b>${esc(name)}</b>${sf.line ? ' · line ' + sf.line : ''}</div>`;
     }).join('') + '</div>';

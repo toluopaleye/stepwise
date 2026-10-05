@@ -100,7 +100,8 @@
   function highlightSnippets(scope) {
     scope.querySelectorAll('pre.snippet:not([data-done])').forEach((pre) => {
       const lang = pre.getAttribute('data-lang') || 'python';
-      if (lang === 'output' || lang === 'text') pre.classList.add('out');
+      if (lang === 'output') pre.classList.add('out');
+      else if (lang === 'text') pre.classList.add('diagram');
       else pre.innerHTML = hl(pre.textContent).join('\n');
       pre.setAttribute('data-done', '1');
     });

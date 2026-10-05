@@ -1,0 +1,1278 @@
+=== lesson
+id: ds-trees
+title: Trees
+summary: A tree stores items in a hierarchy: one root at the top, and every other item hanging below exactly one parent. You'll learn the words (root, parent, child, leaf, edge, subtree, depth, height), build binary trees out of `Node(val, left, right)` objects, and use recursion to count, sum and measure them. Then you'll meet the kinds of tree that the next lessons explore.
+
+=== learn
+### Branching instead of a line
+Lists, linked lists, stacks and queues all keep their items in a line: each item has at most one item after it. A **tree** lets an item branch out to several items below it. The folders on a computer are a tree: a folder holds files and other folders, which hold more files and folders.
+```text
+home
+├── photos
+│   ├── beach.jpg
+│   └── cat.jpg
+└── docs
+    └── cv.pdf
+```
+Each item in a tree is a **node**, and each line joining a node to one directly below it is an **edge**. Three rules make it a tree:
+
+1. One node, the **root**, is at the top. It has nothing above it ("home" here).
+2. Every other node has exactly **one** node directly above it.
+3. Following edges downwards never leads back to a node you've already passed: there are no loops.
+
+Family trees of descendants, a company's org chart and the elements of a web page are trees too.
+
+### The words for a tree
+Trees are drawn with the root at the top. Here is a tree of 7 nodes:
+```text
+        1
+      /   \
+     2     3
+    / \     \
+   4   5     6
+      /
+     7
+```
+| Word | Meaning | In this tree |
+| --- | --- | --- |
+| root | the node at the top | 1 |
+| parent, child | a node directly above or below another, joined by an edge | 2 is the parent of 4 and 5; 4 and 5 are the children of 2 |
+| siblings | children of the same parent | 4 and 5; 2 and 3 |
+| leaf | a node with no children | 4, 7 and 6 |
+| internal node | a node with at least one child | 1, 2, 3 and 5 |
+| subtree | a node together with everything below it | 2, 4, 5 and 7 form the left subtree of 1 |
+| depth of a node | the number of edges from the root down to it | 1 has depth 0, 3 has depth 1, 7 has depth 3 |
+| height of a tree | the number of edges on the longest path from the root down to a leaf | 3, along 1 → 2 → 5 → 7 |
+
+Every node except the root has exactly one edge up to its parent, so a tree with n nodes always has n − 1 edges: 7 nodes, 6 edges. Some books count the nodes on a path instead of the edges; this course counts edges, so a tree of one node has height 0.
+
+### Binary trees in Python
+A **binary tree** is a tree where every node has at most two children, called the **left** child and the **right** child. In Python, a node is an object with a value and two links, like a linked list node with two `next` links:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1,
+            Node(2, Node(4), Node(5, Node(7))),
+            Node(3, None, Node(6)))
+print(root.val, root.left.val, root.right.val)
+print(root.left.right.left.val)
+print(root.right.left)
+```
+```output
+1 2 3
+7
+None
+```
+- `left` and `right` default to None, which means "no child". `Node(4)` is a leaf.
+- Each `Node(...)` call builds a whole subtree, so nesting the calls builds the tree from the bottom up. This is the 7-node tree from the diagram, with 3's only child on its right.
+- `root.left.right.left` follows a path down the tree: 1 → 2 → 5 → 7. `root.right.left` is None, because 3 has no left child.
+
+The variable `root` is all a program needs to keep: every other node can be reached from it.
+
+### Building a tree link by link
+A tree can also be built one link at a time, which is handy when the nodes come from data. Each assignment hangs a new node below one that's already in the tree:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1)
+root.left = Node(2)
+root.right = Node(3)
+root.left.left = Node(4)
+root.left.right = Node(5)
+root.left.right.left = Node(7)
+root.right.right = Node(6)
+print(root.left.right.left.val, root.right.right.val)
+```
+```output
+7 6
+```
+This builds the same tree as before. A node must be in the tree before anything can hang below it: `root.left.right.left = ...` only works once `root.left.right` exists, or Python stops with `AttributeError: 'NoneType' object has no attribute 'left'`.
+
+### Counting the nodes
+Every subtree is a tree itself, which makes recursion a natural fit. To count the nodes of a tree: count the left subtree, count the right subtree, and add 1 for the node itself. The **base case** is the empty tree, None, which has no nodes:
+```python
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+
+print(count(root), count(root.left), count(root.right.right), count(None))
+```
+```output
+7 4 1 0
+```
+For the 7-node tree, the calls finish from the bottom up:
+
+| call | works out | answer |
+| --- | --- | --- |
+| `count(4)` | 1 + 0 + 0 | 1 |
+| `count(7)` | 1 + 0 + 0 | 1 |
+| `count(5)` | 1 + count(7) + 0 | 2 |
+| `count(2)` | 1 + count(4) + count(5) | 4 |
+| `count(6)` | 1 + 0 + 0 | 1 |
+| `count(3)` | 1 + 0 + count(6) | 2 |
+| `count(1)` | 1 + count(2) + count(3) | 7 |
+
+`count` runs once for every node, plus once for every missing child, so it's O(n). Animation 1 shows these calls on a smaller tree. (This code uses the `Node` class and `root` from the step before.)
+
+### Summing and measuring the height
+Other questions follow the same pattern: an answer for None, then an answer built from the two subtrees and the node itself.
+```python
+def total(node):
+    if node is None:
+        return 0
+    return node.val + total(node.left) + total(node.right)
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+print(total(root), height(root))
+print(height(root.left), height(root.right), height(Node(9)), height(None))
+```
+```output
+28 3
+2 1 0 -1
+```
+- `total` adds the node's value instead of 1: 1 + 2 + ... + 7 = 28.
+- `height` takes the **taller** of the two subtrees and adds the edge down to it. The empty tree gets −1, so that a leaf comes out as 1 + max(−1, −1) = 0.
+- For the root: the left subtree has height 2 (2 → 5 → 7) and the right has height 1 (3 → 6), so the tree's height is 1 + 2 = 3.
+
+Each function visits every node once: O(n). Animation 2 works out a height step by step.
+
+### Passing information down
+`count` and `height` send answers **up** the tree, as return values. Some jobs need information to travel **down** instead, as a parameter. Here each call is told how deep its node is, and prints the node indented by that depth, like the folder listing:
+```python
+def show(node, depth):
+    if node is None:
+        return
+    print("    " * depth + str(node.val))
+    show(node.left, depth + 1)
+    show(node.right, depth + 1)
+
+show(root, 0)
+```
+```output
+1
+    2
+        4
+        5
+            7
+    3
+        6
+```
+The root is called with depth 0, and every call passes `depth + 1` to its children. Each node is printed before its children, and the whole left subtree is printed before the right one. The next lessons call this a **preorder** walk.
+
+### How fast is a tree?
+Going through every node, as `count` does, is O(n). But many tree jobs only follow **one path** from the root down, like a guessing game that asks yes/no questions until it reaches an answer. That costs one step per level: O(h), where h is the tree's height.
+
+How tall is a tree of n nodes? It depends on its shape. If every level is full, each level holds twice as many nodes as the one above, so the height is only about log₂ n. If every node has only one child, the tree is a line, and the height is n − 1:
+
+| n | height if every level is full | height if it's a line |
+| --- | --- | --- |
+| 15 | 3 | 14 |
+| 1,000 | 9 | 999 |
+| 1,000,000 | 19 | 999,999 |
+
+With a million nodes, a path down a full tree takes about 20 steps, and a path down a line takes a million. That's why the search trees and heaps later in this unit work hard to keep their trees short and bushy.
+
+### Kinds of trees
+Trees come in several kinds, each with its own rule. The next two lessons go deeper:
+
+| Kind | Rule | Used for |
+| --- | --- | --- |
+| binary tree | every node has at most 2 children | search trees, heaps, yes/no decisions |
+| full binary tree | every node has 0 or 2 children | expression trees like (2 + 3) × 4 |
+| complete binary tree | every level is full, except maybe the last, which fills from the left | heaps |
+| perfect binary tree | every level is completely full | the shortest tree for its number of nodes |
+| balanced binary tree | at every node, the two subtrees' heights differ by at most 1 | fast searching, O(log n) |
+| degenerate tree | every node has at most 1 child | the slow case: really a linked list |
+| n-ary tree | a node can have any number of children, kept in a list | folders, org charts, comment threads |
+
+Choose a binary tree when each step splits into two ways (smaller or bigger, yes or no), and an n-ary tree when an item can have any number of parts.
+
+=== keypoints
+- A tree has one root; every other node has exactly one parent, joined to it by an edge, and there are no loops. A tree of n nodes has n − 1 edges.
+- A leaf has no children; an internal node has at least one. A subtree is a node with everything below it. Depth counts the edges from the root down to a node; the height of a tree counts the edges on its longest root-to-leaf path (one node: 0, an empty tree: −1).
+- A binary tree node has `val`, `left` and `right`, where None means no child. Nested `Node(...)` calls, or assignments like `root.left = Node(2)`, build a tree.
+- Tree functions are recursive: return an answer for None (the base case), then combine the answers for the two subtrees with the node itself. `count` is 1 + left + right, and `height` is 1 + max(left, right), with −1 for None.
+- Answers can travel up as return values or down as parameters, like the depth passed to each child.
+- Visiting every node is O(n); following one path from the root is O(h). A tree of n nodes has a height of about log₂ n when its levels are full, but n − 1 when it's a line.
+- Kinds of binary tree: full, complete, perfect, balanced and degenerate. An n-ary tree keeps any number of children in a list.
+
+=== example: Exploring a tree
+intro: Three recursive functions on one tree: counting the leaves, finding the largest value, and finding how deep a value is.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def leaves(node):
+    if node is None:
+        return 0
+    if node.left is None and node.right is None:
+        return 1
+    return leaves(node.left) + leaves(node.right)
+
+def biggest(node):
+    best = node.val
+    if node.left is not None:
+        best = max(best, biggest(node.left))
+    if node.right is not None:
+        best = max(best, biggest(node.right))
+    return best
+
+def depth_of(node, target, depth):
+    if node is None:
+        return -1
+    if node.val == target:
+        return depth
+    found = depth_of(node.left, target, depth + 1)
+    if found != -1:
+        return found
+    return depth_of(node.right, target, depth + 1)
+
+root = Node(50, Node(30, Node(20), Node(40)), Node(70, None, Node(80, Node(75))))
+print(leaves(root), biggest(root))
+print(depth_of(root, 75, 0), depth_of(root, 30, 0), depth_of(root, 99, 0))
+```
+1-5: A binary tree node: a value and two links.
+7-12: A leaf counts 1. Any other node passes the question on to its two subtrees and adds up their answers. An empty subtree counts 0.
+14-20: The largest value: start with the node's own value and compare it with the largest in each subtree that exists. This version is only called on real nodes, so it checks for None before each call.
+22-30: The depth is passed down, one more at each level. Search the left subtree first; only if the value isn't there (-1), search the right one.
+32: 50 has children 30 and 70; 30 has 20 and 40; 70 has only a right child, 80, whose left child is 75.
+33: The leaves are 20, 40 and 75. The largest value is 80.
+34: 75 is 3 edges below the root (50 → 70 → 80 → 75), 30 is 1, and 99 isn't in the tree.
+
+=== example: A guessing tree
+intro: A tree of yes/no questions. Each internal node is a question, its left child is the "yes" branch, and each leaf is an answer. A guess follows one path down.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+tree = Node("Can it fly?",
+            Node("Does it have feathers?", Node("eagle"), Node("bat")),
+            Node("Does it live in water?", Node("fish"), Node("dog")))
+
+def guess(node, answers):
+    for answer in answers:
+        if answer == "yes":
+            node = node.left
+        else:
+            node = node.right
+    return node.val
+
+print(guess(tree, ["yes", "no"]))
+print(guess(tree, ["no", "yes"]))
+print(guess(tree, ["no"]))
+```
+7-9: A tree of height 2: one question, then a second question, then an answer.
+11-17: No recursion is needed to follow one path: `node` moves down one level for each answer, left for "yes" and right for "no".
+19: Flies, but no feathers: bat.
+20: Doesn't fly, lives in water: fish.
+21: After one answer the walk stops at a question, the next one to ask. A walk down one path takes one step per level: O(h).
+
+=== animation: Counting the nodes
+view: tree root ptr=node
+callstack
+intro: `count` on a tree of 5 nodes. Watch each call wait for its left subtree, then its right subtree, and the answers come back up from the leaves.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count(node):
+    if node is None:
+        return 0
+    left = count(node.left)
+    right = count(node.right)
+    return 1 + left + right
+
+root = Node(5, Node(3, Node(1)), Node(8, None, Node(9)))
+print(count(root))
+```
+1: The binary tree node class.
+3: A new node with the value {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines count. Nothing runs yet.
+8: A call of count on {'node ' + str(node.val) if node is not None else 'None, an empty subtree'}.
+9: An empty subtree has 0 nodes.
+10: First count the left subtree of {node.val}. This call waits until the answer comes back.
+11: The left subtree of {node.val} has {left} node{'' if left == 1 else 's'}. Now count its right subtree.
+12: {node.val}'s subtree has 1 + {left} + {right} = {1 + left + right} node{'' if 1 + left + right == 1 else 's'}.
+14: Build the tree: 5 at the root, 3 and 8 below it, then 1 and 9.
+15: Count from the root. The answer, 5, is printed once every call has come back.
+
+=== animation: Measuring the height
+view: tree root ptr=node
+callstack
+intro: `height` on a tree of 4 nodes. An empty subtree has height −1, so a leaf comes out as 0. Watch each node take the taller of its two subtrees.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def height(node):
+    if node is None:
+        return -1
+    left = height(node.left)
+    right = height(node.right)
+    return 1 + max(left, right)
+
+root = Node(1, Node(2, None, Node(4)), Node(3))
+print(height(root))
+```
+1: The binary tree node class.
+3: A new node with the value {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines height. Nothing runs yet.
+8: A call of height on {'node ' + str(node.val) if node is not None else 'None, an empty subtree'}.
+9: An empty subtree has height -1, one less than a leaf.
+10: First the height of {node.val}'s left subtree.
+11: The left subtree of {node.val} has height {left}. Now its right subtree.
+12: The height at {node.val} is 1 + max({left}, {right}) = {1 + max(left, right)}{', because it is a leaf' if left == -1 and right == -1 else ': one edge down, plus the taller subtree'}.
+14: Build the tree: 1 at the root, 2 and 3 below it, and 4 as 2's right child.
+15: The height of the whole tree: the path 1 → 2 → 4 has 2 edges.
+
+=== task: multi easy
+title: Find the leaves
+prompt: Choose **every** leaf in this tree.
+
+```text
+        A
+      /   \
+     B     C
+    /     / \
+   D     E   F
+          \
+           G
+```
+* D :: Right. D has no children.
+* G :: Right. G is at the bottom of its path, with no children.
+* F :: Right. F has no children.
+- A :: A is the root. It has two children, B and C.
+- E :: E has a child, G, so it's an internal node.
+- B :: B has a child, D.
+hint: A leaf is a node with no children.
+hint: Look for the nodes with no lines going down from them.
+right: D, G and F are the leaves: the nodes where every path down the tree ends.
+wrong: A leaf has no children. A, B, C and E each have at least one child; D, G and F have none.
+
+=== task: cells easy
+title: How deep is each node?
+prompt: What is the depth of each of these nodes? Depth counts the edges from the root down to the node.
+
+```text
+        A
+      /   \
+     B     C
+    /     / \
+   D     E   F
+          \
+           G
+```
+labels: A | B | E | F | G
+answer: 0 | 1 | 2 | 2 | 3
+wrong[1 | 2 | 3 | 3 | 4]: That counts nodes, not edges. The root is 0 edges from itself, so its depth is 0.
+wrong[0 | 1 | 2 | 3 | 3]: F is C's child, at the same level as E: 2 edges from the root (A → C → F).
+hint: The root has depth 0.
+hint: Each step down one edge adds 1.
+right: 0, 1, 2, 2, 3: G is the deepest node, 3 edges below A, so the tree's height is 3.
+wrong: A is the root: 0. B is one edge down: 1. E and F are two edges down (A → C → E, A → C → F): 2. G is three: 3.
+
+=== task: predict easy
+title: Following the links
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", Node("D")), Node("C", Node("E", None, Node("G")), Node("F")))
+print(root.right.left.val, root.left.left.val, root.right.left.right.val)
+print(root.left.right)
+```
+wrong[B D G\nNone]: `root.right` is C, and C's left child is E.
+wrong[E D F\nNone]: `root.right.left` is E, and E's right child is G. F is C's right child.
+wrong[E D G\nD]: B has only a left child, D. Its right is None.
+hint: Read each chain from the left: `root.right` first, then `.left` of that.
+hint: Draw the tree: A has children B and C; B has D; C has E and F; E's right child is G.
+right: `E D G` then `None`: each `.left` or `.right` moves one level down, and a missing child is None.
+wrong: root.right is C, and its left is E. root.left.left is D. root.right.left.right is G. B has no right child, so the last line prints None.
+
+=== task: code easy
+title: Add up the tree
+prompt: Write `total(node)` that returns the sum of all the values in the binary tree whose root is `node`. An empty tree (None) adds up to 0.
+
+For example, `total(Node(1, Node(2), Node(3)))` returns 6.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def total(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def total(node):
+    if node is None:
+        return 0
+    return node.val + total(node.left) + total(node.right)
+```
+tests:
+- total(None)
+- total(Node(5))
+- total(Node(1, Node(2), Node(3)))
+- total(Node(10, Node(-4, Node(2)), Node(7, None, Node(1))))
+- total(Node(0, Node(0)))
+fail[2]: A single node adds up to its own value, 5.
+fail[3]: 1 + 2 + 3 = 6: add the node's value to the totals of both subtrees.
+fail[4]: Negative values count too: 10 − 4 + 2 + 7 + 1 = 16.
+error[AttributeError]: None has no `.val`: return 0 for an empty tree before using `node.val`.
+error[RecursionError]: Every call must reach the base case: return 0 when `node` is None.
+hint: If `node` is None, return 0.
+hint: Otherwise return `node.val + total(node.left) + total(node.right)`.
+right: A base case and one line: each node adds its value to the totals of its subtrees. Every node is visited once: O(n).
+wrong: An empty tree adds up to 0. Any other tree adds up to its root's value plus the totals of its left and right subtrees.
+
+=== task: fill easy
+title: The empty tree
+prompt: Fill in the blank so that `count` returns the number of nodes, and the program prints:
+
+```output
+4
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count(node):
+    if node is None:
+        return ??
+    return 1 + count(node.left) + count(node.right)
+
+print(count(Node(1, Node(2), Node(3, Node(4)))))
+```
+answer: 0
+wrong[1]: Then every missing child would count as a node too. The 4 nodes have 5 missing children between them, so you'd get 9.
+wrong[None]: `1 + None` isn't allowed: `TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'`.
+hint: How many nodes does an empty tree have?
+hint: The base case's answer is added into every total above it.
+right: An empty tree has 0 nodes, so None adds nothing, and the 4 real nodes each add 1.
+wrong: None is the empty tree, and an empty tree has no nodes: `return 0`.
+
+=== task: mcq easy
+title: Counting the edges
+prompt: A tree has 12 nodes. How many edges does it have?
+* 11 :: Right. Every node except the root has exactly one edge up to its parent.
+- 12 :: The root has no parent, so it has no edge going up.
+- 13 :: A tree never has more edges than nodes.
+- It depends on the shape of the tree :: Whatever the shape, each of the 11 non-root nodes has exactly one edge to its parent.
+hint: Which nodes have an edge going up to a parent?
+hint: Only the root has no parent.
+right: n nodes, n − 1 edges: one edge for each node that has a parent, which is every node but the root.
+wrong: Each edge joins a node to its parent. All nodes except the root have one parent, so 12 nodes have 11 edges, whatever the shape.
+
+=== task: parsons easy
+title: The height function
+prompt: Arrange the lines so that `height` returns the height of a tree, and the program prints:
+
+```output
+2 0
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+print(height(Node(1, Node(2, Node(3)))), height(Node(4)))
+```
+distractors:
+```python
+        return 0
+    return 1 + min(height(node.left), height(node.right))
+```
+hint: An empty tree has height −1, so that a leaf has height 0.
+hint: The height follows the taller subtree.
+right: The line 1 → 2 → 3 has 2 edges, and a single node has height 0: `max` takes the taller subtree, and −1 for None makes a leaf come out as 0.
+wrong: Return −1 for None. Otherwise return 1 plus the larger of the two subtrees' heights, with `max`.
+
+=== task: order easy
+title: Counting step by step
+prompt: Put the steps of `count(node)` in order.
+items:
+- If the node is None, return 0
+- Count the nodes in the left subtree
+- Count the nodes in the right subtree
+- Return 1 + the left count + the right count
+hint: The base case comes first.
+hint: The node can only add itself once both subtrees have been counted.
+right: Base case, left, right, combine: the same shape fits `total`, `height` and most tree functions.
+wrong: First deal with the empty tree. Then count the left subtree and the right subtree, and return their sum plus 1 for the node itself.
+
+=== task: predict easy
+title: Counting subtrees
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+
+t = Node(4, Node(9), Node(2, Node(7), None))
+print(count(t), count(t.right), count(t.left.left))
+```
+wrong[4 1 0]: `t.right` is the node 2, whose subtree holds 2 and 7: 2 nodes.
+wrong[4 2 1]: `t.left` is 9, a leaf, so `t.left.left` is None, which has 0 nodes.
+wrong[3 2 0]: The tree holds 4, 9, 2 and 7: 4 nodes.
+hint: Draw the tree: 4 at the root, 9 on its left, 2 on its right, and 7 as 2's left child.
+hint: `count` can start at any node: it counts that node's subtree.
+right: `4 2 0`: the whole tree, the subtree of 2, and the empty tree below 9.
+wrong: The tree is 4 with children 9 and 2, and 2 has a child 7: 4 nodes. 2's subtree is 2 and 7: 2 nodes. 9 has no left child: count(None) is 0.
+
+=== task: mcq easy
+title: Not a tree
+prompt: Which of these structures is **not** a tree?
+* One where a node has two parents :: Right. In a tree, every node except the root has exactly one parent.
+- One where the root has five children :: That's fine: nodes can have any number of children. Only a binary tree limits them to two.
+- One with a single node and no edges :: That's a tree of one node: the root, which is also a leaf.
+- One where every node has at most one child :: That's still a tree, a degenerate one shaped like a line.
+hint: Check the rules: one root, exactly one parent for every other node, and no loops.
+hint: Which option breaks "exactly one parent"?
+right: A node with two parents breaks the tree rule. Structures like that are graphs, which come at the end of this unit.
+wrong: A tree can be wide, tiny or shaped like a line. What it can't have is a node with two parents, or a loop.
+
+=== task: code medium
+title: Count the leaves
+prompt: Write `count_leaves(node)` that returns the number of leaves (nodes with no children) in the binary tree whose root is `node`. An empty tree has no leaves.
+
+For example, `count_leaves(Node(1, Node(2), Node(3)))` returns 2.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count_leaves(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count_leaves(node):
+    if node is None:
+        return 0
+    if node.left is None and node.right is None:
+        return 1
+    return count_leaves(node.left) + count_leaves(node.right)
+```
+tests:
+- count_leaves(None)
+- count_leaves(Node(1))
+- count_leaves(Node(1, Node(2), Node(3)))
+- count_leaves(Node(1, Node(2, Node(4), Node(5, Node(7))), Node(3, None, Node(6))))
+- count_leaves(Node(1, Node(2, Node(3))))
+fail[2]: A single node has no children, so it's a leaf: 1.
+fail[4]: The leaves are 4, 7 and 6. Node 5 has a child, 7, so it isn't a leaf.
+fail[5]: A line of 3 nodes has only one leaf, at the bottom.
+error[AttributeError]: None has no `.left`: return 0 for an empty tree first.
+hint: None has 0 leaves.
+hint: A node whose `left` and `right` are both None is a leaf: return 1.
+hint: Otherwise, add up the leaves of the two subtrees. The node itself isn't a leaf, so it adds nothing.
+right: Two base cases, the empty tree and the leaf, then the usual combination of the two subtrees: O(n).
+wrong: Return 0 for None and 1 for a node with no children. Any other node has as many leaves as its two subtrees together.
+
+=== task: code medium
+title: The largest value
+prompt: Write `tree_max(node)` that returns the largest value in a binary tree. The tree is never empty, but its subtrees can be.
+
+For example, `tree_max(Node(1, Node(9), Node(3)))` returns 9.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def tree_max(node):
+    best = node.val
+    # your code here
+    return best
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def tree_max(node):
+    best = node.val
+    if node.left is not None:
+        best = max(best, tree_max(node.left))
+    if node.right is not None:
+        best = max(best, tree_max(node.right))
+    return best
+```
+tests:
+- tree_max(Node(5))
+- tree_max(Node(1, Node(9), Node(3)))
+- tree_max(Node(-5, Node(-2), Node(-8)))
+- tree_max(Node(4, None, Node(6, Node(10))))
+- tree_max(Node(7, Node(7), Node(7)))
+fail[2]: The largest value, 9, is in the left subtree: compare the node with the largest value of each subtree.
+fail[3]: All the values are negative, so the answer is −2, not 0. Start from the node's own value.
+fail[4]: 10 is two levels down, below 6: the search must reach every node.
+error[AttributeError]: Only call `tree_max` on a child that isn't None.
+hint: `best` starts as the node's own value.
+hint: If `node.left` isn't None, `best = max(best, tree_max(node.left))`.
+hint: Do the same for `node.right`, then return `best`.
+right: Each node compares itself with the largest value of each subtree that exists. Every node is visited once: O(n).
+wrong: Start from the node's value. For each child that isn't None, find the largest value in its subtree and keep whichever is bigger.
+
+=== task: predict medium
+title: Tall or bushy
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+line = Node(1, None, Node(2, None, Node(3, None, Node(4))))
+bushy = Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6), Node(7)))
+print(height(line), height(bushy), height(line.right.right))
+```
+wrong[4 3 2]: Height counts edges, not nodes: a leaf has height 0, so 4 nodes in a line have height 3.
+wrong[3 2 2]: `line.right.right` is the node 3, which has one node below it: height 1.
+wrong[3 3 1]: The bushy tree has 7 nodes on 3 levels: its longest path has 2 edges.
+hint: `line` is 4 nodes, each the right child of the one before.
+hint: `bushy` has full levels of 1, 2 and 4 nodes.
+right: `3 2 1`: 4 nodes in a line are taller than 7 nodes packed into full levels. The shape decides the height.
+wrong: line: 1 → 2 → 3 → 4 is 3 edges. bushy: every path from the root has 2 edges. line.right.right is 3, with 4 below it: 1.
+
+=== task: cells medium
+title: Height of every subtree
+prompt: For each node of this tree, what is the height of the subtree that starts at it?
+
+```text
+        1
+      /   \
+     2     3
+    / \     \
+   4   5     6
+      /
+     7
+```
+labels: 1 | 2 | 3 | 5 | 7
+answer: 3 | 2 | 1 | 1 | 0
+wrong[4 | 3 | 2 | 2 | 1]: That counts nodes on the longest path. Height counts edges, so a leaf like 7 has height 0.
+wrong[0 | 1 | 1 | 2 | 3]: Those are the depths, counted down from the root. A subtree's height is counted from its own top node down to its deepest leaf.
+hint: A leaf has height 0.
+hint: Each node is one more than its taller child.
+right: 3, 2, 1, 1, 0: height is 1 + the taller child's height, worked out from the leaves upwards.
+wrong: 7 is a leaf: 0. 5 is above 7: 1. 3 is above 6, a leaf: 1. 2's taller child is 5: 2. 1's taller child is 2: 3.
+
+=== task: fill medium
+title: Two blanks in height
+prompt: Fill in the blanks so that `height` returns the height of the tree, and the program prints:
+
+```output
+2
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def height(node):
+    if node is None:
+        return ??
+    return 1 + ??(height(node.left), height(node.right))
+
+print(height(Node(1, Node(2, Node(4)), Node(3))))
+```
+answer: -1 | max
+wrong[0 | max]: With 0 for None, a leaf would get height 1, and every height would be 1 too big: 3.
+wrong[-1 | min]: `min` follows the shorter subtree, here 3, so it gives 1 instead of the height.
+hint: What height must None have so that a leaf gets 1 + (that) = 0?
+hint: The height follows the path to the deepest leaf.
+right: −1 for the empty tree makes a leaf 0, and `max` follows the deepest path: 1 → 2 → 4, 2 edges.
+wrong: An empty tree has height −1, and a node's height is 1 plus the larger of its subtrees' heights: `max`.
+
+=== task: mcq medium
+title: One path down
+prompt: A guessing tree has n nodes and height h. A guess starts at the root and follows one path down to an answer. How many steps does it take?
+* O(h): one step for each level it goes down :: Right. It never looks at the other branches.
+- O(n): every node is visited :: Only the nodes on one path are visited.
+- O(1): one step per question :: There's one step per level, and the number of levels is h.
+- O(n log n) :: Nothing is sorted or repeated: it's one walk down.
+hint: How many nodes does one path down from the root pass through?
+hint: The longest path has h edges.
+right: One path costs O(h). For a tree with full levels that's about log₂ n; for a tree shaped like a line it's n − 1.
+wrong: A guess visits one node per level, so it takes at most h + 1 steps: O(h).
+
+=== task: multi medium
+title: True about this tree
+prompt: Choose **every** true statement about this tree.
+
+```text
+        A
+      /   \
+     B     C
+    /     / \
+   D     E   F
+          \
+           G
+```
+* B and C are siblings :: Right. They're both children of A.
+* C's subtree holds 4 nodes: C, E, F and G :: Right. A subtree is a node with everything below it.
+* The height of the tree is 3 :: Right. The longest path, A → C → E → G, has 3 edges.
+* E is an internal node :: Right. It has a child, G.
+- D is the parent of B :: It's the other way round: B is D's parent.
+- The tree has 7 edges :: 7 nodes have 6 edges: one for each node except the root.
+hint: Siblings share a parent; a subtree is a node plus everything below it.
+hint: Count edges, not nodes, for the height.
+right: B and C are siblings, C's subtree has 4 nodes, the height is 3, and E is internal. B is D's parent, and there are 6 edges.
+wrong: B and C share the parent A. C, E, F and G form C's subtree. A → C → E → G is the longest path, 3 edges. E has a child. B is D's parent, not its child, and 7 nodes have 6 edges.
+
+=== task: predict medium
+title: Printing with indents
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def show(node, depth):
+    if node is None:
+        return
+    print("  " * depth + str(node.val))
+    show(node.left, depth + 1)
+    show(node.right, depth + 1)
+
+show(Node("a", Node("b", None, Node("d")), Node("c")), 0)
+```
+wrong[a\n  b\n  c\n    d]: Each subtree is printed completely before the next one starts: b's child d comes before c.
+wrong[a\nb\nd\nc]: Each line is indented by two spaces for every level of depth.
+wrong[a\n  b\n  d\n  c]: d is one level deeper than b: depth 2, so four spaces.
+hint: Each call prints its node, then its whole left subtree, then its whole right subtree.
+hint: The depth goes up by 1 for each level, and each level adds two spaces.
+right: `a`, then `b` (2 spaces), then `d` (4 spaces), then `c` (2 spaces): the depth passed down sets the indent.
+wrong: show(a, 0) prints a, then calls show(b, 1), which prints "  b" and calls show(d, 2) ("    d") for its right child. Only then does show(c, 1) print "  c".
+
+=== task: parsons medium
+title: Print the leaves
+prompt: Arrange the lines so that `print_leaves` prints every leaf, from left to right, and the program prints:
+
+```output
+4
+5
+6
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def print_leaves(node):
+    if node is None:
+        return
+    if node.left is None and node.right is None:
+        print(node.val)
+        return
+    print_leaves(node.left)
+    print_leaves(node.right)
+
+print_leaves(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+```
+distractors:
+```python
+    if node.left is None or node.right is None:
+    if node.left is None:
+```
+hint: A leaf has no left child **and** no right child.
+hint: Visit the left subtree before the right one, so that the leaves come out from left to right.
+right: 3 has a right child, 6, so it isn't a leaf. The leaves 4, 5 and 6 are printed in the order the walk reaches them.
+wrong: Stop at None. If both children are None, print the value and stop. Otherwise go into the left subtree, then the right subtree.
+
+=== task: mcq medium
+title: Which tree for folders?
+prompt: A program models a computer's folders, where a folder can hold any number of files and other folders. Which kind of tree fits best?
+* An n-ary tree, where each node keeps a list of its children :: Right. A list can hold any number of children.
+- A binary tree :: A binary tree node has at most two children, but a folder can hold any number.
+- A degenerate tree :: That allows only one child per node.
+- A perfect binary tree :: That's a binary tree with every level full: still at most two children per node.
+hint: How many children can a folder have?
+hint: Which kind of node can hold any number of children?
+right: Folders branch into any number of parts, which needs an n-ary tree: each node holds a list of children.
+wrong: A folder can hold many items, so its node needs a list of children: an n-ary tree. Binary trees allow at most two.
+
+=== task: code hard
+title: How deep is it?
+prompt: Write `depth_of(node, target)` that returns the depth of the value `target` in the tree whose root is `node` (the root has depth 0), or −1 if the value isn't in the tree. Values in the tree are all different.
+
+Don't add a depth parameter: let the answer travel **up**. If a child's subtree finds the value at depth d, it's at depth d + 1 from this node. `make()` builds a tree to test with:
+
+```text
+        50
+       /  \
+     30    70
+    /  \     \
+   20  40     80
+             /
+            75
+```
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(50, Node(30, Node(20), Node(40)), Node(70, None, Node(80, Node(75))))
+
+def depth_of(node, target):
+    # your code here
+    return -1
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(50, Node(30, Node(20), Node(40)), Node(70, None, Node(80, Node(75))))
+
+def depth_of(node, target):
+    if node is None:
+        return -1
+    if node.val == target:
+        return 0
+    d = depth_of(node.left, target)
+    if d != -1:
+        return d + 1
+    d = depth_of(node.right, target)
+    if d != -1:
+        return d + 1
+    return -1
+```
+tests:
+- depth_of(make(), 50)
+- depth_of(make(), 40)
+- depth_of(make(), 75)
+- depth_of(make(), 99)
+- depth_of(None, 1)
+- depth_of(make(), 70)
+fail[1]: The root is at depth 0.
+fail[2]: 40 is 2 edges below the root: 50 → 30 → 40.
+fail[3]: 75 is 3 edges down: 50 → 70 → 80 → 75. Its depth comes back up as 0, then 1, 2 and 3.
+fail[4]: 99 isn't in the tree: −1. Don't add 1 to a −1.
+error[AttributeError]: Return −1 for None before using `node.val`.
+hint: None: −1. A node holding the target: 0.
+hint: Ask the left subtree. If it found the value at depth d (not −1), return d + 1.
+hint: Otherwise ask the right subtree the same way. If neither found it, return −1.
+right: The answer is built on the way back up: 0 where the value is, plus 1 for each level above it. −1 passes straight up unchanged.
+wrong: Return −1 for an empty tree and 0 if this node holds the value. Otherwise, if a subtree finds it at depth d, it's at d + 1 from here; if neither does, return −1.
+
+=== task: code hard
+title: The same tree?
+prompt: Write `same_tree(a, b)` that returns True if the binary trees with roots `a` and `b` are identical (the same shape, with the same value in each place), and False otherwise. Either tree can be empty.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def same_tree(a, b):
+    # your code here
+    return False
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def same_tree(a, b):
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    return a.val == b.val and same_tree(a.left, b.left) and same_tree(a.right, b.right)
+```
+tests:
+- same_tree(None, None)
+- same_tree(Node(1), None)
+- same_tree(Node(1, Node(2)), Node(1, Node(2)))
+- same_tree(Node(1, Node(2)), Node(1, None, Node(2)))
+- same_tree(Node(1, Node(2), Node(3)), Node(1, Node(2), Node(4)))
+- same_tree(Node(5, Node(3, Node(1)), Node(8)), Node(5, Node(3, Node(1)), Node(8)))
+fail[1]: Two empty trees are the same.
+fail[2]: One tree is empty and the other isn't: not the same.
+fail[3]: Same shape and same values: True.
+fail[4]: Same values, different shape: 2 is a left child in one tree and a right child in the other.
+fail[5]: Same shape, but 3 and 4 differ.
+error[AttributeError]: Deal with None before using `.val`: two Nones are the same; one None is not.
+hint: Both None: True. Only one None: False.
+hint: Otherwise, the values must match, and the left subtrees must be the same, and the right subtrees must be the same.
+hint: `return a.val == b.val and same_tree(a.left, b.left) and same_tree(a.right, b.right)`.
+right: Two trees match when their roots match and both pairs of subtrees match: one recursive call per pair of nodes, O(n). `and` stops at the first difference.
+wrong: Handle the empty cases first: both empty is True, one empty is False. Then compare the values and recurse on the two left subtrees and the two right subtrees.
+
+=== task: code hard
+title: Mirror image
+prompt: Write `mirror(node)` that turns a binary tree into its mirror image: at every node, the left and right children swap places. Change the tree in place and return its root (None for an empty tree). `as_list` turns a tree into nested lists `[val, left, right]` so the tests can show it.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def mirror(node):
+    # your code here
+    return node
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def mirror(node):
+    if node is None:
+        return None
+    node.left, node.right = node.right, node.left
+    mirror(node.left)
+    mirror(node.right)
+    return node
+```
+tests:
+- as_list(mirror(Node(1, Node(2), Node(3))))
+- as_list(mirror(None))
+- as_list(mirror(Node(1, Node(2, Node(4)), None)))
+- as_list(mirror(Node(5)))
+- as_list(mirror(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))))
+fail[1]: Swap the two children: 3 on the left, 2 on the right.
+fail[3]: Every node is mirrored, not only the root: 2 moves to the right, and its child 4 moves from its left to its right.
+fail[5]: All three levels swap: 3 (now with 6 on its left) comes first, then 2 with 5 and 4.
+error[AttributeError]: Return None for an empty tree before using `.left`.
+hint: An empty tree mirrors to itself: return None.
+hint: Swap this node's children with `node.left, node.right = node.right, node.left`.
+hint: Then mirror both subtrees, and return `node`.
+right: Swap at the node, then let recursion swap everything below it. Every node is swapped once: O(n).
+wrong: For a real node, swap its two children, mirror the left subtree and the right subtree, and return the node. For None, return None.
+
+=== task: code hard
+title: The path to a value
+prompt: Write `path_to(node, target)` that returns the list of values on the path from the root down to the value `target`, root first, or None if the value isn't in the tree. Values in the tree are all different. `make()` builds the tree from "How deep is it?":
+
+```text
+        50
+       /  \
+     30    70
+    /  \     \
+   20  40     80
+             /
+            75
+```
+For example, `path_to(make(), 40)` returns `[50, 30, 40]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(50, Node(30, Node(20), Node(40)), Node(70, None, Node(80, Node(75))))
+
+def path_to(node, target):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(50, Node(30, Node(20), Node(40)), Node(70, None, Node(80, Node(75))))
+
+def path_to(node, target):
+    if node is None:
+        return None
+    if node.val == target:
+        return [node.val]
+    rest = path_to(node.left, target)
+    if rest is None:
+        rest = path_to(node.right, target)
+    if rest is None:
+        return None
+    return [node.val] + rest
+```
+tests:
+- path_to(make(), 75)
+- path_to(make(), 50)
+- path_to(make(), 40)
+- path_to(make(), 99)
+- path_to(None, 1)
+- path_to(make(), 20)
+fail[1]: 75 is reached by going right to 70, right to 80, then left to 75: [50, 70, 80, 75].
+fail[2]: The root alone: [50].
+fail[3]: [50, 30, 40]: root first, then each node on the way down.
+fail[4]: 99 isn't in the tree: None, not an empty list.
+error[TypeError]: A subtree that didn't find the value returns None, and `[node.val] + None` fails. Check for None before adding.
+hint: None: None. A node holding the target: `[node.val]`.
+hint: Ask the left subtree for its path; if it gives None, ask the right subtree.
+hint: If one of them found it, put this node's value in front: `[node.val] + rest`. Otherwise return None.
+right: The path is built on the way back up: each node on it puts its value in front. Only nodes on the path add anything, and each node is visited at most once: O(n).
+wrong: Return None for an empty tree and `[node.val]` if this node holds the value. Otherwise take the path from whichever subtree finds it and put this node's value in front, or return None if neither does.
+
+=== task: predict hard
+title: Adding up the depths
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def depth_sum(node, depth):
+    if node is None:
+        return 0
+    return depth + depth_sum(node.left, depth + 1) + depth_sum(node.right, depth + 1)
+
+t = Node(1, Node(2, Node(4), Node(5)), Node(3))
+print(depth_sum(t, 0), depth_sum(t.left, 0))
+```
+wrong[6 4]: The depth is counted from the node the call starts at. Started at 2, node 2 has depth 0, so it's 0 + 1 + 1 = 2.
+wrong[5 2]: Every node adds its own depth: 0 + 1 + 1 + 2 + 2 = 6.
+wrong[15 11]: Each node adds its **depth**, not its value.
+hint: The depths in t are: 1 → 0, 2 and 3 → 1, 4 and 5 → 2.
+hint: The second call treats 2 as the root, at depth 0.
+right: `6 2`: each node adds the depth it was given, and depth travels down as a parameter, so it depends on where the walk starts.
+wrong: From the root: 0 (1) + 1 (2) + 1 (3) + 2 (4) + 2 (5) = 6. From 2: 0 (2) + 1 (4) + 1 (5) = 2.
+
+=== task: predict hard
+title: A tree built in a loop
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+root = None
+for v in [1, 2, 3, 4, 5]:
+    root = Node(v, root)
+print(root.val, count(root), height(root))
+```
+wrong[1 5 4]: Each new node becomes the root, with the old tree as its left child, so the last value, 5, is on top.
+wrong[5 5 5]: Height counts edges: 5 nodes in a line have 4 edges.
+wrong[5 1 0]: The old tree isn't lost: it becomes the new node's left child, so all 5 nodes stay in the tree.
+hint: `Node(v, root)` makes a node whose left child is the tree so far.
+hint: After the loop, the tree is a line: 5 → 4 → 3 → 2 → 1, each node the left child of the one above.
+right: `5 5 4`: a degenerate tree, a line of left children, so its height is n − 1. Following a path down it costs O(n).
+wrong: Each pass puts a new node on top of the old tree, so 5 is the root and the nodes form a line of left children: 5 nodes, height 4.
+
+=== task: cells hard
+title: Which calls finish first?
+prompt: `count` runs on this tree. In what order do the calls for the 6 nodes **return**? (Ignore the calls for None.)
+
+```text
+      6
+     / \
+    2   9
+   / \   \
+  1   4   12
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th
+answer: 1 | 4 | 2 | 12 | 9 | 6
+wrong[6 | 2 | 1 | 4 | 9 | 12]: That's the order the calls **start** in. A call can only return after both of its subtrees' calls have returned, so the leaves finish first.
+wrong[1 | 2 | 4 | 6 | 9 | 12]: That's sorted order. 2 can't return until its right subtree, 4, has returned.
+hint: A call returns only after both of its subtrees' calls have returned.
+hint: The left subtree is counted before the right one.
+right: 1, 4, 2, 12, 9, 6: each node finishes after its whole left subtree and its whole right subtree, so the root is last. This order is called postorder.
+wrong: count(6) calls count(2), which finishes count(1) and count(4) before returning itself. Then count(9) finishes count(12) first. count(6) returns last.
+
+=== task: mcq hard
+title: How tall?
+prompt: A binary tree holds 1,000,000 nodes. What can its height be?
+* Anything from 19, when every level is full, up to 999,999, when the tree is a line :: Right. The shape decides.
+- Always 19 :: That's only when the levels are full. Shaped like a line, the same nodes give a height of 999,999.
+- Always 999,999 :: That's only the worst shape: a line.
+- Always 1,000,000 :: n nodes in a line have n − 1 edges, and that's the tallest possible.
+hint: Each full level holds twice as many nodes as the level above it.
+hint: What if every node has only one child?
+right: A binary tree's height is somewhere between about log₂ n (full levels: 2^19 = 524,288 ≤ 1,000,000 < 2^20) and n − 1 (a line). That gap is why balance matters.
+wrong: Packed into full levels, a million nodes need only 20 levels, height 19. In a line, they need a million levels, height 999,999. Any shape in between is possible.
+
+=== task: multi hard
+title: Recursion on trees
+prompt: Choose **every** true statement about the recursive tree functions in this lesson.
+* Each one needs an answer for None, the empty tree :: Right. That's the base case that stops the recursion.
+* `count` and `height` call themselves once for every node and every missing child, so they're O(n) :: Right. A tree of n nodes has n + 1 missing children.
+* The call stack grows as deep as the tree is tall :: Right. While the deepest leaf is being handled, one call is waiting on each level above it.
+- `height` returns 0 for an empty tree :: In this course an empty tree has height −1, so that a leaf gets 0.
+- Information can only travel up, as return values :: It can also travel down, as a parameter, like the depth in `show`.
+- They always visit the right subtree before the left one :: The order is up to the code: `count` asks the left subtree first.
+hint: What stops the recursion, and how many calls are there?
+hint: Think about `show(node, depth)`.
+right: A base case for None, O(n) calls, and a call stack as deep as the tree: those hold for every function here. Information can flow up or down, in whatever order the code chooses.
+wrong: Every function has a None base case, makes O(n) calls, and stacks up one waiting call per level. Height is −1 for None, `show` passes depth down, and the order of the subtrees is chosen by the code.
+
+=== task: parsons hard
+title: Nodes at one depth
+prompt: Arrange the lines so that `count_at_depth(node, d)` returns how many nodes are exactly d edges below `node`, and the program prints:
+
+```output
+3 1 0
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count_at_depth(node, d):
+    if node is None:
+        return 0
+    if d == 0:
+        return 1
+    return count_at_depth(node.left, d - 1) + count_at_depth(node.right, d - 1)
+
+root = Node(1, Node(2, Node(4), Node(5, Node(7))), Node(3, None, Node(6)))
+print(count_at_depth(root, 2), count_at_depth(root, 3), count_at_depth(root, 5))
+```
+distractors:
+```python
+    if d == 1:
+    return count_at_depth(node.left, d) + count_at_depth(node.right, d)
+```
+hint: A node at depth d from here is at depth d − 1 from its child.
+hint: When d reaches 0, this node is one of the nodes being counted.
+right: Depth 2 holds 4, 5 and 6; depth 3 holds only 7; nothing is 5 deep. Each call takes 1 off d as it goes down a level.
+wrong: Return 0 for None and 1 when d is 0. Otherwise ask both children for the nodes at depth d − 1 below them and add the answers.
