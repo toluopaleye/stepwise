@@ -424,10 +424,11 @@ Sub-lessons (children in `content/units.json`) are listed under their parent as 
    ↳ `py-types-bool` bool: True and False — the two values, `type(True)`, `bool()` of numbers and strings
    (truthiness: 0, 0.0, "" are False), `True + True` is 2 (bools are ints underneath, briefly), booleans from
    comparisons (preview), `str(True)`.
-5. `py-math` Arithmetic operators — `+ - * / // % **`; precedence and brackets; `//` and `%` explained with
-   sharing sweets / minutes and seconds; even/odd with `% 2`; last digit with `% 10`; `round()`, `abs()`,
-   `min()`/`max()` of numbers; float surprises (`0.1 + 0.2`) and rounding output; `import math`, `math.sqrt`,
-   `math.floor`, `math.ceil`, `math.pi`.
+5. `py-math` Arithmetic operators — `+ - * / // % **`; `-3 ** 2` and chains of `**` (right to left); precedence
+   and brackets; shortcut operators `-= *= /= //= %= **=` (the right side is worked out first); `//` and `%`
+   explained with sharing sweets / minutes and seconds / clocks (`% 24`); even/odd with `% 2`; last digit with
+   `% 10`; `round()`, `abs()`, `min()`/`max()` of numbers; float surprises (`0.1 + 0.2`) and rounding output;
+   `import math`, `math.sqrt`, `math.floor`, `math.ceil`, `math.pi`.
 6. `py-strings` Strings: indexing and slicing — characters and positions starting at 0; `s[0]`, `s[-1]`;
    `len(s) - 1` is the last index; IndexError; slicing `s[a:b]` (b not included), `s[:b]`, `s[a:]`, steps
    `s[::2]`, `s[::-1]`; slices never raise; `+` joins, `*` repeats; `in` checks for a substring; strings can't
