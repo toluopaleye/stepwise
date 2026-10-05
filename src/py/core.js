@@ -974,6 +974,8 @@ class Parser {
       } else {
         const est = this.tok;
         const e = this.parseNamedTest();
+        // `print(17 => 18)` or `f(x + 1 = 5)`: only a plain name can be a keyword argument
+        if (this.isOp('=')) this.error('expression cannot contain assignment, perhaps you meant "=="?', this.tok, undefined, e.col !== undefined ? e.col : est.col, this.tok.endCol);
         if (this.isKw('for')) {
           const gens = this.parseCompFor();
           args.push(this.pos({ type: 'GeneratorExp', elt: e, generators: gens, line: e.line }, est));

@@ -38,6 +38,12 @@ CASES = [
     'x = 5 = 6',
     'del f()',
     'f(x) += 1',
+    'print(17 => 18)',
+    'x = 1\nprint(x + 1 = 5)',
+    'print("a" = 5)',
+    'score = 85\nprint("Passed:", score => 50)',
+    'x = 1\nprint((x) = 1)',
+    'def f(**k):\n    pass\nf(x=1, 2 = 3)',
     'print(1 2)\nx = 1',
     'def f(n):\n    return f(n + 1)\nf(0)',
     'print("start")\nname = "Ada"\nprint(nmae)',
@@ -214,6 +220,7 @@ let input=''; process.stdin.on('data', d => input += d); process.stdin.on('end',
             print("--- cpython\n" + str(ct))
             print("--- runner\n" + str(p))
     print(f"{len(CASES) - bad}/{len(CASES)} tracebacks identical")
+    sys.exit(1 if bad else 0)
 
 
 if __name__ == "__main__":
