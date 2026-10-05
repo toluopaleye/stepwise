@@ -1,0 +1,1030 @@
+=== lesson
+id: ds-arrays-2d
+title: 2D arrays (grids)
+summary: A 2D array is a grid of rows and columns, like a spreadsheet or a game board. You'll see how a grid is stored row after row in one block, build grids without the `[[0] * 3] * 3` trap, walk rows, columns and diagonals, find the neighbours of a cell without falling off the edge, and learn what each of these costs.
+
+=== learn
+### Rows and columns
+A **2D array**, or **grid**, arranges items in **rows** and **columns**: the seats of a cinema, a spreadsheet, a chessboard, the pixels of a photo. In Python, a grid is a list of lists, one inner list per row, as in the Nested loops lesson:
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+rows = len(grid)
+cols = len(grid[0])
+print(rows, cols)
+print(grid[1][2])
+```
+```output
+3 4
+9
+```
+- `len(grid)` counts the inner lists, which are the rows: 3.
+- `len(grid[0])` counts the items in row 0, which is the number of columns: 4.
+- `grid[1][2]` first picks row 1, `[7, 1, 9, 3]`, then item 2 of that row: 9.
+
+| | column 0 | column 1 | column 2 | column 3 |
+| --- | --- | --- | --- | --- |
+| **row 0** | 5 | 8 | 2 | 6 |
+| **row 1** | 7 | 1 | **9** | 3 |
+| **row 2** | 4 | 0 | 6 | 2 |
+
+The rows are numbered from 0 to `rows - 1` and the columns from 0 to `cols - 1`. This is a **3 × 4** grid (say "3 by 4": the rows come first), with 3 × 4 = 12 cells. A cell's position is written (row, column): the 9 is at (1, 2).
+
+### Stored row after row
+In languages like C, a 2D array is one block of memory, like a 1D array. The rows go one after another: the 4 items of row 0, then the 4 items of row 1, then the 4 items of row 2. This layout is called **row-major order**. Flattening the grid shows it:
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+flat = [x for row in grid for x in row]
+print(flat)
+```
+```output
+[5, 8, 2, 6, 7, 1, 9, 3, 4, 0, 6, 2]
+```
+To reach cell (r, c), skip r whole rows of `cols` items each, then move c along: it's at position `r * cols + c`. For (1, 2) that's 1 × 4 + 2 = 6, and `flat[6]` is the 9. Going the other way, position i is in row `i // cols` (how many whole rows fit before it) and column `i % cols` (how far along that row it is):
+```python
+cols = 4
+r, c = 1, 2
+i = r * cols + c
+print(i)
+print(i // cols, i % cols)
+```
+```output
+6
+1 2
+```
+Each direction is one multiplication or division and one addition or remainder, so reaching any cell is O(1), like reaching an item of a 1D array. Animation 1 walks a grid in this order.
+
+A Python list of lists is a little different: the outer list holds the rows, and each row is a list of its own, somewhere else in memory. `grid[r][c]` takes two O(1) steps (find row r, then item c of it), so it's still O(1).
+
+### Building a grid: the `* rows` trap
+`[0] * 4` makes a row of four 0s (from the Static arrays lesson). So it's tempting to make 3 rows with `[[0] * 4] * 3`. It prints the right thing, but it's wrong:
+```python
+bad = [[0] * 4] * 3
+print(bad)
+bad[0][1] = 5
+print(bad)
+```
+```output
+[[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+[[0, 5, 0, 0], [0, 5, 0, 0], [0, 5, 0, 0]]
+```
+The outer `* 3` doesn't make three rows. It puts the **same** row list into the outer list three times. That's aliasing, from the Lists lesson: there's only one row, so a change "in row 0" shows up in every row.
+
+The fix is a comprehension. It runs `[0] * 4` again for every row, so each row is a new list:
+```python
+good = [[0] * 4 for r in range(3)]
+good[0][1] = 5
+print(good)
+```
+```output
+[[0, 5, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+```
+The inner `[0] * 4` is fine: `good[0][1] = 5` puts a new value into one slot of row 0, and the other slots keep their 0. Building a grid fills every cell once: O(rows × cols).
+
+Copying a grid has the same catch. `grid.copy()` makes a new outer list, but it holds the **same** row lists, so changing a cell of the copy changes the original too. To copy a grid completely, copy every row: `[row.copy() for row in grid]`.
+
+### Walking a row, a column, or everything
+- To walk **row r**, keep r fixed and move c from 0 to `cols - 1`: `cols` cells, O(cols).
+- To walk **column c**, keep c fixed and move r from 0 to `rows - 1`: `rows` cells, O(rows).
+- To walk **every cell**, nest the two loops: O(rows × cols).
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+rows = len(grid)
+cols = len(grid[0])
+
+row_total = 0
+for c in range(cols):
+    row_total += grid[1][c]
+
+col_total = 0
+for r in range(rows):
+    col_total += grid[r][2]
+
+print(row_total, col_total)
+```
+```output
+20 17
+```
+Row 1 is 7 + 1 + 9 + 3 = 20, and column 2 is 2 + 9 + 6 = 17. A row is a list already (`grid[1]`), but the cells of a column sit in different rows, so a column has to be collected with a loop: `[grid[r][2] for r in range(rows)]` gives `[2, 9, 6]`.
+
+The usual nested loop, `for r in range(rows):` with `for c in range(cols):` inside, visits the cells in row-major order: the order they sit in memory. Swapping the loops (columns outside, rows inside) visits the same cells column by column.
+
+### The diagonals
+A **square** grid has as many rows as columns: n × n. It has two diagonals:
+
+- The **main diagonal** runs from the top-left to the bottom-right: (0, 0), (1, 1), (2, 2). The row and the column are equal, so its cells are `grid[i][i]`.
+- The **other diagonal** runs from the top-right to the bottom-left: (0, 2), (1, 1), (2, 0). The row and the column add up to n − 1, so the column is `n - 1 - i`, and its cells are `grid[i][n - 1 - i]`.
+```python
+board = [["X", "O", "X"], ["O", "X", "O"], ["O", "X", "X"]]
+n = len(board)
+main = [board[i][i] for i in range(n)]
+anti = [board[i][n - 1 - i] for i in range(n)]
+print(main)
+print(anti)
+```
+```output
+['X', 'X', 'X']
+['X', 'X', 'O']
+```
+Each diagonal has n cells, so walking one is O(n). In tic-tac-toe, three in a row, a column or a diagonal wins: here X has the main diagonal.
+
+### The neighbours of a cell
+Mazes, board games, image filters and, later in the course, searches on grids all look at the cells **next to** a cell. The 4 neighbours of (r, c) are:
+
+| Neighbour | Cell | Move (dr, dc) |
+| --- | --- | --- |
+| up | (r − 1, c) | (−1, 0) |
+| down | (r + 1, c) | (1, 0) |
+| left | (r, c − 1) | (0, −1) |
+| right | (r, c + 1) | (0, 1) |
+
+`dr` and `dc` are the changes to the row and the column. A loop over the four moves reaches every neighbour. A cell on the edge of the grid has fewer neighbours, so check that each one is inside the grid before reading it:
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+rows, cols = 3, 4
+r, c = 0, 1
+for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < rows and 0 <= nc < cols:
+        print(nr, nc, grid[nr][nc])
+```
+```output
+1 1 1
+0 0 5
+0 2 2
+```
+Cell (0, 1) is on the top edge: moving up gives row −1, which is outside the grid, so it's skipped. A corner cell has 2 neighbours, any other edge cell 3, and every cell inside 4. Adding the 4 diagonal moves, (−1, −1), (−1, 1), (1, −1) and (1, 1), gives 8 neighbours, as in Minesweeper. Either way, it's a fixed number of checks: O(1). Animation 2 checks them one at a time.
+
+> Never leave out the bounds check. Row −1 doesn't raise an error in Python: `grid[-1]` is the **last** row. Without the check, the cell "above" row 0 would quietly be read from the bottom of the grid.
+
+### The cost table
+
+| Operation | Cost |
+| --- | --- |
+| read or write `grid[r][c]` | O(1) |
+| work out a cell's position, `r * cols + c` | O(1) |
+| the 4 (or 8) neighbours of a cell | O(1) |
+| walk one row | O(cols) |
+| walk one column | O(rows) |
+| walk a diagonal of an n × n grid | O(n) |
+| walk, copy or build the whole grid | O(rows × cols) |
+| space for the grid | O(rows × cols) |
+
+For an n × n grid, visiting every cell is O(n²). That isn't wasteful: there are n² cells. A 1,000 × 1,000 photo has a million pixels, and any job that looks at every pixel has to visit each one.
+
+=== keypoints
+- A 2D array, or grid, has rows and columns. In Python it's a list of rows: `grid[r][c]` is row r, column c; `len(grid)` counts the rows and `len(grid[0])` the columns.
+- In one block, a grid is stored row after row (**row-major order**): (r, c) is at position `r * cols + c`, and position i is at row `i // cols`, column `i % cols`. Reaching any cell is O(1).
+- Build grids with `[[0] * cols for r in range(rows)]`. `[[0] * cols] * rows` repeats one row list, so a change to one cell shows up in every row.
+- Walking a row is O(cols), a column O(rows), a diagonal of an n × n grid O(n), and the whole grid O(rows × cols).
+- The main diagonal is `grid[i][i]`; the other diagonal is `grid[i][n - 1 - i]`.
+- The 4 neighbours of (r, c) are (r ± 1, c) and (r, c ± 1). Check `0 <= nr < rows and 0 <= nc < cols` first: `grid[-1]` is the last row, not an error.
+
+=== example: Row and column totals
+intro: A grid of points: 3 players (the rows) over 4 rounds (the columns). The program adds up each row, then each column.
+```python
+points = [[3, 5, 2, 4], [1, 6, 6, 2], [4, 4, 3, 5]]
+rows = len(points)
+cols = len(points[0])
+
+for r in range(rows):
+    total = 0
+    for c in range(cols):
+        total += points[r][c]
+    print("player", r, total)
+
+for c in range(cols):
+    total = 0
+    for r in range(rows):
+        total += points[r][c]
+    print("round", c, total)
+```
+1-3: A 3 × 4 grid: one row per player, one column per round.
+5-9: For each row, add along it: the inner loop moves c across the row, 4 cells per row. All 3 rows together visit the 12 cells once: O(rows × cols).
+11-15: For each column, add down it: the inner loop moves r down the column, 3 cells per column. The same 12 cells, visited column by column.
+
+=== example: Minesweeper numbers
+intro: In Minesweeper, each safe cell shows how many of its 8 neighbours hide a mine. The program works out every number.
+```python
+board = ["*...", "..*.", "...."]
+rows = len(board)
+cols = len(board[0])
+moves = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+for r in range(rows):
+    line = ""
+    for c in range(cols):
+        if board[r][c] == "*":
+            line += "*"
+        else:
+            count = 0
+            for dr, dc in moves:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < rows and 0 <= nc < cols and board[nr][nc] == "*":
+                    count += 1
+            line += str(count)
+    print(line)
+```
+1-3: A list of strings works as a grid of characters too: `board[r][c]` is one character of row r. `"*"` is a mine.
+4: The 8 moves to the neighbours: the 4 straight ones and the 4 diagonal ones.
+6-10: Visit every cell, row by row. A mine stays a mine.
+11-16: Otherwise, try all 8 moves and count the mines. `and` stops at the first False, so `board[nr][nc]` is only read when (nr, nc) is inside the board.
+17-18: Each row of numbers is built as a string. The corner (2, 0) has 3 neighbours on the board and none of them is a mine: 0.
+
+=== animation: Row-major order
+view: grid grid row=r col=c
+array flat
+intro: A 3 × 4 grid walked with two nested loops. Watch each cell go into the next position of `flat`: row after row, the order a grid sits in memory.
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+cols = 4
+flat = []
+for r in range(3):
+    for c in range(cols):
+        flat.append(grid[r][c])
+print(flat)
+```
+1: A grid with 3 rows and 4 columns.
+2: Each row has 4 cells.
+3: `flat` will hold the cells in the order they're visited.
+4: The outer loop picks the next row.
+5: The inner loop moves to the next column of this row.
+6: Cell ({r}, {c}) holds {grid[r][c]}. It goes to position {r} × 4 + {c} = {r * cols + c}.
+7: Row 0, then row 1, then row 2: cell (r, c) ended up at position r × 4 + c.
+
+=== animation: Checking the neighbours
+view: grid grid row=nr col=nc
+vars nr nc found
+intro: Cell (0, 1) is on the top edge of a 3 × 4 grid. Watch each of the four moves get checked against the edges before its cell is read.
+```python
+grid = [[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]]
+r, c = 0, 1
+found = []
+for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < 3 and 0 <= nc < 4:
+        found.append(grid[nr][nc])
+print(found)
+```
+1: The same 3 × 4 grid.
+2: Find the neighbours of cell (0, 1).
+3: `found` collects their values.
+4: Take the next move: up, down, left, then right.
+5: Move by ({dr}, {dc}) from (0, 1).
+6: Is ({nr}, {nc}) inside the grid? {0 <= nr < 3 and 0 <= nc < 4}.
+7: Yes: read grid[{nr}][{nc}] = {grid[nr][nc]}.
+8: Three neighbours. Up was skipped: row −1 is outside the grid.
+
+=== task: predict easy
+title: Row first, then column
+code:
+```python
+grid = [[4, 7, 1], [9, 2, 8]]
+print(grid[1][0], grid[0][2])
+print(len(grid), len(grid[0]))
+```
+wrong[9 1\n3 2]: `len(grid)` counts the inner lists, which are the rows: 2. `len(grid[0])` counts the items in row 0, which is the number of columns: 3.
+wrong[9 1\n6 3]: `len(grid)` counts the rows, not the cells: the outer list holds 2 lists.
+wrong[7 1\n2 3]: `grid[1][0]` is row 1, column 0: 9. The 7 is at (0, 1). The row always comes first.
+hint: `grid[1]` is the whole row `[9, 2, 8]`.
+hint: `len(grid)` counts the rows; `len(grid[0])` counts the items in one row.
+right: `grid[1][0]` picks row 1, then its item 0: 9. `grid[0][2]` is the last item of row 0: 1. The grid has 2 rows and 3 columns.
+wrong: Row 1 is `[9, 2, 8]`, so `grid[1][0]` is 9. Row 0 is `[4, 7, 1]`, so `grid[0][2]` is 1. Then 2 rows, and 3 items in row 0.
+
+=== task: mcq easy
+title: The bottom-right cell
+prompt: A grid has 5 rows and 8 columns. Which expression reads its bottom-right cell?
+* `grid[4][7]` :: Right. The rows go from 0 to 4 and the columns from 0 to 7, and the row comes first.
+- `grid[5][8]` :: Indexes start at 0, so there's no row 5: that raises an IndexError.
+- `grid[7][4]` :: The row comes first, and a grid of 5 rows has no row 7.
+- `grid[4]` :: That's the whole bottom row, a list of 8 items, not one cell.
+hint: The last of 5 rows is row 4.
+hint: Row first, then column.
+right: The last row is `rows - 1` = 4 and the last column is `cols - 1` = 7, so the cell is `grid[4][7]`.
+wrong: With 5 rows and 8 columns, the last row is 4 and the last column is 7. The row comes first: `grid[4][7]`.
+
+=== task: fill easy
+title: The position of a cell
+prompt: A grid with 4 columns is stored row after row in one block. Fill in the blank so that the program prints the position of cell (2, 1):
+
+```output
+9
+```
+code:
+```python
+cols = 4
+r, c = 2, 1
+print(r * ?? + c)
+```
+answer: cols
+wrong[r]: That gives 2 × 2 + 1 = 5. Each row you skip holds `cols` items, so multiply the row by `cols`.
+wrong[c]: That gives 2 × 1 + 1 = 3. The row number is multiplied by the length of a row, 4.
+hint: To reach row 2, skip 2 whole rows.
+hint: Each row holds `cols` items.
+right: `r * cols + c`: skip 2 rows of 4 items (8 positions), then move 1 along: position 9.
+wrong: Two full rows of 4 come before row 2: that's 8 positions. Column 1 is one more: 9. So the blank is `cols`.
+
+=== task: code easy
+title: Read a column
+prompt: Write `column(grid, c)` that returns the items of column c as a list, from the top row to the bottom row.
+
+For example, `column([[1, 2], [3, 4], [5, 6]], 1)` returns `[2, 4, 6]`.
+starter:
+```python
+def column(grid, c):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def column(grid, c):
+    result = []
+    for r in range(len(grid)):
+        result.append(grid[r][c])
+    return result
+```
+tests:
+- column([[1, 2], [3, 4], [5, 6]], 1)
+- column([[1, 2], [3, 4], [5, 6]], 0)
+- column([[7, 8, 9]], 2)
+- column([[1, 2, 3], [4, 5, 6]], 1)
+- column([], 0)
+fail[1]: Column 1 holds item 1 of every row: 2, 4 and 6.
+fail[4]: Column 1 of a grid with 2 rows has 2 items, one per row: `[2, 5]`. If you got `[4, 5, 6]`, that's row 1.
+fail[5]: A grid with no rows has nothing in any column: `[]`.
+error[IndexError]: Loop over the rows, `range(len(grid))`, and read `grid[r][c]`: the row comes first.
+hint: A column has one item in each row.
+hint: Loop `for r in range(len(grid)):` and append `grid[r][c]`.
+right: One item per row: O(rows). Unlike a row, a column isn't stored as one list, so it has to be collected with a loop.
+wrong: Loop over the row numbers and append `grid[r][c]` each time, then return the list.
+
+=== task: predict easy
+title: One row, two times
+code:
+```python
+grid = [[0] * 3] * 2
+grid[0][0] = 1
+print(grid)
+```
+wrong[[[1, 0, 0], [0, 0, 0]]]: `* 2` puts the same row list into the grid twice. There's only one row, so the change shows up in both places.
+wrong[[[1, 1, 1], [1, 1, 1]]]: Writing `grid[0][0]` changes one slot of the row. The other slots still hold 0.
+hint: How many separate row lists does `[[0] * 3] * 2` make?
+hint: Both slots of the outer list hold the same row.
+right: `[[1, 0, 0], [1, 0, 0]]`: one row list, shown twice. Build grids with `[[0] * 3 for r in range(2)]` instead.
+wrong: `[[0] * 3] * 2` repeats one row list. Changing a cell through `grid[0]` changes that list, and `grid[1]` is the same list.
+
+=== task: multi easy
+title: O(1) on a grid
+prompt: Choose **every** operation that is O(1) on a grid with R rows and C columns.
+* Reading `grid[r][c]` :: Right. Find row r, then item c of it: two O(1) steps.
+* Changing `grid[r][c]` :: Right. One slot is overwritten.
+* Working out the position `r * cols + c` :: Right. One multiplication and one addition.
+* Checking the 4 neighbours of a cell :: Right. Four checks, however big the grid is.
+- Adding up row r :: That reads all C items of the row: O(C).
+- Finding the biggest value in the grid :: Every cell has to be checked: O(R × C).
+hint: Does the work grow when the grid grows?
+hint: Four of them are.
+right: Reaching one cell, or a fixed number of cells, is O(1). Anything that walks a row, a column or the whole grid grows with it.
+wrong: O(1): reading, writing, the position formula and the 4 neighbours. A row is O(C), and the whole grid O(R × C).
+
+=== task: parsons easy
+title: Total of a column
+prompt: Arrange the lines so that the program adds up column 1 and prints:
+
+```output
+7
+```
+
+Not every line is needed.
+lines:
+```python
+grid = [[1, 2, 3], [4, 5, 6]]
+total = 0
+for r in range(len(grid)):
+    total += grid[r][1]
+print(total)
+```
+distractors:
+```python
+for r in range(len(grid[0])):
+    total += grid[1][r]
+```
+hint: A column has one item in each row, so loop over the rows.
+hint: Column 1 of row r is `grid[r][1]`.
+right: 2 + 5 = 7: one item per row, O(rows). `grid[1][r]` would walk along row 1 instead.
+wrong: Start at 0, loop over the row numbers with `range(len(grid))`, add `grid[r][1]` each time, then print.
+
+=== task: cells easy
+title: How many neighbours?
+prompt: In a grid with 3 rows and 4 columns, how many of each cell's 4 neighbours (up, down, left and right) are inside the grid?
+labels: (0, 0) | (0, 2) | (1, 1) | (2, 3)
+answer: 2 | 3 | 4 | 2
+wrong[4 | 4 | 4 | 4]: Cells on the edge are missing the neighbours that would be outside the grid.
+wrong[2 | 3 | 4 | 3]: (2, 3) is the bottom-right corner: there's no cell below it and none to its right, so it has 2.
+wrong[2 | 2 | 4 | 2]: (0, 2) is on the top edge but not in a corner: it has cells to its left, to its right and below it.
+hint: A corner has 2 neighbours, any other edge cell 3.
+hint: (0, 2) is on the top edge; (1, 1) is inside.
+right: Corners 2, other edge cells 3, cells inside 4. That's why every neighbour has to pass the bounds check.
+wrong: (0, 0) is a corner: right and down only. (0, 2) is on the top edge: left, right and down. (1, 1) has all 4. (2, 3) is a corner: up and left.
+
+=== task: mcq easy
+title: What's wrong with `[[0] * 3] * 3`?
+prompt: Why is `grid = [[0] * 3] * 3` a bad way to make a 3 × 3 grid?
+* The outer `* 3` puts the same row list in three times, so changing a cell in one row changes it in every row :: Right. There's only one row list. Use `[[0] * 3 for r in range(3)]` instead.
+- `[0] * 3` shares one 0, so changing one cell changes the whole row :: Writing a cell puts a new value into that one slot. The other slots keep their 0.
+- It makes 9 rows of 1 item :: It makes an outer list of 3 slots, all holding the same row of 3.
+- It raises an error :: It runs without complaint. The trouble shows up later, when you change a cell.
+hint: Is `[0] * 3` run once, or once per row?
+hint: Aliasing: two slots for one list.
+right: `* 3` repeats the reference to one list; it doesn't copy the list. A comprehension runs `[0] * 3` again for every row, so each row is a new list.
+wrong: The outer `* 3` repeats one row list. After `grid[0][1] = 5`, `grid[1][1]` and `grid[2][1]` are 5 too, because all three rows are the same list.
+
+=== task: predict easy
+title: Down the diagonal
+code:
+```python
+grid = [[2, 0, 1], [4, 3, 6], [5, 8, 7]]
+total = 0
+for i in range(3):
+    total += grid[i][i]
+print(total)
+```
+wrong[9]: That's the other diagonal: 1 + 3 + 5. `grid[i][i]` has the row equal to the column: top-left to bottom-right.
+wrong[3]: That's row 0: 2 + 0 + 1. `grid[i][i]` moves down one row and right one column each time.
+wrong[11]: That's column 0: 2 + 4 + 5. The column changes too: it's i, like the row.
+hint: The cells are (0, 0), (1, 1) and (2, 2).
+hint: 2 + 3 + 7.
+right: The main diagonal, where the row equals the column: 2 + 3 + 7 = 12. Three cells for a 3 × 3 grid: O(n).
+wrong: i = 0, 1, 2 reads (0, 0) = 2, (1, 1) = 3 and (2, 2) = 7: 12.
+
+=== task: code medium
+title: The neighbours of a cell
+prompt: Write `neighbours(grid, r, c)` that returns a list of the values of the cells next to (r, c), in the order up, down, left, right, leaving out any that are outside the grid.
+
+It must be O(1): look only at the four cells next to (r, c), not at the whole grid.
+
+For example, `neighbours([[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]], 0, 1)` returns `[1, 5, 2]`: there's nothing above row 0.
+starter:
+```python
+def neighbours(grid, r, c):
+    rows = len(grid)
+    cols = len(grid[0])
+    found = []
+    # your code here
+    return found
+```
+solution:
+```python
+def neighbours(grid, r, c):
+    rows = len(grid)
+    cols = len(grid[0])
+    found = []
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr = r + dr
+        nc = c + dc
+        if 0 <= nr < rows and 0 <= nc < cols:
+            found.append(grid[nr][nc])
+    return found
+```
+tests:
+- neighbours([[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]], 0, 1)
+- neighbours([[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]], 1, 1)
+- neighbours([[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]], 2, 3)
+- neighbours([[5, 8, 2, 6], [7, 1, 9, 3], [4, 0, 6, 2]], 1, 0)
+- neighbours([[7]], 0, 0)
+speed: setup=grid = [[0] * n for r in range(n)] | call=neighbours(grid, n // 2, n // 2) | target=O(1) | sizes=25,50,100,200
+slow:
+```python
+def neighbours(grid, r, c):
+    found = []
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        for nr in range(len(grid)):
+            for nc in range(len(grid[0])):
+                if nr == r + dr and nc == c + dc:
+                    found.append(grid[nr][nc])
+    return found
+```
+fail[1]: (0, 1) has three neighbours: down 1, left 5 and right 2. There's nothing above row 0: without the bounds check, `grid[-1][1]` would quietly read 0 from the bottom row.
+fail[2]: A cell inside the grid has all four, in this order: up 8, down 0, left 7, right 9.
+fail[3]: (2, 3) is the bottom-right corner: only up (3) and left (6).
+fail[4]: (1, 0) is on the left edge, so its neighbours are up 5, down 4 and right 1. Without the bounds check, `grid[1][-1]` would read 3 from the end of the row.
+error[IndexError]: Check `0 <= nr < rows and 0 <= nc < cols` before reading `grid[nr][nc]`.
+hint: The four moves are (-1, 0), (1, 0), (0, -1) and (0, 1), in that order.
+hint: For each move, work out `nr = r + dr` and `nc = c + dc`.
+hint: Append `grid[nr][nc]` only if `0 <= nr < rows and 0 <= nc < cols`.
+right: Four checks, whatever the size of the grid: O(1). The bounds check matters because Python's negative indexes wrap around instead of failing.
+wrong: Loop over the four moves. For each one, work out (nr, nc), and if it's inside the grid, append `grid[nr][nc]`.
+
+=== task: code medium
+title: Fix the grid
+prompt: `mark(rows, cols, r, c)` should return a grid with `rows` rows and `cols` columns, all 0 except for a 1 at (r, c). The starter builds the grid with a bug: fix it, then put the 1 in.
+
+For example, `mark(2, 3, 1, 0)` returns `[[0, 0, 0], [1, 0, 0]]`.
+starter:
+```python
+def mark(rows, cols, r, c):
+    grid = [[0] * cols] * rows
+    # your code here
+    return grid
+```
+solution:
+```python
+def mark(rows, cols, r, c):
+    grid = [[0] * cols for i in range(rows)]
+    grid[r][c] = 1
+    return grid
+```
+tests:
+- mark(2, 3, 1, 0)
+- mark(3, 4, 0, 2)
+- mark(1, 1, 0, 0)
+- mark(4, 1, 3, 0)
+fail[1]: Only row 1 should get the 1. If every row has it, the rows are still one shared list: build them with `[[0] * cols for i in range(rows)]`.
+fail[2]: Row 0, column 2 holds the 1, and the other rows stay all 0.
+fail[4]: Only the last of the 4 rows gets the 1.
+hint: `[[0] * cols] * rows` repeats one row list.
+hint: Use a comprehension, so each row is a new list: `[[0] * cols for i in range(rows)]`.
+hint: Then set `grid[r][c] = 1`.
+right: Each row is now a list of its own, so writing (r, c) changes only row r. Building the grid touches every cell: O(rows × cols).
+wrong: Replace the first line with `grid = [[0] * cols for i in range(rows)]`, then set `grid[r][c] = 1` and return the grid.
+
+=== task: predict medium
+title: Two ways to build
+code:
+```python
+a = [[0] * 2] * 3
+b = [[0] * 2 for r in range(3)]
+a[1][1] = 4
+b[1][1] = 4
+print(a)
+print(b)
+```
+wrong[[[0, 0], [0, 4], [0, 0]]\n[[0, 0], [0, 4], [0, 0]]]: `a` is built with `* 3`: one row list, three times. The change shows up in every row of `a`.
+wrong[[[0, 4], [0, 4], [0, 4]]\n[[0, 4], [0, 4], [0, 4]]]: The comprehension runs `[0] * 2` once per row, so `b` has three separate rows.
+wrong[[[0, 0], [0, 4], [0, 0]]\n[[0, 4], [0, 4], [0, 4]]]: It's the other way round: `* 3` shares the row, and the comprehension makes new ones.
+hint: Which of the two has three separate row lists?
+hint: `a` has one row list, three times.
+right: `a` shows the change in every row, because all three are the same list. The rows of `b` are separate lists, so only row 1 changes.
+wrong: `a = [[0] * 2] * 3` repeats one list, so `a[1][1] = 4` shows up in all three rows. `b` has three lists, and only `b[1]` changes.
+
+=== task: fill medium
+title: The other diagonal
+prompt: Fill in the blank so that `anti` holds the diagonal from the top-right corner to the bottom-left corner, and the program prints:
+
+```output
+['O', 'O', 'O']
+```
+code:
+```python
+board = [["X", "O", "O"], ["X", "O", "X"], ["O", "X", "X"]]
+n = len(board)
+anti = [board[i][??] for i in range(n)]
+print(anti)
+```
+answer: n - 1 - i
+wrong[i]: That's the main diagonal, from the top-left to the bottom-right: X, O, X.
+wrong[n - i]: For i = 0 that's column 3, which doesn't exist: the last column is n − 1.
+hint: Row 0 needs the last column, 2. Row 2 needs column 0.
+hint: The column goes down as the row goes up, and the two always add up to n − 1.
+right: Row i pairs with column n − 1 − i: (0, 2), (1, 1), (2, 0). O has three in a row there.
+wrong: The cells are (0, 2), (1, 1) and (2, 0). The row and the column always add up to n − 1 = 2, so the column is `n - 1 - i`.
+
+=== task: cells medium
+title: Positions in the block
+prompt: A grid with 5 columns is stored row after row in one block, starting at position 0. At which position is each cell (row, column)?
+labels: (0, 3) | (1, 0) | (2, 4) | (3, 2)
+answer: 3 | 5 | 14 | 17
+wrong[15 | 1 | 22 | 13]: Those swap the row and the column. The row says how many whole rows of 5 to skip: r × 5 + c.
+wrong[3 | 4 | 12 | 14]: Those use rows of 4. The grid has 5 columns, so every row you skip holds 5 positions.
+hint: The position is r × 5 + c.
+hint: (2, 4): skip 2 rows of 5 (10 positions), then 4 more.
+right: r × 5 + c gives 3, 5, 14 and 17. One multiplication and one addition per cell: O(1).
+wrong: (0, 3): 0 + 3 = 3. (1, 0): 5 + 0 = 5. (2, 4): 10 + 4 = 14. (3, 2): 15 + 2 = 17.
+
+=== task: order medium
+title: Column by column
+prompt: This loop walks a grid with 3 rows and 4 columns:
+
+```python
+for c in range(4):
+    for r in range(3):
+        print(r, c)
+```
+
+Put these cells in the order it visits them.
+items:
+- (2, 0)
+- (0, 1)
+- (1, 1)
+- (0, 3)
+- (2, 3)
+hint: The outer loop is over the columns, so it finishes column 0 before it starts column 1.
+hint: Inside a column, r goes 0, 1, 2.
+right: Column by column: the outer loop fixes c, and the inner loop runs r down the column. It visits the same 12 cells as a row-by-row walk, in a different order: still O(rows × cols).
+wrong: The outer loop is over the columns, so all of column 0 comes first: (2, 0). Then column 1: (0, 1), (1, 1). Then column 3: (0, 3), (2, 3).
+
+=== task: predict medium
+title: No bounds check
+code:
+```python
+grid = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+r, c = 0, 0
+total = 0
+for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+    total += grid[r + dr][c + dc]
+print(total)
+```
+wrong[6]: Without a bounds check, nothing is skipped. `grid[-1][0]` is 7, from the last row, and `grid[0][-1]` is 3, from the end of row 0.
+wrong[IndexError]: Negative indexes don't fail in Python: -1 means the last one. Only an index that's too big raises an IndexError.
+wrong[13]: Left is `grid[0][-1]`, which is 3, the last item of row 0. It's read too.
+hint: What is `grid[-1]`?
+hint: Up reads `grid[-1][0]`, and left reads `grid[0][-1]`.
+right: 7 + 4 + 3 + 2 = 16. The corner (0, 0) has only 2 real neighbours (4 and 2), but the missing ones wrap around to the other side of the grid. Always check `0 <= nr < rows and 0 <= nc < cols`.
+wrong: Down is 4 and right is 2. Up is `grid[-1][0]` = 7, from the last row, and left is `grid[0][-1]` = 3, from the end of row 0: 16 in all.
+
+=== task: mcq medium
+title: The cost of a column
+prompt: A grid has R rows and C columns. What does adding up one column cost?
+* O(R): the column has one cell in each row :: Right. R cells, each O(1) to reach.
+- O(C) :: That's a row: one cell in each column.
+- O(R × C) :: Only one cell of each row is read, not the whole grid.
+- O(1) :: Each cell is O(1) to reach, but there are R of them.
+hint: How many cells does one column have?
+hint: One in each row.
+right: A column has R cells, so it's O(R); a row has C cells, so it's O(C). Only the whole grid is O(R × C).
+wrong: A column runs down through every row, one cell in each: R cells, O(R).
+
+=== task: multi medium
+title: True about lists of lists
+prompt: Choose **every** true sentence about a grid stored as a Python list of lists.
+* `grid[r]` is the whole of row r, as a list :: Right. The outer list holds the rows.
+* `len(grid)` is the number of rows :: Right. The number of columns is `len(grid[0])`.
+* To get a column as a list, you collect it with a loop :: Right. Its items are spread across all the rows.
+* `grid[-1]` is the last row, not an error :: Right. That's why neighbour checks need `0 <= nr`.
+- `grid[r, c]` reads row r, column c :: A list index can't be a pair: that's a TypeError. Write `grid[r][c]`.
+- `[[0] * 3] * 3` makes three separate rows :: It makes one row list, three times.
+hint: Think about rows, columns and negative indexes.
+hint: Four of them are true.
+right: Rows are lists you can reach directly; columns have to be collected. Negative indexes wrap around, and `* 3` shares one row.
+wrong: True: `grid[r]` is a row, `len(grid)` counts the rows, a column needs a loop, and `grid[-1]` is the last row. False: `grid[r, c]` and the `* 3` grid.
+
+=== task: code medium
+title: Both diagonals
+prompt: Write `diagonal_sum(grid)` for a square n × n grid that returns the sum of both diagonals. When n is odd, the middle cell is on both diagonals: count it only once.
+
+For example, `diagonal_sum([[1, 2, 3], [4, 5, 6], [7, 8, 9]])` returns 25: 1 + 5 + 9 + 3 + 7.
+starter:
+```python
+def diagonal_sum(grid):
+    n = len(grid)
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+def diagonal_sum(grid):
+    n = len(grid)
+    total = 0
+    for i in range(n):
+        total += grid[i][i]
+        if i != n - 1 - i:
+            total += grid[i][n - 1 - i]
+    return total
+```
+tests:
+- diagonal_sum([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+- diagonal_sum([[1, 2], [3, 4]])
+- diagonal_sum([[5]])
+- diagonal_sum([[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]])
+- diagonal_sum([[2, 0, 1], [4, 3, 6], [5, 8, 7]])
+fail[1]: The middle 5 is on both diagonals. Count it once: 1 + 5 + 9 + 3 + 7 = 25, not 30.
+fail[2]: A 2 × 2 grid has no middle cell, so all four cells count: 10.
+fail[3]: In a 1 × 1 grid, the one cell is on both diagonals: count it once, 5.
+fail[4]: In a 4 × 4 grid, each diagonal has 4 cells and they don't overlap: 8.
+hint: Row i meets the main diagonal at column i and the other diagonal at column n − 1 − i.
+hint: The two are the same cell when `i == n - 1 - i`.
+hint: Add `grid[i][i]`, and add `grid[i][n - 1 - i]` only if it's a different cell.
+right: One loop over the rows, two cells in each: O(n). Only the middle row of an odd-sized grid has one shared cell.
+wrong: For each row i, add `grid[i][i]`, and add `grid[i][n - 1 - i]` unless the two columns are the same.
+
+=== task: code hard
+title: Transpose
+prompt: The **transpose** of a grid swaps its rows and columns: row r of the grid becomes column r of the result, so a grid with R rows and C columns turns into one with C rows and R columns. Write `transpose(grid)` that returns a new grid where `result[c][r]` is `grid[r][c]`.
+
+For example, `transpose([[1, 2, 3], [4, 5, 6]])` returns `[[1, 4], [2, 5], [3, 6]]`.
+starter:
+```python
+def transpose(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    # your code here
+    return grid
+```
+solution:
+```python
+def transpose(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    result = [[0] * rows for i in range(cols)]
+    for r in range(rows):
+        for c in range(cols):
+            result[c][r] = grid[r][c]
+    return result
+```
+tests:
+- transpose([[1, 2, 3], [4, 5, 6]])
+- transpose([[1, 2], [3, 4]])
+- transpose([[7]])
+- transpose([[1, 2, 3]])
+- transpose([[1], [2], [3]])
+fail[1]: A grid with 2 rows and 3 columns becomes one with 3 rows and 2 columns: its columns [1, 4], [2, 5] and [3, 6] become the rows. If every row came out the same, the result was built with `* cols`: use a comprehension.
+fail[2]: Each row of the result is a column of the grid: `[1, 3]` and `[2, 4]`.
+fail[4]: One row of 3 becomes 3 rows of 1.
+error[IndexError]: The result has `cols` rows of `rows` items each: `[[0] * rows for i in range(cols)]`.
+forbid[zip(]: Build it with loops, so that you move each cell yourself.
+hint: Make the result with `cols` rows of `rows` items each, using a comprehension.
+hint: Then, for every (r, c), set `result[c][r] = grid[r][c]`.
+hint: Two nested loops: r over the rows of the grid, c over its columns.
+right: Every cell is copied once: O(rows × cols) time, and O(rows × cols) space for the new grid.
+wrong: Make `result = [[0] * rows for i in range(cols)]`, then for every r and c set `result[c][r] = grid[r][c]`, and return it.
+
+=== task: code hard
+title: One step of the Game of Life
+prompt: In the Game of Life, each cell of a grid is alive (1) or dead (0). Each cell counts the live cells among its 8 neighbours (the 4 straight ones and the 4 diagonal ones), and the next grid follows two rules:
+- a live cell stays alive if it has 2 or 3 live neighbours, and dies otherwise,
+- a dead cell comes alive if it has exactly 3 live neighbours.
+
+Write `life_step(grid)` that returns the next grid as a **new** grid. Count every cell's neighbours in the old grid: changing the old grid while you're still counting would spoil the counts of the cells after it.
+
+For example, `life_step([[0, 1, 0], [0, 1, 0], [0, 1, 0]])` returns `[[0, 0, 0], [1, 1, 1], [0, 0, 0]]`.
+starter:
+```python
+def life_step(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    new = [[0] * cols for i in range(rows)]
+    # your code here
+    return new
+```
+solution:
+```python
+def life_step(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    new = [[0] * cols for i in range(rows)]
+    moves = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+    for r in range(rows):
+        for c in range(cols):
+            alive = 0
+            for dr, dc in moves:
+                nr = r + dr
+                nc = c + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    alive += grid[nr][nc]
+            if grid[r][c] == 1 and (alive == 2 or alive == 3):
+                new[r][c] = 1
+            elif grid[r][c] == 0 and alive == 3:
+                new[r][c] = 1
+    return new
+```
+tests:
+- life_step([[0, 1, 0], [0, 1, 0], [0, 1, 0]])
+- life_step([[1, 1], [1, 1]])
+- life_step([[1, 0], [0, 0]])
+- life_step([[0, 0, 0, 0], [0, 1, 1, 0], [0, 1, 0, 0], [0, 0, 0, 0]])
+- life_step([[1, 1, 1]])
+fail[1]: The middle cell keeps 2 live neighbours and stays; the two ends have 1 each and die; (1, 0) and (1, 2) have 3 each and come alive. If the result is different, check that you read only from `grid` and write only into `new`.
+fail[2]: In a 2 × 2 block, every live cell has 3 live neighbours, so all four stay alive.
+fail[3]: A live cell on its own has 0 live neighbours and dies.
+fail[4]: The three live cells each have 2 live neighbours and stay. The dead cell (2, 2) touches all three, so it comes alive: the shape becomes a 2 × 2 block.
+fail[5]: Each end of the row has 1 live neighbour and dies; the middle has 2 and stays.
+error[IndexError]: Check `0 <= nr < rows and 0 <= nc < cols` before reading `grid[nr][nc]`.
+hint: For each cell, count the live cells among its 8 neighbours in `grid`, with the bounds check.
+hint: Alive with 2 or 3 live neighbours: 1 in `new`. Dead with exactly 3: 1 in `new`. Anything else stays 0.
+hint: Read only from `grid` and write only into `new`.
+right: 8 checks per cell, so one step is O(rows × cols), plus O(rows × cols) space for the new grid. The separate grid keeps every count based on the same moment.
+wrong: Make a new grid of 0s. For each cell, count its live neighbours in the old grid, inside the bounds; set the new cell to 1 if the old one is alive with 2 or 3, or dead with exactly 3.
+
+=== task: code hard
+title: Who won?
+prompt: Write `winner(board)` for a 3 × 3 tic-tac-toe board, a list of 3 rows of `"X"`, `"O"` or `"."` (an empty square). Return `"X"` or `"O"` if that player has three in a row: along a row, down a column, or on either diagonal. If nobody has, return None. (At most one player has a line.)
+
+For example, `winner([["X", "X", "X"], ["O", "O", "."], [".", ".", "."]])` returns `"X"`.
+starter:
+```python
+def winner(board):
+    # your code here
+    return None
+```
+solution:
+```python
+def winner(board):
+    lines = []
+    for i in range(3):
+        lines.append([board[i][0], board[i][1], board[i][2]])
+        lines.append([board[0][i], board[1][i], board[2][i]])
+    lines.append([board[0][0], board[1][1], board[2][2]])
+    lines.append([board[0][2], board[1][1], board[2][0]])
+    for line in lines:
+        if line[0] != "." and line[0] == line[1] and line[1] == line[2]:
+            return line[0]
+    return None
+```
+tests:
+- winner([["X", "X", "X"], ["O", "O", "."], [".", ".", "."]])
+- winner([["X", "O", "O"], ["X", "O", "X"], ["O", "X", "X"]])
+- winner([["O", "X", "."], ["O", "X", "."], ["O", ".", "X"]])
+- winner([["X", "O", "."], [".", "X", "O"], [".", ".", "X"]])
+- winner([["X", "O", "X"], ["X", "O", "O"], ["O", "X", "X"]])
+- winner([[".", ".", "."], [".", ".", "."], [".", ".", "."]])
+fail[1]: X has the whole of row 0.
+fail[2]: O has the diagonal from the top-right corner to the bottom-left one: (0, 2), (1, 1), (2, 0).
+fail[3]: O has column 0: `board[0][0]`, `board[1][0]` and `board[2][0]`.
+fail[4]: X has the main diagonal: `board[i][i]`.
+fail[5]: Nobody has three in a row on this full board: return None.
+fail[6]: Three empty squares in a row aren't a win: check that the line isn't `"."`.
+hint: There are 8 lines to check: 3 rows, 3 columns and 2 diagonals.
+hint: Row i is `board[i][0]`, `board[i][1]`, `board[i][2]`; column i is `board[0][i]`, `board[1][i]`, `board[2][i]`.
+hint: A line wins if its three cells are equal and not `"."`.
+right: 3 rows, 3 columns and 2 diagonals: 8 lines of 3 cells. On an n × n board that's 2n + 2 lines of n cells, so every cell is read a few times: O(n²).
+wrong: Collect the 3 rows, the 3 columns, `board[i][i]` and `board[i][2 - i]`. Return the first line whose three cells are equal and not ".", or None.
+
+=== task: code hard
+title: Lucky numbers
+prompt: A number in a grid is **lucky** if it's the smallest in its row and the biggest in its column. Write `lucky(grid)` that returns a list of the lucky numbers, in row-major order. All the numbers in the grid are different.
+
+For an n × n grid it must be O(n²). Checking each cell's whole row and column again would cost O(n) per cell, O(n³) in all. Instead, work out every row's smallest number and every column's biggest number once, first.
+
+For example, `lucky([[3, 7, 8], [9, 11, 13], [15, 16, 17]])` returns `[15]`: 15 is the smallest in row 2 and the biggest in column 0.
+starter:
+```python
+def lucky(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def lucky(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    row_min = [min(grid[r]) for r in range(rows)]
+    col_max = []
+    for c in range(cols):
+        best = grid[0][c]
+        for r in range(rows):
+            if grid[r][c] > best:
+                best = grid[r][c]
+        col_max.append(best)
+    result = []
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == row_min[r] and grid[r][c] == col_max[c]:
+                result.append(grid[r][c])
+    return result
+```
+tests:
+- lucky([[3, 7, 8], [9, 11, 13], [15, 16, 17]])
+- lucky([[1, 10, 4, 2], [9, 3, 8, 7], [15, 16, 17, 12]])
+- lucky([[7, 8], [1, 2]])
+- lucky([[5]])
+- lucky([[3, 6], [7, 1]])
+- lucky([[1, 2, 3]])
+- lucky([[4], [9], [2]])
+speed: setup=grid = [[r * n + c for c in range(n)] for r in range(n)] | call=lucky(grid) | target=O(n²) | sizes=8,16,32,64
+slow:
+```python
+def lucky(grid):
+    rows = len(grid)
+    cols = len(grid[0])
+    result = []
+    for r in range(rows):
+        for c in range(cols):
+            column = [grid[i][c] for i in range(rows)]
+            if grid[r][c] == min(grid[r]) and grid[r][c] == max(column):
+                result.append(grid[r][c])
+    return result
+```
+fail[1]: 15 is the smallest in row 2 and the biggest in column 0.
+fail[2]: 12 is the smallest in row 2 and the biggest in column 3.
+fail[5]: No number here is both: 3 is beaten by 7 in its column, and 1 by 6 in its column.
+fail[7]: In a grid with one column, every number is the smallest in its row, so the lucky one is the biggest in the column: 9.
+hint: First make `row_min`, the smallest number of each row.
+hint: Then `col_max`: for each column, walk down it and keep the biggest.
+hint: Finally, a cell (r, c) is lucky if it equals both `row_min[r]` and `col_max[c]`.
+right: Two passes to work out the minimums and maximums, then one O(1) check per cell: O(rows × cols). Recomputing them for every cell would cost O(rows + cols) each time: O(n³) for an n × n grid.
+wrong: Work out every row's smallest number and every column's biggest number first. Then a cell is lucky if it equals both its row's minimum and its column's maximum.
+
+=== task: predict hard
+title: A copy of a grid
+code:
+```python
+grid = [[1, 2], [3, 4]]
+copy = grid.copy()
+copy[0][0] = 9
+copy[1] = [7, 7]
+print(grid)
+```
+wrong[[[1, 2], [3, 4]]]: `grid.copy()` copies only the outer list. Its slot 0 holds the same row list as `grid[0]`, so `copy[0][0] = 9` changes `grid` too.
+wrong[[[9, 2], [7, 7]]]: `copy[1] = [7, 7]` puts a new list into slot 1 of the copy. Slot 1 of `grid` still holds the old row, `[3, 4]`.
+wrong[[[9, 9], [3, 4]]]: `copy[0][0] = 9` changes one slot of row 0: the 2 stays.
+hint: Does `grid.copy()` copy the rows, or only the outer list?
+hint: Changing a cell changes a row list. Replacing a row changes a slot of the outer list.
+right: `[[9, 2], [3, 4]]`: the copy shares the row lists, so writing a cell shows through, but replacing a whole row changes only the copy. To copy a grid completely, use `[row.copy() for row in grid]`.
+wrong: `copy` is a new outer list holding the same two rows. `copy[0][0] = 9` changes the shared row 0. `copy[1] = [7, 7]` changes only slot 1 of the copy, so `grid[1]` is still `[3, 4]`.
+
+=== task: predict hard
+title: Filled in a different order
+code:
+```python
+rows, cols = 2, 3
+grid = [[0] * cols for r in range(rows)]
+for i in range(rows * cols):
+    grid[i % rows][i // rows] = i
+print(grid)
+```
+wrong[[[0, 1, 2], [3, 4, 5]]]: That's row-major order. Here the row is `i % rows`, which goes 0, 1, 0, 1, so the numbers go down each column first.
+wrong[[[0, 2, 4], [1, 3, 5], [0, 0, 0]]]: The grid has 2 rows, made by the comprehension, and nothing adds a third.
+wrong[[[0, 3], [1, 4], [2, 5]]]: The grid keeps its shape: 2 rows of 3. Only the order of filling changes.
+hint: Work out (i % 2, i // 2) for i = 0 to 5.
+hint: i = 0 → (0, 0), i = 1 → (1, 0), i = 2 → (0, 1).
+right: `i % rows` alternates between the rows while `i // rows` moves right every 2 steps: column by column, which is called column-major order.
+wrong: i = 0, 1 fill column 0 (rows 0 and 1), i = 2, 3 fill column 1, and i = 4, 5 fill column 2: `[[0, 2, 4], [1, 3, 5]]`.
+
+=== task: cells hard
+title: Sums of neighbours
+prompt: For each cell of this grid, what is the sum of its neighbours: up, down, left and right, counting only those inside the grid?
+code:
+```python
+grid = [[5, 8, 2, 6],
+        [7, 1, 9, 3],
+        [4, 0, 6, 2]]
+```
+labels: (0, 0) | (1, 2) | (2, 3) | (1, 3)
+answer: 15 | 12 | 9 | 17
+wrong[16 | 28 | 18 | 25]: Those include the diagonal cells too. Here only up, down, left and right count.
+wrong[25 | 12 | 9 | 17]: (0, 0) is a corner: there's nothing above it or to its left. Wrapping around to the 4 and the 6 is what a missing bounds check does.
+wrong[15 | 12 | 9 | 26]: (1, 3) is on the right edge: its neighbours are 6 above, 2 below and 9 to the left. Nothing is to its right.
+hint: (0, 0) has only a right and a down neighbour.
+hint: (1, 2) is inside: up 2, down 6, left 1, right 3.
+right: 8 + 7 = 15, 2 + 6 + 1 + 3 = 12, 3 + 6 = 9 and 6 + 2 + 9 = 17. Only the neighbours inside the grid count.
+wrong: (0, 0): right 8 + down 7 = 15. (1, 2): 2 + 6 + 1 + 3 = 12. (2, 3): up 3 + left 6 = 9. (1, 3): up 6 + down 2 + left 9 = 17.
+
+=== task: mcq hard
+title: Filtering a photo
+prompt: A photo is a grid of 1,000 × 1,000 pixels. A blur filter visits every pixel and reads it and its 8 neighbours. Roughly how many reads is that, and what's the Big O for an n × n photo?
+* About 9 million reads: O(n²) :: Right. A million pixels, 9 reads each. The 9 is a constant, so it's O(n²).
+- About 9 million reads: O(n³) :: n³ would be a billion. 9 × n² is still O(n²): the 9 doesn't grow with n.
+- About 1 million reads: O(n) :: The photo has n² = 1,000,000 pixels; n is the side, 1,000.
+- About a trillion reads: O(n⁴) :: Each pixel reads 8 neighbours, not every other pixel.
+hint: How many pixels are there, and how many reads per pixel?
+hint: n is the side of the photo, not the number of pixels.
+right: 1,000,000 pixels × 9 reads = 9,000,000: O(n²) for an n × n photo, which is O(1) per pixel.
+wrong: The photo has 1,000 × 1,000 = 1,000,000 pixels, and each one needs 9 reads: about 9 million. A constant times n² is O(n²).
+
+=== task: multi hard
+title: The whole grid
+prompt: Choose **every** job that costs O(R × C) on a grid with R rows and C columns.
+* Finding the biggest value :: Right. Any cell might be the biggest, so every cell is checked.
+* Transposing it into a new grid :: Right. Every cell is copied once.
+* Building it with `[[0] * C for r in range(R)]` :: Right. R rows of C items are made.
+* Counting the mines next to every cell, Minesweeper-style :: Right. 8 checks per cell: 8 × R × C.
+- Reading the neighbours of one cell :: Four (or eight) checks: O(1).
+- Adding up the main diagonal of an n × n grid :: That's n cells: O(n), not O(n²).
+hint: Does the job look at every cell, or only at some?
+hint: Four of them do.
+right: A job is O(R × C) when it touches every cell a fixed number of times. One cell's neighbours, or one diagonal, touch far fewer.
+wrong: O(R × C): the maximum, the transpose, building the grid and the Minesweeper counts. One cell's neighbours are O(1), and a diagonal is O(n).
+
+=== task: parsons hard
+title: A quarter turn
+prompt: Turning a grid a quarter turn clockwise makes row r into column `rows - 1 - r`: the top row becomes the right-hand column. Arrange the lines so that the program turns the grid and prints:
+
+```output
+[[4, 1], [5, 2], [6, 3]]
+```
+
+Not every line is needed.
+lines:
+```python
+grid = [[1, 2, 3], [4, 5, 6]]
+rows = len(grid)
+cols = len(grid[0])
+turned = [[0] * rows for i in range(cols)]
+for r in range(rows):
+    for c in range(cols):
+        turned[c][rows - 1 - r] = grid[r][c]
+print(turned)
+```
+distractors:
+```python
+turned = [[0] * cols for i in range(rows)]
+        turned[c][r] = grid[r][c]
+```
+hint: The turned grid has `cols` rows of `rows` items.
+hint: Cell (r, c) moves to row c, column `rows - 1 - r`.
+right: Every cell moves once: O(rows × cols). `turned[c][r]` would be the transpose, `[[1, 4], [2, 5], [3, 6]]`, which is a mirror image, not a turn.
+wrong: Make `cols` rows of `rows` zeros, then for every (r, c) set `turned[c][rows - 1 - r] = grid[r][c]`, and print.
