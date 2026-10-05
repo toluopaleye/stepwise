@@ -361,7 +361,7 @@ half-written lesson in `content/`**. Work in your own folder and copy the file i
 passes every check. Don't change anything in `tools/` or `src/` (the runner); if a program prints something
 different in CPython and in the runner, change your program and mention the difference in your report.
 
-Set up your folder (`<scratch>` = /tmp/claude-0/-home-claude/d68507ff-eefd-57c1-a90f-56b70d670058/scratchpad/agents):
+Set up your folder (`<scratch>` = any scratch folder outside the repo, e.g. `/tmp/stepwise-work`):
 ```
 W=<scratch>/<lesson-id>
 mkdir -p $W/content/<unit> && cp content/units.json $W/content/
