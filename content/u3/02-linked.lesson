@@ -1,0 +1,1440 @@
+=== lesson
+id: ds-linked
+title: Linked lists
+summary: A linked list keeps each item in its own node, anywhere in memory, and links every node to the next one. Getting to item i means following i links, but adding or removing at the front, or next to a node you're holding, only changes a link or two. You'll build and walk linked lists, compare them with arrays operation by operation, and meet the three kinds you'll study next: singly, doubly and circular.
+
+=== learn
+### Nodes and links
+An array keeps its items side by side in one block. A **linked list** doesn't: each item lives in its own small object, a **node**, which can be anywhere in memory. Each node holds its item and a **link** to the next node: a reference that says where the next node is. The list only has to remember where the first node is, which is called the **head**. The last node's link is `None`: that marks the end.
+
+| Node at address | Holds | Link to the next node |
+| --- | --- | --- |
+| 2040 | 17 | 1100 |
+| 1100 | 42 | 3300 |
+| 3300 | 8 | None |
+
+The nodes are scattered (2040, 1100, 3300), but following the links from the head visits them in order: 17, then 42, then 8. You met the node class in the Classes lesson:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(17, Node(42, Node(8)))
+print(head.val, head.next.val, head.next.next.val)
+print(head.next.next.next)
+```
+```output
+17 42 8
+None
+```
+Python makes `Node(8)` first (the innermost call), then `Node(42, ...)` linking to it, then `Node(17, ...)`. `head` is the first node, and every other node is reached from it.
+
+### Walking the list
+There's no formula for where item i is, because the nodes aren't evenly spaced. The only way to reach a node is to start at the head and follow the links, one at a time:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def get(head, i):
+    node = head
+    for step in range(i):
+        node = node.next
+    return node.val
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+head = Node(17, Node(42, Node(8)))
+print(get(head, 2))
+print(to_list(head))
+```
+```output
+8
+[17, 42, 8]
+```
+`get(head, 2)` follows 2 links. Reaching item i takes i steps: O(i), and O(n) for the last item, where an array needs one step, O(1). `to_list` visits every node, O(n), and is a handy way to print a linked list. Animation 1 walks to an item.
+
+### Inserting at the front: O(1)
+Adding an item at the front of an array shifts every item one place right: O(n). In a linked list nothing moves. Make a new node that links to the old head, and make the new node the head:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(42, Node(8))
+head = Node(17, head)
+print(head.val, head.next.val, head.next.next.val)
+```
+```output
+17 42 8
+```
+`Node(17, head)` makes a node that links to the old first node, 42. Then `head = ...` moves the head to the new node. That's the same two steps however long the list is: O(1). Removing the first node is O(1) too: `head = head.next` moves the head past it.
+
+### Inserting and deleting after a node: O(1)
+When you're already holding a node, you can insert a new node right after it by changing two links. Nothing else moves:
+
+1. `new = Node(99, node.next)`: the new node links to the node that used to come after `node`.
+2. `node.next = new`: `node` now links to the new node.
+
+The order matters. If `node.next = new` ran first, the link to the rest of the list would be overwritten before the new node had copied it, and the rest of the list would be lost. To **delete** the node after `node`, link around it: `node.next = node.next.next`. Nothing links to the skipped node any more, so Python frees its memory.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+head = Node(17, Node(42, Node(8)))
+node = head.next
+new = Node(99, node.next)
+node.next = new
+print(to_list(head))
+head.next = head.next.next
+print(to_list(head))
+```
+```output
+[17, 42, 99, 8]
+[17, 99, 8]
+```
+The link changes are O(1). But to **get to** the node at index i you first walk i links, so inserting at index i costs O(i) for the walk and O(1) for the links. A linked list is fast at changing things where you already are, and slow at getting somewhere. Animation 2 shows an insert.
+
+### Arrays and linked lists compared
+
+| Operation | Array (Python `list`) | Linked list |
+| --- | --- | --- |
+| read or write item i | O(1) | O(i): walk from the head |
+| insert or delete at the front | O(n): every item shifts | O(1): change the head |
+| insert or delete next to a node you hold | O(n): the items after it shift | O(1): change one or two links |
+| add at the end | O(1) amortized | O(n) to walk there, or O(1) if you also keep a `tail` link to the last node |
+| search for a value | O(n), or O(log n) with binary search if sorted | O(n), even if sorted: there's no jumping to the middle |
+| extra memory | some spare capacity | one link (or two) for every item |
+
+Two more differences matter in practice. An array's items sit side by side, which a computer reads very fast, while a linked list's nodes are scattered, so walking a linked list is slower even though both walks are O(n). And a linked list never has to copy all its items to grow: each new node is a small separate piece of memory.
+
+### Three kinds of linked list
+The next three lessons look at each kind in depth:
+
+| Kind | Each node has | Where it ends | Walk backwards? | Used for |
+| --- | --- | --- | --- | --- |
+| **singly linked** | `val`, `next` | the last node's `next` is None | no | stacks, hash map buckets, simple lists |
+| **doubly linked** | `val`, `prev`, `next` | the first node's `prev` and the last node's `next` are None | yes, along `prev` | browser history, undo and redo, caches |
+| **circular** | `val`, `next` (and `prev`, if it's doubly linked) | it doesn't: the last node links back to the first | only if doubly linked | taking turns, playlists on repeat |
+
+A circular list has no None at the end, so a walk round it never stops by itself. To go round once, remember the node you started from and stop when you're back at it. `node is start` asks whether `node` and `start` are the very same node:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node("Ann")
+b = Node("Ben")
+c = Node("Cy")
+a.next = b
+b.next = c
+c.next = a
+
+node = a
+for turn in range(5):
+    print(node.val, end=" ")
+    node = node.next
+print()
+
+start = b
+node = start
+while True:
+    print(node.val, end=" ")
+    node = node.next
+    if node is start:
+        break
+print()
+```
+```output
+Ann Ben Cy Ann Ben
+Ben Cy Ann
+```
+The first loop shows the turns going round and round: after Cy comes Ann again, with no end to fall off. The second loop goes round exactly once: it starts at Ben and stops as soon as `node is start`, back at Ben.
+
+### What the extra link buys
+A doubly linked node knows both of its neighbours, so a doubly linked list can do two things quickly that a singly linked list can't. Both columns assume the list keeps a `head` and a `tail`:
+
+| Operation | Singly linked | Doubly linked |
+| --- | --- | --- |
+| insert or delete at the front | O(1) | O(1) |
+| insert at the end | O(1) | O(1) |
+| delete the last node | O(n): walk to find the node before it | O(1): it's `tail.prev` |
+| delete a node you hold | O(n): walk to find the node before it | O(1): its `prev` and `next` are both known |
+| walk backwards | not possible | O(n), along `prev` |
+| links per node | 1 | 2 |
+
+Deleting a node means changing the link of the node **before** it. A singly linked node doesn't know which node that is, so you have to walk from the head to find it. A doubly linked node has it in `prev`. The price is a second link in every node, and twice as many links to keep right on every insert and delete. A circular list costs the same as the singly or doubly linked list it's made from; what it adds is a way back to the start.
+
+### When a linked list beats an array
+A linked list is the better choice when you:
+
+- insert and delete at the front a lot, as in a stack or a queue,
+- insert and delete at a place you're already holding, like the cursor of a text editor or the song that's playing in a playlist,
+- never need item i by its index.
+
+An array is the better choice when you:
+
+- read items by index, or use binary search,
+- mostly walk through the items in order, which is faster when they sit side by side,
+- want to use as little memory as possible per item.
+
+In Python, `list` is an array, and you'll rarely need a hand-made linked list for everyday programs. But linked nodes are the building block of the stacks, queues, hash maps, trees and graphs in the rest of this unit, and Python's `collections.deque`, coming up in the Queues lesson, is built from linked blocks.
+
+=== keypoints
+- A linked list keeps each item in its own **node**, with a link to the next node. The list keeps the **head**; the last node's `next` is None.
+- Reaching item i means following i links from the head: O(i), and O(n) at worst. There's no address formula, so no binary search.
+- Inserting or deleting at the front is O(1): `head = Node(x, head)` and `head = head.next`.
+- Holding a node, inserting after it (`new = Node(x, node.next)`, then `node.next = new`) or deleting after it (`node.next = node.next.next`) is O(1). Getting to the node is the slow part.
+- Singly linked nodes have `next`; doubly linked nodes have `prev` and `next`, so they can walk backwards and delete a node they hold in O(1); a circular list's last node links back to the first.
+- Choose a linked list for lots of inserts and deletes at the front or at a place you hold. Choose an array for access by index, binary search and fast walking.
+
+=== example: Counting the links
+intro: A list built by inserting at the front, then three items fetched by walking, counting the links followed for each one.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def get(head, i):
+    node = head
+    links = 0
+    for step in range(i):
+        node = node.next
+        links += 1
+    return node.val, links
+
+head = None
+for x in [50, 40, 30, 20, 10]:
+    head = Node(x, head)
+
+for i in [0, 2, 4]:
+    print(i, get(head, i))
+```
+1-4: The node class: a value and a link to the next node.
+6-12: Walk i links from the head, counting them, and return the value with the count.
+14-16: Start with an empty list (head is None) and insert at the front five times. The last value inserted, 10, ends up first: the list is 10, 20, 30, 40, 50.
+18-19: Item i costs i links: O(i). An array would reach any of them in one step.
+
+=== example: Front inserts, array against linked list
+intro: Inserting n items at the front, one by one. The array counts how many items it shifts; the linked list counts how many links it changes.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def array_front_inserts(n):
+    arr = []
+    moves = 0
+    for x in range(n):
+        moves += len(arr)
+        arr.insert(0, x)
+    return moves
+
+def linked_front_inserts(n):
+    head = None
+    changes = 0
+    for x in range(n):
+        head = Node(x, head)
+        changes += 1
+    return changes
+
+for n in [10, 100, 1000]:
+    print(n, array_front_inserts(n), linked_front_inserts(n))
+```
+6-12: Each insert at the front of an array shifts every item that's already there: `len(arr)` moves.
+14-19: Each insert at the front of a linked list makes one node and moves the head: one change, whatever the length.
+21-22: The array makes 0 + 1 + ... + (n − 1) = n(n − 1) / 2 moves, O(n²) in all. The linked list makes n changes, O(n).
+
+=== animation: Walking to item 3
+view: linked head ptr=node
+intro: There's no formula for where item 3 is. Watch `node` start at the head and follow three links to get there.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(17, Node(42, Node(8, Node(23))))
+node = head
+for step in range(3):
+    node = node.next
+print(node.val)
+```
+1: The node class: a value and a link to the next node.
+3: Store this node's value, {val}.
+4: Store the link: {'None, so this is the last node' if next is None else 'the node holding ' + str(next.val)}.
+6: Build four nodes, from the inside out: 23, then 8, then 42, then 17. head is the first one.
+7: Start at the head.
+8: Take the next step: 3 steps in all.
+9: Follow the link from {node.val} to {node.next.val}.
+10: Three links later, node holds item 3: {node.val}. Item i takes i steps: O(i).
+
+=== animation: Inserting after a node
+view: linked head ptr=node,new
+linked new
+intro: We hold the node with 42 and insert 99 right after it. Watch the two links change, in the right order, while every node stays where it is.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(17, Node(42, Node(8)))
+node = head.next
+new = Node(99)
+new.next = node.next
+node.next = new
+print(head.val, head.next.val, head.next.next.val, head.next.next.next.val)
+```
+1: The node class: a value and a link to the next node.
+3: Store this node's value, {val}.
+4: Store the link to the next node.
+6: A list of three nodes: 17, 42, 8.
+7: We're holding the node with 42.
+8: Make the new node. Nothing links to it yet, and it links to nothing.
+9: Step 1: the new node links to the node after 42, which holds {node.next.val}.
+10: Step 2: 42 links to the new node. Now 99 is in the list.
+11: Two links changed and nothing moved: O(1).
+
+=== task: predict easy
+title: Following the links
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(4, Node(9, Node(2)))
+print(head.val, head.next.val)
+print(head.next.next.next)
+```
+wrong[4 9\n2]: `head.next.next` is the node with 2. One more `.next` reads that node's link, which is None: the end of the list.
+wrong[9 2\nNone]: `head` is the first node, which holds 4. `head.next` is the second node, 9.
+hint: `head` holds 4, and each `.next` moves one node along.
+hint: The last node, 2, links to None.
+right: `head` is 4 and `head.next` is 9. Three `.next`s go past the last node (2) to its link: None.
+wrong: `head` → 4, `head.next` → 9, `head.next.next` → 2, and `head.next.next.next` is the last node's link: None.
+
+=== task: mcq easy
+title: Why O(i)?
+prompt: Why does reading item i of a linked list take O(i) steps, when an array takes O(1)?
+* The nodes can be anywhere in memory, so the only way to reach node i is to follow i links from the head :: Right. There's no address formula, because the nodes aren't evenly spaced.
+- Each node holds a big object, which is slow to read :: The size of the item doesn't matter: reading one node is O(1). Getting to it is the slow part.
+- The list has to be sorted first :: Nothing gets sorted. The walk is needed in a sorted list too.
+- Python checks every node to make sure the list isn't broken :: Python doesn't check anything. Following the links is the only way to find node i.
+hint: How does an array find item i?
+hint: Is there a formula for where node i is?
+right: An array works out where item i is with one multiplication. A linked list's nodes are scattered, so it has to follow the links one by one.
+wrong: The nodes aren't side by side, so no formula gives node i's address. Starting at the head, it takes i links to get there.
+
+=== task: fill easy
+title: A new head
+prompt: Fill in the blank so that 17 is added at the front of the list, and the program prints:
+
+```output
+17 42 8
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(42, Node(8))
+head = Node(17, ??)
+print(head.val, head.next.val, head.next.next.val)
+```
+answer: head
+wrong[head.next]: `head.next` is the node with 8, so 17 would skip the 42: the list would be 17, 8.
+wrong[None]: That makes 17 a list on its own: its link is None, and the old nodes are lost.
+hint: The new node should link to the node that's first right now.
+hint: Which name holds the first node?
+right: `Node(17, head)` links the new node to the old first node, then `head = ...` makes it the first node: O(1), and nothing moves.
+wrong: The new node must link to the old head, so the blank is `head`. The list becomes 17, 42, 8.
+
+=== task: code easy
+title: Count the nodes
+prompt: Write `length(head)` that returns how many nodes a linked list has. An empty list has head None and length 0. The starter includes the `Node` class.
+
+For example, `length(Node(1, Node(2, Node(3))))` returns 3.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def length(head):
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def length(head):
+    count = 0
+    node = head
+    while node is not None:
+        count += 1
+        node = node.next
+    return count
+```
+tests:
+- length(Node(1, Node(2, Node(3))))
+- length(None)
+- length(Node("a"))
+- length(Node(5, Node(5, Node(5, Node(5)))))
+fail[1]: Three nodes: 1, 2 and 3. Walk from the head and add 1 for every node until you reach None.
+fail[3]: One node, whose link is None: length 1.
+error[AttributeError]: You went past the end of the list. Stop when `node` is None: `while node is not None:`.
+hint: Start with `node = head`.
+hint: `while node is not None:`, add 1, then move on with `node = node.next`.
+right: Every node is visited once: O(n). A Python list stores its length, so `len` is O(1), but a plain linked list has to count.
+wrong: Walk from the head: while `node` is not None, add 1 and move to `node.next`. Return the count.
+
+=== task: predict easy
+title: Three inserts at the front
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = None
+for x in [1, 2, 3]:
+    head = Node(x, head)
+print(head.val, head.next.val, head.next.next.val)
+```
+wrong[1 2 3]: Each new node goes in front of the others, so the last one inserted, 3, ends up first.
+wrong[3 1 2]: 2 went in front of 1, and then 3 went in front of 2: 3, 2, 1.
+hint: After the first insert, the list holds only 1.
+hint: Then 2 goes in front of 1, and 3 in front of 2.
+right: 3, 2, 1: inserting at the front reverses the order. Each insert is O(1).
+wrong: The list goes 1, then 2 → 1, then 3 → 2 → 1. The head is the last node made.
+
+=== task: multi easy
+title: O(1) with only a head
+prompt: A singly linked list keeps only its `head`. Choose **every** operation that is O(1).
+* Insert at the front :: Right. Make a node that links to the head, and make it the head.
+* Delete the first node :: Right. `head = head.next`.
+* Read the first item :: Right. `head.val`.
+* Insert after a node you're holding :: Right. Two links change.
+- Read item i :: That means following i links from the head: O(i).
+- Add at the end :: Without a `tail`, you walk the whole list to find the last node: O(n).
+hint: Does it need to walk along the list?
+hint: Four of them don't.
+right: Anything at the head, or next to a node you hold, is O(1). Anything that has to find a place first needs a walk: O(n).
+wrong: O(1): insert at the front, delete the first node, read the first item, insert after a held node. Reading item i and adding at the end need a walk.
+
+=== task: parsons easy
+title: Add up the values
+prompt: Arrange the lines so that `total` adds up the values in a linked list, and the program prints:
+
+```output
+15
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def total(head):
+    result = 0
+    node = head
+    while node is not None:
+        result += node.val
+        node = node.next
+    return result
+
+print(total(Node(5, Node(8, Node(2)))))
+```
+distractors:
+```python
+    while node.next is not None:
+        result = node.val
+```
+hint: Start at the head, and stop when `node` is None.
+hint: Add `node.val`, then move on with `node = node.next`.
+right: 5 + 8 + 2 = 15: every node is visited once, O(n). `while node.next is not None` would stop one node early and miss the 2.
+wrong: Set `result = 0` and `node = head`; while `node is not None`, add `node.val` and move to `node.next`; then return the result.
+
+=== task: cells easy
+title: Follow the addresses
+prompt: Each row is a node in memory: its address, its value, and the address of the next node. The head is at address 500. What are the items, in list order?
+
+| Address | Value | Next |
+| --- | --- | --- |
+| 120 | 6 | None |
+| 300 | 1 | 120 |
+| 500 | 3 | 840 |
+| 840 | 9 | 300 |
+labels: item 0 | item 1 | item 2 | item 3
+answer: 3 | 9 | 1 | 6
+wrong[6 | 1 | 3 | 9]: That's the order of the addresses. A linked list's order comes from its links: start at the head, 500, and follow Next.
+wrong[3 | 9 | 6 | 1]: Node 840 links to 300, which holds 1. The node at 120 comes last: its Next is None.
+hint: Item 0 is at the head, address 500.
+hint: Node 500 links to 840, and node 840 links to 300.
+right: 500 → 840 → 300 → 120 gives 3, 9, 1, 6: scattered in memory, in order through the links.
+wrong: Start at 500 (3), go to 840 (9), then 300 (1), then 120 (6), whose Next is None.
+
+=== task: mcq easy
+title: On repeat
+prompt: A music app plays a playlist on repeat: after the last song, the first one plays again. Which kind of linked list fits this best?
+* A circular linked list :: Right. The last node links back to the first, so the songs come round again by themselves.
+- A singly linked list :: Its last node's `next` is None, so the playlist would stop after the last song.
+- A doubly linked list :: It can walk backwards, which helps a "previous song" button, but on its own it still ends after the last song.
+- An array sorted by title :: Sorting doesn't make it repeat, and nothing here needs the songs in order of title.
+hint: What should come after the last song?
+hint: Which kind has no end?
+right: In a circular list the last node links to the first, so "next song" always has an answer. A circular doubly linked list would give "previous song" too.
+wrong: Repeating means the last song links back to the first: that's a circular linked list.
+
+=== task: predict easy
+title: Removing the head
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(5, Node(6, Node(7)))
+head = head.next
+print(head.val, head.next.val)
+```
+wrong[5 6]: `head = head.next` moves the head to the second node, so the list is now 6, 7.
+wrong[7 None]: `head = head.next` moves the head one node, not two: it's on 6, and `head.next` is 7.
+hint: What does `head.next` hold before the change?
+hint: After `head = head.next`, the first node is 6.
+right: The head moves past 5, and nothing links to the 5 any more: deleting the first node is O(1).
+wrong: `head.next` is the node with 6, so after `head = head.next` the list is 6, 7.
+
+=== task: code medium
+title: Where is it?
+prompt: Write `index_of(head, x)` that returns the index of the first node whose value is x (the head is index 0), or -1 if no node holds x.
+
+For example, `index_of(Node(7, Node(3, Node(9))), 9)` returns 2.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def index_of(head, x):
+    # your code here
+    return -1
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def index_of(head, x):
+    node = head
+    i = 0
+    while node is not None:
+        if node.val == x:
+            return i
+        node = node.next
+        i += 1
+    return -1
+```
+tests:
+- index_of(Node(7, Node(3, Node(9))), 9)
+- index_of(Node(7, Node(3, Node(9))), 7)
+- index_of(Node(7, Node(3, Node(9))), 4)
+- index_of(None, 1)
+- index_of(Node(5, Node(8, Node(5))), 5)
+- index_of(Node(5, Node(8, Node(5))), 8)
+fail[1]: 9 is the third node: index 2. Count the nodes you pass, starting from 0 at the head.
+fail[2]: The head itself holds 7: index 0.
+fail[5]: Return the first match: the 5 at the head, index 0.
+error[AttributeError]: Stop at the end of the list: loop `while node is not None:`.
+hint: Walk from the head with a counter `i` that starts at 0.
+hint: If `node.val == x`, return `i`; otherwise move on and add 1 to `i`.
+hint: If the walk reaches None, x isn't in the list: return -1.
+right: A search walks node by node: O(n). It stays O(n) even in a sorted linked list, because there's no jumping to the middle.
+wrong: Walk from the head, counting from 0. Return the count at the first node holding x, or -1 after the last node.
+
+=== task: code medium
+title: Insert at an index
+prompt: Write `insert_at(head, i, x)` that inserts a new node holding x so that it ends up at index i, and returns the head of the list (a new node, when i is 0). Assume 0 ≤ i ≤ the length of the list. The starter includes `to_list`, which the tests use to show the result.
+
+For example, `to_list(insert_at(Node(17, Node(42, Node(8))), 2, 99))` gives `[17, 42, 99, 8]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def insert_at(head, i, x):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def insert_at(head, i, x):
+    if i == 0:
+        return Node(x, head)
+    node = head
+    for step in range(i - 1):
+        node = node.next
+    node.next = Node(x, node.next)
+    return head
+```
+tests:
+- to_list(insert_at(Node(17, Node(42, Node(8))), 2, 99))
+- to_list(insert_at(Node(17, Node(42, Node(8))), 0, 99))
+- to_list(insert_at(Node(17, Node(42, Node(8))), 3, 99))
+- to_list(insert_at(None, 0, "a"))
+- to_list(insert_at(Node(1), 1, 2))
+fail[1]: Index 2 means two nodes come before it: walk to the node at index 1 (42), then link the new node in after it.
+fail[2]: At index 0 the new node becomes the head: return `Node(x, head)`.
+fail[3]: Index 3 is the end of a 3-node list: link the new node in after the last node, 8.
+fail[4]: Inserting at index 0 of an empty list makes a list of one node.
+error[AttributeError]: Walk i − 1 links, not i: you need the node **before** index i, so that you can change its `next`.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: If i is 0, the new node becomes the head: `return Node(x, head)`.
+hint: Otherwise walk i − 1 links from the head, to the node before index i.
+hint: Link the new node in with `node.next = Node(x, node.next)`, then return `head`.
+right: The walk is O(i) and the linking is O(1). Unlike in an array, nothing after index i moves.
+wrong: For i = 0, return a new node that links to the old head. Otherwise walk i − 1 links, set `node.next = Node(x, node.next)`, and return the head.
+
+=== task: predict medium
+title: Deleting from the middle
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3, Node(4))))
+node = head.next
+node.next = node.next.next
+node = head
+while node is not None:
+    print(node.val, end=" ")
+    node = node.next
+```
+wrong[1 3 4]: `node` is the second node, 2. Linking around `node.next` removes the node **after** it: 3.
+wrong[1 2 3 4]: `node.next = node.next.next` makes 2 link straight to 4, so nothing links to 3 any more.
+wrong[1 2]: `node.next.next` is the node with 4, so 2 links to 4, and 4 still links to None.
+hint: `node` is the node with 2. What is `node.next.next`?
+hint: After the change, 2 links straight to 4.
+right: 1 2 4: one link changed, and the node with 3 is skipped. Deleting next to a node you hold is O(1).
+wrong: `node` holds 2; `node.next` is 3 and `node.next.next` is 4. Pointing `node.next` at 4 skips 3, so the walk prints 1, 2, 4.
+
+=== task: fill medium
+title: Skip a node
+prompt: Fill in the blank so that the node after `node` is deleted, and the program prints:
+
+```output
+['A', 'C']
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+head = Node("A", Node("B", Node("C")))
+node = head
+node.next = ??
+print(to_list(head))
+```
+answer: node.next.next
+wrong[node.next]: That links `node` to the node it already links to: nothing changes, and B stays.
+wrong[None]: That cuts the list after A, so C is lost too: `['A']`.
+hint: `node` holds A. Which node should A link to now?
+hint: The node after B is `node.next.next`.
+right: A links straight to C, skipping B: one link change, O(1).
+wrong: To delete B, A must link to the node after B: `node.next.next`, which is C.
+
+=== task: cells medium
+title: Array or linked list?
+prompt: What does each operation cost on an array (a Python `list`) and on a singly linked list that keeps only its head? Write O(1) or O(n).
+labels: read the last item, array | read the last item, linked list | insert at the front, array | insert at the front, linked list
+answer: O(1) | O(n) | O(n) | O(1)
+wrong[O(1) | O(1) | O(n) | O(1)]: To read the last node of a linked list, you walk the whole list from the head: O(n).
+wrong[O(1) | O(n) | O(1) | O(1)]: Inserting at the front of an array shifts every item one place right: O(n).
+wrong[O(n) | O(n) | O(n) | O(1)]: An array finds any index with one multiplication, the last one too: O(1).
+hint: An array reaches any index directly; a linked list starts from the head.
+hint: At the front, which one has to move its items?
+right: The array wins at reaching items (O(1) against O(n)); the linked list wins at the front (O(1) against O(n)).
+wrong: Array: the last item is O(1), and a front insert is O(n). Linked list: the last item is O(n) (a walk), and a front insert is O(1) (a new head).
+
+=== task: order medium
+title: Inserting at index i
+prompt: Put the steps of inserting a new node at index i (where i is at least 1) of a singly linked list in order.
+items:
+- Start at the head
+- Follow i − 1 links, to the node right before index i
+- Make the new node, linking it to that node's `next`
+- Change that node's `next` to the new node
+hint: You need the node **before** the new position.
+hint: The new node has to copy the old link before it's overwritten.
+right: Walk to the node before index i (O(i)), then make two link changes (O(1)), in that order, so that the rest of the list isn't lost.
+wrong: Start at the head, walk i − 1 links, make the new node pointing at the next node, then point the node before it at the new one.
+
+=== task: predict medium
+title: Walking backwards
+code:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+node = c
+while node is not None:
+    print(node.val, end=" ")
+    node = node.prev
+```
+wrong[A B C]: The walk starts at c and follows `prev`, so it goes backwards: C, B, A.
+wrong[C B]: a's `prev` is None, but the loop prints A before it moves to a's `prev`.
+wrong[C]: `c.prev` is b, set by `c.prev = b`, so the walk goes on to B and then A.
+hint: Each node's `prev` is the node before it.
+hint: Start at C and follow `prev` until None.
+right: C B A: a doubly linked list can walk backwards along `prev`. A singly linked list can't, because its nodes only know the next one.
+wrong: node starts at c (C); `c.prev` is b (B); `b.prev` is a (A); `a.prev` is None, so the loop stops.
+
+=== task: mcq medium
+title: Binary search on a linked list
+prompt: A sorted linked list holds a million numbers. Why can't binary search find a number in O(log n) steps?
+* Reaching the middle node already takes half a million link steps, so even the first halving is O(n) :: Right. Binary search needs O(1) access to any index, which only arrays have.
+- Binary search only works on lists of strings :: It works on any sorted data that can be reached by index.
+- A linked list can't be sorted :: It can: its values can be in order along the links.
+- It can: binary search is O(log n) on any sorted list :: Only if reaching the middle is O(1). In a linked list it's O(n).
+hint: What's the first thing binary search does?
+hint: How long does it take to reach the middle node?
+right: Binary search depends on jumping to the middle in O(1). A linked list has to walk there, so searching it stays O(n).
+wrong: Binary search starts by looking at the middle item. A linked list reaches it by walking n / 2 links: O(n) before any halving happens.
+
+=== task: multi medium
+title: True about linked lists
+prompt: Choose **every** true sentence about linked lists.
+* The nodes can be anywhere in memory :: Right. The links connect them, not their positions.
+* Inserting at the front never moves the other items :: Right. Only the head changes.
+* A doubly linked node holds two links :: Right. `prev` and `next`.
+* A circular list's last node links back to the first :: Right. There's no None at the end.
+- Reading item i is O(1) :: It means following i links: O(i).
+- A linked list uses less memory than an array of the same items :: Every node also stores a link (or two), so it uses more.
+hint: Think about memory, links and the front of the list.
+hint: Four of them are true.
+right: Scattered nodes joined by links: cheap changes at the front, two links in a doubly linked node, no end in a circular list. Access by index is slow, and the links cost memory.
+wrong: True: scattered nodes, nothing moves at the front, two links in a doubly linked node, the circular last node. False: reading item i is O(i), and the links take extra memory.
+
+=== task: code medium
+title: From a Python list
+prompt: Write `from_list(items)` that builds a linked list holding the items of the Python list `items`, in the same order, and returns its head (None for an empty list).
+
+It must be O(n). Walking to the end of the list for every new item would make it O(n²). Keep a `tail` variable that holds the last node so far, and link each new node after it.
+
+For example, `to_list(from_list([1, 2, 3]))` gives `[1, 2, 3]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    tail = None
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    tail = None
+    for x in items:
+        node = Node(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    return head
+```
+tests:
+- to_list(from_list([1, 2, 3]))
+- from_list([])
+- to_list(from_list(["a"]))
+- to_list(from_list([5, 5, 2]))
+- from_list([7, 8]).next.val
+speed: setup=items = list(range(n)) | call=from_list(items) | target=O(n)
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    for x in items:
+        if head is None:
+            head = Node(x)
+        else:
+            node = head
+            while node.next is not None:
+                node = node.next
+            node.next = Node(x)
+    return head
+```
+fail[1]: The list must keep the order 1, 2, 3. Inserting each item at the front would give 3, 2, 1.
+fail[2]: An empty Python list makes an empty linked list: return None.
+error[AttributeError]: The first item has no node before it: make it the head, and only link later nodes after `tail`.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: `head` is the first node and `tail` the last node so far.
+hint: For each item, make a node. If the list is empty, it becomes the head; otherwise `tail.next = node`.
+hint: Either way, the new node becomes the tail: `tail = node`.
+right: Each item costs O(1): one new node and one link, thanks to `tail`. Walking to the end every time would cost 0 + 1 + ... + (n − 1) steps: O(n²).
+wrong: For each item, make a node; link it after `tail` (or make it the head if the list is still empty); then make it the tail.
+
+=== task: code hard
+title: Insert in order
+prompt: The values of a linked list are in increasing order. Write `insert_sorted(head, x)` that inserts a new node holding x so that the list stays in order, and returns the head (a new node, if x goes first). The starter includes `to_list` for the tests.
+
+For example, `to_list(insert_sorted(Node(1, Node(4, Node(9))), 5))` gives `[1, 4, 5, 9]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def insert_sorted(head, x):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def insert_sorted(head, x):
+    if head is None or x < head.val:
+        return Node(x, head)
+    node = head
+    while node.next is not None and node.next.val <= x:
+        node = node.next
+    node.next = Node(x, node.next)
+    return head
+```
+tests:
+- to_list(insert_sorted(Node(1, Node(4, Node(9))), 5))
+- to_list(insert_sorted(Node(1, Node(4, Node(9))), 0))
+- to_list(insert_sorted(Node(1, Node(4, Node(9))), 12))
+- to_list(insert_sorted(None, 3))
+- to_list(insert_sorted(Node(2, Node(2)), 2))
+- to_list(insert_sorted(Node(1, Node(3)), 2))
+fail[1]: 5 goes between 4 and 9: walk while the next value is smaller, then link the new node in.
+fail[2]: 0 is smaller than the head's 1, so the new node becomes the head: return it.
+fail[3]: 12 is bigger than everything, so it goes after the last node.
+fail[4]: An empty list becomes a list of one node.
+error[AttributeError]: Check `node.next is not None` before reading `node.next.val`, and handle an empty list (head None) first.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: If the list is empty, or x is smaller than the head's value, the new node becomes the head.
+hint: Otherwise walk while `node.next is not None and node.next.val <= x`.
+hint: Then link in after `node`: `node.next = Node(x, node.next)`.
+right: The walk is O(n) at worst, but the insert itself is O(1): nothing shifts, which an insert into a sorted array can't avoid.
+wrong: Handle the new-head case first. Otherwise stop at the last node whose value is at most x, and link the new node in right after it.
+
+=== task: code hard
+title: A list with a tail
+prompt: Write a class `LinkedList` that keeps both `self.head` and `self.tail` (the last node), both None while the list is empty, with these methods:
+- `push_front(self, x)`: add x at the front,
+- `push_back(self, x)`: add x at the end, in O(1), using `self.tail`,
+- `pop_front(self)`: remove the first node and return its value (assume the list isn't empty).
+
+Keep `tail` right: the first node added to an empty list is both the head and the tail, and when the last node is popped, both become None. The starter includes `Node` and `to_list`, and the tests call your methods.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+class LinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+
+    # your code here
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+class LinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+
+    def push_front(self, x):
+        self.head = Node(x, self.head)
+        if self.tail is None:
+            self.tail = self.head
+
+    def push_back(self, x):
+        node = Node(x)
+        if self.tail is None:
+            self.head = node
+        else:
+            self.tail.next = node
+        self.tail = node
+
+    def pop_front(self):
+        node = self.head
+        self.head = node.next
+        if self.head is None:
+            self.tail = None
+        return node.val
+```
+tests:
+- (lambda q: [q.push_back(1), q.push_back(2), q.push_front(0), to_list(q.head), q.tail.val][3:])(LinkedList())
+- (lambda q: [q.push_front(5), q.head.val, q.tail.val][1:])(LinkedList())
+- (lambda q: [q.push_back(1), q.push_back(2), q.pop_front(), q.pop_front(), q.head, q.tail][2:])(LinkedList())
+- (lambda q: [q.push_back(1), q.pop_front(), q.push_back(7), to_list(q.head), q.tail.val][3:])(LinkedList())
+- (lambda q: [q.push_front(3), q.push_back(4), q.push_front(2), to_list(q.head), q.head.val, q.tail.val][3:])(LinkedList())
+speed: setup=q = LinkedList() | call=[q.push_back(i) for i in range(n)] | target=O(n)
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+class LinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+
+    def push_front(self, x):
+        self.head = Node(x, self.head)
+        if self.tail is None:
+            self.tail = self.head
+
+    def push_back(self, x):
+        if self.head is None:
+            self.head = Node(x)
+            self.tail = self.head
+            return
+        node = self.head
+        while node.next is not None:
+            node = node.next
+        node.next = Node(x)
+        self.tail = node.next
+
+    def pop_front(self):
+        node = self.head
+        self.head = node.next
+        if self.head is None:
+            self.tail = None
+        return node.val
+```
+fail[1]: After `push_back(1)`, `push_back(2)` and `push_front(0)`, the list is 0, 1, 2, and the tail is the node with 2.
+fail[2]: The first node added to an empty list is both the head and the tail.
+fail[3]: Popping returns the values in order, 1 and then 2, and the empty list has head and tail both None.
+fail[4]: When the last node is popped, set `tail` to None too. Otherwise the next `push_back` links the new node to a node that's no longer in the list.
+error[AttributeError]: An empty list's `tail` is None. When you push into an empty list, set both `head` and `tail` to the new node instead of using `self.tail.next`.
+error[NameError]: Keep the `Node` class and the `to_list` helper from the starter: the tests use them.
+hint: `push_back`: make the node; if the list is empty, it's the head, otherwise `self.tail.next = node`; then `self.tail = node`.
+hint: `push_front`: `self.head = Node(x, self.head)`, and if the tail is None, the new node is the tail too.
+hint: `pop_front`: move the head to `self.head.next`; if that makes the head None, set the tail to None.
+right: All three methods are O(1): `tail` turns adding at the end from an O(n) walk into one link change. A queue can be built exactly like this.
+wrong: Keep `head` and `tail` in step: the first node added becomes both, `push_back` links after the tail and moves it, and popping the last node sets both back to None.
+
+=== task: code hard
+title: The k-th from the end
+prompt: Write `kth_from_end(head, k)` that returns the value k nodes from the end of a list: k = 1 is the last node, and k = 2 the one before it. Assume 1 ≤ k ≤ the length. A singly linked list can't walk backwards, so first count the nodes, then walk forwards to the right one.
+
+For example, `kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 2)` returns 15.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def kth_from_end(head, k):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def kth_from_end(head, k):
+    n = 0
+    node = head
+    while node is not None:
+        n += 1
+        node = node.next
+    node = head
+    for step in range(n - k):
+        node = node.next
+    return node.val
+```
+tests:
+- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 2)
+- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 1)
+- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 4)
+- kth_from_end(Node(9), 1)
+- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 3)
+fail[1]: In a list of 4, the 2nd from the end is at index 4 − 2 = 2: the 15.
+fail[2]: k = 1 is the last node: walk n − 1 links.
+fail[3]: k = 4 in a list of 4 is the head itself: walk 0 links.
+error[AttributeError]: Walk n − k links from the head, where n is the number of nodes.
+hint: First walk the whole list to count its nodes: n.
+hint: The k-th node from the end is at index n − k.
+hint: Walk n − k links from the head and return that node's value.
+right: Two walks: O(n). In a doubly linked list with a tail, you could walk k − 1 links back along `prev` instead.
+wrong: Count the nodes (n), then start again at the head and follow n − k links. That node's value is the answer.
+
+=== task: code hard
+title: Remove every copy
+prompt: Write `remove_all(head, x)` that removes every node holding x and returns the head of what's left (None if nothing is left).
+
+It must be O(n): one walk, unlinking each match as you pass it. Starting a new search from the head for every match would make it O(n²). The starter includes `to_list` and `from_list` for the tests.
+
+For example, `to_list(remove_all(from_list([1, 2, 1, 3, 1]), 1))` gives `[2, 3]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    tail = None
+    for x in items:
+        node = Node(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    return head
+
+def remove_all(head, x):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    tail = None
+    for x in items:
+        node = Node(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    return head
+
+def remove_all(head, x):
+    while head is not None and head.val == x:
+        head = head.next
+    node = head
+    while node is not None and node.next is not None:
+        if node.next.val == x:
+            node.next = node.next.next
+        else:
+            node = node.next
+    return head
+```
+tests:
+- to_list(remove_all(from_list([1, 2, 1, 3, 1]), 1))
+- to_list(remove_all(from_list([4, 5, 6]), 7))
+- remove_all(from_list([2, 2, 2]), 2)
+- to_list(remove_all(from_list([3, 3, 5, 3, 3, 6]), 3))
+- remove_all(None, 1)
+- to_list(remove_all(from_list([8, 9, 9]), 9))
+speed: setup=head = from_list([i % 2 for i in range(n)]) | call=remove_all(head, 1) | target=O(n)
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def from_list(items):
+    head = None
+    tail = None
+    for x in items:
+        node = Node(x)
+        if head is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    return head
+
+def remove_all(head, x):
+    while True:
+        prev = None
+        node = head
+        while node is not None and node.val != x:
+            prev = node
+            node = node.next
+        if node is None:
+            return head
+        if prev is None:
+            head = node.next
+        else:
+            prev.next = node.next
+```
+fail[1]: Every 1 goes, including the one at the head and the one at the end: `[2, 3]`.
+fail[2]: There's nothing to remove, so the list stays the same.
+fail[3]: If every node holds x, nothing is left: return None.
+fail[4]: Two matches in a row: after unlinking one, check the new `node.next` again before moving on.
+fail[6]: The last two nodes both hold 9. After unlinking the first, the second becomes `node.next` and has to be checked too.
+error[AttributeError]: Check `node.next is not None` before reading `node.next.val`, and stop when the list runs out.
+error[NameError]: Keep `to_list` and `from_list` from the starter: the tests use them.
+hint: First move the head past any matches at the front: `while head is not None and head.val == x:`.
+hint: Then walk with `node`: if `node.next.val == x`, unlink it with `node.next = node.next.next` and stay where you are; otherwise move on.
+hint: Stay where you are after unlinking, because the new `node.next` might be a match too.
+right: One walk, unlinking each match in O(1): O(n) in all. In an array, deleting each match would shift the items after it: O(n²) when there are many matches.
+wrong: Skip the matches at the head first. Then walk: when the next node matches, link around it and stay put; otherwise step forward. Return the head.
+
+=== task: predict hard
+title: The wrong order
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+node = head
+new = Node(9)
+node.next = new
+new.next = node.next
+print(head.val, head.next.val, head.next.next.val, head.next.next.next.val)
+```
+wrong[1 9 2 3]: That's what the right order would give. Here `node.next = new` runs first, so `node.next` is already the new node when `new.next = node.next` copies it.
+wrong[1 9 None]: `new.next` isn't None: `new.next = node.next` makes it the new node itself.
+wrong[1 2 3 9]: The 9 goes after the head, not at the end, and nothing links to 2 any more.
+hint: After `node.next = new`, what is `node.next`?
+hint: `new.next = node.next` makes the new node link to itself.
+right: 1 9 9 9: the new node links to itself, and the nodes 2 and 3 are lost, because nothing links to them any more. Copy the old link into the new node **before** overwriting it.
+wrong: `node.next = new` overwrites the link to 2. Then `new.next = node.next` copies that same link, so 9 points at itself, and every further `.next` lands on 9 again.
+
+=== task: predict hard
+title: Once round
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node(1)
+b = Node(2)
+c = Node(3)
+d = Node(4)
+a.next = b
+b.next = c
+c.next = d
+d.next = a
+start = c
+node = start
+visited = []
+while True:
+    visited.append(node.val)
+    node = node.next
+    if node is start:
+        break
+print(visited)
+```
+wrong[[1, 2, 3, 4]]: The walk starts at c, not at a: 3 and 4, then round to 1 and 2.
+wrong[[3, 4]]: d links back to a, so the walk carries on past the 4. It stops only when it gets back to c.
+wrong[[3, 4, 1, 2, 3]]: The check comes right after each move. Once `node` is c again, the loop stops before adding 3 a second time.
+hint: The links go a → b → c → d → a.
+hint: Start at c, and stop when the walk is back at c.
+right: `[3, 4, 1, 2]`: once round, starting from c. `node is start` stops the walk at the very node it began from; without it, a walk round a circular list never ends.
+wrong: From c the walk visits 3, then d (4), then a (1), then b (2). The next move lands on c, which is `start`, so the loop stops.
+
+=== task: cells hard
+title: The list after each step
+prompt: What does the list hold after each step? Write the values from the head onwards, separated by commas, like `5, 6`.
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1)
+head = Node(2, head)             # step 1
+head.next = Node(3, head.next)   # step 2
+head = head.next                 # step 3
+head.next.next = Node(4)         # step 4
+```
+labels: after step 1 | after step 2 | after step 3 | after step 4
+answer: 2, 1 | 2, 3, 1 | 3, 1 | 3, 1, 4
+wrong[2, 1 | 3, 2, 1 | 2, 1 | 2, 1, 4]: Step 2 links 3 in after the head (2), not in front of it: 2, 3, 1.
+wrong[2, 1 | 2, 3, 1 | 3, 1 | 3, 4]: In step 4, `head` is 3 and `head.next` is 1, so it's the 1 that now links to 4. The link from 3 to 1 stays.
+wrong[2, 1 | 2, 3, 1 | 2, 3, 1 | 2, 3, 4]: Step 3 moves the head one node along, to 3: nothing links to the 2 any more.
+hint: Step 2 changes the link of the head, 2: the new node goes right after it.
+hint: Step 3 moves the head to the second node.
+right: 2, 1 → 2, 3, 1 → 3, 1 → 3, 1, 4. Every step changes one link (or the head), and nothing ever moves in memory.
+wrong: Step 1 puts 2 in front: 2, 1. Step 2 puts 3 after 2: 2, 3, 1. Step 3 moves the head to 3: 3, 1. Step 4 links 4 after the 1: 3, 1, 4.
+
+=== task: mcq hard
+title: A text editor
+prompt: A text editor keeps its text as a linked list of characters, and holds the node where the cursor is. Typing a character inserts it right after the cursor's node and moves the cursor onto the new node. What does typing k characters cost, in a document of n characters?
+* O(k): each insert next to the held node is O(1) :: Right. The editor never walks: it's already at the cursor.
+- O(k × n): each insert shifts the rest of the document :: That's what an array would do. A linked list only changes two links.
+- O(n + k): the editor walks to the cursor first :: It's holding the cursor's node already, so there's no walk.
+- O(n): the whole document is rebuilt after typing :: Nothing is rebuilt; only links change.
+hint: Does inserting after a node you hold move anything?
+hint: Does the editor need to walk to find the cursor?
+right: k inserts at O(1) each: O(k), however long the document is. An array would shift everything after the cursor on every keystroke.
+wrong: Holding the cursor's node, each new character is two link changes: O(1). k characters cost O(k).
+
+=== task: multi hard
+title: Where linked lists win
+prompt: Choose **every** job where a linked list does better than an array.
+* Removing the song that's playing from a playlist, holding its node in a doubly linked list :: Right. O(1): its `prev` and `next` are both known, and nothing shifts.
+* A stack that pushes and pops at the front, millions of times :: Right. O(1) at the front of a linked list, where an array would shift every item. (An array stack works at its end instead.)
+* Typing characters at a cursor in a long document :: Right. O(1) per character, next to the held node.
+- Reading the 500th score from a table of results :: An array reaches it in O(1); a linked list walks 500 links.
+- Binary search through a sorted phone book :: Binary search needs O(1) access to the middle, which only an array has.
+- Adding up a million numbers as fast as possible :: Both are O(n), but an array's items sit side by side, which is faster to read.
+hint: Is the change at the front, or at a place you're already holding?
+hint: Three of them are.
+right: Linked lists win when changes happen at the front or at a place you're holding. Arrays win at access by index, binary search and fast walks.
+wrong: Linked list: the playing song, the stack at the front, the cursor. Array: the 500th score, binary search, the fast sum.
+
+=== task: parsons hard
+title: Unlinking a node
+prompt: In a doubly linked list, a node you hold is deleted with two link changes: its two neighbours link to each other. Arrange the lines so that `unlink` removes node b from A ⇄ B ⇄ C, and the program prints:
+
+```output
+C A
+```
+
+Not every line is needed.
+lines:
+```python
+class DNode:
+    def __init__(self, val):
+        self.val = val
+        self.prev = None
+        self.next = None
+
+def unlink(node):
+    node.prev.next = node.next
+    node.next.prev = node.prev
+
+a = DNode("A")
+b = DNode("B")
+c = DNode("C")
+a.next = b
+b.prev = a
+b.next = c
+c.prev = b
+unlink(b)
+print(a.next.val, c.prev.val)
+```
+distractors:
+```python
+    node.prev.next = node.next.next
+    node.next = node.prev
+```
+hint: The node before b must now link forward to the node after b.
+hint: The node after b must now link back to the node before b.
+right: A's `next` skips to C and C's `prev` skips back to A: B is out, in O(1). A singly linked list would have to walk from the head to find the node before B.
+wrong: In `unlink`, set `node.prev.next = node.next` and `node.next.prev = node.prev`. Build A, B, C with both links, unlink b, then print.
