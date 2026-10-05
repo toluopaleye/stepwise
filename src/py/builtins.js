@@ -1066,6 +1066,20 @@ checkArity(STR_METHODS, 'str', {
   strip: [0, 1], lstrip: [0, 1], rstrip: [0, 1], center: [1, 2], ljust: [1, 2], rjust: [1, 2],
   split: { kw: 2 }, rsplit: { kw: 2 }, splitlines: { kw: 1 }, expandtabs: { kw: 1 }, replace: { pos: [2, 3] },
 });
+// Speed checks: these str methods go through the whole string, so they cost steps like `x in s`
+// (a quarter of a step per character). Without this, s.count(ch) inside a loop would look O(n).
+for (const name of ['upper', 'lower', 'casefold', 'capitalize', 'title', 'swapcase', 'strip', 'lstrip', 'rstrip',
+  'split', 'rsplit', 'splitlines', 'replace', 'find', 'rfind', 'index', 'rindex', 'count', 'isdigit', 'isnumeric',
+  'isdecimal', 'isalpha', 'isalnum', 'isspace', 'isupper', 'islower', 'istitle', 'isidentifier', 'partition',
+  'rpartition', 'removeprefix', 'removesuffix', 'center', 'ljust', 'rjust', 'zfill', 'format', 'expandtabs']) {
+  const impl = STR_METHODS.get(name);
+  if (!impl) continue;
+  STR_METHODS.set(name, function (args, kw, s) { this.tick(s.length >> 2); return impl.call(this, args, kw, s); });
+}
+{
+  const impl = STR_METHODS.get('join');
+  STR_METHODS.set('join', function (args, kw, s) { const r = impl.call(this, args, kw, s); this.tick(r.length >> 2); return r; });
+}
 checkArity(LIST_METHODS, 'list', {
   copy: 'none', clear: 'none', reverse: 'none', append: 'one', remove: 'one', count: 'one', extend: 'one',
   insert: [2, 2], index: [1, 3], pop: [0, 1],
