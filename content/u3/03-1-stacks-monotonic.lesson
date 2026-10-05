@@ -1,0 +1,1134 @@
+=== lesson
+id: ds-stacks-monotonic
+title: Monotonic stacks
+summary: A monotonic stack keeps its items in increasing or decreasing order, popping anything that would break the order. That one rule answers "what's the next bigger item?" for every item of a list in O(n), instead of O(n²). You'll find next greater elements, count days until a warmer day, see why a loop inside a loop can still be O(n), and choose between increasing and decreasing stacks.
+
+=== learn
+### The next greater element
+For each number in a list, which number to its right is the first one bigger than it? That's its **next greater element**, or -1 if there isn't one:
+
+| index | 0 | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- | --- |
+| nums | 2 | 1 | 5 | 3 | 4 |
+| next greater | 5 | 5 | -1 | 4 | -1 |
+
+The obvious way checks, for each number, the numbers to its right until it finds a bigger one:
+```python
+def next_greater_slow(nums):
+    result = []
+    for i in range(len(nums)):
+        found = -1
+        for j in range(i + 1, len(nums)):
+            if nums[j] > nums[i]:
+                found = nums[j]
+                break
+        result.append(found)
+    return result
+
+print(next_greater_slow([2, 1, 5, 3, 4]))
+```
+```output
+[5, 5, -1, 4, -1]
+```
+That's two nested loops: O(n²) when the bigger numbers are far away or missing, as in a list that only goes down. A stack does it in one pass.
+
+### A stack of numbers still waiting
+Go through the list from left to right, and keep a stack of the indexes whose next greater element hasn't turned up yet. When a new number x arrives:
+
+1. Every waiting number smaller than x has found its answer: it's x. Pop those indexes off the stack, and write x as their answer.
+2. Push x's own index: x is now waiting too.
+
+The waiting numbers on the stack are always in **decreasing** order from the bottom to the top. A number can only be pushed after everything smaller than it on top has been popped, so it always lands on something at least as big. A stack whose values are always in order like this is called a **monotonic stack**: this one is a monotonic decreasing stack.
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] < nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+print(next_greater([2, 1, 5, 3, 4]))
+```
+```output
+[5, 5, -1, 4, -1]
+```
+`result` starts as all -1, so the indexes still on the stack at the end, which never found a bigger number, keep -1. The stack holds **indexes**, not values, so that `result[stack.pop()] = nums[i]` knows where to write the answer; `nums[stack[-1]]` reads the value on top.
+
+| i | nums[i] | popped (their answer is nums[i]) | stack after (indexes) | values on the stack |
+| --- | --- | --- | --- | --- |
+| 0 | 2 | none | 0 | 2 |
+| 1 | 1 | none: 2 isn't smaller than 1 | 0, 1 | 2, 1 |
+| 2 | 5 | 1, then 0 | 2 | 5 |
+| 3 | 3 | none | 2, 3 | 5, 3 |
+| 4 | 4 | 3 | 2, 4 | 5, 4 |
+
+At the end, indexes 2 and 4 are still waiting, so their answers stay -1. Animation 1 runs this.
+
+### Why it's O(n)
+A `while` loop inside a `for` loop usually means O(n²), but not here. Count the work over the **whole** run instead of per step:
+
+- Every index is pushed exactly once: n pushes.
+- Every index is popped at most once, because a popped index never goes back on: at most n pops.
+- Each pass of the `while` loop pops one index, so all the `while` passes together number at most n.
+
+So the total is at most n pushes + n pops + n checks that stop a `while`: O(n). One step can pop a lot (index 2 popped two indexes), but then there's less left to pop later. This is the same kind of argument as amortized O(1) appends in the Dynamic arrays lesson: one expensive step is paid for by many cheap ones.
+
+### Daily temperatures
+Given a list of daily temperatures, how many days do you wait after each day for a warmer one? (0 if a warmer day never comes.) It's the next greater element again, but the answer is the **distance** to it, `i - j`, which is why the stack holds indexes:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        while stack and temps[stack[-1]] < temps[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+print(daily_temperatures([21, 19, 23, 22, 20, 25]))
+```
+```output
+[2, 1, 3, 2, 1, 0]
+```
+Day 0 (21°) waits until day 2 (23°): 2 days. Day 4 (20°) is followed straight away by a warmer day: 1. Nothing after day 5 is warmer, so it stays 0. The comparison is `<`, strictly: a day with the same temperature isn't warmer. Animation 2 runs a shorter week.
+
+### Increasing or decreasing?
+The order of the stack decides what it finds:
+
+| To find, for each item... | Keep the stack | Pop while the top is... | The answer for a popped item is... |
+| --- | --- | --- | --- |
+| the next greater item to the right | decreasing | smaller than x | x |
+| the next smaller item to the right | increasing | bigger than x | x |
+
+There's a bonus: once the popping stops, the item left on top (if there is one) is the **previous** item bigger than x, for a decreasing stack, or smaller than x, for an increasing one. So one pass finds the previous greater element too:
+```python
+def next_smaller(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] > nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+def previous_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] <= nums[i]:
+            stack.pop()
+        if stack:
+            result[i] = nums[stack[-1]]
+        stack.append(i)
+    return result
+
+print(next_smaller([4, 2, 6, 3, 5]))
+print(previous_greater([4, 2, 6, 3, 5]))
+```
+```output
+[2, -1, 3, -1, -1]
+[-1, 4, -1, 6, 6]
+```
+`next_smaller` only changes the comparison to `>`. `previous_greater` pops everything that isn't bigger than x (`<=`); whatever is left on top is bigger, and it's the nearest such number to the left.
+
+### The cost table
+
+| | Two nested loops | Monotonic stack |
+| --- | --- | --- |
+| time | O(n²) | O(n): each index pushed once, popped at most once |
+| extra space | O(1) apart from the answers | O(n): the stack can hold every index, as in a list that only goes down |
+
+Monotonic stacks answer "nearest bigger or smaller item to the left or right" questions: stock prices, temperatures, the skyline of buildings, and the largest rectangle under a bar chart.
+
+=== keypoints
+- The **next greater element** of an item is the first item to its right that's bigger than it. Checking every item to the right is O(n²).
+- Walk left to right with a stack of indexes still waiting for their answer. When x arrives, pop every waiting index whose value is smaller than x (x is their answer), then push x's index.
+- The values on that stack always decrease from bottom to top: it's a **monotonic** stack. Indexes left on it at the end have no answer.
+- It's O(n), even with a `while` inside a `for`: each index is pushed once and popped at most once.
+- Store indexes, not values: they say where to write the answer, and give distances like `i - j`.
+- Pop while the top is smaller for "next greater", or bigger for "next smaller". After popping, the top is the previous greater (or smaller) item.
+
+=== example: Next greater, two ways
+intro: The nested-loop way and the stack way give the same answers. A counter shows how much work each one does on a list that only goes down, the worst case for the nested loops.
+```python
+def slow_steps(nums):
+    steps = 0
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            steps += 1
+            if nums[j] > nums[i]:
+                break
+    return steps
+
+def stack_steps(nums):
+    steps = 0
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] < nums[i]:
+            stack.pop()
+            steps += 1
+        stack.append(i)
+        steps += 1
+    return steps
+
+for n in [10, 100, 1000]:
+    nums = list(range(n, 0, -1))
+    print(n, slow_steps(nums), stack_steps(nums))
+```
+1-8: For each number, look to the right until a bigger one turns up, counting each comparison.
+10-19: Count each push and each pop.
+21-23: In a list that only goes down, no number has a bigger one to its right. The nested loops compare every pair: n(n − 1) / 2 steps, O(n²). The stack only pushes, n steps, O(n).
+
+=== example: Stock span
+intro: The span of a stock price on a day is how many days in a row, ending that day, the price was at most that day's price. It's the distance back to the previous higher price, which a decreasing stack finds.
+```python
+def spans(prices):
+    result = []
+    stack = []
+    for i in range(len(prices)):
+        while stack and prices[stack[-1]] <= prices[i]:
+            stack.pop()
+        if stack:
+            result.append(i - stack[-1])
+        else:
+            result.append(i + 1)
+        stack.append(i)
+    return result
+
+print(spans([100, 80, 60, 70, 60, 75, 85]))
+```
+4-6: Pop every earlier day whose price isn't higher than today's: today's price "covers" them.
+7-10: The day left on top is the previous higher price, so the span is the distance to it. With nothing left, every day so far counts: i + 1.
+11: Today waits on the stack, as a possible higher price for the days to come.
+14: 75 on day 5 covers days 2 to 5 (60, 70, 60, 75), and day 1's 80 stops it: a span of 4.
+
+=== animation: Next greater element
+view: array nums ptr=i
+stack stack
+array result
+intro: Finding the next greater element of each number in [2, 1, 5, 3, 4]. The stack holds the indexes still waiting; watch the 5 answer two of them at once.
+```python
+nums = [2, 1, 5, 3, 4]
+result = [-1] * len(nums)
+stack = []
+for i in range(len(nums)):
+    while stack and nums[stack[-1]] < nums[i]:
+        j = stack.pop()
+        result[j] = nums[i]
+    stack.append(i)
+print(result)
+```
+1: Find the next greater element of each number.
+2: Every answer starts as -1: no greater element found yet.
+3: The stack of indexes still waiting starts empty.
+4: The next number is nums[{i}] = {nums[i]}.
+5: {('Is the waiting nums[' + str(stack[-1]) + '] = ' + str(nums[stack[-1]]) + ' smaller than ' + str(nums[i]) + '? ' + ('Yes.' if nums[stack[-1]] < nums[i] else 'No, so stop popping.')) if stack else 'Nothing is waiting.'}
+6: Pop index {stack[-1]}: it has found its answer.
+7: The next greater element of nums[{j}] is {nums[i]}.
+8: Push index {i}: it waits for a number bigger than {nums[i]}.
+9: Indexes 2 and 4 never found a bigger number, so they keep -1.
+
+=== animation: Daily temperatures
+view: array temps ptr=i
+stack stack
+array answer
+intro: How many days until a warmer day, for the temperatures [21, 19, 23, 22, 25]. Each answer is the distance from the waiting day to the warmer day that pops it.
+```python
+temps = [21, 19, 23, 22, 25]
+answer = [0] * len(temps)
+stack = []
+for i in range(len(temps)):
+    while stack and temps[stack[-1]] < temps[i]:
+        j = stack.pop()
+        answer[j] = i - j
+    stack.append(i)
+print(answer)
+```
+1: Five days of temperatures.
+2: Every answer starts at 0: no warmer day found yet.
+3: The stack holds the days still waiting for a warmer day.
+4: Day {i}: {temps[i]} degrees.
+5: {('Is day ' + str(stack[-1]) + ' (' + str(temps[stack[-1]]) + ') colder than ' + str(temps[i]) + '? ' + ('Yes.' if temps[stack[-1]] < temps[i] else 'No, so stop.')) if stack else 'No day is waiting.'}
+6: Day {stack[-1]} has found a warmer day.
+7: It waited {i} − {j} = {i - j} days.
+8: Day {i} waits for a day warmer than {temps[i]}.
+9: Day 4 is never followed by a warmer day, so it keeps 0.
+
+=== task: predict easy
+title: Next greater, worked out
+code:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] < nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+print(next_greater([3, 7, 1, 4]))
+```
+wrong[[7, -1, 4, 4]]: Nothing comes after the 4, so its answer stays -1.
+wrong[[7, 7, 4, -1]]: 7 is never beaten: no number to its right is bigger, so it keeps -1.
+wrong[[7, -1, 7, -1]]: The next greater element of 1 is the **first** bigger number to its right: 4, which comes before the end.
+hint: For each number, look to its right for the first bigger one.
+hint: 7 and 4 have no bigger number after them.
+right: 3 → 7, 1 → 4, and 7 and 4 keep -1. The stack found all four answers in one pass.
+wrong: The first number bigger than 3 to its right is 7; nothing after 7 is bigger; the first bigger than 1 is 4; nothing comes after 4.
+
+=== task: mcq easy
+title: What's on the stack?
+prompt: While `next_greater` runs, what do the indexes on its stack stand for?
+* Numbers seen so far whose next greater element hasn't turned up yet :: Right. They wait until a bigger number arrives and pops them.
+- Numbers that have already found their answer :: Those have been popped off.
+- The biggest numbers in the whole list :: The stack only knows the numbers seen so far, and only those still waiting.
+- Every number seen so far :: A number is popped as soon as a bigger one arrives.
+hint: When is an index popped?
+hint: What does an index still on the stack not have yet?
+right: The stack is a waiting room: an index stays on it until a bigger number arrives, which is its answer.
+wrong: An index is pushed when its number is seen and popped when a bigger number arrives. So the stack holds the ones still waiting.
+
+=== task: fill easy
+title: Pop the smaller ones
+prompt: Fill in the blank so that `next_greater` pops every waiting number that is smaller than the new one, and the program prints:
+
+```output
+[3, 3, -1, -1]
+```
+code:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] ?? nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+print(next_greater([2, 2, 3, 1]))
+```
+answer: <
+wrong[>]: That pops the waiting numbers that are **bigger**, which finds the next smaller element instead.
+wrong[<=]: That also pops equal numbers, so the first 2 would get the second 2 as its "greater" element. Greater means strictly bigger.
+hint: A waiting number has found its next greater element when the new number is bigger than it.
+hint: Strictly bigger: equal doesn't count.
+right: `nums[stack[-1]] < nums[i]`: the waiting number is smaller than the new one, so the new one is its next greater element.
+wrong: Pop while the number on top is smaller than the new number: the blank is `<`.
+
+=== task: code easy
+title: One answer by scanning
+prompt: Write `next_greater_of(nums, i)` that returns the next greater element of `nums[i]`: the first number to its right that's bigger than it, or -1 if there isn't one. Scan to the right with a loop.
+
+For example, `next_greater_of([2, 1, 5, 3, 4], 3)` returns 4.
+starter:
+```python
+def next_greater_of(nums, i):
+    # your code here
+    return -1
+```
+solution:
+```python
+def next_greater_of(nums, i):
+    for j in range(i + 1, len(nums)):
+        if nums[j] > nums[i]:
+            return nums[j]
+    return -1
+```
+tests:
+- next_greater_of([2, 1, 5, 3, 4], 3)
+- next_greater_of([2, 1, 5, 3, 4], 0)
+- next_greater_of([2, 1, 5, 3, 4], 2)
+- next_greater_of([2, 1, 5, 3, 4], 4)
+- next_greater_of([4, 4, 5], 0)
+fail[1]: To the right of the 3 is the 4, which is bigger.
+fail[2]: Scanning right from 2: 1 isn't bigger, 5 is.
+fail[5]: An equal number isn't greater: the answer is the 5.
+hint: Loop `for j in range(i + 1, len(nums)):`.
+hint: Return `nums[j]` at the first `nums[j] > nums[i]`; after the loop, return -1.
+right: One answer costs up to n − i − 1 checks. Doing this for every index gives the O(n²) way; the monotonic stack finds all the answers in O(n).
+wrong: Look at the numbers after index i in order, and return the first one bigger than `nums[i]`, or -1 if none is.
+
+=== task: predict easy
+title: What's left waiting?
+code:
+```python
+nums = [5, 4, 6, 2, 3]
+stack = []
+for i in range(len(nums)):
+    while stack and nums[stack[-1]] < nums[i]:
+        stack.pop()
+    stack.append(i)
+print(stack)
+```
+wrong[[4]]: When 3 (index 4) arrives, it pops the 2 (index 3), but the 6 (index 2) isn't smaller than 3, so it stays.
+wrong[[6, 3]]: The stack holds indexes, not values: index 2 holds 6 and index 4 holds 3.
+wrong[[0, 1, 2, 3, 4]]: The 6 pops the waiting 5 and 4, because they're smaller.
+hint: The 6 at index 2 pops indexes 1 and 0.
+hint: The 3 at index 4 pops index 3, whose value is 2.
+right: `[2, 4]`: the 6 and the 3 never meet a bigger number after them. Their values, 6 then 3, decrease from bottom to top.
+wrong: i = 0, 1: push 0 and 1. i = 2: 6 pops 1 and 0, then is pushed. i = 3: push 3. i = 4: 3 pops index 3 (value 2) but not index 2 (value 6): `[2, 4]`.
+
+=== task: multi easy
+title: Why it's O(n)
+prompt: `next_greater` has a `while` loop inside a `for` loop, yet it's O(n). Choose **every** sentence that helps explain why.
+* Every index is pushed exactly once :: Right. n pushes in all.
+* An index that has been popped never goes back on the stack :: Right. So each index is popped at most once.
+* All the `while` passes together pop at most n indexes :: Right. Each pass pops one, and there are at most n to pop.
+* One step that pops many indexes leaves fewer to pop later :: Right. The work evens out over the whole run.
+- The `while` loop runs at most once for each `i` :: One `i` can pop many indexes; it's the total over all of them that's limited.
+- The list must be sorted first :: Nothing is sorted. The argument works for any list.
+hint: Count pushes and pops over the whole run, not per step.
+hint: Four of them are true.
+right: At most n pushes and n pops, so all the inner loops together do O(n) work: O(n) in total, like amortized appends.
+wrong: Each index is pushed once and popped at most once, so the inner loop's passes add up to at most n. One step can do a lot of popping; it can't happen often.
+
+=== task: parsons easy
+title: The next greater element
+prompt: Arrange the lines so that `next_greater` uses a stack of waiting indexes, and the program prints:
+
+```output
+[5, 5, -1, 4, -1]
+```
+
+Not every line is needed.
+lines:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] < nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+print(next_greater([2, 1, 5, 3, 4]))
+```
+distractors:
+```python
+        stack.append(nums[i])
+            result[stack.pop()] = nums[stack[-1]]
+```
+hint: The stack holds indexes, so that the answer can be written into `result`.
+hint: Pop while the waiting number on top is smaller than `nums[i]`.
+right: Each new number first answers every smaller number waiting on the stack, then waits itself. Pushing values instead of indexes would lose track of where the answers go.
+wrong: Start `result` as all -1 and the stack empty. For each i: while the top's number is smaller than `nums[i]`, pop it and set its answer to `nums[i]`; then push i.
+
+=== task: cells easy
+title: Next greater elements
+prompt: What is the next greater element of each number in `[4, 2, 6, 1]`? Write -1 if there isn't one.
+labels: 4 | 2 | 6 | 1
+answer: 6 | 6 | -1 | -1
+wrong[2 | 6 | -1 | -1]: The next greater element must be **bigger**: 2 is smaller than 4, so 4's answer is 6.
+wrong[6 | 6 | -1 | 1]: Nothing comes after the 1, so it has no greater element: -1.
+hint: Look to the right of each number for the first bigger one.
+hint: 6 is the biggest, so it has no answer.
+right: 4 → 6, 2 → 6, and 6 and 1 have nothing bigger after them.
+wrong: Right of 4: 2 (smaller), 6 (bigger): 6. Right of 2: 6. Right of 6: only 1: -1. Right of 1: nothing: -1.
+
+=== task: mcq easy
+title: Increasing or decreasing?
+prompt: To find the next **smaller** element of every number, how should the stack be kept?
+* Increasing from bottom to top: pop while the top is bigger than the new number :: Right. The new number is the next smaller element of every bigger number it pops.
+- Decreasing from bottom to top: pop while the top is smaller than the new number :: That finds the next greater element.
+- Sorted from smallest to biggest before starting :: Nothing is sorted: the order on the stack comes from the popping.
+- It doesn't matter which way :: The direction decides what the stack finds: greater or smaller.
+hint: Which waiting numbers does a new number answer when looking for "next smaller"?
+hint: Those are the bigger ones.
+right: For "next smaller", a new number answers every bigger waiting number, so those are popped, and what's left is increasing.
+wrong: Pop the waiting numbers bigger than the new one: they've found their next smaller element. The stack stays increasing.
+
+=== task: predict easy
+title: A warmer day
+code:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        while stack and temps[stack[-1]] < temps[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+print(daily_temperatures([30, 31, 29, 33]))
+```
+wrong[[31, 33, 33, 0]]: The answer is the number of days to wait, `i - j`, not the warmer temperature.
+wrong[[1, 2, 1, 1]]: Nothing after day 3 is warmer, so its answer stays 0.
+wrong[[1, 1, 1, 0]]: Day 1 (31) waits until day 3 (33): 2 days, because day 2 (29) is colder.
+hint: Day 0 (30) is followed straight away by 31.
+hint: Day 1 (31) has to wait for the 33 on day 3.
+right: 1, 2, 1, 0: each answer is the distance from a day to its next warmer day.
+wrong: Day 0 → day 1: 1. Day 1 → day 3: 2. Day 2 → day 3: 1. Day 3: never: 0.
+
+=== task: code medium
+title: All the next greater elements
+prompt: Write `next_greater(nums)` that returns a list with the next greater element of every number (-1 where there isn't one). It must be O(n): use a stack of the indexes still waiting for their answer.
+
+For example, `next_greater([2, 1, 5, 3, 4])` returns `[5, 5, -1, 4, -1]`.
+starter:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    # your code here
+    return result
+```
+solution:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] < nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+```
+tests:
+- next_greater([2, 1, 5, 3, 4])
+- next_greater([])
+- next_greater([1, 2, 3])
+- next_greater([3, 2, 1])
+- next_greater([2, 2, 3])
+- next_greater([5, 1, 4, 2, 6])
+speed: setup=nums = list(range(n, 0, -1)) | call=next_greater(nums) | target=O(n)
+slow:
+```python
+def next_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[j] > nums[i]:
+                result[i] = nums[j]
+                break
+    return result
+```
+fail[1]: The 5 answers both the 2 and the 1; the 4 answers the 3.
+fail[3]: In an increasing list, each number's answer is the very next one.
+fail[4]: In a decreasing list, nothing has a bigger number after it: all -1.
+fail[5]: Equal isn't greater: both 2s get the 3.
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: For each i: while the stack isn't empty and `nums[stack[-1]] < nums[i]`, pop the index and set its answer to `nums[i]`.
+hint: Then push i.
+hint: Indexes left on the stack at the end keep -1.
+right: Each index is pushed once and popped at most once: O(n). Scanning to the right for every number would be O(n²) on a list that only goes down.
+wrong: Walk left to right with a stack of waiting indexes; each new number pops and answers the smaller ones, then is pushed itself.
+
+=== task: code medium
+title: Daily temperatures
+prompt: Write `daily_temperatures(temps)` that returns, for each day, how many days you'd wait for a warmer day (0 if none comes). A day with the same temperature isn't warmer. It must be O(n): use a stack of the days still waiting.
+
+For example, `daily_temperatures([21, 19, 23, 22, 20, 25])` returns `[2, 1, 3, 2, 1, 0]`.
+starter:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    # your code here
+    return answer
+```
+solution:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        while stack and temps[stack[-1]] < temps[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+```
+tests:
+- daily_temperatures([21, 19, 23, 22, 20, 25])
+- daily_temperatures([30, 40, 50, 60])
+- daily_temperatures([60, 50, 40])
+- daily_temperatures([20, 20, 21])
+- daily_temperatures([])
+- daily_temperatures([25])
+speed: setup=temps = list(range(n, 0, -1)) | call=daily_temperatures(temps) | target=O(n)
+slow:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        for j in range(i + 1, len(temps)):
+            if temps[j] > temps[i]:
+                answer[i] = j - i
+                break
+    return answer
+```
+fail[1]: Day 0 (21) waits 2 days for 23; day 2 (23) waits 3 days for 25.
+fail[2]: Every day is followed straight away by a warmer one: all 1, except the last day, 0.
+fail[3]: It only gets colder, so no day finds a warmer one: all 0.
+fail[4]: Day 1 has the same temperature as day 0, which isn't warmer: day 0 waits 2 days, for the 21.
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: The stack holds day numbers (indexes), so you can work out distances.
+hint: While the day on top is colder than today, pop it as j and set `answer[j] = i - j`.
+hint: Then push today, i.
+right: The same O(n) pattern as next greater, with the answer being a distance, `i - j`: that's why the stack holds indexes.
+wrong: For each day i, pop every waiting day j colder than day i and record `i - j` days; then push i. Days still waiting at the end keep 0.
+
+=== task: predict medium
+title: The stack, step by step
+code:
+```python
+nums = [1, 3, 2, 4]
+stack = []
+for i in range(len(nums)):
+    while stack and nums[stack[-1]] < nums[i]:
+        stack.pop()
+    stack.append(i)
+    print(stack)
+```
+wrong[[0]\n[0, 1]\n[0, 1, 2]\n[0, 1, 2, 3]]: Each new number first pops the waiting numbers smaller than it: 3 pops the 1 at index 0.
+wrong[[1]\n[3]\n[3, 2]\n[4]]: The stack holds indexes, not values.
+wrong[[0]\n[1]\n[1, 2]\n[2, 3]]: 4 is bigger than both 2 and 3, so it pops index 2 and then index 1: only 3 is left.
+hint: At i = 1, the 3 pops index 0 (the 1).
+hint: At i = 3, the 4 pops indexes 2 and 1.
+right: `[0]`, `[1]`, `[1, 2]`, `[3]`: the values on the stack (1; 3; 3, 2; 4) are always decreasing from bottom to top.
+wrong: i = 0: push 0. i = 1: 3 pops 0, push 1. i = 2: 2 is smaller than 3, push 2. i = 3: 4 pops 2 and 1, push 3.
+
+=== task: fill medium
+title: How long to wait?
+prompt: Fill in the blanks so that each day's answer is the number of days until a warmer one, and the program prints:
+
+```output
+[1, 1, 0]
+```
+code:
+```python
+temps = [20, 22, 25]
+answer = [0] * len(temps)
+stack = []
+for i in range(len(temps)):
+    while stack and temps[stack[-1]] < temps[i]:
+        j = stack.pop()
+        answer[j] = ?? - ??
+    stack.append(i)
+print(answer)
+```
+answer: i | j
+wrong[j | i]: That's the distance backwards: `j` is the earlier day, so `j - i` is negative.
+hint: `j` is the waiting day, and `i` is the warmer day that has now arrived.
+hint: The later day minus the earlier day.
+right: `i - j` is how many days after day j the warmer day i comes.
+wrong: Day j waits until day i, which is `i - j` days later.
+
+=== task: cells medium
+title: The stack after each number
+prompt: `next_greater` runs on `[3, 1, 4, 1, 5]`. Which indexes are on its stack after each i? Write them from bottom to top, separated by commas.
+labels: after i = 1 | after i = 2 | after i = 3 | after i = 4
+answer: 0, 1 | 2 | 2, 3 | 4
+wrong[1 | 2 | 3 | 4]: At i = 1 the 1 isn't bigger than the 3, so index 0 stays, with index 1 on top of it.
+wrong[0, 1 | 0, 1, 2 | 0, 1, 2, 3 | 0, 1, 2, 3, 4]: A new number first pops every smaller waiting number: the 4 pops both 1 and 3.
+hint: At i = 2, the 4 pops index 1 (value 1) and index 0 (value 3).
+hint: At i = 4, the 5 pops everything that's waiting.
+right: 0, 1 → 2 → 2, 3 → 4. Each index goes on once and comes off at most once.
+wrong: i = 1: push 1 on top of 0. i = 2: 4 pops 1 and 0, push 2. i = 3: push 3. i = 4: 5 pops 3 and 2, push 4.
+
+=== task: order medium
+title: A new number arrives
+prompt: Put the steps for handling a new number x in `next_greater` in order.
+items:
+- Look at the index on top of the stack
+- If its number is smaller than x, pop it and record x as its answer
+- Repeat until the stack is empty or its top number isn't smaller than x
+- Push x's index
+hint: x answers the waiting numbers before it starts waiting itself.
+hint: The popping goes on as long as the top number is smaller.
+right: Check the top, pop and answer while it's smaller, then push: the stack stays decreasing.
+wrong: Look at the top; pop it and record x while its number is smaller than x; when that stops, push x's index.
+
+=== task: predict medium
+title: Next smaller
+code:
+```python
+def next_smaller(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] > nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+
+print(next_smaller([5, 3, 4, 1]))
+```
+wrong[[-1, 4, -1, -1]]: This version pops while the top is **bigger**, so it finds the next smaller element, not the next greater one.
+wrong[[3, 1, 3, -1]]: The next smaller element of 4 is the first smaller number to its right: 1.
+wrong[[3, 1, 1, 1]]: Nothing comes after the 1, so it keeps -1.
+hint: Look to the right of each number for the first smaller one.
+hint: 3 pops 5; 1 pops 4 and 3.
+right: 5 → 3, 3 → 1, 4 → 1, and 1 → -1. Flipping the comparison flips what the stack finds.
+wrong: 3 arrives and pops 5 (answer 3). 4 is pushed. 1 pops 4 and 3 (answer 1 for both). The 1 never finds a smaller number.
+
+=== task: mcq medium
+title: The cost of the inner loop
+prompt: In `daily_temperatures`, a single day can pop many waiting days at once. Why doesn't that make the function O(n²)?
+* Each day is pushed once and popped at most once, so all the pops over the whole run add up to at most n :: Right. A day that pops a lot uses up waiting days that can't be popped again.
+- The `while` loop never pops more than one day at a time :: It can pop many: a very warm day pops every colder day waiting.
+- Temperatures don't vary much, so few days are popped :: The argument works for any temperatures.
+- It is O(n²), but only on very long lists :: Big O describes how the work grows; here it grows like n.
+hint: How many times can one day be popped?
+hint: Count the pops over the whole run.
+right: The total work is at most n pushes and n pops, whatever the order of the temperatures: O(n).
+wrong: One step may pop many days, but each day can only be popped once in the whole run, so all the popping together is at most n.
+
+=== task: multi medium
+title: True about the decreasing stack
+prompt: Choose **every** true sentence about the stack in `next_greater`.
+* Its values decrease from bottom to top :: Right. Anything smaller than a new number is popped before it's pushed.
+* The top is the waiting number seen most recently :: Right. It was pushed last.
+* An index that has been popped never comes back :: Right. Once it has its answer, it's done.
+* Indexes left at the end have no next greater element :: Right. Their answer stays -1.
+- It holds the numbers sorted from biggest to smallest across the whole list :: It only holds the numbers still waiting, not the whole list.
+- Its size is always 1 at the end :: In a decreasing list, every index is still waiting at the end.
+hint: What happens to smaller numbers when a bigger one arrives?
+hint: Four of them are true.
+right: Decreasing values, most recent on top, each index popped at most once, and the leftovers never find an answer.
+wrong: True: decreasing from bottom to top, the most recent on top, no index popped twice, leftovers keep -1. False: it isn't the whole list sorted, and it can end with many indexes.
+
+=== task: code medium
+title: All the next smaller elements
+prompt: Write `next_smaller(nums)` that returns a list with the next smaller element of every number: the first number to its right that's smaller than it, or -1 if there isn't one. It must be O(n): keep an increasing stack of waiting indexes.
+
+For example, `next_smaller([4, 2, 6, 3, 5])` returns `[2, -1, 3, -1, -1]`.
+starter:
+```python
+def next_smaller(nums):
+    result = [-1] * len(nums)
+    stack = []
+    # your code here
+    return result
+```
+solution:
+```python
+def next_smaller(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] > nums[i]:
+            result[stack.pop()] = nums[i]
+        stack.append(i)
+    return result
+```
+tests:
+- next_smaller([4, 2, 6, 3, 5])
+- next_smaller([1, 2, 3])
+- next_smaller([3, 2, 1])
+- next_smaller([])
+- next_smaller([2, 2, 1])
+speed: setup=nums = list(range(n)) | call=next_smaller(nums) | target=O(n)
+slow:
+```python
+def next_smaller(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[j] < nums[i]:
+                result[i] = nums[j]
+                break
+    return result
+```
+fail[1]: 2 is smaller than 4; 3 is smaller than 6; nothing after 2, 3 or 5 is smaller than them.
+fail[2]: In an increasing list, nothing has a smaller number after it: all -1.
+fail[3]: In a decreasing list, each number's answer is the very next one.
+fail[5]: Equal isn't smaller: both 2s get the 1.
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: The same loop as `next_greater`, with the comparison flipped.
+hint: Pop while `nums[stack[-1]] > nums[i]`, setting each popped index's answer to `nums[i]`.
+hint: Then push i.
+right: An increasing stack, O(n): each index pushed once and popped at most once.
+wrong: Walk left to right; each new number pops and answers the bigger waiting numbers, then is pushed.
+
+=== task: code hard
+title: Stock span
+prompt: The **span** of a stock price on day i is the number of days in a row, ending on day i, on which the price was at most the price on day i. Write `spans(prices)` that returns the span of every day. It must be O(n): keep a decreasing stack of earlier days; for each day, pop the days whose price isn't higher, and the day left on top (if any) is the previous higher price.
+
+For example, `spans([100, 80, 60, 70, 60, 75, 85])` returns `[1, 1, 1, 2, 1, 4, 6]`.
+starter:
+```python
+def spans(prices):
+    result = []
+    stack = []
+    # your code here
+    return result
+```
+solution:
+```python
+def spans(prices):
+    result = []
+    stack = []
+    for i in range(len(prices)):
+        while stack and prices[stack[-1]] <= prices[i]:
+            stack.pop()
+        if stack:
+            result.append(i - stack[-1])
+        else:
+            result.append(i + 1)
+        stack.append(i)
+    return result
+```
+tests:
+- spans([100, 80, 60, 70, 60, 75, 85])
+- spans([10, 20, 30])
+- spans([30, 20, 10])
+- spans([5, 5, 5])
+- spans([])
+- spans([10, 4, 5, 90, 120, 80])
+speed: setup=prices = list(range(n)) | call=spans(prices) | target=O(n)
+slow:
+```python
+def spans(prices):
+    result = []
+    stack = []
+    for i in range(len(prices)):
+        span = 1
+        j = i - 1
+        while j >= 0 and prices[j] <= prices[i]:
+            span += 1
+            j -= 1
+        result.append(span)
+    return result
+```
+fail[1]: 75 on day 5 covers days 2 to 5, and the 80 on day 1 stops it: 4. 85 on day 6 covers everything back to the 100: 6.
+fail[2]: Prices that keep rising cover every earlier day: 1, 2, 3.
+fail[3]: Falling prices cover only their own day: all 1.
+fail[4]: Equal prices count ("at most"), so the spans are 1, 2, 3.
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: Pop while `prices[stack[-1]] <= prices[i]`: those days are covered by today.
+hint: If a day is left on top, the span is `i - stack[-1]`; if the stack is empty, it's `i + 1`.
+hint: Then push i.
+right: Each day is pushed once and popped at most once: O(n). Walking back from every day would be O(n²) for prices that keep rising.
+wrong: For each day, pop the earlier days that aren't higher; the span reaches back to the day left on top (or to day 0); then push today.
+
+=== task: code hard
+title: Next greater in a circle
+prompt: The numbers in `nums` stand in a circle: after the last one comes the first again. Write `next_greater_circular(nums)` that returns, for each number, the first bigger number going round the circle from it (-1 if there isn't one). It must be O(n).
+
+Go round twice: for `k` from 0 to `2n − 1`, the number is `nums[k % n]`. Pop and answer smaller waiting indexes as usual, but only push indexes during the first round.
+
+For example, `next_greater_circular([1, 2, 1])` returns `[2, -1, 2]`.
+starter:
+```python
+def next_greater_circular(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+    # your code here
+    return result
+```
+solution:
+```python
+def next_greater_circular(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+    for k in range(2 * n):
+        i = k % n
+        while stack and nums[stack[-1]] < nums[i]:
+            result[stack.pop()] = nums[i]
+        if k < n:
+            stack.append(i)
+    return result
+```
+tests:
+- next_greater_circular([1, 2, 1])
+- next_greater_circular([5, 4, 3, 2, 1])
+- next_greater_circular([1, 2, 3, 4, 3])
+- next_greater_circular([7])
+- next_greater_circular([])
+- next_greater_circular([2, 2])
+speed: setup=nums = list(range(n, 0, -1)) | call=next_greater_circular(nums) | target=O(n)
+slow:
+```python
+def next_greater_circular(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+    for i in range(n):
+        for step in range(1, n):
+            j = (i + step) % n
+            if nums[j] > nums[i]:
+                result[i] = nums[j]
+                break
+    return result
+```
+fail[1]: The last 1 goes round to the 2 at the start.
+fail[2]: Every number except the 5 finds the 5 by going round; the 5 is the biggest, so -1.
+fail[3]: The last 3 goes round to 1, 2, 3, then 4: its answer is 4.
+fail[6]: Equal isn't greater: neither 2 has a bigger number anywhere.
+error[IndexError]: Use `k % n` to turn the round-twice counter into an index.
+hint: Loop `for k in range(2 * n):` with `i = k % n`.
+hint: Pop and answer as in `next_greater`.
+hint: Push i only when `k < n`, so each index waits only once.
+right: The second round lets the numbers near the end find bigger numbers at the start. Still O(n): 2n steps, and each index pushed and popped at most once.
+wrong: Run the usual next-greater loop over 2n steps, reading `nums[k % n]`, and only push during the first n steps.
+
+=== task: code hard
+title: The largest rectangle
+prompt: A bar chart has bars of width 1 and the given heights. Write `largest_rectangle(heights)` that returns the area of the largest rectangle that fits inside the bars. It must be O(n).
+
+The largest rectangle that uses the full height of bar i stretches left as far as the bar after the nearest lower bar on its left, and right as far as the bar before the nearest lower bar on its right. So:
+
+1. find `left[i]`, the index of the previous bar lower than bar i (-1 if none), with an increasing stack walking left to right,
+2. find `right[i]`, the index of the next bar lower than bar i (n if none), walking right to left,
+3. the answer is the biggest `heights[i] * (right[i] - left[i] - 1)`.
+
+For example, `largest_rectangle([2, 1, 5, 6, 2, 3])` returns 10: heights 5 and 6 give a rectangle 5 high and 2 wide.
+starter:
+```python
+def largest_rectangle(heights):
+    n = len(heights)
+    left = [-1] * n
+    right = [n] * n
+    # your code here
+    return 0
+```
+solution:
+```python
+def largest_rectangle(heights):
+    n = len(heights)
+    left = [-1] * n
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and heights[stack[-1]] >= heights[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    stack = []
+    for i in range(n - 1, -1, -1):
+        while stack and heights[stack[-1]] >= heights[i]:
+            stack.pop()
+        if stack:
+            right[i] = stack[-1]
+        stack.append(i)
+    best = 0
+    for i in range(n):
+        area = heights[i] * (right[i] - left[i] - 1)
+        if area > best:
+            best = area
+    return best
+```
+tests:
+- largest_rectangle([2, 1, 5, 6, 2, 3])
+- largest_rectangle([2, 4])
+- largest_rectangle([5])
+- largest_rectangle([])
+- largest_rectangle([3, 3, 3])
+- largest_rectangle([2, 1, 2])
+- largest_rectangle([6, 2, 5, 4, 5, 1, 6])
+speed: setup=heights = [5] * n | call=largest_rectangle(heights) | target=O(n)
+slow:
+```python
+def largest_rectangle(heights):
+    best = 0
+    for i in range(len(heights)):
+        lo = i
+        while lo > 0 and heights[lo - 1] >= heights[i]:
+            lo -= 1
+        hi = i
+        while hi < len(heights) - 1 and heights[hi + 1] >= heights[i]:
+            hi += 1
+        area = heights[i] * (hi - lo + 1)
+        if area > best:
+            best = area
+    return best
+```
+fail[1]: The bars 5 and 6 make a rectangle 5 high and 2 wide: 10.
+fail[2]: The 4 alone gives 4; the two bars together give 2 × 2 = 4.
+fail[5]: Three bars of 3 make one rectangle 3 high and 3 wide: 9.
+fail[6]: The lowest bar, 1, stretches across all three bars: 3.
+fail[7]: The bars 5, 4, 5 make a rectangle 4 high and 3 wide: 12.
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: Left pass: pop while the top bar is at least as high as bar i; if a bar is left, it's `left[i]`; push i.
+hint: Right pass: the same, walking with `range(n - 1, -1, -1)`, filling `right[i]`.
+hint: Then the width for bar i is `right[i] - left[i] - 1`.
+right: Two monotonic-stack passes and one loop: O(n). Spreading out from every bar instead would be O(n²) when the bars are all the same height.
+wrong: Find each bar's previous lower bar and next lower bar with increasing stacks, then take the best height × width.
+
+=== task: code hard
+title: Remove k digits
+prompt: `num` is a string of digits. Write `remove_k_digits(num, k)` that removes exactly k digits so that the number left is as small as possible, and returns it as a string without leading zeros ("0" if nothing is left).
+
+Use an increasing stack of digits: while k > 0 and the digit on top is bigger than the next digit, pop it (removing a bigger digit from earlier in the number helps most) and take 1 from k. If k is still above 0 at the end, remove digits from the end. `s.lstrip("0")` removes every 0 from the left end of `s`.
+
+For example, `remove_k_digits("1432219", 3)` returns "1219".
+starter:
+```python
+def remove_k_digits(num, k):
+    stack = []
+    # your code here
+    return "".join(stack)
+```
+solution:
+```python
+def remove_k_digits(num, k):
+    stack = []
+    for d in num:
+        while k > 0 and stack and stack[-1] > d:
+            stack.pop()
+            k -= 1
+        stack.append(d)
+    while k > 0:
+        stack.pop()
+        k -= 1
+    result = "".join(stack).lstrip("0")
+    if result == "":
+        return "0"
+    return result
+```
+tests:
+- remove_k_digits("1432219", 3)
+- remove_k_digits("10200", 1)
+- remove_k_digits("10", 2)
+- remove_k_digits("12345", 2)
+- remove_k_digits("54321", 2)
+- remove_k_digits("9", 1)
+- remove_k_digits("112", 1)
+fail[1]: The 4, then the 3, then one 2 are removed, because each is bigger than the digit after it: 1219.
+fail[2]: Removing the 1 leaves "0200", which is "200" without its leading zero.
+fail[3]: Removing every digit leaves nothing: "0".
+fail[4]: The digits only rise, so nothing is popped on the way; the last two digits go: "123".
+fail[5]: Each digit is bigger than the next, so the first two go: "321".
+fail[7]: No digit is followed by a smaller one, so nothing is popped on the way, and the last digit, 2, is removed: "11".
+error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
+hint: While `k > 0` and the top digit is bigger than d, pop and take 1 from k. Then push d.
+hint: If k is still above 0, pop from the end k more times.
+hint: Join, strip the leading zeros with `.lstrip("0")`, and return "0" if that leaves nothing.
+right: A bigger digit early in the number costs more than one later on, so each digit pops the bigger digits before it while removals are left: O(n), each digit pushed and popped at most once.
+wrong: Keep an increasing stack: a smaller digit pops bigger ones before it while k lasts. Remove any remaining k from the end, drop leading zeros, and use "0" for an empty result.
+
+=== task: predict hard
+title: The previous greater element
+code:
+```python
+def previous_greater(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums)):
+        while stack and nums[stack[-1]] <= nums[i]:
+            stack.pop()
+        if stack:
+            result[i] = nums[stack[-1]]
+        stack.append(i)
+    return result
+
+print(previous_greater([3, 5, 2, 4, 1]))
+```
+wrong[[-1, 3, 5, 5, 4]]: The previous greater element must be **bigger**: 3 is smaller than 5, so 5 has none.
+wrong[[-1, -1, 5, 2, 4]]: 2 isn't bigger than 4; the nearest bigger number to the left of 4 is 5.
+wrong[[5, -1, 4, -1, -1]]: That's the next greater element, to the right. This function answers each number with what's left on the stack: a number to its left.
+hint: After popping, the top of the stack is the nearest bigger number to the left.
+hint: The 4 pops the 2, leaving the 5 on top.
+right: 3 and 5 have nothing bigger before them; 2 and 4 both look back to 5; 1 looks back to 4.
+wrong: For each number, pop the earlier numbers that aren't bigger; whatever is left on top is the answer: -1, -1, 5, 5, 4.
+
+=== task: predict hard
+title: The same temperature
+code:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        while stack and temps[stack[-1]] < temps[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+print(daily_temperatures([20, 20, 22, 21, 21, 23]))
+```
+wrong[[1, 1, 3, 1, 1, 0]]: The same temperature isn't warmer: day 0 waits for the 22 on day 2, two days later.
+wrong[[2, 1, 3, 2, 1, 1]]: Nothing comes after the 23, so day 5 keeps 0.
+wrong[[2, 1, 1, 2, 1, 0]]: Day 2 (22) has to wait for the 23 on day 5: the 21s are colder.
+hint: Equal temperatures don't pop each other: both 20s wait for the 22.
+hint: The 23 on day 5 pops days 4, 3 and 2.
+right: 2, 1, 3, 2, 1, 0: equal days wait together, and one warmer day answers them all.
+wrong: Days 0 and 1 (20) are answered by day 2: 2 and 1. Days 2, 3 and 4 are answered by day 5: 3, 2 and 1. Day 5 keeps 0.
+
+=== task: cells hard
+title: Spans of a stock
+prompt: Using the `spans` rule (how many days in a row, ending today, the price was at most today's price), what is the span on each day of the prices `[10, 4, 5, 90, 120, 80]`? Days are numbered from 0.
+labels: day 2 | day 3 | day 4 | day 5
+answer: 2 | 4 | 5 | 1
+wrong[1 | 4 | 5 | 1]: Day 2's price, 5, is at least day 1's 4, so the span covers days 1 and 2: 2.
+wrong[2 | 3 | 4 | 1]: Day 3's 90 covers every day so far, days 0 to 3: 4.
+wrong[2 | 4 | 5 | 6]: Day 5's 80 is lower than day 4's 120, so the span is only the day itself: 1.
+hint: The span stops at the first earlier day with a higher price.
+hint: 90 and 120 are higher than everything before them.
+right: 5 covers back to the 4; 90 and 120 cover every day before them; 80 is stopped at once by the 120.
+wrong: Day 2: 5 ≥ 4 but < 10: 2. Day 3: 90 beats everything: 4. Day 4: 120 beats everything: 5. Day 5: 80 < 120: 1.
+
+=== task: mcq hard
+title: Indexes, not values
+prompt: Why does `daily_temperatures` push indexes onto its stack instead of temperatures?
+* An index gives both where to write the answer and how far apart the two days are, and the temperature can still be read as `temps[j]` :: Right. A temperature alone loses the day it belongs to.
+- Indexes are smaller numbers, so they use less memory :: The point isn't size: a temperature on its own doesn't say which day it came from.
+- Python's lists can't hold temperatures with decimals :: Lists hold any numbers.
+- The comparison only works on indexes :: The comparison reads temperatures, `temps[stack[-1]]`.
+hint: What does the answer for a day need to know?
+hint: Can you get a temperature back from an index? Can you get an index back from a temperature?
+right: From an index you get everything: the value, the place to write the answer, and the distance `i - j`. From a value alone you get none of the last two.
+wrong: The answer is `i - j`, written into `answer[j]`: both need the day's index. The temperature is `temps[j]` whenever it's needed.
+
+=== task: multi hard
+title: Jobs for a monotonic stack
+prompt: Choose **every** problem that a monotonic stack solves in O(n).
+* For each day, the number of days until a warmer day :: Right. Next greater element, with distances.
+* For each stock price, how many days back it beats :: Right. The stock span: previous greater element.
+* The largest rectangle under a bar chart :: Right. Previous and next lower bars.
+* For each number, the next greater number going round a circle :: Right. Go round twice.
+- Sorting a list :: Sorting needs O(n log n) comparisons; a stack pass doesn't sort.
+- Finding the biggest number in the list :: One pass with a running maximum is enough: no stack needed.
+hint: Which ones ask about the nearest bigger or smaller item?
+hint: Four of them do.
+right: "Nearest bigger or smaller item to the left or right" is exactly what a monotonic stack answers in O(n).
+wrong: Monotonic stack: warmer days, stock span, largest rectangle, circular next greater. Sorting and the overall maximum are different problems.
+
+=== task: parsons hard
+title: Days until warmer
+prompt: Arrange the lines so that `daily_temperatures` returns the number of days until a warmer day, and the program prints:
+
+```output
+[1, 1, 4, 2, 1, 1, 0, 0]
+```
+
+Not every line is needed.
+lines:
+```python
+def daily_temperatures(temps):
+    answer = [0] * len(temps)
+    stack = []
+    for i in range(len(temps)):
+        while stack and temps[stack[-1]] < temps[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+print(daily_temperatures([73, 74, 75, 71, 69, 72, 76, 73]))
+```
+distractors:
+```python
+        while stack and temps[stack[-1]] > temps[i]:
+            answer[j] = j - i
+```
+hint: A waiting day is answered when today is warmer than it.
+hint: The answer is how many days later: `i - j`.
+right: Each day pops the colder days waiting for it and records how long they waited, then waits itself: O(n).
+wrong: For each day i: while the day on top is colder, pop it as j and set `answer[j] = i - j`; then push i. Return the answers.
