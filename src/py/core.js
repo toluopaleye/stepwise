@@ -832,7 +832,12 @@ class Parser {
     if (this.isKw('if')) {
       this.advance();
       const test = this.parseOrTest();
-      if (!this.eatKw('else')) this.error("expected 'else' after 'if' expression");
+      if (!this.eatKw('else')) {
+        // CPython underlines the whole `value if test` part
+        const et = this.toks[this.i - 1];
+        if (!this.noPos && et && st.line === et.line && st.col !== undefined && et.endCol !== undefined) this.error("expected 'else' after 'if' expression", st, undefined, st.col, et.endCol);
+        this.error("expected 'else' after 'if' expression");
+      }
       const orelse = this.parseTest();
       return this.pos({ type: 'IfExp', test, body, orelse, line: body.line }, st);
     }

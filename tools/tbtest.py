@@ -245,6 +245,13 @@ CASES = [
     'g = (x * 2 for x in [1, 2])\nprint(next(g), list(g), list(g))',
     'x = 5\nx.y = 1',
     's = "hi"\ns.up = 1',
+    'nums = [1]\nprint([n if n > 0 for n in nums])',
+    'x = 1 if True',
+    'y = 2\nz = (y * 3 if y > 1)',
+    'nums = [1]\nprint([n for n in nums if n > 0 else 0])',
+    'names = ["Al"]\nprint([n for n in names and len(n) > 2])',
+    'grid = [[1]]\nflat = [n for row in row for n in grid]',
+
 ]
 
 
