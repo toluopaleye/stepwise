@@ -248,7 +248,7 @@ function repr(v, seen) {
     return v.frozen ? 'frozenset(' + body + ')' : body;
   }
   if (v instanceof PyRange) return v.step === 1 ? `range(${v.start}, ${v.stop})` : `range(${v.start}, ${v.stop}, ${v.step})`;
-  if (v instanceof PyDeque) return 'deque([' + v.a.map((x) => repr(x, seen)).join(', ') + '])';
+  if (v instanceof PyDeque) return 'deque([' + v.a.map((x) => repr(x, seen)).join(', ') + ']' + (v.maxlen !== undefined ? ', maxlen=' + v.maxlen : '') + ')';
   if (v instanceof PyFunction) return v.isLambda ? `<function <lambda> at 0x${addr(v)}>` : `<function ${v.qualname} at 0x${addr(v)}>`;
   if (v instanceof PyBuiltin) {
     if (v.self !== null && v.self !== undefined) return `<built-in method ${v.name} of ${typeName(v.self)} object at 0x${addr(v.self)}>`;

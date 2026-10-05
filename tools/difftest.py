@@ -725,6 +725,25 @@ print(list(range(0)), range(5), range(1, 10, 2), len(range(3, 30, 4)), 7 in rang
 print(str(1 / 3), 2 / 3, 100 / 7, 22 / 7 * 1000000, 1 / 1024, 5e-324, 1.7976931348623157e308)
 print(hash(5), hash(True), int("ff", 16), bin(10), hex(255), oct(8), int("0b101", 0))
 print("done")''',
+    # deques with maxlen: repr, extend, extendleft, copy, appendleft; rotate both ways
+    '''from collections import deque
+d = deque([1, 2, 3], maxlen=3)
+d.extend([4, 5])
+print(d)
+d.extendleft([9, 8])
+print(d)
+c = d.copy()
+c.append(0)
+print(c, d)
+e = deque(maxlen=2)
+for x in [1, 2, 3]:
+    e.appendleft(x)
+print(e, len(e))
+f = deque("abc")
+f.rotate()
+print(f)
+f.rotate(-4)
+print(f, f[1], f[-1], repr(deque()), bool(deque()))''',
 ]
 
 if __name__ == "__main__":
