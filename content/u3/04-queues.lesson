@@ -1,0 +1,1192 @@
+=== lesson
+id: ds-queues
+title: Queues and deques
+summary: A queue serves things in the order they arrived: first in, first out. You'll see why a Python list makes a slow queue, use `collections.deque` to enqueue and dequeue in O(1), simulate a printer and a ticket line, compare the different kinds of queue, and get a first look at breadth-first search, which explores with a queue.
+
+=== learn
+### First in, first out
+A **queue** works like a line at a shop: people join at the **back** and are served from the **front**. The first one in is the first one out: **FIFO**. That's the opposite of a stack, where the last one in comes out first.
+
+| Operation | What it does |
+| --- | --- |
+| enqueue(x) | add x at the back |
+| dequeue() | remove the item at the front and return it |
+| peek() | look at the front item without removing it |
+| is_empty() | is there nothing in the queue? |
+| size() | how many items are in the queue |
+
+Queues appear wherever things must be handled fairly, in order of arrival: print jobs, customers on a phone line, messages between programs, and the steps of a search that explores nearest things first.
+
+### A Python list makes a slow queue
+With a list, `append` adds at the back in O(1), and `pop(0)` removes from the front, so a list works as a queue. But `pop(0)` is O(n): every item behind the front shifts one place left to close the gap.
+```python
+def list_queue_moves(n):
+    q = list(range(n))
+    moves = 0
+    while q:
+        moves += len(q) - 1
+        q.pop(0)
+    return moves
+
+for n in [10, 100, 1000]:
+    print(n, list_queue_moves(n))
+```
+```output
+10 45
+100 4950
+1000 499500
+```
+Emptying a queue of n items this way moves 0 + 1 + ... + (n − 1) = n(n − 1) / 2 items: O(n²). Adding at the front instead, with `insert(0, x)`, and removing at the end has the same problem the other way round. An array can't be fast at both ends.
+
+### `collections.deque`: fast at both ends
+Python's `collections` module has a **deque** (say "deck", short for double-ended queue). It adds and removes at **both** ends in O(1), because it's built as a doubly linked list of blocks, like the lists in the Doubly linked lists lesson:
+```python
+from collections import deque
+
+q = deque()
+q.append("Ann")
+q.append("Ben")
+q.append("Cy")
+print(q, q[0], len(q))
+print(q.popleft(), q.popleft())
+print(q)
+```
+```output
+deque(['Ann', 'Ben', 'Cy']) Ann 3
+Ann Ben
+deque(['Cy'])
+```
+- enqueue is `append(x)`, at the back (the right),
+- dequeue is `popleft()`, from the front (the left),
+- peek is `q[0]`, and size is `len(q)`.
+
+All four are O(1). `popleft()` on an empty deque raises `IndexError: pop from an empty deque`, so check `if q:` first; an empty deque is falsy, like an empty list. `deque([1, 2, 3])` makes a deque from a list. Animation 1 shows people joining and leaving a queue.
+
+### A Queue class
+A class gives the operations their queue names, and keeps the deque inside, so no code can take from the wrong end by mistake:
+```python
+from collections import deque
+
+class Queue:
+    def __init__(self):
+        self.items = deque()
+
+    def enqueue(self, x):
+        self.items.append(x)
+
+    def dequeue(self):
+        return self.items.popleft()
+
+    def peek(self):
+        return self.items[0]
+
+    def is_empty(self):
+        return len(self.items) == 0
+
+    def size(self):
+        return len(self.items)
+
+q = Queue()
+for job in ["report", "photo", "letter"]:
+    q.enqueue(job)
+print(q.dequeue(), q.peek(), q.size())
+```
+```output
+report photo 2
+```
+A queue can also be built from a singly linked list with a head and a tail: enqueue with `push_back` at the tail and dequeue with `pop_front` at the head, both O(1), as in the Linked lists lesson.
+
+### Simulating a queue
+Queues are used to simulate waiting: a printer, a checkout, a phone line. Here a printer receives jobs at different times, prints one page per minute, and always prints the job that has waited longest:
+```python
+from collections import deque
+
+jobs = [("A", 0, 3), ("B", 1, 2), ("C", 2, 1)]
+waiting = deque()
+time = 0
+next_job = 0
+while next_job < len(jobs) or waiting:
+    while next_job < len(jobs) and jobs[next_job][1] <= time:
+        waiting.append(jobs[next_job])
+        next_job += 1
+    if waiting:
+        name, arrived, pages = waiting.popleft()
+        time += pages
+        print(name, "arrived at", arrived, "finished at", time)
+    else:
+        time = jobs[next_job][1]
+```
+```output
+A arrived at 0 finished at 3
+B arrived at 1 finished at 5
+C arrived at 2 finished at 6
+```
+Each job is `(name, arrival time, pages)`. The inner `while` puts every job that has arrived by now into the queue. The printer then takes the job at the front and prints it. If nothing is waiting, the clock jumps to the next arrival. C needs only 1 minute, but it arrived last, so it waits for A and B: fairness by arrival order, not by size.
+
+### Kinds of queue
+The next two lessons look at the first two of these; priority queues come with heaps:
+
+| Kind | Adds | Removes | Typical use |
+| --- | --- | --- | --- |
+| **queue** (FIFO) | at the back | from the front | print jobs, customers, messages |
+| **circular queue** | at the back of a fixed-size array that wraps around | from the front | buffers for sound, video, keyboards |
+| **deque** | at either end | from either end | undo histories with a limit, sliding windows |
+| **priority queue** | anywhere | the most important item first | hospital triage, shortest routes (Heaps lesson) |
+
+A circular queue uses a fixed array and two indexes that wrap round with `%`, so it never shifts or grows. A deque is a queue and a stack in one. A priority queue isn't FIFO at all: it serves by priority, not by arrival.
+
+### A first look at breadth-first search
+A queue serves things in order of arrival, so it explores **nearest first**. Breadth-first search (BFS, in Unit 4) uses this to find how many steps each place is from a start. Start with the start in the queue; repeatedly take the front, and add its neighbours that haven't been seen yet to the back:
+```python
+from collections import deque
+
+friends = {
+    "Ann": ["Ben", "Cy"],
+    "Ben": ["Ann", "Dee"],
+    "Cy": ["Ann", "Dee", "Eve"],
+    "Dee": ["Ben", "Cy", "Fay"],
+    "Eve": ["Cy"],
+    "Fay": ["Dee"],
+}
+dist = {"Ann": 0}
+q = deque(["Ann"])
+while q:
+    person = q.popleft()
+    for f in friends[person]:
+        if f not in dist:
+            dist[f] = dist[person] + 1
+            q.append(f)
+print(dist)
+```
+```output
+{'Ann': 0, 'Ben': 1, 'Cy': 1, 'Dee': 2, 'Eve': 2, 'Fay': 3}
+```
+Everyone 1 step from Ann is dequeued before anyone 2 steps away, because they were enqueued first. So the first time someone is reached, it's by the shortest chain of friends. With a stack instead of a queue, the search would rush down one chain first and could find longer chains first. Animation 2 runs this search.
+
+### The cost table
+
+| Operation | list, as a queue | deque | linked list with a tail |
+| --- | --- | --- | --- |
+| enqueue at the back | O(1) amortized: `append` | O(1): `append` | O(1) |
+| dequeue from the front | O(n): `pop(0)` shifts everything | O(1): `popleft` | O(1) |
+| peek at the front | O(1): `q[0]` | O(1): `q[0]` | O(1) |
+| size | O(1): `len` | O(1): `len` | O(1) with a counter |
+| read item i in the middle | O(1) | O(n) | O(n) |
+
+=== keypoints
+- A queue is FIFO: enqueue adds at the back, dequeue removes from the front, peek looks at the front.
+- A Python list is a slow queue: `pop(0)` shifts every other item, O(n), so emptying n items is O(n²).
+- `collections.deque` is O(1) at both ends: `append` to enqueue, `popleft` to dequeue, `q[0]` to peek, `len(q)` for the size.
+- Check `if q:` before `popleft()`: popping an empty deque raises `IndexError`.
+- Kinds of queue: plain FIFO, circular (a fixed array that wraps round), deque (both ends) and priority queue (most important first).
+- A queue explores nearest first: breadth-first search finds shortest step counts by always taking the front of a queue.
+
+=== example: A ticket line
+intro: People join a ticket line at given minutes, and the seller serves one person every 2 minutes, in arrival order. The program works out how long each person waited.
+```python
+from collections import deque
+
+arrivals = [("Ann", 0), ("Ben", 0), ("Cy", 1), ("Dee", 7)]
+line = deque(arrivals)
+time = 0
+while line:
+    name, arrived = line.popleft()
+    if time < arrived:
+        time = arrived
+    waited = time - arrived
+    time += 2
+    print(name, "waited", waited, "minutes")
+```
+3-4: Everyone in arrival order: `deque(arrivals)` makes a queue from the list.
+5: The seller's clock.
+6-7: Serve the person at the front of the line.
+8-9: If the seller is free before the person arrives, the clock jumps to their arrival.
+10-12: Their wait is the time from arriving to being served, and serving takes 2 minutes. Ann waits 0, Ben 2 (Ann is served first) and Cy 3. Dee arrives at 7, after the line has cleared at 6, so Dee waits 0.
+
+=== example: pop(0) against popleft()
+intro: The same queue emptied with a list and with a deque. The list version counts how many items shift on each `pop(0)`; `popleft()` shifts none.
+```python
+from collections import deque
+
+def empty_list(n):
+    q = list(range(n))
+    shifts = 0
+    while q:
+        shifts += len(q) - 1
+        q.pop(0)
+    return shifts
+
+def empty_deque(n):
+    q = deque(range(n))
+    shifts = 0
+    while q:
+        q.popleft()
+    return shifts
+
+for n in [10, 100, 1000]:
+    print(n, empty_list(n), empty_deque(n))
+```
+3-9: `pop(0)` removes the front item, and the `len(q) - 1` items behind it all shift left.
+11-16: `popleft()` unlinks the front of the deque: nothing shifts.
+18-19: The list makes n(n − 1) / 2 shifts, O(n²); the deque none, so emptying it is O(n).
+
+=== animation: Joining and leaving a queue
+view: queue q
+vars served
+intro: Three people join a queue, one is served, another joins, and then everyone is served. Watch them leave from the front in the order they joined.
+```python
+from collections import deque
+
+q = deque()
+for person in ["Ann", "Ben", "Cy"]:
+    q.append(person)
+served = q.popleft()
+q.append("Dee")
+while q:
+    served = q.popleft()
+print("last served:", served)
+```
+1: Get the deque from the collections module.
+3: An empty queue.
+4: Take the next person from the list.
+5: {person} joins at the back.
+6: The front person, {q[0]}, is served first.
+7: Dee joins at the back, behind {q[-1]}.
+8: Is anyone still waiting? {'Yes: ' + str(len(q)) + '.' if q else 'No.'}
+9: Serve the front person: {q[0]}.
+10: Everyone left in the order they joined.
+
+=== animation: Breadth-first search
+view: queue q
+dict dist
+intro: Finding how many steps each person is from Ann in a network of friends. Watch the queue: everyone 1 step away leaves it before anyone 2 steps away.
+```python
+from collections import deque
+
+friends = {"Ann": ["Ben", "Cy"], "Ben": ["Dee"], "Cy": ["Dee", "Eve"], "Dee": ["Fay"], "Eve": [], "Fay": []}
+dist = {"Ann": 0}
+q = deque(["Ann"])
+while q:
+    person = q.popleft()
+    for f in friends[person]:
+        if f not in dist:
+            dist[f] = dist[person] + 1
+            q.append(f)
+print(dist)
+```
+1: Get the deque from the collections module.
+3: Who each person can pass a message to.
+4: Ann is 0 steps from herself.
+5: The queue starts with Ann.
+6: Is anyone waiting? {'Yes.' if q else 'No: everyone reachable has been reached.'}
+7: Take the front person: {q[0]}.
+8: Look at {person}'s friends, one at a time.
+9: Has {f} been reached already? {'Yes, so skip them.' if f in dist else 'No.'}
+10: {f} is one step further than {person}: {dist[person] + 1}.
+11: {f} joins the back of the queue.
+12: Each person's distance is the fewest steps from Ann.
+
+=== task: predict easy
+title: Front and back
+code:
+```python
+from collections import deque
+
+q = deque()
+q.append(1)
+q.append(2)
+q.append(3)
+x = q.popleft()
+q.append(4)
+print(x, list(q), q[0])
+```
+wrong[3 [1, 2, 4] 4]: That's how a stack behaves. `popleft()` takes from the front: the 1, which joined first.
+wrong[1 [2, 3, 4] 4]: `q[0]` is the front of the queue, which is now 2.
+wrong[1 [1, 2, 3, 4] 1]: `popleft()` removes the 1, so it's no longer in the queue.
+hint: `append` adds at the back; `popleft` removes from the front.
+hint: After the popleft, the queue is 2, 3.
+right: 1 leaves first because it joined first; 4 joins behind 3; and 2 is now at the front.
+wrong: The queue goes 1, 2, 3; `popleft()` removes 1; `append(4)` gives 2, 3, 4; the front, `q[0]`, is 2.
+
+=== task: mcq easy
+title: Who's served first?
+prompt: Ann, Ben and Cy join a queue in that order. Who is served first?
+* Ann :: Right. She joined first, so she's at the front.
+- Cy :: The last one in being the first one out is a stack, not a queue.
+- Ben :: Ben is in the middle: he's served after Ann.
+- Whoever needs the least time :: That would be a priority queue. A plain queue serves in order of arrival.
+hint: Which end of a queue is served?
+hint: First in, first out.
+right: A queue is FIFO: the first to join is the first to be served.
+wrong: People join at the back and are served from the front, so the first to join, Ann, is served first.
+
+=== task: fill easy
+title: Serve the front
+prompt: Fill in the blank so that the person at the front of the queue is served, and the program prints:
+
+```output
+Ann 2
+```
+code:
+```python
+from collections import deque
+
+q = deque(["Ann", "Ben", "Cy"])
+first = q.??()
+print(first, len(q))
+```
+answer: popleft
+wrong[pop]: `pop()` removes from the right end, the back of the queue: Cy, who joined last.
+hint: The front of a deque used as a queue is its left end.
+hint: Which method removes from the left?
+right: `popleft()` removes and returns the front item in O(1).
+wrong: The front is the left end, so the blank is `popleft`.
+
+=== task: code easy
+title: The queue at the end
+prompt: Write `final_queue(ops)` that runs a list of operations on a queue that starts empty, and returns the queue left at the end, as a list from front to back. Each operation is either a name, which joins the back of the queue, or the word "next", which serves the person at the front (the queue won't be empty when that happens). Use a `deque`.
+
+For example, `final_queue(["Ann", "Ben", "next", "Cy"])` returns `["Ben", "Cy"]`.
+starter:
+```python
+from collections import deque
+
+def final_queue(ops):
+    q = deque()
+    # your code here
+    return list(q)
+```
+solution:
+```python
+from collections import deque
+
+def final_queue(ops):
+    q = deque()
+    for op in ops:
+        if op == "next":
+            q.popleft()
+        else:
+            q.append(op)
+    return list(q)
+```
+tests:
+- final_queue(["Ann", "Ben", "next", "Cy"])
+- final_queue([])
+- final_queue(["A", "next"])
+- final_queue(["A", "B", "C", "next", "next", "D"])
+- final_queue(["x", "y"])
+fail[1]: Ann joined first, so she's served first: Ben and Cy are left. If Ben was served instead, the queue was used from the wrong end.
+fail[3]: A joins and is served: nothing is left.
+fail[4]: The first two "next"s serve A and B; then D joins behind C.
+hint: Loop over the operations.
+hint: "next" means `q.popleft()`; anything else means `q.append(op)`.
+right: Each operation is O(1) on a deque: joining at the back and serving from the front.
+wrong: For each operation, serve the front with `popleft()` if it's "next", otherwise append the name at the back. Return `list(q)`.
+
+=== task: predict easy
+title: A list as a queue
+code:
+```python
+q = ["a", "b", "c"]
+q.append("d")
+print(q.pop(0), q.pop(0), q)
+```
+wrong[d c ['a', 'b']]: `pop(0)` takes the item at index 0, the front: "a", not the last item.
+wrong[a a ['b', 'c', 'd']]: The first `pop(0)` removes "a", so the second one takes the new front, "b".
+wrong[a b ['a', 'b', 'c', 'd']]: `pop(0)` removes the items it returns.
+hint: `pop(0)` removes the first item and returns it.
+hint: After two pops, two items are left.
+right: "a" and "b" leave from the front, in the order they were added: the list works as a queue, but each `pop(0)` shifts the rest.
+wrong: After `append("d")` the list is a, b, c, d. `pop(0)` returns "a", then "b", leaving `['c', 'd']`.
+
+=== task: multi easy
+title: Queues in the wild
+prompt: Choose **every** situation that works like a queue.
+* Callers waiting on a phone line :: Right. The caller who has waited longest is answered next.
+* Print jobs sent to one printer :: Right. They're printed in the order they were sent.
+* Cars at a single-lane toll booth :: Right. The first car to arrive pays first.
+* Messages from one program to another, handled in the order they were sent :: Right. That's a message queue.
+- An editor's Undo :: The most recent change is undone first: a stack.
+- A browser's Back button :: The last page visited comes back first: a stack.
+hint: In which ones is the oldest thing handled first?
+hint: Four of them are queues.
+right: Phone lines, printers, toll booths and message queues are all first in, first out. Undo and Back are last in, first out.
+wrong: Queues: callers, print jobs, cars, messages. Undo and Back serve the newest first, so they're stacks.
+
+=== task: parsons easy
+title: A Queue class
+prompt: Arrange the lines so that the class works as a queue on a deque, and the program prints:
+
+```output
+x y
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+class Queue:
+    def __init__(self):
+        self.items = deque()
+
+    def enqueue(self, x):
+        self.items.append(x)
+
+    def dequeue(self):
+        return self.items.popleft()
+
+q = Queue()
+q.enqueue("x")
+q.enqueue("y")
+q.enqueue("z")
+print(q.dequeue(), q.dequeue())
+```
+distractors:
+```python
+        return self.items.pop()
+        self.items.appendleft(x)
+```
+hint: Items join at the back (the right) and leave from the front (the left).
+hint: `append` and `popleft`.
+right: x and y leave first because they joined first. `pop()` or `appendleft` would turn the queue into a stack, serving the newest item first.
+wrong: `enqueue` appends at the right, and `dequeue` returns `self.items.popleft()`. Then enqueue x, y, z and dequeue twice.
+
+=== task: cells easy
+title: The front after each step
+prompt: A queue starts empty. Which item is at the front after each step?
+labels: enqueue 5 | enqueue 7 | dequeue | enqueue 2
+answer: 5 | 5 | 7 | 7
+wrong[5 | 7 | 5 | 2]: That's how a stack's top behaves. A queue's front stays the same while items join behind it.
+wrong[5 | 5 | 7 | 2]: Enqueue adds at the back: the 2 goes behind the 7, which is still at the front.
+hint: New items join at the back.
+hint: Dequeue removes the front item, 5.
+right: 5 stays at the front until it's dequeued; then 7 is at the front, and 2 joins behind it.
+wrong: enqueue 5: front 5. enqueue 7: still 5. dequeue removes 5: front 7. enqueue 2 at the back: front still 7.
+
+=== task: mcq easy
+title: Why is pop(0) slow?
+prompt: Why does `pop(0)` on a Python list take O(n) steps?
+* Every item behind the front shifts one place left, to fill the gap :: Right. A list keeps its items side by side, with no gaps.
+- It has to search the list for the front item :: Index 0 is found at once. The slow part is the shifting.
+- Lists can only remove items from the end :: `pop(0)` works; it's only slow.
+- It sorts the list after removing the item :: Nothing is sorted.
+hint: Think back to deleting from the front of an array.
+hint: Where does the gap go?
+right: A list is an array, and arrays have no gaps, so removing the front item moves all the others: O(n). A deque unlinks its front in O(1).
+wrong: Removing index 0 leaves a gap at the front, and every other item moves one place left to close it: n − 1 moves.
+
+=== task: predict easy
+title: Stack or queue?
+code:
+```python
+from collections import deque
+
+stack = []
+q = deque()
+for x in ["a", "b", "c"]:
+    stack.append(x)
+    q.append(x)
+print(stack.pop(), q.popleft())
+```
+wrong[a a]: The stack gives back the last item pushed: "c".
+wrong[c c]: The queue gives back the first item that joined: "a".
+wrong[a c]: It's the other way round: the stack takes from the end and the queue from the front.
+hint: Both got the same items in the same order.
+hint: Stack: last in, first out. Queue: first in, first out.
+right: Same items, opposite ends: the stack returns "c", the last one in, and the queue returns "a", the first one in.
+wrong: `stack.pop()` takes the last item added, "c". `q.popleft()` takes the first, "a".
+
+=== task: code medium
+title: The printer
+prompt: A printer receives jobs and prints one page per minute, always taking the job that has waited longest. Write `finish_times(jobs)`, where `jobs` is a list of `(name, arrival_minute, pages)` in order of arrival, that returns a list of `(name, finish_minute)` in the order the jobs finish. When nothing is waiting, the printer is idle until the next job arrives. Use a `deque` for the waiting jobs.
+
+For example, `finish_times([("A", 0, 3), ("B", 1, 2), ("C", 2, 1)])` returns `[("A", 3), ("B", 5), ("C", 6)]`.
+starter:
+```python
+from collections import deque
+
+def finish_times(jobs):
+    waiting = deque()
+    time = 0
+    next_job = 0
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+from collections import deque
+
+def finish_times(jobs):
+    waiting = deque()
+    time = 0
+    next_job = 0
+    result = []
+    while next_job < len(jobs) or waiting:
+        while next_job < len(jobs) and jobs[next_job][1] <= time:
+            waiting.append(jobs[next_job])
+            next_job += 1
+        if waiting:
+            name, arrived, pages = waiting.popleft()
+            time += pages
+            result.append((name, time))
+        else:
+            time = jobs[next_job][1]
+    return result
+```
+tests:
+- finish_times([("A", 0, 3), ("B", 1, 2), ("C", 2, 1)])
+- finish_times([("A", 0, 2), ("B", 5, 1)])
+- finish_times([])
+- finish_times([("X", 3, 4)])
+- finish_times([("A", 0, 1), ("B", 0, 1), ("C", 0, 1)])
+fail[1]: A prints from 0 to 3; B, waiting since 1, prints from 3 to 5; C from 5 to 6.
+fail[2]: After A finishes at 2, nothing is waiting, so the printer is idle until B arrives at 5: B finishes at 6.
+fail[4]: The printer waits for X to arrive at 3, then prints its 4 pages: 7.
+error[IndexError]: Only take from the queue when it isn't empty, and only jump to the next arrival when there is a next job.
+hint: Keep looping while jobs are still to arrive or are waiting.
+hint: Each time round, first move every job that has arrived by `time` into the deque.
+hint: If something is waiting, `popleft()` it, add its pages to `time`, and record `(name, time)`; otherwise jump `time` to the next arrival.
+right: Every job joins the deque once and leaves it once: the simulation is O(n) for n jobs, plus however many idle jumps it makes.
+wrong: Move arrived jobs into the queue; print the front job (the clock moves on by its pages) and record when it finishes; if nothing is waiting, jump to the next arrival.
+
+=== task: code medium
+title: A Queue class
+prompt: Write a class `Queue` with `enqueue(x)`, `dequeue()` (remove and return the front item), `peek()` (return the front item), `is_empty()` and `size()`. All five must be O(1), so keep the items in a `deque`, not a list. Assume `dequeue` and `peek` are only called when the queue isn't empty.
+starter:
+```python
+from collections import deque
+
+class Queue:
+    def __init__(self):
+        self.items = deque()
+
+    # your code here
+```
+solution:
+```python
+from collections import deque
+
+class Queue:
+    def __init__(self):
+        self.items = deque()
+
+    def enqueue(self, x):
+        self.items.append(x)
+
+    def dequeue(self):
+        return self.items.popleft()
+
+    def peek(self):
+        return self.items[0]
+
+    def is_empty(self):
+        return len(self.items) == 0
+
+    def size(self):
+        return len(self.items)
+```
+tests:
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.enqueue(3), q.dequeue(), q.peek(), q.size()][3:])(Queue())
+- (lambda q: [q.is_empty(), q.size()])(Queue())
+- (lambda q: [q.enqueue("a"), q.dequeue(), q.is_empty()][1:])(Queue())
+- (lambda q: [q.enqueue(5), q.enqueue(6), q.dequeue(), q.enqueue(7), q.dequeue(), q.dequeue(), q.size()][2:])(Queue())
+speed: setup=q = Queue(); [q.enqueue(i) for i in range(n)] | call=[q.dequeue() for i in range(n)] | target=O(n)
+slow:
+```python
+class Queue:
+    def __init__(self):
+        self.items = []
+
+    def enqueue(self, x):
+        self.items.append(x)
+
+    def dequeue(self):
+        return self.items.pop(0)
+
+    def peek(self):
+        return self.items[0]
+
+    def is_empty(self):
+        return len(self.items) == 0
+
+    def size(self):
+        return len(self.items)
+```
+fail[1]: 1 joined first, so it leaves first; 2 is then at the front, and 2 items are left.
+fail[2]: A new queue is empty, with size 0.
+fail[4]: Items leave in the order they joined: 5, 6, then 7.
+error[AttributeError]: Define all five methods, and keep the items in `self.items`.
+hint: `enqueue` is `self.items.append(x)`, and `dequeue` returns `self.items.popleft()`.
+hint: `peek` returns `self.items[0]`.
+hint: `is_empty` and `size` use `len(self.items)`.
+right: A deque makes every method O(1). With a list, `pop(0)` would make emptying n items O(n²), which the speed check catches.
+wrong: Append at the back, popleft from the front, read `[0]` to peek, and use `len` for the size and the empty check.
+
+=== task: predict medium
+title: The printer, traced
+code:
+```python
+from collections import deque
+
+jobs = [("A", 0, 2), ("B", 0, 1), ("C", 4, 1)]
+waiting = deque()
+time = 0
+next_job = 0
+while next_job < len(jobs) or waiting:
+    while next_job < len(jobs) and jobs[next_job][1] <= time:
+        waiting.append(jobs[next_job])
+        next_job += 1
+    if waiting:
+        name, arrived, pages = waiting.popleft()
+        time += pages
+        print(name, time)
+    else:
+        time = jobs[next_job][1]
+```
+wrong[B 1\nA 3\nC 4]: The printer takes the job that has waited longest, not the shortest: A, which joined the queue first.
+wrong[A 2\nB 3\nC 4]: C arrives at 4, after the printer has gone idle at 3, so it prints from 4 to 5.
+wrong[A 2\nB 3\nC 6]: The clock doesn't keep running from 3: while nothing waits, it jumps to C's arrival, 4, then adds 1 page.
+hint: A and B arrive together, A first in the list.
+hint: After B finishes at 3, nothing is waiting until 4.
+right: A 2, B 3, then an idle minute, then C 5. First come, first served, with the clock jumping over idle time.
+wrong: A prints from 0 to 2, B from 2 to 3. Nothing is waiting, so the clock jumps to 4 when C arrives, and C finishes at 5.
+
+=== task: fill medium
+title: Join at the back
+prompt: Fill in the blank so that Ben joins the queue behind Ann, and the program prints:
+
+```output
+Ann Ben
+```
+code:
+```python
+from collections import deque
+
+q = deque(["Ann"])
+q.??("Ben")
+print(q.popleft(), q.popleft())
+```
+answer: append
+wrong[appendleft]: That puts Ben at the front, so he'd be served before Ann.
+hint: The back of the queue is the right end.
+hint: Which method adds at the right?
+right: `append` adds at the back, so Ben waits behind Ann, and they're served in the order they joined.
+wrong: Joining a queue means adding at the back, the right end: `append`.
+
+=== task: cells medium
+title: Shifts for pop(0)
+prompt: A list of n items is emptied with `pop(0)`, one item at a time. How many items shift in total?
+labels: n = 2 | n = 3 | n = 5 | n = 10
+answer: 1 | 3 | 10 | 45
+wrong[2 | 3 | 5 | 10]: Each `pop(0)` shifts every item **behind** the front, not one item per pop: (n − 1) + ... + 1 + 0.
+wrong[4 | 9 | 25 | 100]: n × n counts too many: the total is n(n − 1) / 2.
+hint: The first pop shifts n − 1 items, the next n − 2, and the last one none.
+hint: For n = 5: 4 + 3 + 2 + 1 + 0.
+right: n(n − 1) / 2: 1, 3, 10 and 45. That's O(n²) for something a deque does in O(n).
+wrong: n = 2: 1. n = 3: 2 + 1 = 3. n = 5: 4 + 3 + 2 + 1 = 10. n = 10: 9 + 8 + ... + 1 = 45.
+
+=== task: order medium
+title: One step of breadth-first search
+prompt: Put the steps of one round of breadth-first search in order.
+items:
+- Take the person at the front of the queue
+- Look at each of their friends in turn
+- If a friend hasn't been reached yet, set their distance to one more than this person's
+- Add that friend to the back of the queue
+hint: The person being processed comes from the front.
+hint: A newly reached friend gets a distance before joining the queue.
+right: Front out, neighbours checked, new ones given a distance and sent to the back. Because the queue is FIFO, everyone at distance d is processed before anyone at distance d + 1.
+wrong: Dequeue the front person, go through their friends, and for each friend not yet reached, record the distance and enqueue them.
+
+=== task: predict medium
+title: Who is reached first?
+code:
+```python
+from collections import deque
+
+graph = {"A": ["B", "C"], "B": ["D"], "C": ["E"], "D": [], "E": []}
+seen = {"A"}
+q = deque(["A"])
+order = []
+while q:
+    node = q.popleft()
+    order.append(node)
+    for nb in graph[node]:
+        if nb not in seen:
+            seen.add(nb)
+            q.append(nb)
+print(order)
+```
+wrong[['A', 'B', 'D', 'C', 'E']]: That's going deep first, as a stack would. The queue takes C, which joined before D, first.
+wrong[['A', 'C', 'B', 'E', 'D']]: B joined the queue before C, because it's first in A's list, so B is taken first.
+wrong[['A', 'B', 'C']]: D and E join the queue when B and C are taken, so they're visited too.
+hint: A's neighbours, B and C, join the queue before anything else.
+hint: D and E join behind them.
+right: Level by level: A, then its neighbours B and C, then their neighbours D and E. That's breadth-first order.
+wrong: Take A: B and C join. Take B: D joins. Take C: E joins. Take D, then E. Order: A, B, C, D, E.
+
+=== task: mcq medium
+title: Which kind of queue?
+prompt: A hospital's emergency department sees the most urgent patients first, whatever order they arrived in. Which kind of queue is that?
+* A priority queue :: Right. Each patient has a priority, and the most urgent is served first.
+- A plain FIFO queue :: That would serve patients in order of arrival.
+- A circular queue :: A circular queue is a way of storing a FIFO queue in a fixed array; it still serves in arrival order.
+- A deque :: A deque adds and removes at either end, but by position, not by urgency.
+hint: What decides who's served next: arrival, or something else?
+hint: The Heaps lesson builds this kind of queue.
+right: When the order is decided by importance rather than arrival, it's a priority queue.
+wrong: Serving the most urgent first, regardless of arrival, is a priority queue.
+
+=== task: multi medium
+title: O(1) on a deque
+prompt: Choose **every** operation that is O(1) on a `deque`.
+* `q.append(x)` :: Right. Add at the right end.
+* `q.popleft()` :: Right. Remove from the left end.
+* `q.appendleft(x)` :: Right. Add at the left end.
+* `q[0]` :: Right. Reading an end.
+- `q[len(q) // 2]` :: Reaching the middle means walking from an end: O(n).
+- `x in q` :: Searching checks the items one by one: O(n).
+hint: Which ones work at an end?
+hint: Four of them are.
+right: A deque is fast at both ends and slow in the middle, like the doubly linked list it's built from.
+wrong: O(1): append, popleft, appendleft and `q[0]`, all at the ends. The middle index and `in` are O(n).
+
+=== task: code medium
+title: Hot potato
+prompt: Children stand in a circle passing a hot potato. Starting with the potato at the first child, it's passed `num` times, and the child holding it then is out. Passing goes on from the next child, until one is left. Write `hot_potato(names, num)` that returns the names in the order they're out, with the winner last.
+
+Use a deque as the circle, with the potato at the front: a pass moves the front child to the back (`q.append(q.popleft())`), and the child at the front after `num` passes is out.
+
+For example, `hot_potato(["A", "B", "C", "D"], 1)` returns `["B", "D", "C", "A"]`.
+starter:
+```python
+from collections import deque
+
+def hot_potato(names, num):
+    q = deque(names)
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+from collections import deque
+
+def hot_potato(names, num):
+    q = deque(names)
+    out = []
+    while len(q) > 1:
+        for i in range(num):
+            q.append(q.popleft())
+        out.append(q.popleft())
+    out.append(q.popleft())
+    return out
+```
+tests:
+- hot_potato(["A", "B", "C", "D"], 1)
+- hot_potato(["Ann", "Ben", "Cy"], 3)
+- hot_potato(["solo"], 5)
+- hot_potato(["A", "B"], 0)
+- hot_potato(["A", "B", "C", "D", "E"], 2)
+fail[1]: One pass moves A to the back, so B holds the potato and is out. Then C passes to D, so D is out next.
+fail[2]: With 3 children, 3 passes bring the potato back to the same child.
+fail[3]: One child is the winner straight away.
+fail[4]: With 0 passes, the child holding the potato, A, is out at once.
+error[IndexError]: Stop when one child is left: `while len(q) > 1:`. Then add that child as the winner.
+hint: While more than one child is left: pass `num` times with `q.append(q.popleft())`, then `out.append(q.popleft())`.
+hint: The child left at the end is the winner: append them too.
+hint: `deque(names)` makes the circle, in order.
+right: Each pass and each removal is O(1) on a deque, so the game costs O(n × num). A list with `pop(0)` would shift everyone on every pass.
+wrong: Rotate the deque `num` times by moving the front child to the back, then remove the front child. Repeat until one is left, and add the winner at the end.
+
+=== task: code hard
+title: Steps from the start
+prompt: Write `bfs_distances(graph, start)` that returns a dictionary giving, for every node that can be reached from `start`, the fewest steps needed to reach it. `graph` is a dictionary from each node to a list of its neighbours. Use breadth-first search with a `deque`, and record each node's distance the first time it's reached. It must be O(V + E), where V is the number of nodes and E the number of links.
+
+For example, `bfs_distances({"A": ["B"], "B": ["C"], "C": []}, "A")` returns `{"A": 0, "B": 1, "C": 2}`.
+starter:
+```python
+from collections import deque
+
+def bfs_distances(graph, start):
+    dist = {start: 0}
+    q = deque([start])
+    # your code here
+    return dist
+```
+solution:
+```python
+from collections import deque
+
+def bfs_distances(graph, start):
+    dist = {start: 0}
+    q = deque([start])
+    while q:
+        node = q.popleft()
+        for nb in graph[node]:
+            if nb not in dist:
+                dist[nb] = dist[node] + 1
+                q.append(nb)
+    return dist
+```
+tests:
+- bfs_distances({"A": ["B"], "B": ["C"], "C": []}, "A")
+- bfs_distances({"A": ["B", "C"], "B": ["D"], "C": ["E"], "E": ["D"], "D": []}, "A")
+- bfs_distances({"A": []}, "A")
+- bfs_distances({"A": ["B"], "B": ["A"], "C": ["A"]}, "A")
+- bfs_distances({1: [2, 3], 2: [4], 3: [4], 4: [1]}, 1)
+speed: setup=graph = {i: [] for i in range(n)}; graph[0] = list(range(1, n)) | call=bfs_distances(graph, 0) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def bfs_distances(graph, start):
+    dist = {start: 0}
+    q = [start]
+    while q:
+        node = q.pop(0)
+        for nb in graph[node]:
+            if nb not in dist:
+                dist[nb] = dist[node] + 1
+                q.append(nb)
+    return dist
+```
+fail[1]: A chain: B is 1 step from A, and C is 2.
+fail[2]: D can be reached in 2 steps through B, and in 3 through C and E. Breadth-first search reaches it through B first, so its distance is 2. A stack would find the longer route.
+fail[3]: The start is 0 steps from itself.
+fail[4]: C can't be reached from A (its link goes the other way), so it isn't in the answer.
+error[KeyError]: Look up a node's distance only after it's been recorded: record `dist[nb]` before adding nb to the queue.
+hint: While the queue isn't empty, take the front node with `popleft()`.
+hint: For each neighbour not in `dist`, set `dist[nb] = dist[node] + 1` and append it to the queue.
+hint: Checking `nb not in dist` makes sure every node joins the queue once.
+right: Each node joins and leaves the queue once, and each link is looked at once: O(V + E). Using a list with `pop(0)` would make the queue itself O(V²).
+wrong: Start with the start node at distance 0 in the queue. Repeatedly take the front node, and give each unreached neighbour a distance one bigger before adding it to the back.
+
+=== task: code hard
+title: Recent requests
+prompt: Write a class `RecentCounter` whose method `ping(t)` records a request at time t (in milliseconds) and returns how many requests have happened in the last 3,000 milliseconds, from t − 3000 to t, counting this one. The times passed to `ping` always increase.
+
+Keep the recent times in a deque: add t at the back, then remove times older than t − 3000 from the front. Each ping must be O(1) on average.
+
+For example, pings at 1, 100, 3001 and 3002 return 1, 2, 3 and 3.
+starter:
+```python
+from collections import deque
+
+class RecentCounter:
+    def __init__(self):
+        self.times = deque()
+
+    def ping(self, t):
+        # your code here
+        return 0
+```
+solution:
+```python
+from collections import deque
+
+class RecentCounter:
+    def __init__(self):
+        self.times = deque()
+
+    def ping(self, t):
+        self.times.append(t)
+        while self.times[0] < t - 3000:
+            self.times.popleft()
+        return len(self.times)
+```
+tests:
+- (lambda c: [c.ping(1), c.ping(100), c.ping(3001), c.ping(3002)])(RecentCounter())
+- (lambda c: [c.ping(5000)])(RecentCounter())
+- (lambda c: [c.ping(0), c.ping(3000), c.ping(3001), c.ping(6001)])(RecentCounter())
+- (lambda c: [c.ping(10), c.ping(20), c.ping(30)])(RecentCounter())
+speed: setup=c = RecentCounter() | call=[c.ping(i * 1000) for i in range(n)] | target=O(n)
+slow:
+```python
+from collections import deque
+
+class RecentCounter:
+    def __init__(self):
+        self.times = []
+
+    def ping(self, t):
+        self.times.append(t)
+        count = 0
+        for old in self.times:
+            if old >= t - 3000:
+                count += 1
+        return count
+```
+fail[1]: At 3002, the window is 2 to 3002: the ping at 1 is too old, so 3 are counted.
+fail[3]: At 3000 the window is 0 to 3000, so the ping at 0 still counts. At 6001, only the pings at 3001 and 6001 are recent enough.
+fail[4]: All three pings are within 3,000 milliseconds of each other.
+error[IndexError]: After appending t the deque isn't empty, and t itself is never too old, so the loop always stops at t at the latest.
+hint: Append t at the back.
+hint: While the front time is older than `t - 3000`, `popleft()` it.
+hint: Return the deque's length.
+right: Each time is added once and removed once, so all the pings together cost O(n): O(1) each, on average. Counting through every old ping would be O(n²).
+wrong: Add the new time, drop times from the front while they're older than t − 3000, and return how many are left.
+
+=== task: code hard
+title: A queue from two stacks
+prompt: Write a class `TwoStackQueue` that works as a queue but stores its items in two Python lists used as stacks, `inbox` and `outbox`:
+- `enqueue(x)` pushes x onto `inbox`,
+- `dequeue()` pops from `outbox`, but if `outbox` is empty, it first pops every item off `inbox` and pushes it onto `outbox`, which reverses their order,
+- `size()` returns how many items are in the queue.
+
+Each item is moved at most once, so `dequeue` must be O(1) amortized. Assume `dequeue` is only called when the queue isn't empty.
+starter:
+```python
+class TwoStackQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    # your code here
+```
+solution:
+```python
+class TwoStackQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    def enqueue(self, x):
+        self.inbox.append(x)
+
+    def dequeue(self):
+        if not self.outbox:
+            while self.inbox:
+                self.outbox.append(self.inbox.pop())
+        return self.outbox.pop()
+
+    def size(self):
+        return len(self.inbox) + len(self.outbox)
+```
+tests:
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.enqueue(3), q.dequeue(), q.dequeue(), q.size()][3:])(TwoStackQueue())
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.dequeue(), q.enqueue(3), q.dequeue(), q.dequeue()][2:])(TwoStackQueue())
+- (lambda q: [q.size()])(TwoStackQueue())
+- (lambda q: [q.enqueue("a"), q.dequeue(), q.size()][1:])(TwoStackQueue())
+speed: setup=q = TwoStackQueue(); [q.enqueue(i) for i in range(n)] | call=[q.dequeue() for i in range(n)] | target=O(n)
+slow:
+```python
+class TwoStackQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    def enqueue(self, x):
+        self.inbox.append(x)
+
+    def dequeue(self):
+        while self.inbox:
+            self.outbox.append(self.inbox.pop())
+        x = self.outbox.pop()
+        while self.outbox:
+            self.inbox.append(self.outbox.pop())
+        return x
+
+    def size(self):
+        return len(self.inbox) + len(self.outbox)
+```
+fail[1]: 1 joined first, so it leaves first, then 2; one item is left.
+fail[2]: 3 joins after 2 has already moved to `outbox`. It waits in `inbox` until `outbox` is empty, so 2 still leaves before 3.
+fail[3]: A new queue holds nothing.
+error[IndexError]: Only move items when `outbox` is empty, and move all of `inbox` across before popping.
+hint: `enqueue` appends to `self.inbox`.
+hint: In `dequeue`, if `self.outbox` is empty, pop everything off `inbox` onto `outbox`.
+hint: Then return `self.outbox.pop()`. The size is the two lengths added together.
+right: Moving `inbox` to `outbox` reverses it, so the oldest item ends up on top of `outbox`. Each item is pushed twice and popped twice in its life: O(1) amortized per operation.
+wrong: Push new items onto `inbox`. To dequeue, refill `outbox` from `inbox` only when `outbox` is empty, then pop `outbox`.
+
+=== task: code hard
+title: Moving averages
+prompt: Write `moving_averages(values, k)` that returns, for each value, the average of the last k values up to and including it (or of all the values so far, when there are fewer than k), rounded to 2 decimal places. It must be O(n) whatever k is: keep the window in a deque and a running total, adding each new value and subtracting the value that leaves the window, instead of adding the window up again each time.
+
+For example, `moving_averages([1, 2, 3, 4, 5], 3)` returns `[1.0, 1.5, 2.0, 3.0, 4.0]`.
+starter:
+```python
+from collections import deque
+
+def moving_averages(values, k):
+    window = deque()
+    total = 0
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+from collections import deque
+
+def moving_averages(values, k):
+    window = deque()
+    total = 0
+    result = []
+    for v in values:
+        window.append(v)
+        total += v
+        if len(window) > k:
+            total -= window.popleft()
+        result.append(round(total / len(window), 2))
+    return result
+```
+tests:
+- moving_averages([1, 2, 3, 4, 5], 3)
+- moving_averages([10, 20], 1)
+- moving_averages([], 3)
+- moving_averages([5, 5, 5, 5], 2)
+- moving_averages([1, 2, 4], 5)
+speed: setup=values = list(range(n)); k = n // 2 | call=moving_averages(values, k) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def moving_averages(values, k):
+    window = deque()
+    total = 0
+    result = []
+    for v in values:
+        window.append(v)
+        if len(window) > k:
+            window.popleft()
+        result.append(round(sum(window) / len(window), 2))
+    return result
+```
+fail[1]: The first two averages use fewer than 3 values: 1, then (1 + 2) / 2. After that the window holds the last 3: (1 + 2 + 3) / 3, then (2 + 3 + 4) / 3, then (3 + 4 + 5) / 3.
+fail[2]: With k = 1, each average is the value itself.
+fail[5]: k is bigger than the list, so every average uses all the values so far: (1 + 2 + 4) / 3 = 2.33.
+error[ZeroDivisionError]: Divide by the window's length after adding the new value: it's never 0 then.
+hint: For each value: append it to the window and add it to `total`.
+hint: If the window now holds more than k values, `popleft()` the oldest and subtract it from `total`.
+hint: Append `round(total / len(window), 2)`.
+right: Each value enters and leaves the window once, and the total is updated in O(1): O(n) overall. Adding up the window again each time would be O(n × k).
+wrong: Keep a deque of the last k values and their total. Add the new value; if there are now too many, remove the oldest from both; record the average.
+
+=== task: predict hard
+title: Two stacks make a queue
+code:
+```python
+inbox = []
+outbox = []
+for x in [1, 2, 3]:
+    inbox.append(x)
+while inbox:
+    outbox.append(inbox.pop())
+front = outbox.pop()
+print(outbox, front)
+inbox.append(4)
+print(inbox, outbox)
+print(outbox.pop())
+```
+wrong[[2, 3] 1\n[4] [2, 3]\n3]: Moving the items pops them off `inbox` from the top: 3 first, so `outbox` is `[3, 2, 1]`, and 1 is on top.
+wrong[[3, 2] 1\n[4] [3, 2, 4]\n4]: 4 goes into `inbox`, not `outbox`: it waits there until `outbox` is empty.
+wrong[[3, 2] 1\n[4] [3, 2]\n3]: `pop()` takes the top of `outbox`, the end of the list: 2.
+hint: Moving 1, 2, 3 from one stack to the other reverses them.
+hint: `outbox` is `[3, 2, 1]`, with 1 on top.
+right: `[3, 2] 1`, then `[4] [3, 2]`, then 2: the items leave in the order 1, 2, like a queue, and 4 waits in `inbox` behind them.
+wrong: `inbox` is `[1, 2, 3]`; moving pops 3, 2, 1 onto `outbox`: `[3, 2, 1]`. Popping gives 1, leaving `[3, 2]`. 4 goes into `inbox`. The next pop from `outbox` gives 2.
+
+=== task: predict hard
+title: Hot potato, traced
+code:
+```python
+from collections import deque
+
+q = deque(["A", "B", "C", "D", "E"])
+out = []
+while len(q) > 1:
+    for i in range(2):
+        q.append(q.popleft())
+    out.append(q.popleft())
+print(out, q[0])
+```
+wrong[['B', 'D', 'A', 'E'] C]: Two passes move two children to the back, so the third child is out: C first, not B.
+wrong[['C', 'A', 'E', 'B'] B]: B is out last, so the winner is the one left: D.
+hint: Round 1: A and B move to the back, and C is out.
+hint: Round 2: D and E move to the back, and A is out.
+right: C, A, E and B are out, and D wins. Each round is two O(1) rotations and one O(1) removal.
+wrong: Round 1: A and B pass, and C is out. Round 2: D and E pass, and A is out. Round 3: B and D pass, and E is out. Round 4: B and D pass, and B is out. D is left.
+
+=== task: cells hard
+title: Distances by breadth-first search
+prompt: Breadth-first search runs from A on this graph. How many steps is each node from A?
+
+```python
+graph = {"A": ["B", "C"], "B": ["D", "E"], "C": ["F"],
+         "D": [], "E": ["F"], "F": ["G"], "G": []}
+```
+labels: D | E | F | G
+answer: 2 | 2 | 2 | 3
+wrong[2 | 2 | 3 | 4]: F is reached through C in 2 steps (A → C → F), before the longer route through B and E.
+wrong[2 | 2 | 2 | 4]: G is one step after F: 2 + 1 = 3.
+hint: Level 1: B and C. Level 2: everything one step from B or C.
+hint: F is a neighbour of C.
+right: Level 1: B, C. Level 2: D, E, F. Level 3: G. Breadth-first search finds each node at its shortest distance.
+wrong: From A: B and C are 1. B leads to D and E, and C leads to F: all 2. F leads to G: 3.
+
+=== task: mcq hard
+title: Why the two-stack queue is fast
+prompt: In the two-stack queue, one `dequeue` can move every item from `inbox` to `outbox`. Why is `dequeue` still O(1) amortized?
+* Each item is moved from `inbox` to `outbox` at most once in its life, so n dequeues move at most n items in total :: Right. The big moves are rare, and paid for by the cheap ones.
+- Moving items between Python lists is O(1), however many there are :: Moving k items takes k pops and k pushes: O(k).
+- The items are moved back to `inbox` after each dequeue :: That would make every dequeue O(n). They stay in `outbox`.
+- It isn't: every dequeue is O(n) :: Only a dequeue that finds `outbox` empty does any moving.
+hint: How many times can one item be moved?
+hint: Count the moves over the whole run.
+right: Every item is pushed twice and popped twice over its whole life, so the total work for n operations is O(n): O(1) amortized each.
+wrong: An item moves to `outbox` once and then waits there until it's dequeued, so all the moving together is at most n items.
+
+=== task: multi hard
+title: Kinds of queue
+prompt: Choose **every** true sentence.
+* A deque can be used as a stack and as a queue :: Right. Use one end for a stack, both ends for a queue.
+* A priority queue doesn't serve in order of arrival :: Right. It serves the most important item first.
+* A circular queue has a fixed size :: Right. It stores the items in a fixed array that wraps round.
+* Breadth-first search uses a plain first-in-first-out queue :: Right. That's what makes it explore nearest first.
+- A circular queue serves the newest item first :: It's still first in, first out; only the storage wraps round.
+- A priority queue is the same as a stack :: A stack serves the newest item; a priority queue serves the most important one.
+hint: What decides the order in each kind?
+hint: Four of them are true.
+right: Deques are flexible, priority queues serve by importance, circular queues are fixed arrays, and BFS needs plain FIFO order.
+wrong: True: deque as stack or queue, priority not by arrival, circular has a fixed size, BFS uses FIFO. False: circular queues are still FIFO, and a priority queue isn't a stack.
+
+=== task: parsons hard
+title: Breadth-first distances
+prompt: Arrange the lines so that `bfs` finds the fewest steps from A to every node, and the program prints:
+
+```output
+{'A': 0, 'B': 1, 'C': 1, 'D': 2, 'E': 2}
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def bfs(graph, start):
+    dist = {start: 0}
+    q = deque([start])
+    while q:
+        node = q.popleft()
+        for nb in graph[node]:
+            if nb not in dist:
+                dist[nb] = dist[node] + 1
+                q.append(nb)
+    return dist
+
+graph = {"A": ["B", "C"], "B": ["D"], "C": ["E"], "E": ["D"], "D": []}
+print(bfs(graph, "A"))
+```
+distractors:
+```python
+        node = q.pop()
+                dist[nb] = dist[node]
+```
+hint: Take from the front of the queue, so that nearer nodes go first.
+hint: A neighbour is one step further than the node it was reached from.
+right: Taking from the front makes the search go level by level, so D is reached through B in 2 steps. Taking from the back (`pop`) would go deep through C and E first, and give D the distance 3.
+wrong: Start with `dist = {start: 0}` and a deque holding the start. While it isn't empty, popleft a node, and give each unseen neighbour `dist[node] + 1` before appending it.
