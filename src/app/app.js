@@ -283,10 +283,10 @@
       }
     }
     const here = S.step === 0 ? 'Learn' : `Task ${S.step} of ${ntasks(S.lesson)}`;
-    const crumbs = info.parent ? `<span>${esc(htmlToText(info.parent.title))}</span><span class="sep" aria-hidden="true">/</span>` : '';
+    const crumbs = info.parent ? `<span class="cparent" title="${esc(htmlToText(info.parent.title))}">${esc(htmlToText(info.parent.title))}</span><span class="sep" aria-hidden="true">/</span>` : '';
     return `<header class="appbar">
       <button class="wordmark" data-act="drawer" aria-label="Open the course map">stepwise<span>_</span></button>
-      <nav class="crumbs" aria-label="Breadcrumb"><button data-act="drawer">Unit ${info.unitIdx + 1} · ${esc(info.unit.title)}</button><span class="sep" aria-hidden="true">/</span>${crumbs}<span>${esc(htmlToText(info.title))}</span><span class="sep" aria-hidden="true">/</span><span class="here">${here}</span></nav>
+      <nav class="crumbs" aria-label="Breadcrumb"><button data-act="drawer">Unit ${info.unitIdx + 1}<span class="cunit"> · ${esc(info.unit.title)}</span></button><span class="sep" aria-hidden="true">/</span>${crumbs}<span>${esc(htmlToText(info.title))}</span><span class="sep" aria-hidden="true">/</span><span class="here">${here}</span></nav>
       <div class="spacer"></div>
       <ol class="segs" aria-label="Lesson progress: ${here}">${segs}</ol>
       <div class="stats"><span>${icon('flame', 'style="color:var(--orange)"')}${plural(streakCount(), 'day')} streak</span><span>${icon('bolt', 'style="color:var(--accent)"')}${prog.xp || 0} XP</span>${acctHTML()}</div>
@@ -1267,6 +1267,25 @@
 
   // ---------------------------------------------------------------- main render
   let lastView = null;
+  // Keep the breadcrumb on one line when it can be: shorten the unit to "Unit N", then the parent
+  // lesson's title (sub-lessons), and only then let it wrap.
+  function fitCrumbs() {
+    const c = root.querySelector('.crumbs');
+    if (!c) return;
+    const oneLine = () => { const k = c.children; return k[k.length - 1].offsetTop - k[0].offsetTop < 8; };
+    c.classList.remove('fit1', 'fit2');
+    if (oneLine()) return;
+    c.classList.add('fit1');
+    if (oneLine() || !c.querySelector('.cparent')) return;
+    c.classList.add('fit2');
+  }
+  let fitQueued = false;
+  window.addEventListener('resize', () => {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fitCrumbs(); });
+  });
+
   function render(opts) {
     opts = opts || {};
     const L = LESSONS[S.lesson];
@@ -1280,6 +1299,7 @@
     else { const T = L.tasks[S.step - 1]; const ts = TS(S.lesson, S.step); left = taskLeft(L, T, ts); right = taskRight(L, T, ts); }
     root.innerHTML = headerHTML() + `<main class="work"><section class="lesson-pane" aria-label="Lesson">${left}</section><section class="editor-pane" aria-label="Code and results">${right}</section></main>` + (S.drawer ? drawerHTML() : '');
     highlightSnippets(root);
+    fitCrumbs();
     const view = S.lesson + ':' + S.step + ':' + S.tab;
     const nlp = root.querySelector('.lesson-pane'), nep = root.querySelector('.editor-pane');
     if (keep) { nlp.scrollTop = keep.l; nep.scrollTop = keep.e; window.scrollTo(0, keep.w); }
@@ -1306,6 +1326,7 @@
     const id = S.lesson;
     const info = INFO[id];
     root.innerHTML = headerHTML() + `<main class="work"><section class="lesson-pane" aria-label="Lesson"><div class="block"><div class="label">Lesson ${esc(info.num)}</div><h1 class="title">${esc(htmlToText(info.title))}</h1><div class="prose" id="load-msg"><p>Loading the lesson…</p></div></div></section><section class="editor-pane" aria-label="Code and results"></section></main>` + (S.drawer ? drawerHTML() : '');
+    fitCrumbs();
     loadLesson(id).then(() => { if (S.lesson === id) render(opts); }, () => {
       const m = document.getElementById('load-msg');
       if (m && S.lesson === id) m.innerHTML = '<p>This lesson couldn\'t be loaded. Check your connection, then try again.</p><div class="lesson-actions"><button class="btn primary" data-act="reload-lesson">Try again</button></div>';
