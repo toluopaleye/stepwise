@@ -267,7 +267,7 @@ function repr(v, seen) {
     if (v.cls.isException) return v.cls.name + '(' + (v.excArgs || []).map((x) => repr(x, seen)).join(', ') + ')';
     return `<__main__.${v.cls.name} object at 0x${addr(v)}>`;
   }
-  if (v instanceof PyIter) return `<${v.name} object at 0x${addr(v)}>`;
+  if (v instanceof PyIter) return v.name === 'generator' ? `<generator object <genexpr> at 0x${addr(v)}>` : `<${v.name} object at 0x${addr(v)}>`;
   if (v instanceof PyDictView) {
     const items = dictViewItems(v);
     return `dict_${v.kind}([` + items.map((x) => repr(x, seen)).join(', ') + '])';

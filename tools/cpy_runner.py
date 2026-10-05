@@ -198,7 +198,8 @@ def snapshot(frame, show):
         local = f.f_globals if name == "<module>" else f.f_locals
         vs = {}
         for k, v in local.items():
-            if k.startswith("__") or isinstance(v, types.ModuleType):
+            # ".0" is the hidden iterator Python passes to a generator expression: not a learner's variable
+            if k.startswith("__") or not k.isidentifier() or isinstance(v, types.ModuleType):
                 continue
             if name == "<module>" and k in SKIP_GLOBALS and k not in show:
                 continue
