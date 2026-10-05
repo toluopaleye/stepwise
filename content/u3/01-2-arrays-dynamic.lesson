@@ -1,0 +1,988 @@
+=== lesson
+id: ds-arrays-dynamic
+title: Dynamic arrays
+summary: A dynamic array is an array that grows: when it's full, it moves to a block twice as big, copying every item. That copy is slow, but it happens so rarely that appending is still O(1) on average. You'll track size and capacity, count the copies, see why doubling beats growing one slot at a time, and build a small DynamicArray class like Python's own list.
+
+=== learn
+### An array that grows
+A static array can't grow, because the memory after it may be taken. A **dynamic array** gets around this: when it runs out of room, it asks for a new, bigger block somewhere else, copies every item across, and carries on in the new block. The old block is thrown away. Python's `list` works like this, which is why you can append to a list as long as you like.
+
+### Size and capacity
+A dynamic array tracks two numbers:
+
+- its **size**: how many items it holds, which is what `len` gives,
+- its **capacity**: how many slots its current block has.
+
+Start with capacity 1 and append 5 items, doubling whenever the array is full:
+
+| Append | Full before? | Capacity after | Size after |
+| --- | --- | --- | --- |
+| 1st | no | 1 | 1 |
+| 2nd | yes: grow to 2, copy 1 item | 2 | 2 |
+| 3rd | yes: grow to 4, copy 2 items | 4 | 3 |
+| 4th | no | 4 | 4 |
+| 5th | yes: grow to 8, copy 4 items | 8 | 5 |
+
+The capacity is always at least the size. The slots between them are free, ready for the next appends.
+
+### Growing: a new block and a copy
+Growing makes a block twice as big and copies the items across, one by one:
+```python
+def grow(slots):
+    new = [None] * (2 * len(slots))
+    for i in range(len(slots)):
+        new[i] = slots[i]
+    return new
+
+slots = [7, 3, 9, 4]
+slots = grow(slots)
+print(slots, len(slots))
+```
+```output
+[7, 3, 9, 4, None, None, None, None] 8
+```
+That one append costs O(n): every item is copied. Animation 1 shows the copy. Every other append writes into a free slot: O(1).
+
+### Counting the copies
+With doubling, a copy happens each time the size reaches a power of 2 (1, 2, 4, 8, 16, ...), and it copies that many items:
+```python
+def copies_for(n):
+    capacity = 1
+    size = 0
+    copies = 0
+    for i in range(n):
+        if size == capacity:
+            copies += size
+            capacity *= 2
+        size += 1
+    return copies
+
+for n in [5, 9, 16, 1000]:
+    print(n, copies_for(n))
+```
+```output
+5 7
+9 15
+16 15
+1000 1023
+```
+For 1,000 appends the copies add up to 1 + 2 + 4 + ... + 512 = 1,023. Each block holds the copies of all the blocks before it, so the total is always **less than 2n**. Animation 2 counts them step by step.
+
+### Amortized O(1)
+Add the n writes and the fewer than 2n copies: n appends cost fewer than 3n steps. So **on average** each append costs fewer than 3 steps, whatever n is. That's called **amortized O(1)**: a few appends are expensive (O(n)), but they're rare enough that the average stays constant. It's like a bus pass: one big payment now and then, spread over many cheap rides.
+
+| | One append | n appends |
+| --- | --- | --- |
+| worst case | O(n), when it grows | |
+| total | | under 3n steps: O(n) |
+| average (amortized) | O(1) | |
+
+### Why double, and not add one slot?
+Growing by one slot each time would copy every item on **every** append once the array is full:
+
+| n appends | copies, growing by 1 | copies, doubling |
+| --- | --- | --- |
+| 9 | 36 | 15 |
+| 16 | 120 | 15 |
+| 1,000 | 499,500 | 1,023 |
+
+Adding one slot copies 1 + 2 + ... + (n − 1) items: n(n − 1) / 2, O(n²). Adding any fixed number of slots, like 10, has the same problem, only ten times later. Growing by a **factor** (×2, or even ×1.5) keeps the total copies O(n). CPython grows lists by about an eighth each time, plus a few slots: a smaller factor, but the same idea.
+
+### A DynamicArray class
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    def append(self, x):
+        if self.size == len(self.slots):
+            new = [None] * (2 * len(self.slots))
+            for i in range(self.size):
+                new[i] = self.slots[i]
+            self.slots = new
+        self.slots[self.size] = x
+        self.size += 1
+
+    def get(self, i):
+        return self.slots[i]
+
+a = DynamicArray()
+for x in [5, 6, 7]:
+    a.append(x)
+print(a.size, len(a.slots), a.get(2), a.slots)
+```
+```output
+3 4 7 [5, 6, 7, None]
+```
+The capacity is `len(self.slots)`. Three appends grew the array twice (1 → 2 → 4), and one free slot is waiting for the next append.
+
+### The cost table
+
+| Operation | Cost |
+| --- | --- |
+| `get(i)`, `set(i, x)` | O(1) |
+| append | O(1) amortized, O(n) when it grows |
+| pop from the end | O(1) |
+| insert or delete at index i | O(n): the items after i shift |
+| search | O(n) unsorted, O(log n) sorted |
+
+Some dynamic arrays also **shrink** when most of their slots are empty, to give memory back. They shrink only when the array is a quarter full, not half, so that alternating appends and pops can't make it grow and shrink over and over.
+
+=== keypoints
+- A dynamic array grows by moving to a bigger block and copying every item. Python's `list` is one.
+- **Size** is how many items it holds; **capacity** is how many slots its block has. Capacity ≥ size.
+- Growing copies all n items: that one append is O(n). The others write into a free slot: O(1).
+- With doubling, n appends make fewer than 2n copies in total, so append is **amortized O(1)**.
+- Growing by one slot (or any fixed number) makes n(n − 1) / 2 copies: O(n²). Grow by a factor instead.
+- Get, set and pop from the end are O(1); insert and delete in the middle are O(n).
+
+=== example: Watching the capacity
+intro: Nine appends to a DynamicArray, printing the size and the capacity after each one.
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    def append(self, x):
+        if self.size == len(self.slots):
+            new = [None] * (2 * len(self.slots))
+            for i in range(self.size):
+                new[i] = self.slots[i]
+            self.slots = new
+        self.slots[self.size] = x
+        self.size += 1
+
+a = DynamicArray()
+for x in range(1, 10):
+    a.append(x)
+    print(a.size, len(a.slots))
+```
+1-4: Start with one slot and no items.
+6-11: When the array is full, make a block twice as big and copy the items into it.
+12-13: Write the new item into the next free slot.
+15-18: The capacity doubles at sizes 2, 3, 5 and 9: 1, 2, 4, 8, 16. Between those, appends only write.
+
+=== example: Doubling against adding one
+intro: The total copies for n appends, when the array grows by doubling and when it grows by one slot.
+```python
+def copies(n, doubling):
+    capacity = 1
+    size = 0
+    total = 0
+    for i in range(n):
+        if size == capacity:
+            total += size
+            if doubling:
+                capacity *= 2
+            else:
+                capacity += 1
+        size += 1
+    return total
+
+for n in [10, 100, 1000]:
+    print(n, copies(n, True), copies(n, False))
+```
+1-13: The same loop for both strategies; only the growth step differs.
+15-16: Doubling makes 15, 127 and 1,023 copies: always less than 2n. Adding one makes 45, 4,950 and 499,500: n(n − 1) / 2, O(n²).
+
+=== animation: Growing by copying
+view: array new ptr=i
+vars slots
+intro: The array [7, 3, 9, 4] is full. Watch each item get copied into a new block twice as big.
+```python
+slots = [7, 3, 9, 4]
+new = [None] * (2 * len(slots))
+for i in range(len(slots)):
+    new[i] = slots[i]
+slots = new
+print(slots)
+```
+1: A full array: 4 items in 4 slots.
+2: Ask for a new block of {2 * len(slots)} slots.
+3: Copy the items one by one.
+4: Copy slots[{i}] = {slots[i]} into new[{i}].
+5: Switch to the new block. The old one is thrown away.
+6: 4 copies for this one append: O(n). The next 4 appends will be O(1).
+
+=== animation: Counting the copies
+view: steps copies label=copies_so_far
+vars size capacity
+intro: Nine appends to an array that starts with one slot and doubles when it's full. Watch the copies jump only at sizes 1, 2, 4 and 8.
+```python
+capacity = 1
+size = 0
+copies = 0
+for i in range(9):
+    if size == capacity:
+        copies += size
+        capacity *= 2
+    size += 1
+print(copies)
+```
+1: One slot to start.
+2: No items yet.
+3: No copies yet.
+4: Append item number {i + 1}.
+5: Is the array full? size {size}, capacity {capacity}: {size == capacity}.
+6: Full: copy all {size} items into the new block.
+7: The capacity doubles to {capacity * 2}.
+8: Write the item: size {size + 1}.
+9: 9 appends cost 1 + 2 + 4 + 8 = {copies} copies: less than 2 × 9.
+
+=== task: predict easy
+title: Capacities as it fills
+code:
+```python
+capacity = 1
+size = 0
+caps = []
+for i in range(5):
+    if size == capacity:
+        capacity *= 2
+    size += 1
+    caps.append(capacity)
+print(caps)
+```
+wrong[[1, 2, 3, 4, 5]]: The capacity doesn't grow by one: it doubles, and only when the array is full.
+wrong[[2, 4, 8, 16, 32]]: The first append fits into the starting slot, and the capacity only grows when size equals capacity.
+wrong[[1, 2, 4, 8, 8]]: After the 3rd append the capacity is 4, and the 4th append still fits: no growth.
+hint: Grow only when `size == capacity`.
+hint: The 2nd, 3rd and 5th appends find the array full.
+right: 1, 2, 4, 4, 8: the array grows at sizes 1, 2 and 4, and the 4th append uses a free slot.
+wrong: Append 1 fits (1). Append 2: full, grow to 2. Append 3: full, grow to 4. Append 4 fits (4). Append 5: full, grow to 8.
+
+=== task: mcq easy
+title: Full, then one more
+prompt: A dynamic array is full, and you append one more item. What happens?
+* It makes a new block (usually twice as big), copies every item into it, then adds the new item :: Right. That append costs O(n) because of the copying.
+- It refuses the item :: That's a static array. A dynamic array always makes room.
+- It adds one slot right after the old block :: The memory after the block may belong to something else, so it can't stretch in place.
+- It overwrites the oldest item :: That's a circular queue. A dynamic array keeps every item.
+hint: A dynamic array never refuses an append.
+hint: Where does the extra room come from?
+right: Grow, copy, then write: a new block twice as big, so the next appends are cheap again.
+wrong: The array moves to a bigger block: every item is copied across, then the new one is added.
+
+=== task: fill easy
+title: Twice as big
+prompt: Fill in the blank so that the array's new capacity is double the old one, and the program prints:
+
+```output
+8
+```
+code:
+```python
+capacity = 4
+new_capacity = capacity ?? 2
+print(new_capacity)
+```
+answer: *
+wrong[+]: That adds 2 slots instead of doubling: 6. Growing by a fixed amount makes appends O(n) on average.
+wrong[**]: That squares the capacity: 16.
+hint: Doubling means multiplying by 2.
+hint: Use `*`.
+right: Doubling, `capacity * 2`, is what keeps append amortized O(1): the copies stay under 2n in total.
+wrong: `capacity * 2` gives 8.
+
+=== task: code easy
+title: The next capacity
+prompt: Write `next_capacity(capacity)` that returns the capacity a dynamic array grows to when it's full: double the old capacity, but at least 1 (an array with capacity 0 grows to 1).
+
+For example, `next_capacity(4)` returns 8.
+starter:
+```python
+def next_capacity(capacity):
+    # your code here
+    return capacity
+```
+solution:
+```python
+def next_capacity(capacity):
+    if capacity == 0:
+        return 1
+    return capacity * 2
+```
+tests:
+- next_capacity(4)
+- next_capacity(1)
+- next_capacity(0)
+- next_capacity(100)
+fail[1]: Doubling 4 gives 8.
+fail[3]: 0 × 2 is still 0, which would never make room. Start at 1.
+hint: Double the capacity with `* 2`.
+hint: Handle 0 on its own.
+right: Doubling makes the array grow fast enough that the copies average out: amortized O(1) appends.
+wrong: Return 1 for a capacity of 0; otherwise `capacity * 2`.
+
+=== task: predict easy
+title: Three appends
+code:
+```python
+capacity = 1
+size = 0
+for x in [5, 6, 7]:
+    if size == capacity:
+        capacity *= 2
+    size += 1
+print(size, capacity)
+```
+wrong[3 3]: The capacity doubles when the array is full: 1 → 2 → 4, so it skips 3.
+wrong[3 8]: The 3rd append finds size 2 and capacity 2, so it grows to 4. Nothing grows it again.
+wrong[4 4]: There are 3 appends, so the size is 3.
+hint: Track size and capacity after each append.
+hint: Append 1: (1, 1). Append 2: grow to 2. Append 3: grow to 4.
+right: Size 3 and capacity 4: one free slot is ready for the next append.
+wrong: (1, 1), then (2, 2), then (3, 4).
+
+=== task: multi easy
+title: Cheap on a dynamic array
+prompt: Choose **every** operation on a dynamic array that is O(1), or O(1) amortized.
+* Reading item i :: Right. Address arithmetic, as in any array.
+* Writing item i :: Right. O(1).
+* Appending at the end :: Right. O(1) amortized: growing is rare enough to average out.
+* Removing the last item :: Right. Nothing has to move.
+- Inserting at index 0 :: Every item shifts right: O(n).
+- Searching for a value in an unsorted array :: O(n): the items are checked one by one.
+hint: Which ones work at one slot, or at the end?
+hint: Four of them are.
+right: Reads, writes, appends and pops from the end are cheap. Inserting at the front and searching touch every item.
+wrong: O(1): read, write, append (amortized), pop from the end. O(n): insert at the front and search.
+
+=== task: parsons easy
+title: Grow and copy
+prompt: Arrange the lines so that `grow` returns a block twice as big with the items copied into it, and the program prints:
+
+```output
+[7, 3, None, None]
+```
+
+Not every line is needed.
+lines:
+```python
+def grow(slots):
+    new = [None] * (2 * len(slots))
+    for i in range(len(slots)):
+        new[i] = slots[i]
+    return new
+
+print(grow([7, 3]))
+```
+distractors:
+```python
+    new = [None] * (len(slots) + 1)
+        slots[i] = new[i]
+```
+hint: The new block has twice as many slots.
+hint: Copy from the old block into the new one.
+right: Two copies into a block of 4: growing costs O(n), but doubling makes it rare. Growing by one slot would make it happen on every append.
+wrong: `new = [None] * (2 * len(slots))`, then copy `new[i] = slots[i]` for every i, then `return new`.
+
+=== task: cells easy
+title: Capacity after n appends
+prompt: A dynamic array starts with capacity 1 and doubles when it's full. What is its capacity after each number of appends?
+labels: 1 append | 2 appends | 3 appends | 9 appends
+answer: 1 | 2 | 4 | 16
+wrong[1 | 2 | 3 | 9]: The capacity doubles; it doesn't grow by one.
+wrong[2 | 4 | 8 | 18]: The first append fits into the starting slot, so the capacity is still 1.
+hint: Grow only when full: at sizes 1, 2, 4 and 8.
+hint: After 9 appends: 1 → 2 → 4 → 8 → 16.
+right: 1, 2, 4 and 16. The capacity is always the smallest power of 2 that's at least the size.
+wrong: 1 append: 1. 2 appends: 2. 3 appends: 4. 9 appends: 16.
+
+=== task: mcq easy
+title: What "amortized" means
+prompt: Append on a dynamic array is "O(1) amortized". What does that mean?
+* Over many appends, the average cost per append is O(1), even though a few appends cost O(n) :: Right. The rare expensive copies are spread over all the cheap appends.
+- Every single append takes O(1) :: The appends that make the array grow copy every item: O(n).
+- Appends are O(1) only for small arrays :: The average stays constant for any size.
+- Appends are O(1) only if you never append twice :: The more you append, the more the copies average out.
+hint: Some appends copy the whole array. How often?
+hint: Total work divided by the number of appends.
+right: n appends cost under 3n steps in total, so the average is under 3 per append: O(1) amortized, O(n) in the worst single case.
+wrong: Amortized means averaged over many operations: the occasional O(n) copy is paid for by all the O(1) appends.
+
+=== task: predict easy
+title: One growth
+code:
+```python
+slots = [10, 20, 30, 40]
+new = [None] * (2 * len(slots))
+copies = 0
+for i in range(len(slots)):
+    new[i] = slots[i]
+    copies += 1
+print(len(new), copies)
+```
+wrong[5 4]: The new block is twice as big: 8 slots, not one more.
+wrong[8 8]: Only the 4 items are copied; the other 4 slots stay None.
+wrong[4 4]: `new` has `2 * 4` = 8 slots.
+hint: How many slots does `[None] * 8` make?
+hint: How many items are copied?
+right: 8 slots and 4 copies: this append costs O(n), but the next 4 appends need no copying.
+wrong: `new` has 8 slots, and the loop copies the 4 items.
+
+=== task: code medium
+title: Grow
+prompt: Write `grow(slots)` that returns a new list twice as long as `slots`, with the items copied to the same positions and None in the new slots. Copy the items with a loop.
+
+For example, `grow([7, 3])` returns `[7, 3, None, None]`.
+starter:
+```python
+def grow(slots):
+    new = [None] * (2 * len(slots))
+    # your code here
+    return new
+```
+solution:
+```python
+def grow(slots):
+    new = [None] * (2 * len(slots))
+    for i in range(len(slots)):
+        new[i] = slots[i]
+    return new
+```
+tests:
+- grow([7, 3])
+- grow([1])
+- grow(["a", "b", "c"])
+- len(grow([0, 0, 0, 0]))
+fail[1]: Both items are copied, and two empty slots follow: `[7, 3, None, None]`.
+fail[3]: Three items, then three None slots.
+forbid[+ [None]]: Copy into the new block with a loop, the way an array has to.
+hint: Loop over the positions of the old list.
+hint: `new[i] = slots[i]`.
+hint: Return `new`.
+right: n copies into a block of 2n slots: O(n) for this append, but after it the next n appends are O(1).
+wrong: `for i in range(len(slots)): new[i] = slots[i]`, then `return new`.
+
+=== task: code medium
+title: How many copies?
+prompt: Write `copies_for(n)` that returns how many items get copied in total when n items are appended, one by one, to a dynamic array that starts with capacity 1, is empty, and doubles when it's full. Simulate it: keep `capacity`, `size` and `copies`, and when an append finds `size == capacity`, add `size` to the copies and double the capacity.
+
+For example, `copies_for(5)` returns 7: 1 + 2 + 4.
+starter:
+```python
+def copies_for(n):
+    capacity = 1
+    size = 0
+    copies = 0
+    # your code here
+    return copies
+```
+solution:
+```python
+def copies_for(n):
+    capacity = 1
+    size = 0
+    copies = 0
+    for i in range(n):
+        if size == capacity:
+            copies += size
+            capacity *= 2
+        size += 1
+    return copies
+```
+tests:
+- copies_for(5)
+- copies_for(0)
+- copies_for(1)
+- copies_for(2)
+- copies_for(9)
+- copies_for(1000)
+fail[1]: The array grows at sizes 1, 2 and 4, copying 1 + 2 + 4 = 7 items.
+fail[3]: One append fits into the starting slot: 0 copies.
+fail[4]: The second append finds the array full and copies 1 item.
+fail[6]: 1 + 2 + 4 + ... + 512 = 1,023: less than 2 × 1,000.
+hint: Loop n times, once per append.
+hint: When `size == capacity`, the append copies `size` items and the capacity doubles.
+hint: Every append then adds 1 to `size`.
+right: The total is always under 2n, so n appends cost O(n) altogether: O(1) each, amortized.
+wrong: For each append: if `size == capacity`, add `size` to `copies` and double `capacity`; then `size += 1`.
+
+=== task: predict medium
+title: Nine appends
+code:
+```python
+capacity = 1
+size = 0
+copies = 0
+for i in range(9):
+    if size == capacity:
+        copies += size
+        capacity *= 2
+    size += 1
+print(copies, capacity)
+```
+wrong[8 16]: The copies are 1 + 2 + 4 + 8 = 15, one for each item in the block at each growth.
+wrong[15 9]: The capacity doubles, so it jumps from 8 to 16, not to 9.
+wrong[36 9]: That's growing by one slot at a time. Doubling copies far less: 15.
+hint: The array grows at sizes 1, 2, 4 and 8.
+hint: Each growth copies that many items.
+right: 15 copies and a capacity of 16. Fewer than 2 × 9 copies, as always with doubling.
+wrong: Growths at sizes 1, 2, 4 and 8 copy 1 + 2 + 4 + 8 = 15 items, and the capacity ends at 16.
+
+=== task: fill medium
+title: Copy from the old block
+prompt: Fill in the blank so that the items are copied from the old block into the new one, and the program prints:
+
+```output
+['a', 'b', 'c', None, None, None]
+```
+code:
+```python
+slots = ["a", "b", "c"]
+new = [None] * (2 * len(slots))
+for i in range(len(slots)):
+    new[i] = ??[i]
+print(new)
+```
+answer: slots
+wrong[new]: Copying `new[i]` into itself leaves every slot None.
+hint: The items come from the old block.
+hint: The old block is called `slots`.
+right: `new[i] = slots[i]` copies each of the n items: O(n) for this one append.
+wrong: `slots[i]`: each item is read from the old block and written into the new one.
+
+=== task: cells medium
+title: Adding one against doubling
+prompt: A dynamic array starts with capacity 1. How many items are copied in total for n appends, when it grows by one slot each time, and when it doubles?
+labels: grow by 1, n = 5 | double, n = 5 | grow by 1, n = 9 | double, n = 9
+answer: 10 | 7 | 36 | 15
+wrong[4 | 7 | 8 | 15]: Growing by one slot copies every item on every append after the first: 1 + 2 + 3 + 4 = 10.
+wrong[10 | 15 | 36 | 31]: Doubling copies at sizes 1, 2 and 4 for n = 5: 7. For n = 9, add 8: 15.
+hint: Grow by 1: copies 1 + 2 + ... + (n − 1).
+hint: Double: copies 1 + 2 + 4 + ..., up to the biggest power of 2 below n.
+right: Adding one slot: 10 and 36 (n(n − 1) / 2, O(n²)). Doubling: 7 and 15 (under 2n, O(n)).
+wrong: Grow by 1: 1 + 2 + 3 + 4 = 10 and 1 + ... + 8 = 36. Double: 1 + 2 + 4 = 7 and 1 + 2 + 4 + 8 = 15.
+
+=== task: order medium
+title: An append that grows
+prompt: Put the steps of an append to a full dynamic array in order.
+items:
+- see that size equals the capacity
+- make a new block twice as big
+- copy every item into the new block
+- switch to the new block
+- write the new item into slot `size` and add 1 to size
+hint: Nothing is copied until there's somewhere to copy to.
+hint: The new item goes in last, into a free slot.
+right: Notice it's full, allocate double, copy, switch, then write: the copy is the O(n) part, and it's rare.
+wrong: Check for full, make the new block, copy the items, start using the new block, then add the item.
+
+=== task: predict medium
+title: Two ways to grow
+code:
+```python
+def copies(n, doubling):
+    capacity = 1
+    size = 0
+    total = 0
+    for i in range(n):
+        if size == capacity:
+            total += size
+            if doubling:
+                capacity *= 2
+            else:
+                capacity += 1
+        size += 1
+    return total
+
+print(copies(8, True), copies(8, False))
+```
+wrong[7 7]: Growing by one slot copies every item on every append after the first: 1 + 2 + ... + 7 = 28.
+wrong[15 28]: With doubling, 8 appends grow at sizes 1, 2 and 4: 1 + 2 + 4 = 7. The 8th append still fits.
+wrong[28 7]: It's the other way round: doubling copies less.
+hint: Doubling grows at sizes 1, 2, 4.
+hint: Adding one slot grows at every size from 1 to 7.
+right: 7 copies with doubling and 28 with adding one. For n = 1,000 that's 1,023 against 499,500.
+wrong: Doubling: 1 + 2 + 4 = 7. Adding one: 1 + 2 + 3 + 4 + 5 + 6 + 7 = 28.
+
+=== task: mcq medium
+title: Why double?
+prompt: Why do dynamic arrays grow by a factor, like doubling, rather than by one slot at a time?
+* Doubling keeps the total copies under 2n, so append is O(1) amortized; growing by one copies n(n − 1) / 2 items, O(n²) in all :: Right. A factor makes the copies rare; a fixed step makes them constant.
+- Doubling uses less memory :: Doubling can leave up to half the slots empty. It's faster, not smaller.
+- Growing by one slot is impossible :: It's possible, but slow: every append after the first would copy everything.
+- Doubling avoids copying altogether :: It still copies, but rarely: at sizes 1, 2, 4, 8, ...
+hint: Count the copies for n appends both ways.
+hint: 1 + 2 + 4 + ... versus 1 + 2 + 3 + ...
+right: Growth by a factor: total copies O(n), amortized O(1) appends. Growth by a fixed step: O(n²) for n appends.
+wrong: Doubling makes the expensive copies rare: fewer than 2n in total. Adding one slot copies on nearly every append: n(n − 1) / 2.
+
+=== task: multi medium
+title: True about Python lists
+prompt: Choose **every** true sentence about Python's `list`.
+* It's a dynamic array :: Right. It grows by moving to bigger blocks.
+* `append` is O(1) amortized :: Right. Growth is rare enough to average out.
+* `len` is O(1), because the size is stored :: Right. Nothing is counted.
+* It often has free slots at the end, waiting for appends :: Right. Its capacity is usually a bit more than its size.
+- Every `append` copies the whole list :: Only the rare appends that make it grow copy everything.
+- `insert(0, x)` is O(1), because the list can grow :: Growing doesn't help: every item still shifts right, O(n).
+hint: Think about size, capacity, and what shifts.
+hint: Four of them are true.
+right: A list is a dynamic array with spare capacity: append is O(1) amortized and `len` O(1). Appends rarely copy, and inserting at the front always shifts.
+wrong: True: dynamic array, amortized O(1) append, O(1) `len`, spare slots. False: appends rarely copy, and `insert(0, x)` is O(n).
+
+=== task: code medium
+title: Append with growth
+prompt: Write `append_dynamic(slots, size, x)` for a dynamic array kept as a list `slots` (its capacity is `len(slots)`) and a `size`. If the array is full (`size == len(slots)`), make a new list twice as long (at least 1 slot), copy the items into it, and use it from now on. Then write x into slot `size`. Return the slots and the new size as a tuple, `(slots, size + 1)`.
+
+For example, `append_dynamic([1, 2], 2, 3)` returns `([1, 2, 3, None], 3)`.
+starter:
+```python
+def append_dynamic(slots, size, x):
+    # your code here
+    return slots, size
+```
+solution:
+```python
+def append_dynamic(slots, size, x):
+    if size == len(slots):
+        new = [None] * max(1, 2 * len(slots))
+        for i in range(size):
+            new[i] = slots[i]
+        slots = new
+    slots[size] = x
+    return slots, size + 1
+```
+tests:
+- append_dynamic([1, 2], 2, 3)
+- append_dynamic([1, None], 1, 2)
+- append_dynamic([], 0, "a")
+- append_dynamic([5, 6, 7, None], 3, 8)
+fail[1]: The array is full, so it grows to 4 slots, then 3 goes into slot 2.
+fail[2]: There's a free slot, so no growth: `([1, 2], 2)`.
+fail[3]: An empty block of 0 slots grows to 1 slot.
+error[IndexError]: Grow before writing: when `size == len(slots)`, slot `size` doesn't exist yet.
+hint: Check `size == len(slots)` first.
+hint: Grow to `max(1, 2 * len(slots))` slots and copy the items.
+hint: Write `slots[size] = x` and return `slots, size + 1`.
+right: O(1) when there's room, O(n) when it grows: amortized O(1). This is what Python's `append` does inside.
+wrong: If full, make a block twice as big (at least 1) and copy; then write x into slot `size` and return `(slots, size + 1)`.
+
+=== task: code hard
+title: A DynamicArray class
+prompt: Write a class `DynamicArray` with `self.slots` (starting as `[None]`, capacity 1) and `self.size` (starting at 0), and these methods:
+- `append(self, x)`: if full, move to a block twice as big, copying the items with a loop; then store x and add 1 to the size,
+- `get(self, i)`: return the item at index i (assume 0 ≤ i < size),
+- `set(self, i, x)`: replace the item at index i.
+
+Appending n items must be O(n) in total, so grow by **doubling**. The tests make arrays and call their methods.
+starter:
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    # your code here
+```
+solution:
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    def append(self, x):
+        if self.size == len(self.slots):
+            new = [None] * (2 * len(self.slots))
+            for i in range(self.size):
+                new[i] = self.slots[i]
+            self.slots = new
+        self.slots[self.size] = x
+        self.size += 1
+
+    def get(self, i):
+        return self.slots[i]
+
+    def set(self, i, x):
+        self.slots[i] = x
+```
+tests:
+- (lambda a: [a.append(5), a.append(6), a.append(7), a.size, a.get(2), a.get(0)][3:])(DynamicArray())
+- (lambda a: [a.size, len(a.slots)])(DynamicArray())
+- (lambda a: [a.append("x"), a.set(0, "y"), a.get(0), a.slots][2:])(DynamicArray())
+- (lambda a: [[a.append(i) for i in range(9)], a.size, a.get(8), a.get(3)][1:])(DynamicArray())
+speed: setup=a = DynamicArray() | call=[a.append(i) for i in range(n)] | target=O(n)
+slow:
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    def append(self, x):
+        if self.size == len(self.slots):
+            new = [None] * (len(self.slots) + 1)
+            for i in range(self.size):
+                new[i] = self.slots[i]
+            self.slots = new
+        self.slots[self.size] = x
+        self.size += 1
+
+    def get(self, i):
+        return self.slots[i]
+
+    def set(self, i, x):
+        self.slots[i] = x
+```
+fail[1]: After appending 5, 6 and 7 the size is 3, item 2 is 7 and item 0 is still 5.
+fail[2]: A new array has size 0 and one slot.
+fail[3]: `set(0, "y")` replaces the "x", so `get(0)` is "y" and the slots are `["y"]`.
+fail[4]: After 9 appends (0 to 8) the size is 9, item 8 is 8 and item 3 is 3: the copies kept every item in place.
+error[AttributeError]: Define all three methods: `append`, `get` and `set`.
+hint: In `append`, check `self.size == len(self.slots)` first.
+hint: Grow to `2 * len(self.slots)` slots, copying the items with a loop.
+hint: `get` and `set` read and write `self.slots[i]`.
+right: Doubling keeps the copies under 2n, so n appends are O(n) and each is O(1) amortized. Growing by one slot would make n appends O(n²), which the speed check catches.
+wrong: `append` grows by doubling when full and writes into slot `self.size`; `get` returns `self.slots[i]`; `set` writes it.
+
+=== task: code hard
+title: Shrink when sparse
+prompt: To give memory back, a dynamic array can shrink when most of its slots are empty. Write `shrink_if_sparse(slots, size)`: if the capacity (`len(slots)`) is more than 1 and `size` is at most a quarter of it (`size <= len(slots) // 4`), return a new list half as long with the items copied in. Otherwise return `slots` unchanged.
+
+For example, `shrink_if_sparse([1, None, None, None, None, None, None, None], 1)` returns `[1, None, None, None]`.
+starter:
+```python
+def shrink_if_sparse(slots, size):
+    # your code here
+    return slots
+```
+solution:
+```python
+def shrink_if_sparse(slots, size):
+    if len(slots) > 1 and size <= len(slots) // 4:
+        new = [None] * (len(slots) // 2)
+        for i in range(size):
+            new[i] = slots[i]
+        return new
+    return slots
+```
+tests:
+- shrink_if_sparse([1, None, None, None, None, None, None, None], 1)
+- shrink_if_sparse([1, 2, None, None], 2)
+- shrink_if_sparse([None], 0)
+- shrink_if_sparse([9, None, None, None], 1)
+- shrink_if_sparse([None, None], 0)
+fail[1]: 1 item in 8 slots is under a quarter: shrink to 4 slots.
+fail[2]: 2 items in 4 slots is half full, not a quarter: keep it.
+fail[3]: A capacity of 1 never shrinks.
+fail[4]: 1 item in 4 slots is exactly a quarter: shrink to 2 slots.
+hint: The condition is `len(slots) > 1 and size <= len(slots) // 4`.
+hint: The new block has `len(slots) // 2` slots.
+hint: Copy the `size` items across.
+right: Shrinking only at a quarter (to half) leaves room to grow again, so a mix of appends and pops can't make the array copy itself on every step.
+wrong: When the capacity is above 1 and the array is at most a quarter full, copy the items into a block half as big and return it; otherwise return the old one.
+
+=== task: code hard
+title: Insert into a dynamic array
+prompt: Write `insert_dynamic(slots, size, i, x)` that inserts x at index i of a dynamic array: if it's full, grow by doubling (at least 1 slot) and copy; then shift the items from the end back to i one slot right, write x into slot i, and return `(slots, size + 1)`.
+
+For example, `insert_dynamic([1, 3], 2, 1, 2)` returns `([1, 2, 3, None], 3)`.
+starter:
+```python
+def insert_dynamic(slots, size, i, x):
+    # your code here
+    return slots, size
+```
+solution:
+```python
+def insert_dynamic(slots, size, i, x):
+    if size == len(slots):
+        new = [None] * max(1, 2 * len(slots))
+        for k in range(size):
+            new[k] = slots[k]
+        slots = new
+    j = size
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+    return slots, size + 1
+```
+tests:
+- insert_dynamic([1, 3], 2, 1, 2)
+- insert_dynamic([1, 3, None, None], 2, 0, 0)
+- insert_dynamic([], 0, 0, "a")
+- insert_dynamic([4, None], 1, 1, 5)
+fail[1]: Full, so grow to 4 slots; then 3 shifts right and 2 goes into slot 1.
+fail[2]: There's room: 1 and 3 shift right, and 0 goes in front.
+fail[3]: An empty block grows to 1 slot, and "a" goes into it.
+fail[4]: Inserting at index `size` shifts nothing.
+forbid[insert(]: Grow and shift by hand instead of using `insert`.
+hint: First grow if `size == len(slots)`, exactly like an append.
+hint: Then shift: `j = size`, and while `j > i`, `slots[j] = slots[j - 1]`.
+hint: Write x into slot i and return `(slots, size + 1)`.
+right: Growing is O(n) but rare; the shifting is O(n − i) every time. Inserting into a dynamic array is O(n), even though appending is O(1) amortized.
+wrong: Grow by doubling if full; shift the items from `size - 1` down to i one slot right; write x at i; return `(slots, size + 1)`.
+
+=== task: code hard
+title: The average cost of an append
+prompt: Write `average_cost(n)` that returns, rounded to 2 decimal places, the average cost of n appends to a dynamic array that starts with capacity 1 and doubles: count 1 step for each write, plus 1 step for each copied item, then divide by n.
+
+For example, `average_cost(5)` returns 2.4: 5 writes plus 7 copies is 12 steps, and 12 / 5 = 2.4.
+starter:
+```python
+def average_cost(n):
+    capacity = 1
+    size = 0
+    steps = 0
+    # your code here
+    return 0
+```
+solution:
+```python
+def average_cost(n):
+    capacity = 1
+    size = 0
+    steps = 0
+    for i in range(n):
+        if size == capacity:
+            steps += size
+            capacity *= 2
+        steps += 1
+        size += 1
+    return round(steps / n, 2)
+```
+tests:
+- average_cost(5)
+- average_cost(1)
+- average_cost(2)
+- average_cost(4)
+- average_cost(9)
+- average_cost(1000)
+fail[1]: 5 writes and 1 + 2 + 4 = 7 copies: 12 steps, 12 / 5 = 2.4.
+fail[2]: One append, no copy: 1 step on average.
+fail[5]: 9 writes and 15 copies: 24 / 9 = 2.67.
+fail[6]: 1,000 writes and 1,023 copies: about 2.02 per append. The average stays under 3 for every n.
+error[ZeroDivisionError]: The tests use n of at least 1, so divide by `n`.
+hint: Simulate the appends as in `copies_for`.
+hint: Count 1 step per append, plus `size` steps when it grows.
+hint: Return `round(steps / n, 2)`.
+right: The average never reaches 3, whatever n is: that's what "O(1) amortized" means.
+wrong: For each append: if full, add `size` copies and double; add 1 for the write. Return the total divided by n, rounded to 2 places.
+
+=== task: predict hard
+title: When does it grow?
+code:
+```python
+capacity = 1
+size = 0
+for i in range(6):
+    if size == capacity:
+        capacity *= 2
+        print("grow to", capacity)
+    size += 1
+print(size, capacity)
+```
+wrong[grow to 2\ngrow to 4\ngrow to 8\ngrow to 16\n6 16]: After growing to 8, the 5th and 6th appends fit: no 4th growth.
+wrong[grow to 2\ngrow to 4\n6 4]: The 5th append finds size 4 and capacity 4, so it grows to 8.
+wrong[grow to 1\ngrow to 2\ngrow to 4\n6 8]: The capacity starts at 1, and doubling 1 gives 2.
+hint: Growth happens at sizes 1, 2 and 4.
+hint: After 6 appends: size 6, capacity 8.
+right: Three growths, to 2, 4 and 8, for six appends; slots 6 and 7 are still free.
+wrong: Appends 2, 3 and 5 find the array full and double it: 2, 4, 8. The others fit.
+
+=== task: predict hard
+title: The total work
+code:
+```python
+capacity = 1
+size = 0
+work = 0
+for i in range(16):
+    if size == capacity:
+        work += size
+        capacity *= 2
+    work += 1
+    size += 1
+print(work, work / 16)
+```
+wrong[16 1.0]: The copies count too: 1 + 2 + 4 + 8 = 15 of them.
+wrong[31 1.94]: `work / 16` isn't rounded: 31 / 16 is 1.9375.
+wrong[47 2.9375]: The 16th append still fits into the block of 16: there's no copy of 16 items.
+hint: 16 writes, plus the copies at sizes 1, 2, 4 and 8.
+hint: 16 + 15.
+right: 31 steps for 16 appends: under 2 per append on average. Doubling keeps the average below 3 for any n.
+wrong: 16 writes + 15 copies = 31, and 31 / 16 = 1.9375.
+
+=== task: cells hard
+title: Copies so far
+prompt: A dynamic array starts with capacity 1 and doubles when full. How many items have been copied in total after each number of appends?
+labels: 1 append | 4 appends | 5 appends | 16 appends
+answer: 0 | 3 | 7 | 15
+wrong[1 | 4 | 5 | 16]: Copies happen only when the array grows, not on every append.
+wrong[0 | 7 | 7 | 31]: After 4 appends, the growths were at sizes 1 and 2: 3 copies. The 4th append fits into the block of 4.
+hint: Growth happens at sizes 1, 2, 4, 8 and copies that many items.
+hint: After 16 appends: 1 + 2 + 4 + 8.
+right: 0, 3, 7 and 15: each total is one less than the capacity after those appends (1, 4, 8, 16), so it's always less than 2n.
+wrong: 1 append: no copy. 4: 1 + 2 = 3. 5: 1 + 2 + 4 = 7. 16: 1 + 2 + 4 + 8 = 15.
+
+=== task: mcq hard
+title: The worst single append
+prompt: A dynamic array holds n items and is full. What does the next append cost, and what is the average cost of an append?
+* That append is O(n), but the average over many appends is O(1) :: Right. It copies all n items, but such appends are rare.
+- That append is O(1), like every append :: It has to copy all n items into the new block.
+- Every append is O(n), because the array might be full :: Most appends find a free slot and cost O(1).
+- That append is O(log n), and the average is O(log n) :: Nothing is halved: the copy touches every item.
+hint: What does growing copy?
+hint: How often does growing happen?
+right: Worst case O(n), amortized O(1). If one slow append would be a problem (in a game, say), that's worth knowing, even though the average is fine.
+wrong: The growing append copies all n items, O(n). Spread over all the appends, the average stays O(1).
+
+=== task: multi hard
+title: Growth strategies
+prompt: Choose **every** growth strategy that keeps append O(1) amortized.
+* Double the capacity when full :: Right. Total copies under 2n.
+* Grow the capacity by 50% when full :: Right. Any factor above 1 keeps the copies O(n) in total.
+* Grow by about an eighth plus a few slots, like CPython :: Right. Still a factor: the copies add up to O(n).
+- Add 1 slot when full :: n(n − 1) / 2 copies: O(n) per append on average.
+- Add 100 slots when full :: Still a fixed step: the copies grow like n² / 200, O(n²) in total.
+- Never grow; refuse appends when full :: That's a static array: it can't take more items at all.
+hint: Does the step grow with the array, or stay fixed?
+hint: Three of them grow by a factor.
+right: Growing by a factor (2, 1.5, or 1.125 plus a bit) makes the copies a geometric series: O(n) total. A fixed step makes them O(n²).
+wrong: Factors work: ×2, ×1.5, CPython's about ×1.125. Fixed steps (+1, +100) don't, and refusing isn't growing.
+
+=== task: parsons hard
+title: The append method
+prompt: Arrange the lines so that `append` grows the array by doubling when it's full, then adds the item, and the program prints:
+
+```output
+3 4 [5, 6, 7, None]
+```
+
+Not every line is needed.
+lines:
+```python
+class DynamicArray:
+    def __init__(self):
+        self.slots = [None]
+        self.size = 0
+
+    def append(self, x):
+        if self.size == len(self.slots):
+            new = [None] * (2 * len(self.slots))
+            for i in range(self.size):
+                new[i] = self.slots[i]
+            self.slots = new
+        self.slots[self.size] = x
+        self.size += 1
+
+a = DynamicArray()
+for x in [5, 6, 7]:
+    a.append(x)
+print(a.size, len(a.slots), a.slots)
+```
+distractors:
+```python
+            new = [None] * (len(self.slots) + 1)
+        self.slots.append(x)
+```
+hint: Grow only when `self.size == len(self.slots)`.
+hint: After growing (or not), write into slot `self.size` and add 1.
+right: Two growths (1 → 2 → 4) for three appends, with one free slot left. Growing by one slot would copy on nearly every append, and `self.slots.append` would sidestep the array we're building.
+wrong: In `append`: if full, make a block twice as big, copy the items, switch to it; then `self.slots[self.size] = x` and `self.size += 1`.
