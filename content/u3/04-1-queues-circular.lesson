@@ -1,0 +1,1172 @@
+=== lesson
+id: ds-queues-circular
+title: Circular queues
+summary: A circular queue keeps its items in a fixed-size array and treats the array as a ring: when an index runs off the end, `%` brings it back to 0. Nothing ever shifts, and nothing ever grows. You'll build one by hand with a `front` index and a `size`, tell a full queue from an empty one, and make a buffer that overwrites its oldest item.
+
+=== learn
+### A queue in a fixed array
+A queue in an array doesn't have to shift its items. Keep an index, `front`, pointing at the first item: dequeuing reads `slots[front]` and moves `front` one place right. Enqueuing writes at the next free slot after the last item. Both are O(1). But the queue creeps along the array:
+
+| After | slots | front | next free slot |
+| --- | --- | --- | --- |
+| enqueue A, B, C | A, B, C, _ | 0 | 3 |
+| dequeue, dequeue | _, _, C, _ | 2 | 3 |
+| enqueue D | _, _, C, D | 2 | 4: past the end! |
+
+There's no room after D, although slots 0 and 1 are free. Shifting C and D back to the start would fix it, but that's the O(n) shift we were trying to avoid.
+
+### Wrapping round with %
+The fix is to treat the array as a ring: the slot after the last one is slot 0. With `cap` slots, the slot after `i` is `(i + 1) % cap`:
+```python
+cap = 4
+for i in range(4):
+    print(i, "->", (i + 1) % cap)
+print(10 % cap, (0 - 1) % cap)
+```
+```output
+0 -> 1
+1 -> 2
+2 -> 3
+3 -> 0
+2 3
+```
+`%` gives the remainder after dividing by `cap`, so it's always between 0 and `cap - 1`: an index that runs past the end comes back round to the start. In Python this works going backwards too: `(0 - 1) % 4` is 3, the last slot, because Python's `%` never gives a negative answer when `cap` is positive. A queue stored like this is called a **circular queue** or **ring buffer**.
+
+### front and size
+A circular queue stores three numbers besides the array:
+
+- `front`: the index of the first item,
+- `size`: how many items there are,
+- `cap`: how many slots the array has.
+
+The next free slot, where the next item goes, is `(front + size) % cap`:
+
+1. **enqueue x**: write x at `(front + size) % cap`, then add 1 to `size`.
+2. **dequeue**: read `slots[front]`, move `front` to `(front + 1) % cap`, then take 1 from `size`.
+
+Neither moves any other item: both are O(1).
+```python
+cap = 4
+slots = [None] * cap
+front = 0
+size = 0
+for x in ["A", "B", "C"]:
+    slots[(front + size) % cap] = x
+    size += 1
+for i in range(2):
+    print("served", slots[front])
+    front = (front + 1) % cap
+    size -= 1
+for x in ["D", "E", "F"]:
+    slots[(front + size) % cap] = x
+    size += 1
+print(slots, front, size)
+```
+```output
+served A
+served B
+['E', 'F', 'C', 'D'] 2 4
+```
+After A and B are served, the queue is C (in slot 2). D goes into slot 3, then E wraps round into slot 0 and F into slot 1. The queue, from the front, is C, D, E, F: it starts at slot 2 and wraps round. The old A and B are still in the array, but they're outside the queue, so they don't count: E and F were written over them. Animation 1 shows the indexes wrapping.
+
+### Full or empty?
+With `size`, there's no doubt: the queue is **empty** when `size == 0` and **full** when `size == cap`. Enqueueing into a full queue must be refused, or it would write over the front item.
+
+Some circular queues store a `back` index (the next free slot) instead of `size`. Then `front == back` happens both when the queue is empty and when it's full, because a full queue's back has wrapped round onto its front. There are two usual fixes:
+
+- keep a `size` count as well, or
+- never fill the last slot: the queue is "full" when `(back + 1) % cap == front`, so `front == back` only ever means empty. This wastes one slot.
+
+### A CircularQueue class
+```python
+class CircularQueue:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def enqueue(self, x):
+        if self.size == self.cap:
+            return False
+        self.slots[(self.front + self.size) % self.cap] = x
+        self.size += 1
+        return True
+
+    def dequeue(self):
+        if self.size == 0:
+            return None
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % self.cap
+        self.size -= 1
+        return x
+
+q = CircularQueue(2)
+print(q.enqueue("a"), q.enqueue("b"), q.enqueue("c"))
+print(q.dequeue(), q.enqueue("c"), q.dequeue(), q.dequeue(), q.dequeue())
+```
+```output
+True True False
+a True b c None
+```
+`enqueue` returns False instead of adding to a full queue, and `dequeue` returns None for an empty one, so the caller can tell. The array is made once, with `[None] * cap`, and never grows: a circular queue uses fixed memory.
+
+### Overwriting the oldest
+Sometimes a full buffer should make room by throwing away its **oldest** item: a sensor that keeps its last 10 readings, a game that remembers its last 5 moves, a log that keeps the latest 1,000 lines. Then enqueueing into a full buffer overwrites `slots[front]` and moves `front` on:
+```python
+cap = 3
+slots = [None] * cap
+front = 0
+size = 0
+for reading in [21, 22, 25, 24, 23]:
+    if size == cap:
+        slots[front] = reading
+        front = (front + 1) % cap
+    else:
+        slots[(front + size) % cap] = reading
+        size += 1
+latest = [slots[(front + i) % cap] for i in range(size)]
+print(latest)
+```
+```output
+[25, 24, 23]
+```
+The buffer always holds the last 3 readings. To read them in order, start at `front` and step round: `slots[(front + i) % cap]` for i from 0 to `size - 1`. Python's `deque(maxlen=3)` behaves the same way. Animation 2 shows the overwriting.
+
+### The cost table
+
+| | list (`pop(0)`) | deque | circular queue |
+| --- | --- | --- | --- |
+| enqueue | O(1) amortized | O(1) | O(1) |
+| dequeue | O(n) | O(1) | O(1) |
+| memory | grows | grows | fixed: `cap` slots |
+| when full | never full | never full | refuse, or overwrite the oldest |
+
+Circular queues are used where memory is fixed and speed matters: sound and video buffers, keyboard buffers, network cards, and data passed between two programs running at the same time.
+
+=== keypoints
+- A circular queue stores its items in a fixed array of `cap` slots, and treats it as a ring: the slot after `i` is `(i + 1) % cap`.
+- Keep `front` (the first item's index) and `size`. The next free slot is `(front + size) % cap`.
+- Enqueue: write at `(front + size) % cap` and add 1 to `size`. Dequeue: read `slots[front]`, set `front = (front + 1) % cap`, take 1 from `size`. Both are O(1), with no shifting.
+- Empty: `size == 0`. Full: `size == cap`. With only `front` and `back` indexes, `front == back` could mean either, so keep a size or leave one slot empty.
+- To read the queue in order, step from `front`: `slots[(front + i) % cap]`.
+- A buffer that overwrites its oldest item when full keeps the latest `cap` items, like `deque(maxlen=cap)`.
+
+=== example: Recent moves in a game
+intro: A game keeps the last 4 moves in a ring buffer, overwriting the oldest, and prints them in order after each move.
+```python
+cap = 4
+slots = [None] * cap
+front = 0
+size = 0
+
+def recent():
+    return [slots[(front + i) % cap] for i in range(size)]
+
+for move in ["up", "up", "left", "down", "right", "up"]:
+    if size == cap:
+        slots[front] = move
+        front = (front + 1) % cap
+    else:
+        slots[(front + size) % cap] = move
+        size += 1
+    print(recent())
+```
+1-4: A fixed array of 4 slots; the buffer starts empty.
+6-7: The moves in order, from the oldest at `front`, stepping round the ring.
+9-15: Until the buffer is full, each move goes into the next free slot. After that, each move overwrites the oldest, and `front` moves on to the new oldest.
+16: The last two lines show "up" and "up" dropping out as "right" and "up" arrive. (`recent` reads `front` and `size` without changing them, so it needs no `global`.)
+
+=== example: Indexes round a ring
+intro: Walking forwards and backwards round a ring of 5 slots with `%`, starting from slot 3.
+```python
+cap = 5
+i = 3
+forward = []
+for step in range(7):
+    forward.append(i)
+    i = (i + 1) % cap
+j = 3
+backward = []
+for step in range(7):
+    backward.append(j)
+    j = (j - 1) % cap
+print(forward)
+print(backward)
+```
+1-6: Going forwards, 4 is followed by 0: `(4 + 1) % 5` is 0.
+7-11: Going backwards, 0 is followed by 4: `(0 - 1) % 5` is 4, because Python's `%` never gives a negative remainder here.
+12-13: Both walks go round and round the ring without ever stepping outside it.
+
+=== animation: Wrapping round
+view: array slots ptr=front
+vars size
+intro: A circular queue with 4 slots. Watch `front` move right as items are served, and new items wrap round into the free slots at the start.
+```python
+cap = 4
+slots = [None] * cap
+front = 0
+size = 0
+for x in ["A", "B", "C"]:
+    slots[(front + size) % cap] = x
+    size += 1
+for i in range(2):
+    slots[front] = None
+    front = (front + 1) % cap
+    size -= 1
+for x in ["D", "E", "F"]:
+    slots[(front + size) % cap] = x
+    size += 1
+print(slots, front, size)
+```
+1: 4 slots in a ring.
+2: The array is made once and never grows.
+3: The first item will be in slot 0.
+4: No items yet.
+5: Take the next item to enqueue, if any are left.
+6: {x} goes into the next free slot: ({front} + {size}) % 4 = {(front + size) % cap}.
+7: One more item: size {size + 1}.
+9: Serve the front item, {slots[front]}. (Clearing the slot only makes the picture clearer.)
+10: `front` moves on to slot ({front} + 1) % 4 = {(front + 1) % cap}.
+11: One item fewer.
+12: Take the next item to enqueue, if any are left.
+13: {x} goes into the next free slot: ({front} + {size}) % 4 = {(front + size) % cap}.{' It wraps round to the start!' if front + size >= cap else ''}
+14: Size {size + 1}.
+15: The queue C, D, E, F starts at slot 2 and wraps round to slot 1. It's full: size 4.
+
+=== animation: Overwriting the oldest
+view: array slots ptr=front
+vars reading size
+intro: A buffer of 3 slots that keeps the latest readings. Once it's full, each new reading replaces the oldest one, at `front`.
+```python
+cap = 3
+slots = [None] * cap
+front = 0
+size = 0
+for reading in [21, 22, 25, 24, 23]:
+    if size == cap:
+        slots[front] = reading
+        front = (front + 1) % cap
+    else:
+        slots[(front + size) % cap] = reading
+        size += 1
+print([slots[(front + i) % cap] for i in range(size)])
+```
+1: Room for 3 readings.
+2: The fixed array.
+3: The oldest reading will be at `front`.
+4: No readings yet.
+5: Take the next reading, if any are left.
+6: The reading {reading} arrives. Is the buffer full? size {size} of {cap}: {size == cap}.
+7: Full: the oldest reading, {slots[front]}, at slot {front}, is replaced by {reading}.
+8: The next oldest is now at slot {(front + 1) % cap}.
+10: There's room: {reading} goes into slot {(front + size) % cap}.
+11: One more reading: size {size + 1}.
+12: Reading from `front` round the ring gives the latest 3, oldest first.
+
+=== task: predict easy
+title: Round the ring
+code:
+```python
+cap = 5
+print((4 + 1) % cap, (2 + 3) % cap, (3 + 4) % cap, (0 - 1) % cap)
+```
+wrong[5 5 7 -1]: `% cap` keeps the answer between 0 and 4: an index past the end wraps round to the start.
+wrong[0 0 2 -1]: In Python, `(0 - 1) % 5` is 4: `%` never gives a negative answer when the number after it is positive.
+wrong[0 5 2 4]: 2 + 3 is 5, and 5 % 5 is 0: slot 5 doesn't exist, so it wraps to slot 0.
+hint: `x % 5` is the remainder after dividing by 5.
+hint: Going back from slot 0 lands on the last slot, 4.
+right: 0 0 2 4: every answer is a real slot of the ring, 0 to 4, whichever way you step.
+wrong: 5 % 5 = 0, 5 % 5 = 0, 7 % 5 = 2, and -1 % 5 = 4.
+
+=== task: mcq easy
+title: Why wrap round?
+prompt: Why does a circular queue wrap its indexes round with `%`?
+* So that the slots freed at the start of the array can be used again, without shifting any items :: Right. The queue can keep going round the same fixed array.
+- To keep the items in sorted order :: The items stay in the order they arrived; nothing is sorted.
+- To make the array grow when it's full :: A circular queue's array never grows: it has a fixed number of slots.
+- To serve the newest item first :: It's still first in, first out.
+hint: What happens to the slots before `front` after a few dequeues?
+hint: Without wrapping, could the queue use them again?
+right: Dequeuing frees slots at the start; wrapping round lets new items reuse them, so the fixed array never runs out while it still has free slots.
+wrong: Without `%`, the queue creeps to the end of the array and stops, even with free slots at the start. Wrapping round reuses them.
+
+=== task: fill easy
+title: The next free slot
+prompt: Fill in the blank so that C goes into the next free slot of the ring, and the program prints:
+
+```output
+['C', None, 'A', 'B']
+```
+code:
+```python
+cap = 4
+slots = [None, None, "A", "B"]
+front = 2
+size = 2
+slots[(front + size) ?? cap] = "C"
+print(slots)
+```
+answer: %
+wrong[+]: That gives 2 + 2 + 4 = 8, which is past the end of the array: an IndexError.
+wrong[//]: That gives 4 // 4 = 1, but the slot after B (slot 3) is slot 0, not 1.
+hint: The queue holds A and B in slots 2 and 3, so the next slot is past the end.
+hint: Which operator wraps a number round to 0 to `cap - 1`?
+right: `(2 + 2) % 4` is 0: C wraps round into slot 0, right after B in the ring.
+wrong: The next free slot is `(front + size) % cap`, so the blank is `%`.
+
+=== task: code easy
+title: The next index
+prompt: Write `next_index(i, cap)` that returns the index after i in a ring of `cap` slots: one more, except that after the last slot, `cap - 1`, comes slot 0.
+
+For example, `next_index(3, 4)` returns 0.
+starter:
+```python
+def next_index(i, cap):
+    # your code here
+    return i + 1
+```
+solution:
+```python
+def next_index(i, cap):
+    return (i + 1) % cap
+```
+tests:
+- next_index(0, 4)
+- next_index(3, 4)
+- next_index(5, 6)
+- next_index(2, 6)
+- next_index(0, 1)
+fail[2]: After the last slot of 4, which is 3, comes slot 0.
+fail[3]: In a ring of 6, after slot 5 comes slot 0.
+fail[5]: A ring of 1 slot: the slot after 0 is 0 again.
+hint: Add 1, then wrap round.
+hint: `% cap` turns `cap` into 0.
+right: `(i + 1) % cap` is one step round the ring: O(1), and it never leaves the array.
+wrong: Return `(i + 1) % cap`: one more, wrapped round into 0 to `cap - 1`.
+
+=== task: predict easy
+title: Serve one, add one
+code:
+```python
+cap = 3
+slots = [None] * cap
+front = 0
+size = 0
+for x in [10, 20, 30]:
+    slots[(front + size) % cap] = x
+    size += 1
+front = (front + 1) % cap
+size -= 1
+slots[(front + size) % cap] = 40
+size += 1
+print(slots, front, size)
+```
+wrong[[10, 20, 30, 40] 1 3]: The array never grows. 40 goes into the next free slot, `(1 + 2) % 3` = 0, where the served 10 was.
+wrong[[40, 20, 30] 0 3]: Serving the front moved `front` to 1: the queue now starts at 20.
+wrong[[10, 20, 30] 1 2]: The last two lines add 40 to the queue, so the size goes back to 3.
+hint: After the dequeue, front is 1 and size is 2.
+hint: The next free slot is `(1 + 2) % 3`.
+right: 40 wraps round into slot 0. The queue, from slot 1, is 20, 30, 40: full again, without anything shifting.
+wrong: The array fills with 10, 20, 30. Serving moves front to 1 (size 2). 40 goes into slot (1 + 2) % 3 = 0, so the array is [40, 20, 30], front 1, size 3.
+
+=== task: multi easy
+title: True about circular queues
+prompt: Choose **every** true sentence about a circular queue.
+* Its array is made once and never grows :: Right. It has a fixed number of slots.
+* Enqueue and dequeue are both O(1) :: Right. Only indexes move, never items.
+* An index that runs past the last slot wraps round to slot 0 :: Right. That's what `% cap` does.
+* It can be full :: Right. When `size == cap`, there's no free slot.
+- Dequeuing shifts the other items one place left :: Nothing shifts: `front` moves on instead.
+- It serves the newest item first :: It's first in, first out, like any queue.
+hint: What moves when an item leaves: the items, or an index?
+hint: Four of them are true.
+right: Fixed memory, O(1) at both ends of the queue, indexes that wrap round, and a size limit.
+wrong: True: fixed array, O(1) operations, wrapping with %, and it can be full. False: nothing shifts, and it's FIFO.
+
+=== task: parsons easy
+title: A circular queue class
+prompt: Arrange the lines so that the class works as a circular queue, and the program prints:
+
+```output
+a b c
+```
+
+Not every line is needed.
+lines:
+```python
+class CircularQueue:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def enqueue(self, x):
+        self.slots[(self.front + self.size) % self.cap] = x
+        self.size += 1
+
+    def dequeue(self):
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % self.cap
+        self.size -= 1
+        return x
+
+q = CircularQueue(2)
+q.enqueue("a")
+q.enqueue("b")
+print(q.dequeue(), end=" ")
+q.enqueue("c")
+print(q.dequeue(), q.dequeue())
+```
+distractors:
+```python
+        self.front = self.front + 1
+        self.slots[self.size] = x
+```
+hint: Both indexes have to wrap round with `% self.cap`.
+hint: The next free slot depends on `front` as well as `size`.
+right: "c" wraps round into slot 0, freed by "a", and comes out after "b". Without `%`, `front` would run off the end of the 2-slot array.
+wrong: `enqueue` writes at `(front + size) % cap` and adds 1 to size. `dequeue` reads `slots[front]`, moves front on with `% cap`, takes 1 from size, and returns the item.
+
+=== task: cells easy
+title: Where does each item go?
+prompt: A circular queue with 4 slots is empty, and its `front` is 3. W, X, Y and Z are enqueued, in that order. Which slot does each one go into?
+labels: W | X | Y | Z
+answer: 3 | 0 | 1 | 2
+wrong[3 | 4 | 5 | 6]: There are only slots 0 to 3: after slot 3 comes slot 0.
+wrong[0 | 1 | 2 | 3]: The queue starts at `front`, slot 3, so the first item goes there.
+hint: The first item goes at `(front + 0) % 4`.
+hint: Then `(3 + 1) % 4`, `(3 + 2) % 4` and `(3 + 3) % 4`.
+right: 3, 0, 1, 2: the queue starts at slot 3 and wraps round. In queue order it's W, X, Y, Z, even though W sits in the last slot.
+wrong: Each item goes at `(front + size) % 4` with size 0, 1, 2, 3: slots 3, 0, 1 and 2.
+
+=== task: mcq easy
+title: When is it full?
+prompt: A circular queue keeps `front`, `size` and `cap`. When is it full?
+* When `size == cap` :: Right. Every slot holds an item.
+- When `front == 0` :: `front` can be anywhere; it says where the queue starts, not how much is in it.
+- When `front == cap - 1` :: That only says the queue starts in the last slot.
+- When `size == 0` :: That's when it's empty.
+hint: Which number counts the items?
+hint: How many items fit?
+right: `size` counts the items and `cap` is the number of slots, so the queue is full exactly when they're equal.
+wrong: The queue is full when the number of items, `size`, equals the number of slots, `cap`.
+
+=== task: predict easy
+title: Too many
+code:
+```python
+cap = 2
+size = 0
+results = []
+for x in [1, 2, 3]:
+    if size == cap:
+        results.append("full")
+    else:
+        size += 1
+        results.append("ok")
+print(results, size)
+```
+wrong[['ok', 'ok', 'ok'] 3]: After two items the queue is full, `size == cap`, so the third is refused.
+wrong[['ok', 'full', 'full'] 1]: The check is `size == cap`, and cap is 2: the second item still fits.
+wrong[['ok', 'ok', 'full'] 3]: The refused item isn't counted: size stays at 2.
+hint: The capacity is 2.
+hint: The third item finds `size == 2`.
+right: Two items fit, and the third is refused: a circular queue has a fixed size, so it has to say no (or overwrite) when it's full.
+wrong: 1: size 0, ok. 2: size 1, ok. 3: size 2 == cap, full. The size ends at 2.
+
+=== task: code medium
+title: A circular queue
+prompt: Write a class `CircularQueue(cap)` with a fixed array of `cap` slots, a `front` index and a `size`, and these methods:
+- `enqueue(x)`: add x at the back and return True, or return False if the queue is full,
+- `dequeue()`: remove and return the front item, or return None if the queue is empty,
+- `peek()`: return the front item without removing it, or None if empty,
+- `is_empty()` and `is_full()`.
+
+Every method must be O(1): wrap the indexes round with `%`.
+starter:
+```python
+class CircularQueue:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    # your code here
+```
+solution:
+```python
+class CircularQueue:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def enqueue(self, x):
+        if self.size == self.cap:
+            return False
+        self.slots[(self.front + self.size) % self.cap] = x
+        self.size += 1
+        return True
+
+    def dequeue(self):
+        if self.size == 0:
+            return None
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % self.cap
+        self.size -= 1
+        return x
+
+    def peek(self):
+        if self.size == 0:
+            return None
+        return self.slots[self.front]
+
+    def is_empty(self):
+        return self.size == 0
+
+    def is_full(self):
+        return self.size == self.cap
+```
+tests:
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.enqueue(3), q.is_full()])(CircularQueue(2))
+- (lambda q: [q.dequeue(), q.peek(), q.is_empty()])(CircularQueue(3))
+- (lambda q: [q.enqueue("a"), q.enqueue("b"), q.dequeue(), q.enqueue("c"), q.dequeue(), q.dequeue(), q.is_empty()][2:])(CircularQueue(2))
+- (lambda q: [[q.enqueue(i) for i in range(3)], q.dequeue(), q.dequeue(), q.enqueue(7), q.enqueue(8), q.peek(), q.slots][1:])(CircularQueue(3))
+fail[1]: Two items fill a queue of capacity 2, so the third enqueue returns False.
+fail[2]: An empty queue: dequeue and peek both return None.
+fail[3]: "c" wraps round into the slot "a" left, and comes out after "b".
+fail[4]: After two dequeues, front is at slot 2; 7 goes into slot 0 and 8 into slot 1, and the front item is 2.
+error[IndexError]: Wrap every index with `% self.cap`.
+error[AttributeError]: Define all five methods.
+hint: `enqueue`: if `size == cap`, return False; otherwise write at `(front + size) % cap`, add 1 to size, return True.
+hint: `dequeue`: if `size == 0`, return None; otherwise read `slots[front]`, move front on with `% cap`, take 1 from size.
+hint: `peek` reads `slots[front]`; `is_empty` and `is_full` compare `size` with 0 and `cap`.
+right: Only `front` and `size` change, and no item ever moves: every method is O(1), in a fixed amount of memory.
+wrong: Keep `front` and `size`; write at `(front + size) % cap`, read at `front`, move front with `% cap`, and compare size with 0 and cap.
+
+=== task: code medium
+title: The queue in order
+prompt: Write `in_order(slots, front, size)` that returns the items of a circular queue as a list, from the front to the back. The queue starts at `slots[front]`, holds `size` items, and may wrap round the end of the array.
+
+For example, `in_order(["E", "F", "C", "D"], 2, 4)` returns `["C", "D", "E", "F"]`.
+starter:
+```python
+def in_order(slots, front, size):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def in_order(slots, front, size):
+    result = []
+    cap = len(slots)
+    for i in range(size):
+        result.append(slots[(front + i) % cap])
+    return result
+```
+tests:
+- in_order(["E", "F", "C", "D"], 2, 4)
+- in_order([1, 2, 3], 0, 3)
+- in_order([7, None, 5, 6], 2, 3)
+- in_order([None, None], 1, 0)
+- in_order([9, 8, 7, 6, 5], 4, 2)
+fail[1]: The queue starts at slot 2 (C), goes to slot 3 (D), then wraps round to slots 0 and 1 (E, F).
+fail[3]: Three items from slot 2: 5, 6, then 7 from slot 0. Slot 1 isn't part of the queue.
+fail[4]: An empty queue gives an empty list.
+fail[5]: Two items from slot 4: 5, then 9 from slot 0.
+error[IndexError]: Wrap the index with `% len(slots)`.
+hint: The i-th item of the queue is at `(front + i) % cap`, where `cap = len(slots)`.
+hint: Loop i from 0 to `size - 1`.
+right: Index arithmetic reaches any item of the queue in O(1), so listing all of them is O(size). A circular queue can read its i-th item directly, which a linked list can't.
+wrong: For i in `range(size)`, append `slots[(front + i) % len(slots)]`.
+
+=== task: predict medium
+title: front equals back
+code:
+```python
+cap = 3
+front = 0
+back = 0
+size = 0
+for x in range(3):
+    back = (back + 1) % cap
+    size += 1
+print(front == back, size)
+for x in range(3):
+    front = (front + 1) % cap
+    size -= 1
+print(front == back, size)
+```
+wrong[False 3\nTrue 0]: After 3 items in 3 slots, `back` has wrapped all the way round to 0, where `front` is.
+wrong[True 3\nFalse 0]: After 3 dequeues, `front` has also gone all the way round, to 0, where `back` is.
+wrong[True 0\nTrue 0]: `size` counts the items: 3 after the enqueues, 0 after the dequeues.
+hint: Three steps round a ring of 3 bring an index back to where it started.
+hint: Both `front` and `back` end at 0.
+right: `front == back` is True when the queue is full and when it's empty, so on its own it can't tell them apart. `size` can: 3 or 0.
+wrong: `back` goes 1, 2, 0: back to `front`, with size 3. Then `front` goes 1, 2, 0: back to `back`, with size 0. Both times `front == back`.
+
+=== task: fill medium
+title: Read it in order
+prompt: Fill in the blank so that the program lists the queue's items from front to back, and prints:
+
+```output
+['C', 'D', 'E']
+```
+code:
+```python
+cap = 4
+slots = ["E", None, "C", "D"]
+front = 2
+size = 3
+print([slots[(front + i) % cap] for i in range(??)])
+```
+answer: size
+wrong[cap]: That reads 4 slots, so the empty slot 1 would be included too: None at the end.
+wrong[front]: That reads only 2 items.
+hint: How many items are in the queue?
+hint: That's stored in `size`.
+right: `range(size)` visits exactly the items in the queue: C and D, then E after wrapping round.
+wrong: The queue holds `size` items, so i goes from 0 to `size - 1`: the blank is `size`.
+
+=== task: cells medium
+title: Working out the indexes
+prompt: A circular queue has `cap = 5`, `front = 3` and `size = 2`. Work out each value.
+labels: next free slot | front after one dequeue | size after one dequeue | next free slot after that dequeue
+answer: 0 | 4 | 1 | 0
+wrong[5 | 4 | 1 | 5]: Slot 5 doesn't exist: `(3 + 2) % 5` wraps round to 0.
+wrong[0 | 4 | 1 | 1]: After the dequeue, front is 4 and size is 1: `(4 + 1) % 5` is 0, so the free slot doesn't move.
+wrong[0 | 2 | 1 | 3]: Dequeuing moves `front` forward, to `(3 + 1) % 5` = 4.
+hint: The next free slot is `(front + size) % cap`.
+hint: A dequeue moves front on by one and makes size one smaller.
+right: The free slot is `(3 + 2) % 5` = 0. A dequeue makes front 4 and size 1, and `(4 + 1) % 5` is still 0: dequeuing frees the front, not the back.
+wrong: (3 + 2) % 5 = 0. Front becomes (3 + 1) % 5 = 4, size 1, and (4 + 1) % 5 = 0.
+
+=== task: order medium
+title: A dequeue
+prompt: Put the steps of a dequeue from a circular queue that isn't empty in order.
+items:
+- Read the item at `slots[front]`
+- Move `front` to `(front + 1) % cap`
+- Take 1 from `size`
+- Return the item that was read
+hint: The item has to be read before `front` moves away from it.
+hint: The item is returned last.
+right: Read, move front, shrink size, return: the item never moves, only `front` does.
+wrong: Read `slots[front]` first, then move `front` round, then take 1 from `size`, then return the item.
+
+=== task: predict medium
+title: Keeping the latest two
+code:
+```python
+cap = 2
+slots = [None] * cap
+front = 0
+size = 0
+for r in [1, 2, 3, 4, 5]:
+    if size == cap:
+        slots[front] = r
+        front = (front + 1) % cap
+    else:
+        slots[(front + size) % cap] = r
+        size += 1
+print(slots, front)
+```
+wrong[[4, 5] 0]: The overwrites alternate between slots: 3 goes into slot 0, 4 into slot 1, then 5 into slot 0.
+wrong[[1, 2] 0]: Once the buffer is full, each new reading overwrites the oldest one.
+wrong[[5, 4] 0]: After 5 overwrites slot 0, `front` moves on to slot 1, where the oldest reading, 4, is.
+hint: 1 and 2 fill the buffer.
+hint: 3, 4 and 5 each overwrite the slot at `front`, which then moves on.
+right: `[5, 4] 1`: reading from `front` gives 4, then 5, the latest two readings, oldest first.
+wrong: 1 and 2 fill slots 0 and 1. 3 overwrites slot 0 (front 1), 4 overwrites slot 1 (front 0), 5 overwrites slot 0 (front 1).
+
+=== task: mcq medium
+title: The empty slot
+prompt: A circular queue that stores only `front` and `back` indexes (no size) never lets its last free slot fill up. Why?
+* If every slot could fill, a full queue would also have `front == back`, and it couldn't be told apart from an empty one :: Right. Leaving one slot empty means `front == back` always means "empty".
+- Python lists can't have every slot filled :: They can; the problem is only with telling full from empty.
+- The empty slot is where the next dequeue writes :: Dequeuing reads, it doesn't write.
+- It makes the queue faster :: The speed is the same: it costs a slot to keep the two cases apart.
+hint: What do `front` and `back` look like when the queue is empty?
+hint: And after `back` has gone all the way round?
+right: Full and empty both make `front == back`. Stopping one slot short gives "full" its own test, `(back + 1) % cap == front`.
+wrong: With every slot usable, filling the queue brings `back` round to `front`, which is also how an empty queue looks. One empty slot keeps the two apart.
+
+=== task: multi medium
+title: O(1) in a ring
+prompt: Choose **every** operation that is O(1) on a circular queue.
+* Enqueue :: Right. One write and an index update.
+* Dequeue :: Right. One read and an index update.
+* Reading the i-th item of the queue, counting from the front :: Right. It's `slots[(front + i) % cap]`: one calculation.
+* Checking whether it's full :: Right. `size == cap`.
+- Listing every item in order :: That visits all of them: O(size).
+- Making room for more items than `cap` :: The array has a fixed size. Growing it means copying every item: O(n).
+hint: Which ones touch a fixed number of slots?
+hint: Four of them are O(1).
+right: Everything that touches one slot is O(1), including reaching the i-th item, which an array can do and a linked list can't.
+wrong: O(1): enqueue, dequeue, the i-th item, the full check. O(n): listing them all, and growing.
+
+=== task: code medium
+title: Keep the latest
+prompt: Write a class `RecentBuffer(cap)` that keeps the latest `cap` items added to it, in a ring of `cap` slots:
+- `add(x)`: add x; when the buffer is full, x overwrites the oldest item,
+- `latest()`: return the items as a list, oldest first.
+
+`add` must be O(1).
+starter:
+```python
+class RecentBuffer:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    # your code here
+```
+solution:
+```python
+class RecentBuffer:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def add(self, x):
+        if self.size == self.cap:
+            self.slots[self.front] = x
+            self.front = (self.front + 1) % self.cap
+        else:
+            self.slots[(self.front + self.size) % self.cap] = x
+            self.size += 1
+
+    def latest(self):
+        return [self.slots[(self.front + i) % self.cap] for i in range(self.size)]
+```
+tests:
+- (lambda b: [[b.add(x) for x in [21, 22, 25, 24, 23]], b.latest()][1])(RecentBuffer(3))
+- (lambda b: [b.add("a"), b.latest()][1])(RecentBuffer(2))
+- (lambda b: b.latest())(RecentBuffer(4))
+- (lambda b: [[b.add(i) for i in range(10)], b.latest()][1])(RecentBuffer(4))
+- (lambda b: [[b.add(i) for i in range(3)], b.latest(), b.front][1:])(RecentBuffer(3))
+fail[1]: The buffer keeps the last 3: 25, 24, 23, oldest first.
+fail[2]: One item in a buffer of 2 gives a list of that one item. If you got a None too, read only `size` items.
+fail[3]: An empty buffer gives an empty list.
+fail[4]: After 0 to 9, the last 4 are 6, 7, 8 and 9.
+fail[5]: Three items exactly fill the buffer: nothing has been overwritten yet, so front is still 0.
+error[IndexError]: Wrap every index with `% self.cap`.
+hint: `add`: if the buffer isn't full, write at `(front + size) % cap` and add 1 to size.
+hint: If it's full, write over `slots[front]`, then move front on: the next oldest item is now at the front.
+hint: `latest` reads `size` items, starting at `front`, with `% cap`.
+right: Overwriting the oldest item and moving `front` on keeps the newest `cap` items in O(1) per add, in fixed memory.
+wrong: Fill the ring until it's full; after that, overwrite `slots[front]` and move front on. List the items from front, `size` of them.
+
+=== task: code hard
+title: Front and back only
+prompt: Write a class `RingQueue(cap)` that holds up to `cap` items using only two indexes, `front` and `back` (the next free slot), and an array of `cap + 1` slots, so that one slot is always left empty:
+- `is_empty()` is `front == back`, and `is_full()` is `(back + 1) % n == front`, where n is the number of slots,
+- `enqueue(x)` returns False if full; otherwise it writes at `back`, moves `back` on, and returns True,
+- `dequeue()` returns None if empty; otherwise it reads at `front`, moves `front` on, and returns the item,
+- `size()` returns `(back - front) % n`.
+starter:
+```python
+class RingQueue:
+    def __init__(self, cap):
+        self.n = cap + 1
+        self.slots = [None] * self.n
+        self.front = 0
+        self.back = 0
+
+    # your code here
+```
+solution:
+```python
+class RingQueue:
+    def __init__(self, cap):
+        self.n = cap + 1
+        self.slots = [None] * self.n
+        self.front = 0
+        self.back = 0
+
+    def is_empty(self):
+        return self.front == self.back
+
+    def is_full(self):
+        return (self.back + 1) % self.n == self.front
+
+    def enqueue(self, x):
+        if self.is_full():
+            return False
+        self.slots[self.back] = x
+        self.back = (self.back + 1) % self.n
+        return True
+
+    def dequeue(self):
+        if self.is_empty():
+            return None
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % self.n
+        return x
+
+    def size(self):
+        return (self.back - self.front) % self.n
+```
+tests:
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.enqueue(3), q.is_full(), q.size()])(RingQueue(2))
+- (lambda q: [q.is_empty(), q.dequeue(), q.size()])(RingQueue(3))
+- (lambda q: [q.enqueue("a"), q.enqueue("b"), q.dequeue(), q.enqueue("c"), q.enqueue("d"), q.dequeue(), q.dequeue(), q.size()][2:])(RingQueue(2))
+- (lambda q: [[q.enqueue(i) for i in range(3)], q.dequeue(), q.dequeue(), q.enqueue(9), q.size(), q.front, q.back][1:])(RingQueue(3))
+fail[1]: A queue of capacity 2 has 3 slots. After two items, `(back + 1) % 3 == front`, so the third is refused.
+fail[2]: A new queue has `front == back`: empty, size 0.
+fail[3]: "c" wraps round, then "d" is refused because the queue is full again; "b" and "c" come out in order.
+fail[4]: Two dequeues move front to 2; 9 goes into slot 3 and back wraps round to 0. Size is `(0 - 2) % 4` = 2.
+error[IndexError]: Wrap both indexes with `% self.n`.
+error[AttributeError]: Define `is_empty`, `is_full`, `enqueue`, `dequeue` and `size`.
+hint: `is_empty`: `front == back`. `is_full`: `(back + 1) % n == front`.
+hint: `enqueue` writes at `back` then moves it; `dequeue` reads at `front` then moves it; both wrap with `% self.n`.
+hint: `size` is `(back - front) % n`: Python's `%` turns a negative difference into the right count.
+right: Leaving one slot empty keeps "full" and "empty" apart with only two indexes. `(back - front) % n` counts the items even when `back` has wrapped round behind `front`.
+wrong: Use n = cap + 1 slots. Empty when front equals back; full when back is one step behind front. Write at back and read at front, wrapping both; the size is `(back - front) % n`.
+
+=== task: code hard
+title: A circular deque
+prompt: Write a class `CircularDeque(cap)`: a deque stored in a ring of `cap` slots, with a `front` index and a `size`. Its methods:
+- `push_front(x)` and `push_back(x)`: add at either end and return True, or return False if full,
+- `pop_front()` and `pop_back()`: remove and return the item at either end, or return None if empty.
+
+The back item is at `(front + size - 1) % cap`. To push at the front, move `front` one step back first: `(front - 1) % cap`, which wraps 0 round to `cap - 1`. Every method must be O(1).
+starter:
+```python
+class CircularDeque:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    # your code here
+```
+solution:
+```python
+class CircularDeque:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def push_front(self, x):
+        if self.size == self.cap:
+            return False
+        self.front = (self.front - 1) % self.cap
+        self.slots[self.front] = x
+        self.size += 1
+        return True
+
+    def push_back(self, x):
+        if self.size == self.cap:
+            return False
+        self.slots[(self.front + self.size) % self.cap] = x
+        self.size += 1
+        return True
+
+    def pop_front(self):
+        if self.size == 0:
+            return None
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % self.cap
+        self.size -= 1
+        return x
+
+    def pop_back(self):
+        if self.size == 0:
+            return None
+        self.size -= 1
+        return self.slots[(self.front + self.size) % self.cap]
+```
+tests:
+- (lambda d: [d.push_back(1), d.push_back(2), d.push_front(0), d.pop_back(), d.pop_front(), d.pop_front(), d.pop_front()][3:])(CircularDeque(3))
+- (lambda d: [d.push_front("a"), d.push_front("b"), d.front, d.pop_back(), d.pop_back()][2:])(CircularDeque(4))
+- (lambda d: [d.push_back(1), d.push_back(2), d.push_front(3)])(CircularDeque(2))
+- (lambda d: [d.pop_back(), d.pop_front()])(CircularDeque(2))
+- (lambda d: [d.push_back(5), d.push_front(4), d.push_back(6), d.pop_front(), d.push_front(9), d.slots, d.front][3:])(CircularDeque(3))
+fail[1]: The deque is 0, 1, 2: `pop_back` gives 2, then `pop_front` gives 0 and 1, and the empty deque gives None.
+fail[2]: Pushing at the front from front 0 wraps round to slot 3, then slot 2. Popping from the back gives "a" (pushed first), then "b".
+fail[3]: A deque of capacity 2 is full after two items, so the third push returns False.
+fail[4]: Popping an empty deque returns None at either end.
+fail[5]: After 4, 5, 6 and one `pop_front`, the front is slot 0; pushing 9 at the front wraps round into slot 2, where the 4 was.
+error[IndexError]: Wrap every index with `% self.cap`; `(self.front - 1) % self.cap` is never negative.
+error[AttributeError]: Define all four methods.
+hint: `push_front`: if full, return False; else set `front = (front - 1) % cap`, write x there, add 1 to size.
+hint: `push_back` writes at `(front + size) % cap`. `pop_front` reads at front and moves it on.
+hint: `pop_back`: take 1 from size first, then return the item at `(front + size) % cap`.
+right: Both ends are reached by index arithmetic, so all four methods are O(1) in fixed memory. Python's `%` makes stepping back from slot 0 land on the last slot.
+wrong: Keep front and size. The front item is at `front` and the back item at `(front + size - 1) % cap`. Push at the front by stepping front back with `% cap`; pop at the back by shrinking size.
+
+=== task: code hard
+title: A queue that grows
+prompt: Write a class `GrowingQueue` that works like a circular queue but never refuses an item: when the array is full, it copies the items, **in queue order**, into a new array twice as big, starting at slot 0, and resets `front` to 0. It starts with one slot. `enqueue` must be O(1) amortized, so grow by doubling. Assume `dequeue` is only called when the queue isn't empty.
+starter:
+```python
+class GrowingQueue:
+    def __init__(self):
+        self.slots = [None]
+        self.front = 0
+        self.size = 0
+
+    # your code here
+```
+solution:
+```python
+class GrowingQueue:
+    def __init__(self):
+        self.slots = [None]
+        self.front = 0
+        self.size = 0
+
+    def enqueue(self, x):
+        cap = len(self.slots)
+        if self.size == cap:
+            new = [None] * (2 * cap)
+            for i in range(self.size):
+                new[i] = self.slots[(self.front + i) % cap]
+            self.slots = new
+            self.front = 0
+        self.slots[(self.front + self.size) % len(self.slots)] = x
+        self.size += 1
+
+    def dequeue(self):
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % len(self.slots)
+        self.size -= 1
+        return x
+```
+tests:
+- (lambda q: [q.enqueue(1), q.enqueue(2), q.dequeue(), q.enqueue(3), q.enqueue(4), q.dequeue(), q.dequeue(), q.dequeue()][2:])(GrowingQueue())
+- (lambda q: [[q.enqueue(i) for i in range(5)], q.dequeue(), q.dequeue(), q.size][1:])(GrowingQueue())
+- (lambda q: [q.enqueue("a"), q.dequeue(), q.enqueue("b"), q.enqueue("c"), q.dequeue(), q.dequeue()][1:])(GrowingQueue())
+- (lambda q: [q.size, len(q.slots)])(GrowingQueue())
+speed: setup=q = GrowingQueue() | call=[q.enqueue(i) for i in range(n)] | target=O(n)
+slow:
+```python
+class GrowingQueue:
+    def __init__(self):
+        self.slots = [None]
+        self.front = 0
+        self.size = 0
+
+    def enqueue(self, x):
+        cap = len(self.slots)
+        if self.size == cap:
+            new = [None] * (cap + 1)
+            for i in range(self.size):
+                new[i] = self.slots[(self.front + i) % cap]
+            self.slots = new
+            self.front = 0
+        self.slots[(self.front + self.size) % len(self.slots)] = x
+        self.size += 1
+
+    def dequeue(self):
+        x = self.slots[self.front]
+        self.front = (self.front + 1) % len(self.slots)
+        self.size -= 1
+        return x
+```
+fail[1]: When 4 arrives, the queue 2, 3 has wrapped round (3 is in slot 0, 2 in slot 1). Copy it in queue order, 2 then 3, or the items come out in the wrong order.
+fail[2]: Five items go in, through several growths; the first two out are 0 and 1, and 3 are left.
+fail[3]: Items come out in the order they went in, across the growth: a, then b, then c.
+fail[4]: A new queue has one slot and no items.
+error[IndexError]: After growing, use the new length in `% len(self.slots)`.
+hint: In `enqueue`, if `size == len(self.slots)`, make a list twice as long and copy item i of the queue, `self.slots[(front + i) % cap]`, into slot i.
+hint: Then set `self.slots` to the new list and `front` to 0, and write x at `(front + size) % len(self.slots)`.
+hint: `dequeue` is the usual circular dequeue, using `len(self.slots)` for the wrap.
+right: Doubling keeps the copying to fewer than 2n item moves for n enqueues: O(1) amortized, as in the Dynamic arrays lesson. Copying in queue order straightens out a wrapped queue.
+wrong: When full, copy the items in queue order into a list twice as long, starting at slot 0, and reset front to 0. Then enqueue as usual.
+
+=== task: code hard
+title: A buffer between two programs
+prompt: One program puts numbers into a buffer and another gets them out, first in, first out. The buffer is a circular queue with `cap` slots: a put into a full buffer is dropped, and a get from an empty buffer gets nothing. Write `run_buffer(ops, cap)`, where `ops` is a list of operations, each `("put", x)` or `("get",)`, and return a tuple `(got, dropped)`: the list of numbers got, in order, and how many puts were dropped.
+
+For example, `run_buffer([("put", 1), ("put", 2), ("put", 3), ("get",), ("put", 4), ("get",), ("get",)], 2)` returns `([1, 2, 4], 1)`.
+starter:
+```python
+def run_buffer(ops, cap):
+    slots = [None] * cap
+    front = 0
+    size = 0
+    got = []
+    dropped = 0
+    # your code here
+    return got, dropped
+```
+solution:
+```python
+def run_buffer(ops, cap):
+    slots = [None] * cap
+    front = 0
+    size = 0
+    got = []
+    dropped = 0
+    for op in ops:
+        if op[0] == "put":
+            if size == cap:
+                dropped += 1
+            else:
+                slots[(front + size) % cap] = op[1]
+                size += 1
+        elif size > 0:
+            got.append(slots[front])
+            front = (front + 1) % cap
+            size -= 1
+    return got, dropped
+```
+tests:
+- run_buffer([("put", 1), ("put", 2), ("put", 3), ("get",), ("put", 4), ("get",), ("get",)], 2)
+- run_buffer([("get",), ("put", 5), ("get",), ("get",)], 1)
+- run_buffer([], 3)
+- run_buffer([("put", 1), ("put", 2), ("put", 3), ("put", 4)], 2)
+- run_buffer([("put", 7), ("get",), ("put", 8), ("get",), ("put", 9), ("get",)], 1)
+fail[1]: 3 arrives when the buffer is full, so it's dropped. 4 fits after the first get. The gets give 1, 2 and 4.
+fail[2]: A get from an empty buffer gets nothing; then 5 is put and got.
+fail[4]: Only 2 fit: 3 and 4 are dropped.
+fail[5]: A buffer of one slot works if every put is followed by a get.
+error[IndexError]: Wrap the indexes with `% cap`, and only get when `size > 0`.
+hint: For a put: if `size == cap`, count it as dropped; otherwise write at `(front + size) % cap`.
+hint: For a get: if `size > 0`, append `slots[front]` to `got` and move front on.
+hint: `op[0]` is "put" or "get", and `op[1]` is the number for a put.
+right: Every put and get is O(1), and the buffer never uses more than `cap` slots. Dropping on a full buffer is what real buffers do when the reader can't keep up.
+wrong: Run a circular queue: puts go in at `(front + size) % cap` unless it's full (then count a drop); gets take `slots[front]` unless it's empty.
+
+=== task: predict hard
+title: Stepping back from 0
+code:
+```python
+cap = 4
+front = 0
+order = []
+for i in range(5):
+    front = (front - 1) % cap
+    order.append(front)
+print(order)
+```
+wrong[[-1, -2, -3, -4, -5]]: Python's `%` brings the index back into 0 to 3: `(0 - 1) % 4` is 3.
+wrong[[3, 2, 1, 0, -1]]: `(0 - 1) % 4` is 3 again: the fifth step wraps round too.
+wrong[[1, 2, 3, 0, 1]]: The index goes down by 1 each time, not up.
+hint: In Python, the answer of `% 4` is always 0 to 3.
+hint: After 0 comes 3, going backwards.
+right: 3, 2, 1, 0, 3: stepping backwards round the ring. This is how a circular deque pushes at its front.
+wrong: 0 − 1 = −1, and −1 % 4 = 3. Then 2, 1, 0, and from 0 the next step is 3 again.
+
+=== task: predict hard
+title: A deque in a ring
+code:
+```python
+cap = 3
+slots = [None] * cap
+front = 0
+size = 0
+for x in [1, 2]:
+    slots[(front + size) % cap] = x
+    size += 1
+front = (front - 1) % cap
+slots[front] = 0
+size += 1
+size -= 1
+back_item = slots[(front + size) % cap]
+front = (front - 1) % cap
+slots[front] = 9
+size += 1
+print(slots, front, back_item)
+print([slots[(front + i) % cap] for i in range(size)])
+```
+wrong[[1, 9, 0] 1 1\n[9, 0, 1]]: Popping from the back reads the item at `(front + size) % cap` after size has shrunk: slot 1, which holds 2.
+wrong[[9, 2, 0] 0 2\n[9, 0, 1]]: Pushing 9 at the front moves front back from 2 to 1, and 9 overwrites slot 1, the 2 that was popped.
+wrong[[1, 9, 0] 1 2\n[0, 1, 9]]: Reading in order starts at `front`, slot 1: 9, then 0 in slot 2, then 1 in slot 0.
+hint: 1 and 2 go into slots 0 and 1. Pushing 0 at the front puts it in slot 2.
+hint: Popping the back removes 2 (slot 1); pushing 9 at the front reuses slot 1.
+right: The deque is 9, 0, 1, stored as [1, 9, 0] from slot 1. Both ends move round the ring with `%`, and no item ever shifts.
+wrong: Push 1, 2 at the back: slots 0 and 1. Push 0 at the front: front 2. Pop the back: 2 from slot 1. Push 9 at the front: front 1. The array is [1, 9, 0], and the deque from front is 9, 0, 1.
+
+=== task: cells hard
+title: Straightening out
+prompt: A full circular queue has the slots `["C", "D", "A", "B"]` and `front = 2`. It grows: its items are copied in queue order into a new array of 8 slots, starting at slot 0, and `front` becomes 0. What is in slots 0 to 3 of the new array?
+labels: slot 0 | slot 1 | slot 2 | slot 3
+answer: A | B | C | D
+wrong[C | D | A | B]: Copying slot by slot keeps the old wrap, but `front` is now 0, so C would wrongly be first. Copy in queue order, starting at the old front.
+wrong[B | A | D | C]: The queue order is A, B, C, D: from slot 2 forwards, wrapping round. Nothing is reversed.
+hint: In the old array, the queue starts at slot 2.
+hint: Item i of the queue is `old[(2 + i) % 4]`.
+right: A, B, C, D: the wrapped queue becomes one straight run starting at slot 0, so `front = 0` is right.
+wrong: The queue in order is slots 2, 3, 0, 1 of the old array: A, B, C, D. They go into new slots 0 to 3.
+
+=== task: mcq hard
+title: Copying in order
+prompt: When a circular queue grows into a bigger array, why does it copy the items in queue order (starting at `front`) into slots 0, 1, 2, ..., instead of copying each slot into the slot with the same number?
+* Because the queue may wrap round the end of the old array; in the bigger array, the slots after the old end would come between the back and the front :: Right. Copying in order straightens the queue out, with front = 0.
+- Because copying slot by slot is slower :: Both copy the same number of items.
+- Because the new array must be sorted :: Nothing is sorted: queue order is arrival order.
+- Because Python can't copy a list slot by slot :: It can; the problem is where the items end up.
+hint: Picture a full queue that starts at slot 2 of 4 and is copied into 8 slots, slot by slot.
+hint: Where would the empty new slots 4 to 7 be?
+right: In a wrapped queue, the item after the old last slot is in slot 0. Copied slot by slot into a bigger array, empty slots would sit in the middle of the queue. Copying in queue order avoids that.
+wrong: Copying slot by slot keeps the wrap, but the ring is now longer, so the empty new slots end up inside the queue. Copy item i of the queue into slot i instead.
+
+=== task: multi hard
+title: Where ring buffers are used
+prompt: Choose **every** job that a fixed-size ring buffer suits.
+* Holding the sound waiting to go to a speaker :: Right. A fixed amount of audio, written and read at the same speed.
+* Remembering the last 100 lines of a log :: Right. Overwriting the oldest keeps the newest 100.
+* Keys pressed but not yet handled by a program :: Right. A small keyboard buffer, first in, first out.
+* Passing data between two programs that run at the same time :: Right. One writes at the back, the other reads at the front.
+- Keeping every message ever received, for ever :: A ring buffer has a fixed size; it would have to drop or overwrite messages.
+- Sorting a list of names :: A ring buffer keeps arrival order; it doesn't sort.
+hint: A ring buffer has a fixed size, and keeps things in arrival order.
+hint: Four of them suit it.
+right: Ring buffers fit streams that are produced and used at about the same rate, and histories where only the latest few items matter.
+wrong: Ring buffers: audio, the last lines of a log, keyboard input, data between programs. Not: unlimited storage, or sorting.
+
+=== task: parsons hard
+title: Add to a buffer that overwrites
+prompt: Arrange the lines so that `add` keeps the latest 3 readings, overwriting the oldest when the buffer is full, and the program prints:
+
+```output
+[25, 24, 23]
+```
+
+Not every line is needed.
+lines:
+```python
+class RecentBuffer:
+    def __init__(self, cap):
+        self.slots = [None] * cap
+        self.cap = cap
+        self.front = 0
+        self.size = 0
+
+    def add(self, x):
+        if self.size == self.cap:
+            self.slots[self.front] = x
+            self.front = (self.front + 1) % self.cap
+        else:
+            self.slots[(self.front + self.size) % self.cap] = x
+            self.size += 1
+
+b = RecentBuffer(3)
+for r in [21, 22, 25, 24, 23]:
+    b.add(r)
+print([b.slots[(b.front + i) % b.cap] for i in range(b.size)])
+```
+distractors:
+```python
+            self.front = (self.front - 1) % self.cap
+            self.slots[(self.front + 1) % self.cap] = x
+```
+hint: When the buffer is full, the oldest item is at `front`: overwrite it, then move front on.
+hint: The size only grows while the buffer isn't full yet.
+right: Overwriting at `front` and moving `front` forwards keeps the latest 3, oldest first from `front`. Moving `front` backwards, or overwriting the slot after it, would throw away the wrong reading.
+wrong: In `add`: if full, write over `slots[front]` and move front on; otherwise write at `(front + size) % cap` and add 1 to size.
