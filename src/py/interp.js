@@ -7,6 +7,8 @@ class PyThrow extends Error {
 function markLoc(err, f, node) {
   const tb = err.tb;
   if (!tb) return;
+  // list/set/dict comprehensions run inside the enclosing frame (CPython 3.13 inlines them)
+  while (f && f.inlined) f = f.parent;
   for (let k = tb.length - 1; k >= 0; k--) {
     if (tb[k].fr === f) { if (!tb[k].loc) tb[k].loc = node; return; }
   }
@@ -507,41 +509,47 @@ class Interp {
   assign(t, v, f) {
     switch (t.type) {
       case 'Name': this.storeName(f, t.id, v); return;
-      case 'Attribute': this.setAttr(this.eval(t.value, f), t.attr, v); return;
+      case 'Attribute': {
+        const obj = this.eval(t.value, f);
+        try { this.setAttr(obj, t.attr, v); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
+        return;
+      }
       case 'Subscript': {
         const obj = this.eval(t.value, f);
         const key = this.evalSlice(t.slice, f);
         try { this.setItem(obj, key, v); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
         return;
       }
-      case 'Tuple': case 'List': this.unpack(t.elts, v, f); return;
+      case 'Tuple': case 'List': this.unpack(t.elts, v, f, t); return;
       case 'Starred': throw pyErr('SyntaxError', 'starred assignment target must be in a list or tuple');
     }
     throw pyErr('SyntaxError', 'cannot assign');
   }
 
-  unpack(elts, v, f) {
+  unpack(elts, v, f, node) {
+    // CPython underlines the whole target (`x, y`) when the unpacking itself fails
+    const fail = (err) => { if (node && node.col !== undefined) markLoc(err, f, node); return err; };
     let items;
     if (v instanceof PyTuple || v instanceof PyList) items = v.a;
     else {
       try { items = this.toArray(v); }
       catch (e) {
-        if (e instanceof PyThrow && isInstanceOfName(e.exc, 'TypeError') && /not iterable/.test(pyStr(e.exc))) throw pyErr('TypeError', `cannot unpack non-iterable ${shortTypeName(v)} object`);
+        if (e instanceof PyThrow && isInstanceOfName(e.exc, 'TypeError') && /not iterable/.test(pyStr(e.exc))) throw fail(pyErr('TypeError', `cannot unpack non-iterable ${shortTypeName(v)} object`));
         throw e;
       }
     }
     const starIdx = elts.findIndex((e) => e.type === 'Starred');
     if (starIdx < 0) {
       if (items.length !== elts.length) {
-        if (items.length > elts.length) throw pyErr('ValueError', `too many values to unpack (expected ${elts.length})`);
-        throw pyErr('ValueError', `not enough values to unpack (expected ${elts.length}, got ${items.length})`);
+        if (items.length > elts.length) throw fail(pyErr('ValueError', `too many values to unpack (expected ${elts.length})`));
+        throw fail(pyErr('ValueError', `not enough values to unpack (expected ${elts.length}, got ${items.length})`));
       }
       const copy = items.slice();
       for (let i = 0; i < elts.length; i++) this.assign(elts[i], copy[i], f);
       return;
     }
     const before = starIdx, after = elts.length - starIdx - 1;
-    if (items.length < before + after) throw pyErr('ValueError', `not enough values to unpack (expected at least ${before + after}, got ${items.length})`);
+    if (items.length < before + after) throw fail(pyErr('ValueError', `not enough values to unpack (expected at least ${before + after}, got ${items.length})`));
     const copy = items.slice();
     for (let i = 0; i < before; i++) this.assign(elts[i], copy[i], f);
     this.assign(elts[starIdx].value, new PyList(copy.slice(before, copy.length - after)), f);
@@ -607,12 +615,21 @@ class Interp {
 
   deleteTarget(t, f) {
     switch (t.type) {
-      case 'Name': this.deleteName(f, t.id); return;
-      case 'Subscript': this.delItem(this.eval(t.value, f), this.evalSlice(t.slice, f)); return;
+      case 'Name':
+        try { this.deleteName(f, t.id); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
+        return;
+      case 'Subscript': {
+        const obj = this.eval(t.value, f);
+        const key = this.evalSlice(t.slice, f);
+        try { this.delItem(obj, key); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
+        return;
+      }
       case 'Attribute': {
         const obj = this.eval(t.value, f);
         if (obj instanceof PyInstance && obj.dict.has(t.attr)) { obj.dict.delete(t.attr); return; }
-        throw pyErr('AttributeError', `'${shortTypeName(obj)}' object has no attribute '${t.attr}'`);
+        const err = pyErr('AttributeError', `'${shortTypeName(obj)}' object has no attribute '${t.attr}'`);
+        if (t.col !== undefined) markLoc(err, f, t);
+        throw err;
       }
       case 'Tuple': case 'List': for (const e of t.elts) this.deleteTarget(e, f); return;
     }
@@ -934,7 +951,7 @@ class Interp {
     if (obj instanceof PyModule) { obj.dict.set(name, v); return; }
     const tbl = methodsFor(obj);
     if (tbl && tbl.has(name)) throw pyErr('AttributeError', `'${shortTypeName(obj)}' object attribute '${name}' is read-only`);
-    throw pyErr('AttributeError', `'${shortTypeName(obj)}' object has no attribute '${name}'` + (obj instanceof PyDict || obj instanceof PyList ? ' and no __dict__ for setting new attributes' : ''));
+    throw pyErr('AttributeError', `'${shortTypeName(obj)}' object has no attribute '${name}' and no __dict__ for setting new attributes`);
   }
 
   // ---------- items ----------
@@ -1058,7 +1075,12 @@ class Interp {
         this.tick(obj.a.length);
         return;
       }
-      const i = this.seqIndex(key, obj.a.length, 'list');
+      let i;
+      try { i = this.seqIndex(key, obj.a.length, 'list'); } catch (err) {
+        // `del nums[9]` says "list assignment index out of range", like nums[9] = x
+        if (err instanceof PyThrow && isInstanceOfName(err.exc, 'IndexError')) throw pyErr('IndexError', 'list assignment index out of range');
+        throw err;
+      }
       if (i === obj.a.length - 1) obj.a.pop();
       else { obj.a.splice(i, 1); this.tick(obj.a.length - i); }
       return;
@@ -1439,7 +1461,6 @@ class Interp {
 
   eSetComp(e, f) { const s = new PySet(); for (const x of this.comprehension(e, f, false)) setAdd(s, x); return s; }
   eDictComp(e, f) { const d = new PyDict(); for (const [k, v] of this.comprehension(e, f, true)) dictSet(d, k, v); return d; }
-  eGenExp(e, f) { const items = this.comprehension(e, f, false); let i = 0; return new PyIter(() => (i < items.length ? items[i++] : STOP), 'generator'); }
   eNamed(e, f) { const v = this.eval(e.value, f); this.storeName(f, e.target.id, v); return v; }
 
   evalCall(e, f) {
@@ -1497,10 +1518,17 @@ class Interp {
     return new PySuper(fr.fn.ownerClass, fr.locals.get(first.name));
   }
 
+  // iter(...) of a comprehension's `in` part; a failure is shown under that part, as CPython does
+  compIter(node, f) {
+    const v = this.eval(node, f);
+    try { return this.iterOf(v); } catch (err) { if (err instanceof PyThrow && node.col !== undefined) markLoc(err, f, node); throw err; }
+  }
+
   comprehension(e, f, isDict) {
     if (!e.scope) e.scope = compScope(e.generators);
     const cf = new Frame('function', e.scope, f, '<listcomp>');
     cf.line = f.line;
+    cf.inlined = true; // not a frame of its own in tracebacks: errors point into the enclosing line
     const out = [];
     const gens = e.generators;
     const loop = (gi, it) => {
@@ -1513,13 +1541,51 @@ class Interp {
         let ok = true;
         for (let k = 0; k < g.ifs.length; k++) if (!truthy(this.eval(g.ifs[k], cf))) { ok = false; break; }
         if (!ok) continue;
-        if (gi + 1 < gens.length) loop(gi + 1, this.iterOf(this.eval(gens[gi + 1].iter, cf)));
+        if (gi + 1 < gens.length) loop(gi + 1, this.compIter(gens[gi + 1].iter, cf));
         else if (isDict) out.push([this.eval(e.key, cf), this.eval(e.value, cf)]);
         else out.push(this.eval(e.elt, cf));
       }
     };
-    loop(0, this.iterOf(this.eval(gens[0].iter, f)));
+    loop(0, this.compIter(gens[0].iter, f));
     return out;
+  }
+
+  // A generator expression runs lazily, one item each time it is asked for, in its own <genexpr> frame,
+  // so any()/all()/next() can stop early and errors show both the consuming call and the <genexpr> line.
+  eGenExp(e, f) {
+    if (!e.scope) e.scope = compScope(e.generators);
+    const gens = e.generators;
+    const first = this.compIter(gens[0].iter, f); // the first `in` part is evaluated right away
+    const cf = new Frame('function', e.scope, f, '<genexpr>');
+    cf.src = f.src;
+    cf.line = e.line || f.line;
+    const vm = this;
+    function* loop(gi, it) {
+      const g = gens[gi];
+      for (;;) {
+        const v = it.next();
+        if (v === STOP) return;
+        vm.tick(1);
+        vm.assign(g.target, v, cf);
+        let ok = true;
+        for (let k = 0; k < g.ifs.length; k++) if (!truthy(vm.eval(g.ifs[k], cf))) { ok = false; break; }
+        if (!ok) continue;
+        if (gi + 1 < gens.length) yield* loop(gi + 1, vm.compIter(gens[gi + 1].iter, cf));
+        else yield vm.eval(e.elt, cf);
+      }
+    }
+    const gen = loop(0, first);
+    let done = false;
+    return new PyIter(() => {
+      if (done) return STOP;
+      vm.callStack.push(cf);
+      vm.depth++;
+      try {
+        const r = gen.next();
+        if (r.done) { done = true; return STOP; }
+        return r.value;
+      } catch (err) { done = true; throw err; } finally { vm.depth--; vm.callStack.pop(); }
+    }, 'generator');
   }
 }
 

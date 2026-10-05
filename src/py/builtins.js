@@ -409,8 +409,11 @@ defBuiltin('reversed', function (args) {
 defBuiltin('enumerate', function (args, kw) {
   checkKw('enumerate', kw, ['start']);
   nargs('enumerate', args, 1, 2);
-  const it = this.iterOf(args[0]);
+  // like CPython, check start (it must be a whole number) before the iterable
   let i = args.length > 1 ? args[1] : kwGet(kw, 'start', 0);
+  if (typeof i === 'boolean') i = i ? 1 : 0;
+  else if (!isIntV(i)) i = toIndexInt(i);
+  const it = this.iterOf(args[0]);
   return new PyIter(() => { const v = it.next(); if (v === STOP) return STOP; const t = new PyTuple([i, v]); i = iadd(i, 1); return t; }, 'enumerate');
 });
 defBuiltin('zip', function (args, kw) {
