@@ -1,0 +1,1158 @@
+=== lesson
+id: ds-hashsets
+title: Hash sets
+summary: A hash set is a hash map that stores only keys, so `add`, `in` and `remove` are O(1) on average. You'll build one, see why `in` on a set beats `in` on a list, and use the seen-before pattern to remove duplicates, find the first repeat and find two numbers that add up to a target in one pass. Then you'll meet the set operations and what each one costs.
+
+=== learn
+### A map with only keys
+A **hash set** stores keys and nothing else. It's a hash map without the values: each key goes into the bucket its hash picks, and `in` looks only in that bucket. Python's `set` is a hash table built this way, which is why its items must be hashable. Here is a small one with separate chaining, for integer keys:
+```python
+class HashSet:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+        self.count = 0
+
+    def add(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key not in bucket:
+            bucket.append(key)
+            self.count += 1
+
+    def contains(self, key):
+        return key in self.buckets[key % len(self.buckets)]
+
+    def remove(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key in bucket:
+            bucket.remove(key)
+            self.count -= 1
+
+s = HashSet(5)
+for x in [12, 7, 3, 12, 22, 7]:
+    s.add(x)
+print(s.count, s.contains(22), s.contains(17))
+s.remove(7)
+print(s.buckets)
+```
+```output
+4 True False
+[[], [], [12, 22], [3], []]
+```
+- `add` puts a key in only if its bucket doesn't already hold it, so the second 12 and the second 7 change nothing: 4 keys.
+- `contains(17)` looks only in bucket 17 % 5 = 2, finds 12, 7 and 22 there but not 17, and answers False.
+- Each method searches one short bucket: O(1) on average, as long as the set resizes like a hash map to keep the buckets short.
+
+### Why `in` is fast
+`x in a_list` compares x with the items one by one until it finds it: O(n). `x in a_set` looks in one bucket: O(1) on average. This program counts the comparisons each one makes to find out that 1 is missing, for n items that are the multiples of 3, spread over n buckets:
+```python
+def list_checks(items, x):
+    checks = 0
+    for item in items:
+        checks += 1
+        if item == x:
+            break
+    return checks
+
+def set_checks(buckets, x):
+    checks = 0
+    for item in buckets[x % len(buckets)]:
+        checks += 1
+        if item == x:
+            break
+    return checks
+
+for n in [10, 100, 1000]:
+    items = list(range(0, 3 * n, 3))
+    buckets = [[] for i in range(n)]
+    for item in items:
+        buckets[item % n].append(item)
+    print(n, list_checks(items, 1), set_checks(buckets, 1))
+```
+```output
+10 10 1
+100 100 1
+1000 1000 1
+```
+The list has to check every item before it can say "missing", so its count grows with n. The set checks one bucket holding one item, whatever n is. That's the whole reason to reach for a set: whenever a program asks "have I got this?" many times, a set makes each question O(1).
+
+### Removing duplicates, keeping the order
+`set(items)` drops duplicates, but a set has no order, so the original order is lost. To keep each item's first appearance in order, use a set to remember what's been seen, and a list for the answer:
+```python
+def dedupe(items):
+    seen = set()
+    result = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            result.append(x)
+    return result
+
+print(dedupe([3, 1, 3, 2, 1, 5]))
+print(dedupe(["b", "a", "b", "c", "a"]))
+print(sorted(set([3, 1, 3, 2, 1, 5])))
+```
+```output
+[3, 1, 2, 5]
+['b', 'a', 'c']
+[1, 2, 3, 5]
+```
+The set answers "seen it?" and the list keeps the order. Checking `x not in result` on the list would give the same answer, but each check would search the list. For 1,000 different items that's up to 1 + 2 + ... + 999, about 500,000 comparisons, against 1,000 set lookups: O(n²) against O(n).
+
+### Seen before?
+Many problems come down to one question: "have I met this item before?" The **seen-before pattern** walks through the items once with a set of everything so far. For each item it checks the set first, then adds the item. Here it finds the **first repeat**, the first item to appear for the second time:
+```python
+def first_repeat(items):
+    seen = set()
+    for x in items:
+        if x in seen:
+            return x
+        seen.add(x)
+    return None
+
+print(first_repeat([4, 7, 1, 7, 4]))
+print(first_repeat(["mon", "tue", "wed"]))
+```
+```output
+7
+None
+```
+The answer is 7, not 4: 4 came first, but 7's second appearance (index 3) comes before 4's (index 4). The order of the two lines matters: checking before adding means an item is compared only with the items before it. One pass with an O(1) check per item is O(n); comparing every pair of items would be O(n²). Animation 1 shows this function at work.
+
+### Two numbers that add up
+**Two-sum**: do any two numbers in a list add up to a target? Checking every pair is O(n²). The seen-before pattern does it in one pass: a number x needs a partner `target - x`, so look for the partner among the numbers seen so far:
+```python
+def has_pair(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:
+            return True
+        seen.add(x)
+    return False
+
+def pair_indexes(nums, target):
+    where = {}
+    for i in range(len(nums)):
+        need = target - nums[i]
+        if need in where:
+            return (where[need], i)
+        where[nums[i]] = i
+    return None
+
+nums = [8, 3, 11, 5, 2]
+print(has_pair(nums, 7), has_pair(nums, 4), has_pair(nums, 22))
+print(pair_indexes(nums, 7), pair_indexes(nums, 19))
+```
+```output
+True False False
+(3, 4) (0, 2)
+```
+- For target 7, the 2 at the end needs 5, which is already in the set.
+- For target 4, the 2 needs another 2, and there's only one. Because each number is checked before it's added, a number can't pair with itself. For the same reason, 11 doesn't pair with itself for 22.
+- To return **where** the pair is, store a dictionary from each number to its index instead of a set. 11 + 8 = 19, so `pair_indexes` returns (0, 2).
+
+Animation 2 follows `has_pair` step by step.
+
+### More set operations
+You've met union `a | b`, intersection `a & b` and difference `a - b`. Two more:
+```python
+a = {1, 2, 3, 4}
+b = {3, 4, 5}
+print(a ^ b)
+print({3, 4} <= a, b <= a)
+```
+```output
+{1, 2, 5}
+True False
+```
+- `a ^ b` is the **symmetric difference**: the items in exactly one of the two sets, but not in both. It's the same set as `(a - b) | (b - a)`.
+- `a <= b` asks whether a is a **subset** of b: is every item of a also in b? `{3, 4}` is inside a, but 5 isn't in a, so `b <= a` is False.
+
+All of these build a new set or answer a question without changing a or b.
+
+### What set operations cost
+Each set operation makes one O(1) membership check (or one O(1) add) for every item it looks at, so its cost is the number of items it has to look at. The intersection only needs to look at the smaller set:
+```python
+def intersect(a, b):
+    if len(a) > len(b):
+        a, b = b, a
+    result = set()
+    checks = 0
+    for x in a:
+        checks += 1
+        if x in b:
+            result.add(x)
+    return sorted(result), checks
+
+small = {3, 10, 9}
+big = set(range(0, 1000, 3))
+print(intersect(small, big))
+print(intersect(big, small))
+```
+```output
+([3, 9], 3)
+([3, 9], 3)
+```
+Whichever way round the sets are given, `intersect` swaps them so that it loops over the 3-item set and checks each item in the 334-item set: 3 checks, not 334. Python's `&` does the same.
+
+| Operation | Looks at | Cost (a has m items, b has n) |
+| --- | --- | --- |
+| `x in a`, `a.add(x)`, `a.discard(x)` | one item | O(1) |
+| `a & b` | the smaller set | O(min(m, n)) |
+| `a - b`, `a <= b` | every item of a | O(m) |
+| `a \| b`, `a ^ b` | every item of both | O(m + n) |
+| `set(items)` | every item of the list | O(len(items)) |
+
+### Sets of positions
+Set items must be hashable, and tuples are, so a set of `(x, y)` tuples can remember positions on a grid. This walk starts at (0, 0) and follows the moves R (right), L (left), U (up) and D (down):
+```python
+x, y = 0, 0
+visited = {(0, 0)}
+for move in "RRULLDDR":
+    if move == "R":
+        x += 1
+    elif move == "L":
+        x -= 1
+    elif move == "U":
+        y += 1
+    else:
+        y -= 1
+    visited.add((x, y))
+print(len(visited), (1, 0) in visited, (5, 5) in visited)
+```
+```output
+8 True False
+```
+The walk visits (1, 0), (2, 0), (2, 1), (1, 1), (0, 1), then (0, 0) again, then (0, -1) and (1, -1). That's 9 positions counting the start, but (0, 0) is stored once, so the set holds 8. "Have I been here?" is then one O(1) check. A list can't go in a set: `{[1, 0]}` raises `TypeError: unhashable type: 'list'`, so positions are stored as tuples.
+
+=== keypoints
+- A hash set is a hash map with only keys: `add`, `in` and `remove` each look in one bucket, O(1) on average. Python's `set` is a hash table, so its items must be hashable: numbers, strings, tuples.
+- `x in a_list` is O(n), but `x in a_set` is O(1) on average. Building a set from n items is O(n), so for many lookups, build the set once.
+- To remove duplicates and keep the order, use a `seen` set and a result list: O(n). `set(items)` drops duplicates but loses the order.
+- The seen-before pattern checks `x in seen` before `seen.add(x)`. It finds the first repeat in one pass, and for two-sum it checks whether `target - x` was seen: O(n) instead of O(n²). A dictionary from each value to its index gives the positions.
+- `a ^ b` holds the items in exactly one of the sets; `a <= b` asks whether every item of a is in b.
+- A set operation costs one O(1) step per item it looks at: `&` is O(min(m, n)), `-` and `<=` are O(m), and `|` and `^` are O(m + n).
+
+=== example: Visitors on two days
+intro: Two days of website visitors, with repeat visits. Sets answer the questions about them in a line each.
+```python
+monday = ["ann", "bob", "cy", "ann", "dee", "bob"]
+tuesday = ["cy", "eve", "ann", "eve", "fay"]
+mon = set(monday)
+tue = set(tuesday)
+print(len(monday), len(mon), len(tuesday), len(tue))
+print(sorted(mon & tue))
+print(sorted(mon ^ tue))
+print(sorted(tue - mon))
+print(len(mon | tue))
+```
+1-2: Each visit is logged, so a name can appear more than once.
+3-4: Building each set is O(n), and drops the repeat visits.
+5: 6 visits but 4 different visitors on Monday; 5 visits but 4 visitors on Tuesday.
+6: Came on both days: the intersection. Sets of strings have no fixed order, so they're printed sorted.
+7: Came on exactly one of the days: the symmetric difference.
+8: New on Tuesday: in Tuesday's set but not in Monday's.
+9: 6 different people visited across the two days.
+
+=== example: Words in every review
+intro: Which words appear in every one of several reviews? Start with the first review's words and keep intersecting.
+```python
+reviews = [
+    "great food and great service",
+    "the food was great but the service was slow",
+    "slow but the food is great",
+]
+common = set(reviews[0].split())
+for review in reviews[1:]:
+    common = common & set(review.split())
+    print(sorted(common))
+```
+1-5: Three reviews, as strings.
+6: The words of the first review, each once: and, food, great, service.
+7: Go through the other reviews.
+8: Keep only the words that are also in this review. Each `&` loops over the smaller set, and `common` only gets smaller.
+9: After the second review: food, great, service. After the third, "service" is gone.
+
+=== animation: The first repeat
+view: set seen hit=x
+vars x
+intro: The seen-before pattern on a list of numbers. Each number is looked up in the set first, then added. Watch the set grow until a number finds itself already there.
+```python
+seen = set()
+for x in [4, 7, 1, 7, 4]:
+    if x in seen:
+        print("first repeat:", x)
+        break
+    seen.add(x)
+```
+1: An empty set: nothing seen yet.
+2: Take the next number, if any are left.
+3: Is {x} in the set? {x in seen}. That's one O(1) check, however big the set gets.
+4: Yes: {x} has been seen before, so it's the first repeat.
+5: Stop: there's no need to look at the rest.
+6: Not seen yet: remember {x}.
+
+=== animation: Two numbers that add up
+view: set seen hit=need
+vars x need
+intro: `has_pair` looks for two numbers that add up to 7. Each number works out the partner it needs and looks for it among the numbers already seen.
+```python
+nums = [8, 3, 11, 5, 2]
+target = 7
+seen = set()
+for x in nums:
+    need = target - x
+    if need in seen:
+        print(need, "+", x, "=", target)
+        break
+    seen.add(x)
+```
+1: The numbers to search.
+2: The total to find: 7.
+3: An empty set for the numbers seen so far.
+4: Take the next number, if any are left.
+5: {x} needs a partner of {target} - {x} = {target - x}.
+6: Has {need} been seen? {need in seen}.
+7: Yes: {need} came earlier, and {need} + {x} = {target}.
+8: Stop: one pass found the pair.
+9: No partner yet: add {x} for the numbers still to come.
+
+=== task: predict easy
+title: First appearances only
+code:
+```python
+seen = set()
+result = []
+for x in [5, 2, 5, 9, 2, 5]:
+    if x not in seen:
+        seen.add(x)
+        result.append(x)
+print(result, len(seen))
+```
+wrong[[2, 5, 9] 3]: Nothing sorts the result: it keeps the order in which each value first appeared, 5 first.
+wrong[[5, 2, 5, 9, 2, 5] 3]: Only values that aren't in `seen` yet are appended, so the repeats are skipped.
+wrong[[5, 2, 9] 6]: A set holds each value once: 5, 2 and 9, so its length is 3.
+hint: The second 5, the second 2 and the third 5 are already in `seen` when they come along.
+hint: `result` is a list, so it keeps the order things were appended in.
+right: `[5, 2, 9] 3`: the set remembers what's been seen and the list keeps the first appearances in order.
+wrong: 5 is new: append. 2 is new: append. 5 is seen: skip. 9 is new: append. 2 and 5 are seen: skip. The result is [5, 2, 9], and the set holds 3 values.
+
+=== task: mcq easy
+title: What a hash set is
+prompt: Which of these best describes a hash set, like Python's `set`?
+* A hash map that stores keys only, with no values :: Right. Each key goes into the bucket its hash picks, exactly as in a hash map.
+- A sorted list with the duplicates removed :: A set keeps no order. Sorted, `in` would take a binary search, O(log n), not O(1).
+- A list that is searched from the end :: Searching a list is O(n), whichever end it starts from.
+- A linked list of different items :: Searching a linked list is O(n) too.
+hint: How does a hash map find a key quickly?
+hint: What's left of a hash map if there are no values?
+right: A set is a hash map with keys only: the same hashing, buckets and resizing, so `add`, `in` and `remove` are O(1) on average.
+wrong: A hash set stores each key in the bucket its hash picks, exactly as a hash map does, only without a value next to it.
+
+=== task: fill easy
+title: The partner it needs
+prompt: Fill in the blank so that the loop finds two numbers that add up to the target, and the program prints:
+
+```output
+4 6
+```
+code:
+```python
+nums = [4, 9, 6, 1]
+target = 10
+seen = set()
+for x in nums:
+    if ?? in seen:
+        print(target - x, x)
+        break
+    seen.add(x)
+```
+answer: target - x
+wrong[x]: `x in seen` looks for a repeat of x itself. No number repeats here, so nothing is printed.
+hint: x needs a partner that makes the total 10.
+hint: For x = 6, the partner is 10 − 6 = 4.
+right: Each number looks for `target - x` among the numbers before it. 6 needs 4, which was seen first, so the loop prints `4 6`.
+wrong: The partner of x is the number that adds to it to make the target: `target - x`.
+
+=== task: code easy
+title: Any duplicates?
+prompt: Write `has_duplicates(items)` that returns True if any value appears more than once in the list `items`, and False otherwise. Use a set of the values seen so far, so that the whole check is O(n).
+starter:
+```python
+def has_duplicates(items):
+    seen = set()
+    # your code here
+    return False
+```
+solution:
+```python
+def has_duplicates(items):
+    seen = set()
+    for x in items:
+        if x in seen:
+            return True
+        seen.add(x)
+    return False
+```
+tests:
+- has_duplicates([1, 2, 3, 2])
+- has_duplicates([1, 2, 3])
+- has_duplicates([])
+- has_duplicates(["a", "b", "a"])
+- has_duplicates([7])
+- has_duplicates([0, 0])
+fail[1]: 2 appears twice.
+fail[4]: "a" appears twice: strings work in a set like numbers do.
+fail[6]: Two zeros are a duplicate.
+hint: For each item, first check whether it's in `seen`.
+hint: If it is, return True. Otherwise `seen.add(x)`. After the loop, return False.
+right: One pass with an O(1) check per item: O(n). `len(set(items)) < len(items)` gives the same answer, but this version stops at the first repeat.
+wrong: Walk through the items. If an item is already in `seen`, there's a duplicate: return True. Otherwise add it. If the loop ends, there were none.
+
+=== task: cells easy
+title: Seen before?
+prompt: This loop checks each number against a set before adding it. What does `x in seen` print for each number?
+code:
+```python
+seen = set()
+for x in [6, 2, 6, 9, 2]:
+    print(x in seen)
+    seen.add(x)
+```
+labels: 6 | 2 | 6 | 9 | 2
+answer: False | False | True | False | True
+wrong[False | False | True | False | False]: The first 2 was added before the second 2 comes along, so the second 2 is in the set: True.
+wrong[False | False | False | False | False]: The second 6 and the second 2 find their first copies already in the set: True.
+hint: The set starts empty, and each number is added after it's checked.
+hint: A number is in the set only if the same number came earlier.
+right: False, False, True, False, True: `in` is True exactly for the repeats. Checking before adding is the seen-before pattern.
+wrong: 6: the set is empty, False; then add 6. 2: False; add 2. 6: True. 9: False; add 9. 2: True.
+
+=== task: multi easy
+title: When a set helps
+prompt: Choose **every** job where using a set instead of a list makes the code faster.
+* Checking many times whether a name is in a big group of names :: Right. Each `in` is O(1) on a set, O(n) on a list.
+* Removing the duplicates from a big list :: Right. A `seen` set answers "had it?" in O(1).
+* Finding whether any value appears twice :: Right. One pass with a `seen` set.
+- Getting the 3rd item :: A set has no positions. A list gets `items[2]` in O(1).
+- Keeping items in the order they were added :: A set has no order.
+- Counting how many times each word appears :: A set can't hold counts; that's a job for a dictionary.
+hint: A set answers one question fast: is this item in here?
+hint: It has no positions, no order and no counts.
+right: Sets speed up membership questions: checking, removing duplicates, spotting repeats. For positions or order use a list; for counts, a dictionary.
+wrong: A set helps whenever the work is "is x in the group?": checking names, removing duplicates, finding repeats. It can't give the 3rd item, keep an order, or count.
+
+=== task: parsons easy
+title: The first repeat
+prompt: Arrange the lines so that `first_repeat` returns the first item that appears for a second time, and the program prints:
+
+```output
+8 None
+```
+
+Not every line is needed.
+lines:
+```python
+def first_repeat(items):
+    seen = set()
+    for x in items:
+        if x in seen:
+            return x
+        seen.add(x)
+    return None
+
+print(first_repeat([3, 8, 5, 8, 3]), first_repeat([1, 2]))
+```
+distractors:
+```python
+        seen.append(x)
+    seen = {}
+```
+hint: Check the set first, then add the item.
+hint: `{}` is an empty dictionary, not an empty set, and sets use `add`, not `append`.
+right: 8 is the first item to come back (at index 3), before 3 comes back at index 4. [1, 2] has no repeat, so the loop ends and the answer is None.
+wrong: Start with `seen = set()`. For each item, return it if it's in `seen`; otherwise `seen.add(x)`. Return None after the loop.
+
+=== task: mcq easy
+title: Why a seen set?
+prompt: `dedupe` keeps a set called `seen` as well as its `result` list. Why not check `if x not in result` on the list instead?
+* Checking a set is O(1), but checking the list searches it, O(n) each time, which makes the whole function O(n²) :: Right. The list keeps the order; the set makes the checks fast.
+- The list version would give a different answer :: It gives the same answer, only more slowly.
+- A list can't hold duplicates :: Lists can hold duplicates; that's why they need removing.
+- The set keeps the items sorted :: A set has no order; the order comes from the result list.
+hint: What does `x not in result` cost when `result` is a list?
+hint: It runs once for every item.
+right: Both versions give the same list, but the set turns n searches of a growing list into n O(1) checks: O(n) instead of O(n²).
+wrong: `x not in result` searches the list from the start each time. Doing that for every item is O(n²). A set answers the same question in O(1).
+
+=== task: predict easy
+title: More set operations
+code:
+```python
+a = {1, 2, 3, 4}
+b = {3, 4, 5, 6}
+print(sorted(a ^ b), sorted(a - b), a <= b)
+```
+wrong[[3, 4] [1, 2] False]: `^` is the symmetric difference: the items in exactly one of the sets. `[3, 4]` would be `a & b`.
+wrong[[1, 2, 5, 6] [5, 6] False]: `a - b` keeps the items of a that aren't in b: 1 and 2.
+wrong[[1, 2, 5, 6] [1, 2] True]: `a <= b` asks whether every item of a is in b. 1 isn't, so it's False.
+hint: 3 and 4 are in both sets.
+hint: `<=` means "is a subset of".
+right: `[1, 2, 5, 6] [1, 2] False`: the symmetric difference leaves out the shared 3 and 4, the difference keeps a's own items, and a isn't inside b.
+wrong: a ^ b: in exactly one set, 1, 2, 5, 6. a - b: in a but not b, 1, 2. a <= b: is all of a in b? No, 1 isn't.
+
+=== task: order easy
+title: Looking for a pair
+prompt: Put the steps that `has_pair` takes for each number in order.
+items:
+- Take the next number, x
+- Work out the partner it needs: target − x
+- If the partner is already in the set, a pair has been found
+- Otherwise, add x to the set and move on
+hint: The partner must have come earlier, so it's looked for before x is added.
+hint: x goes into the set last.
+right: Check first, then add: each number looks for a partner among the earlier numbers, so it's never paired with itself.
+wrong: For each number: work out target − x, look it up in the set of earlier numbers, and if it isn't there, add x for the numbers still to come.
+
+=== task: code medium
+title: Remove duplicates in order
+prompt: Write `dedupe(items)` that returns a new list with the duplicates removed, keeping the **first** appearance of each value, in the original order. It must be O(n).
+
+For example, `dedupe([3, 1, 3, 2, 1])` returns `[3, 1, 2]`.
+starter:
+```python
+def dedupe(items):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def dedupe(items):
+    result = []
+    seen = set()
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            result.append(x)
+    return result
+```
+tests:
+- dedupe([3, 1, 3, 2, 1])
+- dedupe([])
+- dedupe(["b", "a", "b"])
+- dedupe([7, 7, 7])
+- dedupe([1, 2, 3])
+- dedupe([2, 1, 2, 1, 3])
+speed: setup=items = list(range(n)) + list(range(n)) | call=dedupe(items) | target=O(n)
+slow:
+```python
+def dedupe(items):
+    result = []
+    for x in items:
+        if x not in result:
+            result.append(x)
+    return result
+```
+fail[1]: Keep the first 3 and the first 1, in the order they first appear: [3, 1, 2].
+fail[3]: Strings work too: ['b', 'a'].
+fail[6]: The order is the order of first appearances, not sorted: [2, 1, 3].
+hint: Keep a set `seen` beside the result list.
+hint: For each item: if it isn't in `seen`, add it to `seen` and append it to the result.
+hint: Checking `x not in result` would also work, but it searches the list every time: O(n²).
+right: The set answers "seen it?" in O(1), and the list keeps the order. Together: one pass, O(n).
+wrong: Walk through the items. When an item isn't in the `seen` set yet, add it to the set and append it to the result. Later copies are skipped.
+
+=== task: predict medium
+title: Which pair?
+code:
+```python
+def find_pair(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:
+            return (target - x, x)
+        seen.add(x)
+    return None
+
+print(find_pair([2, 7, 4, 5], 9), find_pair([3, 3], 6), find_pair([3], 6))
+```
+wrong[(2, 7) None None]: The second 3 finds the first 3 in the set: two different items that are equal still make a pair.
+wrong[(4, 5) (3, 3) None]: The function returns the first pair it completes: 7 finds 2 before 5 gets to 4.
+wrong[(2, 7) (3, 3) (3, 3)]: A single 3 can't pair with itself: the set is checked before 3 is added, and it's empty then.
+hint: The pair is returned as soon as the second number of a pair comes along.
+hint: For [3, 3], the first 3 is checked against an empty set, then added.
+right: `(2, 7) (3, 3) None`: 7 is the first number whose partner was already seen. Two equal numbers can pair, but one number can't pair with itself.
+wrong: [2, 7, 4, 5]: 2 needs 7 (not seen); 7 needs 2 (seen): (2, 7). [3, 3]: the second 3 finds the first: (3, 3). [3]: nothing to pair with: None.
+
+=== task: fill medium
+title: Intersection by hand
+prompt: Fill in the blank so that `intersect` loops over the smaller set and keeps the items that are also in the other one, and the program prints:
+
+```output
+[4, 6]
+```
+code:
+```python
+def intersect(a, b):
+    if len(a) > len(b):
+        a, b = b, a
+    result = set()
+    for x in a:
+        if x ?? b:
+            result.add(x)
+    return result
+
+print(sorted(intersect({1, 2, 3, 4, 5, 6}, {4, 6, 8})))
+```
+answer: in
+wrong[not in]: That keeps the items of the smaller set that are **not** in the other: `[8]`, which is `{4, 6, 8} - {1, 2, 3, 4, 5, 6}`.
+hint: After the swap, `a` is the smaller set, {4, 6, 8}.
+hint: An item belongs in the intersection when it's in both sets.
+right: `x in b` is an O(1) check, done once for each item of the smaller set: O(min(m, n)) for the whole intersection.
+wrong: Keep each item of the smaller set that is also in the larger one: `if x in b`.
+
+=== task: cells medium
+title: Sizes of set operations
+prompt: `a` holds the numbers 1 to 10, and `b` holds the even numbers 2 to 20. How many items does each result have?
+code:
+```python
+a = set(range(1, 11))
+b = set(range(2, 21, 2))
+```
+labels: len(a | b) | len(a & b) | len(a - b) | len(b - a) | len(a ^ b)
+answer: 15 | 5 | 5 | 5 | 10
+wrong[20 | 5 | 5 | 5 | 10]: A set holds each value once: 2, 4, 6, 8 and 10 are in both sets, so the union has 10 + 10 − 5 = 15.
+wrong[15 | 5 | 5 | 5 | 15]: `a ^ b` leaves out the values that are in both sets: 15 − 5 = 10.
+hint: a & b is the even numbers from 2 to 10.
+hint: a ^ b is everything in exactly one of the sets: a - b together with b - a.
+right: 15, 5, 5, 5 and 10. The symmetric difference is the union without the intersection: 15 − 5 = 10.
+wrong: In both: 2, 4, 6, 8, 10 (5). Only in a: the odd numbers 1 to 9 (5). Only in b: 12 to 20 (5). Union: 5 + 5 + 5 = 15. Symmetric difference: 5 + 5 = 10.
+
+=== task: mcq medium
+title: Build once, ask many times
+prompt: A list holds n names, and a program must answer q questions of the form "is this name in the list?". It turns the list into a set first. What is the total cost?
+* O(n + q): O(n) to build the set, then O(1) for each question :: Right.
+- O(n × q): each question searches the list :: That's the cost without the set.
+- O(q): the set answers each question in O(1) :: Building the set takes O(n) first.
+- O(n log n + q): the set has to be sorted :: A set isn't sorted; `set(names)` is built in O(n).
+hint: What does `set(names)` cost?
+hint: And each question afterwards?
+right: Build once, ask many times: O(n + q). For n = q = 10,000, that's about 20,000 steps instead of 100,000,000.
+wrong: `set(names)` is O(n). Each `in` on the set is O(1), so q questions are O(q). Together: O(n + q).
+
+=== task: predict medium
+title: Places on a walk
+code:
+```python
+visited = {(0, 0)}
+x, y = 0, 0
+for dx, dy in [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 0)]:
+    x += dx
+    y += dy
+    visited.add((x, y))
+print(len(visited), (1, 1) in visited, (0, 2) in visited)
+```
+wrong[6 True False]: A set keeps each position once. (0, 0) and (1, 0) are both visited twice, so there are 4 different positions.
+wrong[5 True False]: The walk comes back to (0, 0), which is in the set from the start: still 4 different positions.
+wrong[4 False False]: The second step goes up from (1, 0) to (1, 1), so (1, 1) was visited.
+hint: Follow the position: (1, 0), (1, 1), (0, 1), (0, 0), (1, 0).
+hint: Adding a position that's already in the set changes nothing.
+right: `4 True False`: tuples are hashable, so a set of `(x, y)` positions answers "been here?" in O(1).
+wrong: The walk goes (0, 0) → (1, 0) → (1, 1) → (0, 1) → (0, 0) → (1, 0): 4 different positions. (1, 1) was visited; (0, 2) wasn't.
+
+=== task: order medium
+title: Adding to a hash set
+prompt: Put the steps of `add(key)` in a hash set with separate chaining and resizing in order.
+items:
+- Work out the key's bucket: key % the number of buckets
+- Look for the key in that bucket's list
+- If it isn't there, append it and add 1 to the count
+- If the count is now more than the number of buckets, double the buckets and rehash every key
+hint: The bucket comes from the key.
+hint: Resizing is checked last, and only after a new key was added.
+right: Bucket, search, append, maybe resize: the same steps as a hash map's `put`, without a value.
+wrong: Find the bucket, search it, append the key if it's new (and count it), then double the buckets if the count has passed their number.
+
+=== task: multi medium
+title: One pass is enough
+prompt: Each of these answers a question about a list of n items. Choose **every** one that is O(n).
+* Removing duplicates with a `seen` set and a result list :: Right. One pass with O(1) checks.
+* Finding whether two numbers add up to a target, with a set of the numbers seen so far :: Right. One pass, one O(1) lookup per number.
+* Finding the first repeat by checking each item against a `seen` set :: Right. One pass.
+- Checking every pair of items to see whether any two are equal :: That's n(n − 1)/2 comparisons: O(n²).
+- Calling `items.count(x)` for every item x to find a repeat :: Each `count` walks the whole list: O(n²).
+- Sorting the list first and then comparing neighbours :: The sort alone is O(n log n).
+hint: Which ones make a single pass with O(1) work per item?
+hint: `count` and checking pairs both hide a second loop.
+right: The seen-before pattern turns "have I met this before?" into an O(1) set check, so one pass is enough.
+wrong: O(n): removing duplicates, two-sum and first repeat with a set. Not O(n): every pair (O(n²)), `count` for every item (O(n²)), and sorting first (O(n log n)).
+
+=== task: parsons medium
+title: Where is the pair?
+prompt: Arrange the lines so that `pair_indexes` returns the indexes of two numbers that add up to the target, and the program prints:
+
+```output
+(2, 3) None
+```
+
+Not every line is needed.
+lines:
+```python
+def pair_indexes(nums, target):
+    where = {}
+    for i in range(len(nums)):
+        need = target - nums[i]
+        if need in where:
+            return (where[need], i)
+        where[nums[i]] = i
+    return None
+
+print(pair_indexes([3, 9, 4, 6], 10), pair_indexes([1, 2], 5))
+```
+distractors:
+```python
+        where[i] = nums[i]
+            return (need, i)
+```
+hint: The dictionary goes from each number to its index.
+hint: Return the partner's index, `where[need]`, and the current index, i.
+right: 6 at index 3 needs 4, which was stored at index 2: (2, 3). In [1, 2] no two numbers make 5, so the answer is None.
+wrong: For each index i, work out `need = target - nums[i]`. If `need` is a key of `where`, return `(where[need], i)`; otherwise store `where[nums[i]] = i`. Return None after the loop.
+
+=== task: code medium
+title: Missing numbers
+prompt: Write `missing_numbers(nums, n)` that returns, in increasing order, the numbers from 1 to n that are **not** in the list `nums`. `nums` may hold duplicates and numbers outside 1 to n. It must be O(n + len(nums)).
+
+For example, `missing_numbers([3, 1, 5], 5)` returns `[2, 4]`.
+starter:
+```python
+def missing_numbers(nums, n):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def missing_numbers(nums, n):
+    result = []
+    present = set(nums)
+    for k in range(1, n + 1):
+        if k not in present:
+            result.append(k)
+    return result
+```
+tests:
+- missing_numbers([3, 1, 5], 5)
+- missing_numbers([], 3)
+- missing_numbers([1, 2], 2)
+- missing_numbers([2, 2, 9], 3)
+- missing_numbers([4], 0)
+speed: setup=nums = list(range(1, n + 1, 2)) | call=missing_numbers(nums, n) | target=O(n)
+slow:
+```python
+def missing_numbers(nums, n):
+    result = []
+    for k in range(1, n + 1):
+        if k not in nums:
+            result.append(k)
+    return result
+```
+fail[1]: 2 and 4 are the numbers from 1 to 5 that aren't in the list.
+fail[2]: An empty list is missing every number: [1, 2, 3].
+fail[4]: 9 is outside 1 to 3, so it doesn't matter; 1 and 3 are missing.
+hint: Make a set of `nums` once: `present = set(nums)`.
+hint: Then go through k = 1 to n, and append each k that isn't in `present`.
+right: Building the set is O(len(nums)), and each of the n checks is O(1). Checking `k not in nums` on the list instead would search it n times: O(n × len(nums)).
+wrong: Turn the list into a set once. Then loop k from 1 to n and collect every k that the set doesn't contain.
+
+=== task: code hard
+title: Build a hash set
+prompt: Write a class `HashSet` for integer keys with separate chaining. `self.buckets` is a list of lists of keys (a key's bucket is `key % len(self.buckets)`), starting with 4 empty buckets, and `self.count` is the number of keys. Methods:
+- `add(key)`: if the key isn't in its bucket, append it, add 1 to the count and return True; if it was already there, return False. When the count goes over the number of buckets, double the buckets and put every key into its new bucket,
+- `contains(key)`: True or False,
+- `remove(key)`: remove the key and return True, or return False if it isn't there.
+
+`add` must be O(1) amortized. Store the keys in your buckets: don't use a Python set or dict.
+starter:
+```python
+class HashSet:
+    def __init__(self):
+        self.buckets = [[] for i in range(4)]
+        self.count = 0
+
+    # your code here
+```
+solution:
+```python
+class HashSet:
+    def __init__(self):
+        self.buckets = [[] for i in range(4)]
+        self.count = 0
+
+    def add(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key in bucket:
+            return False
+        bucket.append(key)
+        self.count += 1
+        if self.count > len(self.buckets):
+            old = self.buckets
+            self.buckets = [[] for i in range(2 * len(old))]
+            for b in old:
+                for k in b:
+                    self.buckets[k % len(self.buckets)].append(k)
+        return True
+
+    def contains(self, key):
+        return key in self.buckets[key % len(self.buckets)]
+
+    def remove(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key in bucket:
+            bucket.remove(key)
+            self.count -= 1
+            return True
+        return False
+```
+tests:
+- (lambda s: [s.add(3), s.add(7), s.add(3), s.contains(7), s.contains(11), s.count])(HashSet())
+- (lambda s: [[s.add(k) for k in range(20)], [s.contains(k) for k in [0, 7, 19, 20]], s.count][1:])(HashSet())
+- (lambda s: [s.add(5), s.remove(5), s.remove(5), s.contains(5), s.count][1:])(HashSet())
+- (lambda s: [[s.add(k * 4) for k in range(10)], s.remove(16), [s.contains(k * 4) for k in range(10)]][1:])(HashSet())
+- (lambda s: [s.contains(1), s.remove(1), s.count])(HashSet())
+forbid[= set(]: Store the keys in your own buckets, not in a Python set.
+forbid[{}]: Store the keys in your own buckets, not in a Python dict.
+forbid[dict(]: Store the keys in your own buckets, not in a Python dict.
+speed: setup=s = HashSet() | call=[s.add(i) for i in range(n)] | target=O(n)
+slow:
+```python
+class HashSet:
+    def __init__(self):
+        self.buckets = [[] for i in range(4)]
+        self.count = 0
+
+    def add(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key in bucket:
+            return False
+        bucket.append(key)
+        self.count += 1
+        return True
+
+    def contains(self, key):
+        return key in self.buckets[key % len(self.buckets)]
+
+    def remove(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        if key in bucket:
+            bucket.remove(key)
+            self.count -= 1
+            return True
+        return False
+```
+fail[1]: The second `add(3)` finds 3 already there and returns False. 11 shares a bucket with 3 and 7, but it isn't in it.
+fail[2]: After several resizes, every key must still be found in its new bucket, and 20 was never added.
+fail[3]: The second remove finds nothing: False, and the count ends at 0.
+fail[4]: The multiples of 4 all start in bucket 0. After the resizes, removing 16 must leave the others findable.
+fail[5]: An empty set: nothing to find or remove.
+error[AttributeError]: Define `add`, `contains` and `remove`.
+hint: Every method starts by finding the bucket: `self.buckets[key % len(self.buckets)]`.
+hint: `add`: return False if the key is in the bucket; otherwise append it, count it, and resize when `self.count > len(self.buckets)`. Then return True.
+hint: To resize: keep the old buckets, make twice as many, and append every key `k` to `self.buckets[k % len(self.buckets)]`.
+right: A hash set is a hash map without values: the same buckets, the same resizing, O(1) on average for every operation. With 4 fixed buckets, the buckets would grow with n and n adds would cost O(n²).
+wrong: Find the key's bucket. `add` appends a new key, counts it and doubles the buckets when the count passes their number; `contains` checks the bucket; `remove` deletes the key from its bucket and lowers the count.
+
+=== task: code hard
+title: The longest streak
+prompt: Write `longest_streak(nums)` that returns the length of the longest run of consecutive whole numbers that are all in the list `nums`, in any order. For example, `longest_streak([5, 2, 99, 3, 4, 100, 1])` returns 5, for 1, 2, 3, 4 and 5. It must be O(n), so don't sort.
+
+Put the numbers in a set. A number `d` starts a run only if `d - 1` isn't in the set. From each start, count up while the next number is in the set.
+starter:
+```python
+def longest_streak(nums):
+    values = set(nums)
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_streak(nums):
+    values = set(nums)
+    best = 0
+    for d in values:
+        if d - 1 not in values:
+            length = 1
+            while d + length in values:
+                length += 1
+            if length > best:
+                best = length
+    return best
+```
+tests:
+- longest_streak([5, 2, 99, 3, 4, 100, 1])
+- longest_streak([])
+- longest_streak([7])
+- longest_streak([10, 12, 11, 11])
+- longest_streak([1, 3, 5])
+- longest_streak([-1, 0, 1, 5, 6])
+forbid[sorted(]: Don't sort: that's O(n log n). Use the set.
+forbid[.sort(]: Don't sort: that's O(n log n). Use the set.
+speed: setup=nums = list(range(n, 0, -1)) | call=longest_streak(nums) | target=O(n)
+slow:
+```python
+def longest_streak(nums):
+    values = set(nums)
+    best = 0
+    for d in values:
+        length = 1
+        while d + length in values:
+            length += 1
+        if length > best:
+            best = length
+    return best
+```
+fail[1]: 1, 2, 3, 4 and 5 are all there: a run of 5. 99 and 100 make a run of 2.
+fail[2]: No numbers: 0.
+fail[4]: Duplicates don't make a run longer: 10, 11, 12 is 3.
+fail[6]: Runs can include negative numbers and 0: -1, 0, 1 is 3.
+hint: Loop over the set. Skip `d` if `d - 1` is in the set: then d isn't the start of a run.
+hint: From a start, set `length = 1`, then `while d + length in values: length += 1`.
+hint: Keep the largest length in `best`.
+right: Each run is counted once, from its start, so the counting loop runs at most n times in all: O(n). Counting up from every number would be O(n²) on one long run.
+wrong: Make a set. For each number with no number one below it, count how many consecutive numbers follow it in the set, and keep the longest count.
+
+=== task: code hard
+title: A repeat close by
+prompt: Write `close_repeat(items, k)` that returns True if some value appears twice at positions at most k apart (indexes i and j with 0 < j − i ≤ k), and False otherwise. It must be O(n), even when k is large.
+
+Keep a set of the last k items. At each index i, first check whether `items[i]` is in it; then add `items[i]`, and if the set now holds more than k items, remove `items[i - k]`, which has become too far back.
+starter:
+```python
+def close_repeat(items, k):
+    window = set()
+    # your code here
+    return False
+```
+solution:
+```python
+def close_repeat(items, k):
+    window = set()
+    for i in range(len(items)):
+        if items[i] in window:
+            return True
+        window.add(items[i])
+        if len(window) > k:
+            window.remove(items[i - k])
+    return False
+```
+tests:
+- close_repeat([1, 2, 3, 1], 3)
+- close_repeat([1, 2, 3, 1], 2)
+- close_repeat([5, 5], 1)
+- close_repeat([], 2)
+- close_repeat([4, 1, 4], 1)
+- close_repeat([1, 0, 1, 1], 1)
+- close_repeat([7, 7], 0)
+speed: setup=items = list(range(n)) | call=close_repeat(items, n // 2) | target=O(n)
+slow:
+```python
+def close_repeat(items, k):
+    for i in range(len(items)):
+        for j in range(i + 1, min(i + k + 1, len(items))):
+            if items[i] == items[j]:
+                return True
+    return False
+```
+fail[1]: The two 1s are at positions 0 and 3: 3 apart, which is allowed when k is 3.
+fail[2]: With k = 2, the two 1s are too far apart.
+fail[5]: The 4s are 2 apart, more than k = 1.
+fail[7]: With k = 0, no two positions are close enough.
+error[KeyError]: Remove `items[i - k]` only once the window holds more than k items; it's always in the window then.
+hint: Before adding `items[i]`, check whether it's already in `window`.
+hint: After adding it, if `len(window) > k`, remove `items[i - k]`.
+hint: The window then always holds the last k items, so each check is O(1).
+right: The set slides along with the loop: one add and at most one remove per item, O(n) in all, whatever k is. Comparing each item with the next k items would be O(n × k).
+wrong: Keep a set of the last k items. If the current item is already in it, there's a close repeat. Otherwise add it, and drop the item k places back once the set holds more than k items.
+
+=== task: code hard
+title: Pairs with a difference
+prompt: Write `count_pairs(nums, k)` that returns how many different pairs of values `(a, a + k)` can be made from the values in the list `nums`, for a whole number k of at least 1. Each value counts once, however many times it appears. It must be O(n).
+
+For example, `count_pairs([3, 1, 4, 1, 5], 2)` returns 2: (1, 3) and (3, 5).
+starter:
+```python
+def count_pairs(nums, k):
+    values = set(nums)
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+def count_pairs(nums, k):
+    values = set(nums)
+    count = 0
+    for a in values:
+        if a + k in values:
+            count += 1
+    return count
+```
+tests:
+- count_pairs([3, 1, 4, 1, 5], 2)
+- count_pairs([1, 2, 3, 4, 5], 1)
+- count_pairs([1, 1, 1], 2)
+- count_pairs([], 1)
+- count_pairs([10, 7, 4, 1], 3)
+- count_pairs([1, 5, 9, 5], 4)
+speed: setup=nums = list(range(n)) | call=count_pairs(nums, 3) | target=O(n)
+slow:
+```python
+def count_pairs(nums, k):
+    values = set(nums)
+    count = 0
+    for a in values:
+        for b in values:
+            if b - a == k:
+                count += 1
+    return count
+```
+fail[1]: The values are 1, 3, 4 and 5. 1 pairs with 3, and 3 with 5: 2 pairs. The second 1 doesn't make another pair.
+fail[3]: Only the value 1: there's no pair with a difference of 2.
+fail[5]: 1 → 4, 4 → 7 and 7 → 10: 3 pairs.
+fail[6]: 1 → 5 and 5 → 9. The two 5s are one value.
+hint: Use the set `values`, so that each value is counted once.
+hint: For each value a, there's a pair if `a + k` is in the set.
+hint: Count those values.
+right: Each value needs one O(1) check for its partner: O(n). Checking every pair of values would be O(n²).
+wrong: Make a set of the values. For each value a, check whether a + k is also in the set, and count how many times it is.
+
+=== task: predict hard
+title: Two ways to the same set
+code:
+```python
+a = set(range(1, 7))
+b = {x * 2 for x in range(1, 5)}
+c = (a - b) | (b - a)
+print(sorted(c), c == a ^ b, len(a & b))
+```
+wrong[[1, 3, 5] True 3]: b - a holds 8, the one value of b that isn't in a, and the union adds it to c.
+wrong[[1, 3, 5, 8] False 3]: `a ^ b` is the values in one set but not both, which is exactly how c was built.
+wrong[[1, 3, 5, 8] True 4]: a & b is {2, 4, 6}: 8 isn't in a.
+hint: b is {2, 4, 6, 8}.
+hint: a - b and b - a are the values only in a and only in b.
+right: `(a - b) | (b - a)` is the definition of the symmetric difference, so it equals `a ^ b`. 2, 4 and 6 are in both sets.
+wrong: a = {1, 2, 3, 4, 5, 6} and b = {2, 4, 6, 8}. a - b = {1, 3, 5} and b - a = {8}, so c = {1, 3, 5, 8}, the same as a ^ b. a & b = {2, 4, 6}: 3 items.
+
+=== task: predict hard
+title: Where the runs start
+code:
+```python
+days = {7, 3, 8, 1, 2, 9, 5}
+starts = sorted(d for d in days if d - 1 not in days)
+lengths = []
+for d in starts:
+    length = 1
+    while d + length in days:
+        length += 1
+    lengths.append(length)
+print(starts, lengths)
+```
+wrong[[1, 5, 7] [3, 1, 2]]: From 7, the run is 7, 8 and 9: length 3.
+wrong[[3, 5, 9] [3, 1, 3]]: A run starts where d − 1 is missing, so the starts are the smallest numbers of their runs: 1, 5 and 7.
+wrong[[1, 5, 7] [2, 0, 2]]: `length` starts at 1 for the start day itself, then counts each following day.
+hint: 0, 4 and 6 aren't in the set.
+hint: From each start, count the days one at a time until a day is missing.
+right: Three runs: 1 to 3, 5 alone, and 7 to 9. Only the start of each run does any counting, which keeps the whole method O(n).
+wrong: 0, 4 and 6 aren't in the set, so 1, 5 and 7 start runs. From 1, days 2 and 3 follow (3 days). From 5, 6 is missing (1 day). From 7, days 8 and 9 follow (3 days).
+
+=== task: cells hard
+title: Tracing pair_indexes
+prompt: `pair_indexes` from this lesson runs on `[4, 11, 7, 2, 9]` with target 13. What is `need` at each index the loop reaches, and what does the function return?
+code:
+```python
+def pair_indexes(nums, target):
+    where = {}
+    for i in range(len(nums)):
+        need = target - nums[i]
+        if need in where:
+            return (where[need], i)
+        where[nums[i]] = i
+    return None
+
+result = pair_indexes([4, 11, 7, 2, 9], 13)
+```
+labels: need at i = 0 | need at i = 1 | need at i = 2 | need at i = 3 | returned
+answer: 9 | 2 | 6 | 11 | (1, 3)
+wrong[9 | 2 | 6 | 11 | (3, 1)]: The earlier index comes first: `where[need]` is 11's index, 1, and i is 3.
+wrong[9 | 2 | 6 | 11 | (11, 2)]: The function returns indexes, not values: 11 is at index 1 and 2 is at index 3.
+hint: `need` is 13 minus the current number.
+hint: At i = 3 the number is 2, and 11 was stored at index 1.
+right: 9, 2, 6, 11, then `(1, 3)`: nums[1] + nums[3] = 11 + 2 = 13, found in one pass without looking at 9.
+wrong: i = 0: 13 − 4 = 9. i = 1: 13 − 11 = 2. i = 2: 13 − 7 = 6. i = 3: 13 − 2 = 11, which is in `where` with index 1, so it returns (1, 3).
+
+=== task: mcq hard
+title: Check, then add
+prompt: `has_pair` checks `target - x in seen` **before** it adds x to `seen`. What would go wrong if it added x first?
+* A number could pair with itself: with target 10 and a single 5, it would find 5 in the set and report a pair that doesn't exist :: Right. Checking first means only earlier numbers can be partners.
+- The function would become O(n²) :: Adding first is still one O(1) step per number.
+- Nothing: the order of the two lines doesn't matter :: It matters whenever target − x equals x.
+- It would miss pairs of two equal numbers, like 5 and 5 :: Those are still found: the second 5 finds the first in the set either way.
+hint: Try nums = [5] and target = 10.
+hint: When is target − x the same as x?
+right: If x were added first, `target - x in seen` would find x itself whenever the target is 2 × x. Checking first allows only earlier numbers as partners.
+wrong: With x added first, a lone 5 and target 10 would find 5 in the set: a "pair" of one number. Check, then add.
+
+=== task: multi hard
+title: What set operations cost
+prompt: `a` is a set of m items and `b` is a set of n items. Choose **every** true statement about the average cost.
+* `a & b` is O(min(m, n)): it loops over the smaller set and checks each item in the other :: Right.
+* `a | b` is O(m + n): every item of both sets goes into the new set :: Right.
+* `a - b` is O(m): each item of a is checked in b :: Right.
+* `a <= b` is O(m): each item of a must be found in b :: Right. It can stop at the first item that isn't.
+- `a & b` is O(m × n), because every pair of items is compared :: Hashing avoids comparing pairs: each check is O(1).
+- `a ^ b` is O(1) :: It builds a new set from both sets: O(m + n).
+hint: Each operation does one O(1) check or add for every item it looks at.
+hint: Which items does each operation have to look at?
+right: A set operation costs one O(1) step per item it looks at: the smaller set for `&`, the left set for `-` and `<=`, and both sets for `|` and `^`.
+wrong: `&` is O(min(m, n)), `|` and `^` are O(m + n), and `-` and `<=` are O(m). Nothing compares every pair.
+
+=== task: parsons hard
+title: Back where I've been
+prompt: Arrange the lines so that `first_revisit` returns the first position that a walk visits for a second time, and the program prints:
+
+```output
+(0, 0) None
+```
+
+Not every line is needed.
+lines:
+```python
+def first_revisit(moves):
+    x, y = 0, 0
+    seen = {(0, 0)}
+    for m in moves:
+        if m == "R":
+            x += 1
+        elif m == "L":
+            x -= 1
+        elif m == "U":
+            y += 1
+        else:
+            y -= 1
+        if (x, y) in seen:
+            return (x, y)
+        seen.add((x, y))
+    return None
+
+print(first_revisit("RULDR"), first_revisit("RRU"))
+```
+distractors:
+```python
+        if [x, y] in seen:
+        seen.add(x, y)
+```
+hint: Positions are stored as tuples, because tuples are hashable and lists aren't.
+hint: After each move, check the new position first, then add it.
+right: R, U, L, D goes round a square and lands back on (0, 0), which was in the set from the start. "RRU" never comes back, so the answer is None.
+wrong: Start at (0, 0) with it already in `seen`. After each move, return the position if it's in `seen`; otherwise add it as a tuple. Return None when the moves run out.

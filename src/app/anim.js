@@ -277,7 +277,11 @@
     if (!r.found) return `<div class="emptyv">${esc(name || '?')} doesn't exist yet</div>`;
     const items = seq(r.v) || [];
     if (!items.length) return '<div class="emptyv">empty set</div>';
-    return '<div class="queuev">' + items.map((x) => `<div class="it" style="border-radius:999px">${esc(label(x))}</div>`).join('') + '</div>';
+    const hit = spec.hit ? lookup(frame, spec.hit) : { found: false };
+    return '<div class="queuev">' + items.map((x) => {
+      const isHit = hit.found && JSON.stringify(hit.v) === JSON.stringify(x);
+      return `<div class="it${isHit ? ' hit' : ''}" style="border-radius:999px">${esc(label(x))}</div>`;
+    }).join('') + '</div>';
   }
 
   function viewBuckets(spec, frame) {

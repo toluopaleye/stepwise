@@ -87,7 +87,8 @@ def md(text: str) -> str:
             while i < len(lines) and lines[i].strip().startswith("|"):
                 rows.append(lines[i].strip())
                 i += 1
-            cells = [[c.strip() for c in r.strip("|").split("|")] for r in rows]
+            # A cell may contain a literal pipe written as \| (e.g. the set union `a \| b`).
+            cells = [[c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", r.strip("|"))] for r in rows]
             body = [r for r in cells if not all(re.fullmatch(r":?-{2,}:?", c) for c in r)]
             h = "<table class=\"mdtable\"><thead><tr>" + "".join(f"<th scope=\"col\">{inline_md(c)}</th>" for c in body[0]) + "</tr></thead><tbody>"
             for r in body[1:]:
