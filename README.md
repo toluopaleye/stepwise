@@ -34,3 +34,18 @@ python3 tools/tbtest.py && python3 tools/difftest.py
 ```
 
 `dist/index.html` plus `dist/lessons/*.json` is the site.
+
+## Hosting
+
+Two builds come out of `dist/`:
+
+- `dist/index.html` + `dist/lessons/` is published on claude.ai as an artifact.
+- `dist/web/` is the same course as a full web page, hosted on **Firebase** (project `stepwise-84a2b`) at
+  https://stepwise-84a2b.web.app. There, learners can sign in with Google and their progress is saved in
+  Firestore (`users/{uid}`, rules in `firestore.rules`), so it follows them to any device. Signed out,
+  progress stays in the browser.
+
+Every push to `main` runs `.github/workflows/deploy.yml`: it builds the course (checking every answer against
+CPython), runs the runner tests, and deploys hosting and Firestore rules. Deploying needs a repository secret
+`FIREBASE_SERVICE_ACCOUNT` holding a Google Cloud service-account key (JSON) with the **Firebase Admin** and
+**Service Usage Consumer** roles on the project.

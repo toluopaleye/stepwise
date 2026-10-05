@@ -1,0 +1,48 @@
+name: Build and deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Runs every example, answer and test in CPython and in the in-browser runner, then writes dist/.
+      - name: Build the course
+        run: python3 tools/build.py --allow-short
+
+      - name: Runner fidelity tests
+        run: python3 tools/tbtest.py && python3 tools/difftest.py
+
+      - name: Deploy hosting and Firestore rules
+        if: env.HAS_KEY == 'true'
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          KEY="$RUNNER_TEMP/firebase-key.json"
+          printf '%s' "$SERVICE_ACCOUNT" > "$KEY"
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --project stepwise-84a2b --non-interactive
+          rm -f "$KEY"
+
+      - name: Waiting for the deploy key
+        if: env.HAS_KEY != 'true'
+        run: echo "Built fine. Add the FIREBASE_SERVICE_ACCOUNT secret to deploy (see README)."

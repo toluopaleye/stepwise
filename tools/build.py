@@ -845,6 +845,38 @@ def write_atomic(path, text):
     tmp.replace(path)
 
 
+FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
+           "%3Crect width='32' height='32' rx='7' fill='%230A0C10'/%3E"
+           "%3Cpath d='M8 10l6 6-6 6' fill='none' stroke='%23FFD43B' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E"
+           "%3Cpath d='M16 23h8' stroke='%23FFD43B' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E")
+
+
+def write_web(out_dir, page, ldir):
+    """The Firebase Hosting build (dist/web): the same page as a full HTML document, plus Google sign-in and
+    progress sync (src/app/firebase.js). The claude.ai build (dist/index.html) is a page fragment that the
+    artifact host wraps itself."""
+    web = out_dir / "web"
+    (web / "lessons").mkdir(parents=True, exist_ok=True)
+    names = {f.name for f in ldir.glob("*.json")}
+    for old in (web / "lessons").glob("*.json"):
+        if old.name not in names:
+            old.unlink()
+    for f in ldir.glob("*.json"):
+        write_atomic(web / "lessons" / f.name, f.read_text())
+    head, sep, body = page.partition('<div id="app">')
+    if not sep:
+        raise BuildError("page template has no <div id=\"app\">")
+    fb = (ROOT / "src" / "app" / "firebase.js").read_text()
+    doc = ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+           "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n"
+           "<meta name=\"theme-color\" content=\"#0A0C10\">\n"
+           f"<link rel=\"icon\" href=\"{FAVICON}\">\n"
+           "<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}"
+           "[hidden]{display:none!important}</style>\n"
+           + head.strip() + "\n</head>\n<body>\n" + sep + body.rstrip() + "\n<script>" + fb + "</script>\n</body>\n</html>\n")
+    write_atomic(web / "index.html", doc)
+
+
 def build(only=None, skip_diff=False, check_only=False, out_dir=None):
     (DIST).mkdir(exist_ok=True)
     bundle = bundle_py.bundle()
@@ -936,6 +968,7 @@ def build(only=None, skip_diff=False, check_only=False, out_dir=None):
               .replace("/*__APP__*/", js)
               .replace("/*__COURSE__*/", "window.COURSE = " + course_js + ";"))
     write_atomic(out_dir / "index.html", out)
+    write_web(out_dir, out, ldir)
     size = (out_dir / "index.html").stat().st_size
     lsize = sum(f.stat().st_size for f in ldir.glob("*.json"))
     print(f"wrote {out_dir / 'index.html'} ({size / 1e6:.2f} MB) + {len(course['lessons'])} lesson files ({lsize / 1e6:.2f} MB)")

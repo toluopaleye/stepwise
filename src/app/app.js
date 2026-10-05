@@ -35,6 +35,7 @@
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
+    cloud: '<path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.25 4.25 0 0 1-.5 8.5z"/>',
   };
   const icon = (n, extra) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"${extra ? ' ' + extra : ''}>${ICONS[n] || ''}</svg>`;
   const tmpDiv = document.createElement('div');
@@ -150,6 +151,16 @@
   let prog = blankProgress();
   try { const raw = lsGet(PKEY); if (raw) prog = Object.assign(blankProgress(), JSON.parse(raw)); } catch (e) { prog = blankProgress(); }
   let cloudRef = null, saving = false, dirty = false, saveTimer = null;
+  // Sign-in for sync when the site runs outside claude.ai (window.StepwiseCloud, e.g. Firebase).
+  // null = no sign-in available here; otherwise { api, user, menu, state: 'saved' | 'saving' | 'offline' }
+  let acct = null;
+  function setSyncState(st) {
+    if (!acct) return;
+    acct.state = st;
+    const el = root.querySelector('.acct .acct-st');
+    if (el) el.textContent = SYNC_TEXT[st] || '';
+  }
+  const SYNC_TEXT = { saved: 'Synced', saving: 'Saving…', offline: 'Not synced' };
   function mergeProgress(a, b) {
     const out = blankProgress();
     out.xp = Math.max(a.xp || 0, b.xp || 0);
@@ -175,9 +186,11 @@
     if (!cloudRef) return;
     if (saving) { dirty = true; return; }
     saving = true;
-    try { await cloudRef.set(JSON.parse(JSON.stringify(prog))); } catch (e) { /* keep local copy */ }
+    setSyncState('saving');
+    const ref = cloudRef;
+    try { await ref.set(JSON.parse(JSON.stringify(prog))); setSyncState('saved'); } catch (e) { setSyncState('offline'); /* keep local copy */ }
     saving = false;
-    if (dirty) { dirty = false; flushCloud(); }
+    if (dirty && cloudRef) { dirty = false; flushCloud(); }
   }
   function saveProgress() {
     prog.updated = Date.now();
@@ -276,8 +289,17 @@
       <nav class="crumbs" aria-label="Breadcrumb"><button data-act="drawer">Unit ${info.unitIdx + 1} · ${esc(info.unit.title)}</button><span class="sep" aria-hidden="true">/</span>${crumbs}<span>${esc(htmlToText(info.title))}</span><span class="sep" aria-hidden="true">/</span><span class="here">${here}</span></nav>
       <div class="spacer"></div>
       <ol class="segs" aria-label="Lesson progress: ${here}">${segs}</ol>
-      <div class="stats"><span>${icon('flame', 'style="color:var(--orange)"')}${plural(streakCount(), 'day')} streak</span><span>${icon('bolt', 'style="color:var(--accent)"')}${prog.xp || 0} XP</span></div>
+      <div class="stats"><span>${icon('flame', 'style="color:var(--orange)"')}${plural(streakCount(), 'day')} streak</span><span>${icon('bolt', 'style="color:var(--accent)"')}${prog.xp || 0} XP</span>${acctHTML()}</div>
     </header>`;
+  }
+
+  function acctHTML() {
+    if (!acct) return '';
+    const u = acct.user;
+    if (!u) return `<button class="acct" data-act="acct-signin" title="Sign in with Google to save your progress to your account and use it on any device">${icon('cloud')}<span>Sign in to sync</span></button>`;
+    const initial = esc((u.name || u.email || '?').trim().charAt(0).toUpperCase());
+    const menu = acct.menu ? `<div class="acct-menu" role="dialog" aria-label="Account"><div class="who">Signed in as<br><b>${esc(u.email || u.name)}</b></div><div class="note-sm">Your progress is saved to this account, so it follows you to any device.</div><button class="btn quiet" data-act="acct-signout">Sign out</button></div>` : '';
+    return `<span class="acct-wrap"><button class="acct on" data-act="acct-menu" aria-expanded="${acct.menu ? 'true' : 'false'}" title="${esc(u.email || u.name)}"><span class="av" aria-hidden="true">${initial}</span><span class="acct-st">${SYNC_TEXT[acct.state] || 'Synced'}</span></button>${menu}</span>`;
   }
 
   // ---------------------------------------------------------------- render: learn
@@ -1292,6 +1314,9 @@
     if (act === 'drawer-close-bg') { if (e.target.closest('[data-stop]')) return; S.drawer = false; render({ keepScroll: true }); return; }
     const L = LESSONS[S.lesson];
     if (act === 'reload-lesson') { render({ top: true }); return; }
+    if (act === 'acct-signin') { if (acct) acct.api.signIn().catch((err) => { toast(err && err.message ? 'Sign-in didn\'t finish: ' + err.message : 'Sign-in didn\'t finish.'); }); return; }
+    if (act === 'acct-menu') { if (acct) { acct.menu = !acct.menu; render({ keepScroll: true }); } return; }
+    if (act === 'acct-signout') { if (acct) { acct.menu = false; acct.api.signOut(); } return; }
     if (!L && act !== 'drawer' && act !== 'drawer-close' && act !== 'lesson') return;
     const ts = L && S.step > 0 ? TS(S.lesson, S.step) : null;
     const T = L && S.step > 0 ? L.tasks[S.step - 1] : null;
@@ -1387,6 +1412,35 @@
   setTimeout(() => {
     try { PR.run('def _w(n):\n    return 0 if n == 0 else 1 + _w(n - 1)\nfor _ in range(30):\n    _w(150)\n', { stepLimit: 2000000 }); } catch (e) { /* ignore */ }
   }, 400);
+  // Outside claude.ai: an optional sign-in provider (see src/app/firebase.js) syncs progress to the learner's account.
+  function attachCloud(api) {
+    if (!api || acct) return;
+    acct = { api, user: null, menu: false, state: 'saved' };
+    api.onUser(async (u) => {
+      acct.user = u;
+      acct.menu = false;
+      cloudRef = null;
+      if (u) {
+        try {
+          const ref = api.progressRef(u.uid);
+          const snap = await ref.get();
+          if (acct.user !== u) return;
+          if (snap.exists) {
+            prog = mergeProgress(prog, snap.data() || {});
+            lsSet(PKEY, JSON.stringify(prog));
+          }
+          cloudRef = ref;
+          flushCloud();
+        } catch (e) { acct.state = 'offline'; }
+      }
+      render({ keepScroll: true });
+    });
+    render({ keepScroll: true });
+  }
+  if (!(window.claude && typeof window.claude.use === 'function')) {
+    if (window.StepwiseCloud) attachCloud(window.StepwiseCloud);
+    else window.addEventListener('stepwise-cloud', () => attachCloud(window.StepwiseCloud), { once: true });
+  }
   (async function cloud() {
     const cl = window.claude;
     if (!cl || typeof cl.use !== 'function') return;
