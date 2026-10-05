@@ -1,0 +1,1249 @@
+=== lesson
+id: ds-hash-open
+title: Open addressing
+summary: In open addressing, a hash map keeps every pair in one flat list of slots, one pair per slot. A key whose slot is taken probes along to the next free slot. You'll write `put` and `get` with linear probing, see why a lookup stops at an empty slot, why deleting needs a "deleted" marker, how clusters make a nearly full table slow, and why the table must be resized long before it's full.
+
+=== learn
+### One pair per slot
+**Open addressing** keeps every pair in the table itself: one list of `size` **slots**, each holding a single `(key, value)` pair, or None if it's empty. There are no chains.
+
+A key's **home slot** is `key % size`. If the home slot is taken by another key, the pair goes into another free slot of the same list. The order the slots are tried in is the **probe sequence**, and the simplest one is **linear probing**: try the next slot, then the one after it, wrapping round from the last slot to slot 0, exactly as the circular queue did with `% size`. Each slot looked at is one **probe**.
+
+| | Separate chaining | Open addressing |
+| --- | --- | --- |
+| A bucket or slot holds | a chain of any number of pairs | at most one pair |
+| A colliding key | joins the chain | goes into another free slot |
+
+Python's `dict` and `set` use open addressing. Almost everything in this lesson comes down to counting probes.
+
+### Putting a key
+`put` starts at the key's home slot and moves along until it finds an empty slot or the key itself:
+```python
+def put(slots, key, value):
+    i = key % len(slots)
+    while slots[i] is not None and slots[i][0] != key:
+        i = (i + 1) % len(slots)
+    slots[i] = (key, value)
+
+slots = [None] * 7
+for key, name in [(10, "Ann"), (24, "Ben"), (17, "Cy"), (6, "Dee"), (13, "Eve")]:
+    put(slots, key, name)
+print(slots)
+```
+```output
+[(13, 'Eve'), None, None, (10, 'Ann'), (24, 'Ben'), (17, 'Cy'), (6, 'Dee')]
+```
+| key | home slot (`key % 7`) | slots tried | stored in |
+| --- | --- | --- | --- |
+| 10 | 3 | 3 | 3 |
+| 24 | 3 | 3, 4 | 4 |
+| 17 | 3 | 3, 4, 5 | 5 |
+| 6 | 6 | 6 | 6 |
+| 13 | 6 | 6, 0 | 0 |
+
+- If the loop stops at the key itself, `slots[i] = (key, value)` replaces its pair: an update.
+- `(i + 1) % len(slots)` wraps from slot 6 round to slot 0, which is how 13 ended up in slot 0.
+- If every slot were full, the loop would never stop. The table must always keep at least one empty slot; Step 7 makes sure of that.
+
+Animation 1 shows these puts probe by probe.
+
+### Looking a key up
+`get` follows the same path as `put`. It stops when it finds the key, or when it reaches an empty slot:
+```python
+def get(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i][0] == key:
+            return slots[i][1]
+        i = (i + 1) % len(slots)
+    return None
+
+slots = [(13, "Eve"), None, None, (10, "Ann"), (24, "Ben"), (17, "Cy"), (6, "Dee")]
+print(get(slots, 17), get(slots, 13), get(slots, 31))
+```
+```output
+Cy Eve None
+```
+- 17 is found on the third probe (slots 3, 4 and 5), and 13 on the second, after wrapping round (slots 6 and 0).
+- 31 isn't there. Its home slot is 31 % 7 = 3, so the search tries slots 3, 4, 5, 6, 0 and then 1, which is empty. If 31 had ever been put, `put` would have stored it in that empty slot or earlier. So reaching an empty slot proves the key is missing.
+
+That miss took 6 probes in a table of only 7 slots. A miss walks to the end of the run of filled slots it starts in, which is why open addressing slows down as the table fills.
+
+### Deleting breaks the path
+The obvious way to delete 24 is to set its slot back to None. But that breaks the path to 17:
+```python
+def get(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i][0] == key:
+            return slots[i][1]
+        i = (i + 1) % len(slots)
+    return None
+
+slots = [(13, "Eve"), None, None, (10, "Ann"), (24, "Ben"), (17, "Cy"), (6, "Dee")]
+print(get(slots, 17))
+slots[4] = None
+print(get(slots, 17))
+```
+```output
+Cy
+None
+```
+17's home slot is 3, and its path runs through slots 3, 4 and 5. With slot 4 empty, `get(17)` stops at slot 4 and decides that 17 isn't there, even though it's still sitting in slot 5. In open addressing, an empty slot means "no key's path ever went past here", so deleting must never empty a slot.
+
+> Setting a deleted slot to None is the classic open addressing bug. Every key stored further along the same path becomes impossible to find.
+
+### Tombstones
+Instead, `delete` leaves a marker, called a **tombstone**, that means "a pair was here: keep looking". Here the marker is the string `"deleted"`:
+```python
+DELETED = "deleted"
+
+def get(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i] != DELETED and slots[i][0] == key:
+            return slots[i][1]
+        i = (i + 1) % len(slots)
+    return None
+
+def delete(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i] != DELETED and slots[i][0] == key:
+            slots[i] = DELETED
+            return True
+        i = (i + 1) % len(slots)
+    return False
+
+slots = [(13, "Eve"), None, None, (10, "Ann"), (24, "Ben"), (17, "Cy"), (6, "Dee")]
+print(delete(slots, 24), get(slots, 17), get(slots, 24))
+print(slots)
+```
+```output
+True Cy None
+[(13, 'Eve'), None, None, (10, 'Ann'), 'deleted', (17, 'Cy'), (6, 'Dee')]
+```
+- `get` and `delete` step over a tombstone as if the slot were full, but a tombstone never matches a key: `slots[i] != DELETED` is checked before `slots[i][0]`.
+- `put` may store a new pair in a tombstone's slot. But first it must walk on to make sure the key isn't further along the path, or the key could end up stored twice. Example 1 does this.
+- Tombstones still make every search that passes over them longer. A resize (Step 7) leaves them behind.
+
+Animation 2 follows a search past a tombstone.
+
+### Clustering
+Linear probing has a weakness. A colliding key goes into the next free slot, so filled slots bunch together into **clusters**: runs of filled slots with no gap between them. A key whose home slot is anywhere in a cluster walks to the cluster's end and then makes the cluster one longer, so big clusters grow faster than small ones.
+
+This program fills 1000 slots with random keys up to different load factors (n / size). `random.sample(range(100000), k)` picks k different numbers below 100000 at random. It prints the load factor, the average probes for a hit (a key that's there) and the average probes for a miss:
+```python
+import random
+
+def put(slots, key):
+    i = key % len(slots)
+    probes = 1
+    while slots[i] is not None:
+        i = (i + 1) % len(slots)
+        probes += 1
+    slots[i] = key
+    return probes
+
+def miss_probes(slots):
+    total = 0
+    for start in range(len(slots)):
+        i = start
+        probes = 1
+        while slots[i] is not None:
+            i = (i + 1) % len(slots)
+            probes += 1
+        total += probes
+    return total / len(slots)
+
+random.seed(2)
+for load in [0.25, 0.5, 0.75, 0.9]:
+    slots = [None] * 1000
+    keys = random.sample(range(100000), int(load * 1000))
+    hits = 0
+    for key in keys:
+        hits += put(slots, key)
+    print(load, round(hits / len(keys), 1), round(miss_probes(slots), 1))
+```
+```output
+0.25 1.1 1.4
+0.5 1.5 2.5
+0.75 2.3 7.5
+0.9 5.3 53.2
+```
+A hit takes as many probes as `put` needed to store the key, so `put` counts them. A miss can start at any slot, so `miss_probes` tries every start. Half full, a miss takes 2.5 probes. At 0.9 full it takes over 50: the clusters have joined up into long runs. Chaining slows down far more gently, because one chain never runs into another. Python's `dict` avoids most clustering by jumping around the table instead of stepping to the next slot.
+
+### Keeping the table sparse
+Every pair needs a slot of its own, so the load factor can never go over 1, and the clustering numbers show it must stay well below that. So an open addressing map resizes early: Python's `dict` resizes when it's about two-thirds full. A resize makes a bigger table and puts every pair in again, probing in the new table. Tombstones are left behind:
+```python
+DELETED = "deleted"
+
+def resize(slots, new_size):
+    new = [None] * new_size
+    for pair in slots:
+        if pair is not None and pair != DELETED:
+            i = pair[0] % new_size
+            while new[i] is not None:
+                i = (i + 1) % new_size
+            new[i] = pair
+    return new
+
+slots = [(13, "Eve"), None, None, (10, "Ann"), DELETED, (17, "Cy"), (6, "Dee")]
+print(resize(slots, 14))
+```
+```output
+[None, None, None, (17, 'Cy'), None, None, (6, 'Dee'), None, None, None, (10, 'Ann'), None, None, (13, 'Eve')]
+```
+- Each pair is placed with a probe loop but without looking for its own key: the keys are already known to be different.
+- The tombstone is gone, and the cluster has broken up: in 14 slots, every key is in its home slot (17 % 14 = 3, 6 % 14 = 6, 10 % 14 = 10, 13 % 14 = 13).
+- A resize is O(n), but doubling makes it rare, so `put` stays O(1) amortized. When deciding whether to resize, tombstones count as filled slots: they lengthen searches in the same way as pairs.
+
+Example 2 grows a map whenever it gets more than two-thirds full.
+
+### Open addressing or chaining?
+| | Separate chaining | Open addressing (linear probing) |
+| --- | --- | --- |
+| Load factor | can go over 1 | must stay below 1; resize at about 2/3 |
+| Deleting | remove the pair from its chain | leave a tombstone |
+| Memory | a list (or nodes) for every bucket | one flat list of slots |
+| What slows it down | long chains | long clusters, and tombstones |
+| Used by | Java's `HashMap` | Python's `dict` and `set` |
+
+Both are O(1) on average for `put`, `get` and `delete`, as long as the load factor is kept low, and both are O(n) in the worst case, when every key's path runs through the same few places. Open addressing keeps everything in one list, with no extra lists or nodes, which is why Python uses it; chaining copes better with a full table and with deletes.
+
+=== keypoints
+- In open addressing, every pair lives in the table itself, one pair per slot. A key starts at its home slot, `key % size`; linear probing then tries the next slot, `(i + 1) % size`, wrapping round to slot 0.
+- `put` probes until it finds the key (and updates it) or an empty slot (and stores the pair there). `get` follows the same path and stops at the key or at an empty slot, which proves the key is missing.
+- Deleting can't empty a slot, because that cuts the path to keys stored further along. `delete` leaves a tombstone: searches step over it, and `put` may reuse its slot after checking that the key isn't further along.
+- Linear probing builds clusters, runs of filled slots that grow faster the bigger they get. Probes climb steeply as the table fills: a miss takes about 2.5 probes half full, and about 50 when 90% full.
+- The load factor must stay below 1, and in practice below about 2/3. A resize puts every pair into a bigger table and drops the tombstones: O(n), but O(1) amortized per `put`.
+- Chaining and open addressing are both O(1) on average and O(n) in the worst case. Python's `dict` and `set` use open addressing; Java's `HashMap` uses chaining.
+
+=== example: A complete probing map
+intro: A map with linear probing and tombstones. Its `put` reuses a tombstone's slot, but only after making sure the key isn't further along the path.
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self, size):
+        self.slots = [None] * size
+
+    def put(self, key, value):
+        i = key % len(self.slots)
+        spare = None
+        while self.slots[i] is not None:
+            if self.slots[i] == DELETED:
+                if spare is None:
+                    spare = i
+            elif self.slots[i][0] == key:
+                self.slots[i] = (key, value)
+                return
+            i = (i + 1) % len(self.slots)
+        if spare is None:
+            spare = i
+        self.slots[spare] = (key, value)
+
+    def get(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                return self.slots[i][1]
+            i = (i + 1) % len(self.slots)
+        return None
+
+    def delete(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                self.slots[i] = DELETED
+                return True
+            i = (i + 1) % len(self.slots)
+        return False
+
+m = ProbingMap(7)
+for key, name in [(10, "Ann"), (24, "Ben"), (17, "Cy")]:
+    m.put(key, name)
+m.delete(24)
+m.put(17, "Cyd")
+m.put(31, "Dee")
+print(m.get(17), m.get(24), m.get(31))
+print(m.slots)
+```
+1: The tombstone marker.
+3-5: `size` empty slots in one list. `[None] * size` is safe: a slot is only ever replaced, never changed in place.
+7-9: Start at the home slot. `spare` will remember the first tombstone on the path.
+10-17: Walk until an empty slot. Note the first tombstone, but keep going: if the key turns up further along, update it where it is.
+18-20: The key isn't in the table: store it in the first tombstone's slot if there was one, or else in the empty slot that ended the walk.
+22-37: `get` and `delete` step over tombstones and stop at an empty slot. `delete` leaves a tombstone instead of None.
+39-41: 10, 24 and 17 all have home slot 3, so they fill slots 3, 4 and 5.
+42: 24's slot becomes a tombstone.
+43: 17's path passes the tombstone in slot 4, and 17 is found further along, in slot 5, so it's updated there. Storing it in slot 4 would have left two pairs for 17.
+44: 31's home slot is 3. The walk notes the tombstone in slot 4, reaches the empty slot 6 without finding 31, and stores 31 in slot 4.
+45-46: 24 is gone, and its tombstone has been reused.
+
+=== example: Growing at two-thirds full
+intro: A probing map that doubles its slots whenever more than two-thirds of them are filled, so there's always plenty of empty space.
+```python
+class ProbingMap:
+    def __init__(self):
+        self.slots = [None] * 8
+        self.count = 0
+
+    def find(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None and self.slots[i][0] != key:
+            i = (i + 1) % len(self.slots)
+        return i
+
+    def put(self, key, value):
+        i = self.find(key)
+        if self.slots[i] is None:
+            self.count += 1
+        self.slots[i] = (key, value)
+        if self.count > 2 / 3 * len(self.slots):
+            old = self.slots
+            self.slots = [None] * (2 * len(old))
+            for pair in old:
+                if pair is not None:
+                    self.slots[self.find(pair[0])] = pair
+            print(self.count, "keys: now", len(self.slots), "slots")
+
+    def get(self, key):
+        pair = self.slots[self.find(key)]
+        if pair is None:
+            return None
+        return pair[1]
+
+m = ProbingMap()
+for key in range(0, 100, 5):
+    m.put(key, key * 2)
+print(m.get(35), m.get(36), m.count)
+```
+1-4: Start with 8 slots and no keys. This map has no `delete`, so there are no tombstones.
+6-10: `find` returns the slot holding the key, or the empty slot where the key would go. `put` and `get` share it, so they always follow the same path.
+12-16: An empty slot means a new key: count it. Then store the pair.
+17-23: More than 2/3 full: make twice as many slots and place every pair again with `find`, which now probes the bigger table.
+25-29: The slot `find` returns holds the key's pair, or is empty for a missing key.
+31-34: 20 keys cause 2 resizes: at 6 keys (8 → 16 slots) and at 11 keys (16 → 32). 35's value is 70, and 36 was never put.
+
+=== animation: Linear probing
+view: array slots ptr=i
+vars key i
+intro: Five keys are put into a table of 7 slots with linear probing. Only the keys are stored, so each slot shows one number. Watch keys with the same home slot line up in the slots after it, and 13 wrap round to slot 0.
+```python
+slots = [None] * 7
+for key in [10, 24, 17, 6, 13]:
+    i = key % 7
+    while slots[i] is not None:
+        i = (i + 1) % 7
+    slots[i] = key
+print(slots)
+```
+1: Seven empty slots.
+2: Take the next key, if any are left.
+3: {key}'s home slot is {key} % 7 = {key % 7}.
+4: Is slot {i} taken? {'Yes, by ' + str(slots[i]) + '.' if slots[i] is not None else 'No, it is empty.'}
+5: Probe the next slot: ({i} + 1) % 7 = {(i + 1) % 7}{', wrapping round to the start' if i == 6 else ''}.
+6: Store {key} in slot {i}.
+7: 17 took 3 probes, and 13 wrapped round from slot 6 to slot 0. Slots 3, 4, 5, 6 and 0 now form one long cluster.
+
+=== animation: Searching past a tombstone
+view: array slots ptr=i
+vars key i
+intro: The table from Animation 1. 24 is deleted by leaving a tombstone, the string "deleted", in its slot. Then a search for 17 walks past the tombstone instead of stopping there.
+```python
+slots = [13, None, None, 10, 24, 17, 6]
+DELETED = "deleted"
+i = 24 % 7
+while slots[i] != 24:
+    i = (i + 1) % 7
+slots[i] = DELETED
+key = 17
+i = key % 7
+while slots[i] is not None and slots[i] != key:
+    i = (i + 1) % 7
+print(key, "is in slot", i)
+```
+1: 17's path from its home slot, 3, runs through slots 3, 4 and 5.
+2: The tombstone marker.
+3: To delete 24, start at its home slot: 24 % 7 = 3.
+4: Does slot {i} hold 24? {slots[i] == 24}.
+5: Not yet: probe slot {(i + 1) % 7}.
+6: Found 24 in slot {i}. Leave a tombstone there, not None.
+7: Now look for 17.
+8: Its home slot is 17 % 7 = 3.
+9: Slot {i} holds {slots[i]!r}. {'Found it.' if slots[i] == key else ('Empty: stop.' if slots[i] is None else ('A tombstone does not stop the search: keep going.' if slots[i] == DELETED else 'Not 17: keep going.'))}
+10: Probe slot {(i + 1) % 7}.
+11: 17 is found in slot 5. If slot 4 had been set to None, the search would have stopped there and missed it.
+
+=== task: predict easy
+title: Three keys, five slots
+code:
+```python
+slots = [None] * 5
+for key in [7, 12, 3]:
+    i = key % 5
+    while slots[i] is not None:
+        i = (i + 1) % 5
+    slots[i] = key
+print(slots)
+```
+wrong[[None, None, 12, 3, None]]: A filled slot is never overwritten: 12 finds slot 2 taken by 7 and moves on to slot 3.
+wrong[[None, None, 7, 3, None]]: 3's home slot, 3, is already taken by 12, so 3 moves on to slot 4.
+wrong[[3, None, 7, 12, None]]: Linear probing moves forward: after slot 3 comes slot 4, which is free.
+hint: The home slots are 7 % 5 = 2, 12 % 5 = 2 and 3 % 5 = 3.
+hint: Each key takes the first free slot from its home slot onwards.
+right: `[None, None, 7, 12, 3]`: 12 collided with 7 and moved to slot 3, which then pushed 3 along to slot 4.
+wrong: 7 → slot 2. 12 → slot 2 is taken, so slot 3. 3 → slot 3 is taken, so slot 4.
+
+=== task: mcq easy
+title: When the home slot is taken
+prompt: In open addressing with linear probing, where does a key go if its home slot is already taken by another key?
+* Into the next slot along, then the one after, wrapping round to slot 0, until it finds a free slot :: Right. Every slot it looks at on the way is one probe.
+- Into a chain stored in its home slot :: That's separate chaining. In open addressing, each slot holds one pair.
+- It replaces the key that's there :: That would lose the other key's pair.
+- The map resizes straight away :: Resizing depends on how full the whole table is, not on one collision.
+hint: Every slot holds at most one pair.
+hint: "Linear" means stepping along the list one slot at a time.
+right: The key walks forward from its home slot to the first free slot, wrapping from the last slot round to slot 0.
+wrong: Linear probing tries the next slot, then the next, with `(i + 1) % size`, and stores the pair in the first free one.
+
+=== task: fill easy
+title: Wrap round to the start
+prompt: Fill in the blank so that probing wraps round from the last slot to slot 0, and the program prints:
+
+```output
+[13, None, None, None, None, None, 6]
+```
+code:
+```python
+slots = [None, None, None, None, None, None, 6]
+i = 13 % 7
+while slots[i] is not None:
+    i = (i + 1) ?? len(slots)
+slots[i] = 13
+print(slots)
+```
+answer: %
+wrong[//]: (6 + 1) // 7 is 1, so 13 would land in slot 1. The remainder is what wraps 7 round to 0.
+wrong[+]: (6 + 1) + 7 is 14, which is past the end of the list: `IndexError: list index out of range`.
+hint: 13's home slot is 6, the last slot, and it's taken.
+hint: Which operator turns 7 into 0 when there are 7 slots?
+right: `(6 + 1) % 7` is 0, so the probe wraps round to the first slot. `%` keeps every index between 0 and size − 1.
+wrong: The next slot is `(i + 1) % len(slots)`: the remainder after dividing by the number of slots, so 7 becomes 0.
+
+=== task: code easy
+title: The probe order
+prompt: Write `probe_order(home, size, count)` that returns a list of the first `count` slots that linear probing tries, starting at the slot `home` in a table of `size` slots. After the last slot, `size - 1`, it wraps round to slot 0.
+
+For example, `probe_order(5, 7, 4)` returns `[5, 6, 0, 1]`.
+starter:
+```python
+def probe_order(home, size, count):
+    order = []
+    # your code here
+    return order
+```
+solution:
+```python
+def probe_order(home, size, count):
+    order = []
+    i = home
+    for step in range(count):
+        order.append(i)
+        i = (i + 1) % size
+    return order
+```
+tests:
+- probe_order(5, 7, 4)
+- probe_order(0, 3, 3)
+- probe_order(2, 4, 6)
+- probe_order(1, 5, 0)
+- probe_order(4, 5, 1)
+fail[1]: After slot 6 comes slot 0: (6 + 1) % 7 = 0.
+fail[3]: With more probes than slots, the order goes round again: 2, 3, 0, 1, 2, 3.
+fail[4]: No probes: an empty list.
+hint: Start with `i = home` and repeat `count` times.
+hint: Each time, append `i`, then move on with `i = (i + 1) % size`.
+right: `(i + 1) % size` is the whole of linear probing's wrap-around: it turns the list into a ring.
+wrong: Starting from `home`, append the current slot and then step to `(i + 1) % size`, `count` times.
+
+=== task: cells easy
+title: Where does each key land?
+prompt: The integer keys 8, 14, 3 and 9 are put, in that order, into an empty table of 6 slots with linear probing (home slot = `key % 6`). Which slot does each key end up in?
+labels: 8 | 14 | 3 | 9
+answer: 2 | 3 | 4 | 5
+wrong[2 | 2 | 3 | 3]: Those are the home slots. A key whose home slot is taken moves on to the next free slot: 14 to 3, then 3 to 4 and 9 to 5.
+wrong[2 | 3 | 3 | 4]: 3's home slot, 3, is already taken by 14, so 3 moves on to slot 4, and 9 then has to go on to slot 5.
+hint: The home slots are 8 % 6 = 2, 14 % 6 = 2, 3 % 6 = 3 and 9 % 6 = 3.
+hint: Put them in order: each key takes the first free slot from its home slot onwards.
+right: 2, 3, 4 and 5. 14 spilled over into slot 3, so 3 and 9 were pushed along too: one collision at slot 2 grew into a run of four filled slots.
+wrong: 8 → slot 2. 14 → 2 is taken → 3. 3 → 3 is taken → 4. 9 → 3 and 4 are taken → 5.
+
+=== task: multi easy
+title: When get stops
+prompt: Choose **every** situation in which `get` stops searching in a table with linear probing and tombstones.
+* It finds a pair with the key :: Right. It returns that pair's value.
+* It reaches an empty slot :: Right. The key would have been stored there or earlier, so it isn't in the table.
+- It reaches a slot holding a different key :: That's a collision: the key may be further along, so it keeps going.
+- It reaches a tombstone :: A tombstone means "keep looking": a key may be stored past it.
+- It reaches the last slot of the list :: It wraps round to slot 0 and carries on.
+hint: Two things end a search.
+hint: Which slots could have a key stored past them?
+right: Only the key itself or an empty slot ends the walk. Other keys, tombstones and the end of the list don't.
+wrong: `get` stops at the key (a hit) or at an empty slot (a miss). It steps past other keys and tombstones, and wraps round at the end.
+
+=== task: parsons easy
+title: Look a key up
+prompt: Arrange the lines so that `get` finds a key with linear probing, and the program prints:
+
+```output
+y None
+```
+
+Not every line is needed.
+lines:
+```python
+def get(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i][0] == key:
+            return slots[i][1]
+        i = (i + 1) % len(slots)
+    return None
+
+slots = [None, (6, "x"), (11, "y"), None, None]
+print(get(slots, 11), get(slots, 16))
+```
+distractors:
+```python
+    while slots[i][0] != key:
+            return slots[i]
+```
+hint: Start at the home slot and keep going while the slot isn't empty.
+hint: Return the value, `slots[i][1]`, when the key matches; otherwise step on with `% len(slots)`.
+right: 11's home slot is 1, which holds 6, so `get` moves on to slot 2 and finds 11. 16 also starts at slot 1, passes 6 and 11, and reaches the empty slot 3: None.
+wrong: Start at `key % len(slots)`. While the slot isn't None, return its value if its key matches, or else move to `(i + 1) % len(slots)`. Return None after the loop.
+
+=== task: mcq easy
+title: What an empty slot means
+prompt: While `get` is probing for a key, it reaches an empty slot. What does that tell it?
+* The key isn't in the table, because `put` would have stored it in this slot or earlier :: Right. `put` and `get` follow the same path, and `put` stops at the first free slot.
+- The key was deleted :: A deleted key leaves a tombstone, not an empty slot.
+- The table needs to be resized :: How full the table is has nothing to do with one empty slot.
+- Nothing: `get` must keep looking until it has checked every slot :: That would make every miss O(n). The empty slot already proves the key is missing.
+hint: Where would `put` have stored the key?
+hint: `put` stops at the first free slot on the key's path.
+right: An empty slot on the key's path proves it was never stored, so `get` can stop and return None.
+wrong: `put` stores a key in the first free slot on its path. If `get` reaches a free slot on the same path, the key can't be anywhere past it.
+
+=== task: predict easy
+title: Counting the probes
+code:
+```python
+slots = [None, 15, 8, None, None, None, None]
+key = 22
+i = key % 7
+probes = 1
+while slots[i] is not None:
+    i = (i + 1) % 7
+    probes += 1
+print(i, probes)
+```
+wrong[1 1]: Slot 1 is taken by 15, so the loop moves on.
+wrong[3 2]: `probes` starts at 1 for the home slot and goes up for every slot after it: slots 1, 2 and 3 make 3.
+wrong[2 2]: Slot 2 is taken by 8 too, so the loop moves on again, to slot 3.
+hint: 22 % 7 is 1.
+hint: Slots 1 and 2 are taken; slot 3 is empty.
+right: `3 3`: the home slot and two more, three probes in all, to reach the free slot 3.
+wrong: The home slot is 1 (probe 1, taken). Slot 2 is probe 2 (taken). Slot 3 is probe 3, and it's empty, so the loop stops with i = 3.
+
+=== task: order easy
+title: Putting a key
+prompt: Put the steps of `put(key, value)` with linear probing in order.
+items:
+- Work out the home slot: `key % size`
+- If the slot holds a different key, move on to the next slot, `(i + 1) % size`
+- Keep moving on until the slot is empty or holds the same key
+- Store the pair in that slot
+hint: Everything starts from the home slot.
+hint: The pair is stored only once the walk has stopped.
+right: Home slot, step past other keys, stop at an empty slot or the same key, store. `get` follows the same path.
+wrong: Start at `key % size`, step forward past slots holding other keys until a slot is empty or holds this key, and store the pair there.
+
+=== task: code medium
+title: Put and get with probing
+prompt: Write a class `ProbingMap(size)` for integer keys that keeps `(key, value)` pairs in `self.slots`, a list of `size` slots that starts all None. Use linear probing from the home slot `key % len(self.slots)`:
+- `put(key, value)`: probe until the slot is empty or holds the key, then store the pair there (a new key, or an update),
+- `get(key)`: probe until the slot holds the key (return its value) or is empty (return None).
+
+You can assume the table never gets full.
+starter:
+```python
+class ProbingMap:
+    def __init__(self, size):
+        self.slots = [None] * size
+
+    # your code here
+```
+solution:
+```python
+class ProbingMap:
+    def __init__(self, size):
+        self.slots = [None] * size
+
+    def put(self, key, value):
+        i = key % len(self.slots)
+        while self.slots[i] is not None and self.slots[i][0] != key:
+            i = (i + 1) % len(self.slots)
+        self.slots[i] = (key, value)
+
+    def get(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i][0] == key:
+                return self.slots[i][1]
+            i = (i + 1) % len(self.slots)
+        return None
+```
+tests:
+- (lambda m: [m.put(10, "a"), m.put(24, "b"), m.put(17, "c"), m.slots][3])(ProbingMap(7))
+- (lambda m: [m.put(6, "x"), m.put(13, "y"), m.get(13), m.slots[0]][2:])(ProbingMap(7))
+- (lambda m: [m.put(4, "a"), m.put(4, "b"), m.get(4), m.slots.count(None)][2:])(ProbingMap(5))
+- (lambda m: [m.put(1, "a"), m.put(6, "b"), m.get(11), m.get(6)][2:])(ProbingMap(5))
+- (lambda m: [m.get(3)])(ProbingMap(4))
+fail[1]: 10, 24 and 17 all have home slot 3, so they fill slots 3, 4 and 5 in that order.
+fail[2]: 13's home slot, 6, is taken, so it wraps round to slot 0. `get` must follow the same path.
+fail[3]: Putting 4 again updates its pair in place: still only one slot used, so 4 slots stay empty.
+fail[4]: 11's path is slots 1, 2 and 3. Slot 3 is empty, so 11 isn't there: None.
+error[TypeError]: An empty slot is None, which has no `[0]`: check `self.slots[i] is not None` before looking at `self.slots[i][0]`.
+error[IndexError]: Wrap round with `(i + 1) % len(self.slots)`.
+error[AttributeError]: Define both `put` and `get`.
+hint: Both methods start at `i = key % len(self.slots)`.
+hint: `put`: `while self.slots[i] is not None and self.slots[i][0] != key:` move on with `i = (i + 1) % len(self.slots)`, then store the pair at i.
+hint: `get`: while the slot isn't None, return its value if its key matches, or else move on. Return None after the loop.
+right: `put` and `get` follow exactly the same path from the home slot, which is what lets `get` find what `put` stored. An empty slot ends both walks.
+wrong: Start at the home slot. `put` moves past slots holding other keys and stores at the first empty slot or the key's own slot. `get` moves along the same way and returns the value, or None at an empty slot.
+
+=== task: predict medium
+title: Hits and misses
+code:
+```python
+slots = [13, None, None, 10, 24, 17, 6]
+
+def probes(key):
+    i = key % 7
+    count = 1
+    while slots[i] is not None and slots[i] != key:
+        i = (i + 1) % 7
+        count += 1
+    return count
+
+print(probes(17), probes(31), probes(2))
+```
+wrong[3 5 1]: The empty slot that ends a miss is looked at too: slots 3, 4, 5, 6, 0 and 1 make 6.
+wrong[3 6 0]: The home slot is always the first probe, even when it's empty: 2 takes 1 probe.
+wrong[3 4 1]: The search wraps round: after slot 6 it carries on at slots 0 and 1.
+hint: 17 % 7 and 31 % 7 are both 3; 2 % 7 is 2.
+hint: `count` counts every slot looked at, including the one that stops the loop.
+right: `3 6 1`: a hit stops at its key, but a miss walks to the end of its cluster, here round the end of the list, before it finds an empty slot.
+wrong: 17: slots 3, 4, 5 → 3. 31: slots 3, 4, 5, 6, 0, 1 (empty) → 6. 2: slot 2 is empty straight away → 1.
+
+=== task: fill medium
+title: Leave a tombstone
+prompt: Fill in the blank so that 6 is deleted without breaking the path to 11, and the program prints:
+
+```output
+c None
+```
+code:
+```python
+DELETED = "deleted"
+
+def get(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i] != DELETED and slots[i][0] == key:
+            return slots[i][1]
+        i = (i + 1) % len(slots)
+    return None
+
+slots = [None, (1, "a"), (6, "b"), (11, "c"), None]
+slots[2] = ??
+print(get(slots, 11), get(slots, 6))
+```
+answer: DELETED
+wrong[None]: An empty slot 2 cuts 11's path: `get(11)` stops at slot 2 and returns None, though 11 is still in slot 3.
+hint: 1, 6 and 11 all have home slot 1, so 11's path runs through slots 1, 2 and 3.
+hint: Slot 2 must say "a pair was here: keep looking".
+right: The tombstone keeps slot 2 filled, so `get(11)` walks past it to slot 3, while `get(6)` no longer finds 6.
+wrong: Deleting must not empty a slot that's on another key's path. Put the tombstone marker, `DELETED`, in slot 2.
+
+=== task: cells medium
+title: Fill the table
+prompt: The integer keys 5, 12, 19, 6 and 26 are put, in that order, into an empty table of 7 slots with linear probing (home slot = `key % 7`). What does each slot hold at the end? Write None for an empty slot.
+labels: slot 0 | slot 1 | slot 2 | slot 3 | slot 4 | slot 5 | slot 6
+answer: 19 | 6 | 26 | None | None | 5 | 12
+wrong[19 | 26 | None | None | None | 5 | 6]: 12's home slot is 5 too (12 % 7 = 5), so it goes to slot 6 before 6 arrives. 6 then finds slots 6 and 0 taken and goes to slot 1.
+wrong[None | None | None | None | None | 5 | 12]: The other keys don't disappear: 19 wraps round to slot 0, 6 to slot 1 and 26 to slot 2.
+hint: The home slots are 5, 5, 5, 6 and 5.
+hint: After slot 6, probing wraps round to slots 0, 1 and 2.
+right: 19, 6, 26, empty, empty, 5, 12. 6 wasn't in a collision of its own making: its home slot, 6, had been taken by 12, which spilled out of slot 5.
+wrong: 5 → 5. 12 → 5, 6. 19 → 5, 6, 0. 6 → 6, 0, 1. 26 → 5, 6, 0, 1, 2.
+
+=== task: mcq medium
+title: Joining a cluster
+prompt: In a table with linear probing, slots 10 to 19 are all filled and slot 20 is empty. A new key's home slot is 12. Where does it go?
+* Slot 20, the first free slot after the cluster, which makes the cluster one longer :: Right. It walks from 12 to the cluster's end and joins it.
+- Slot 12, replacing the pair that's there :: That would lose a pair. A filled slot is never overwritten by a different key.
+- Slot 9, the free slot right before the cluster :: Linear probing only moves forward from the home slot.
+- Into a chain at slot 12 :: Open addressing has no chains: one pair per slot.
+hint: Which direction does linear probing move in?
+hint: It stops at the first free slot.
+right: The key probes slots 12 to 19 and lands in slot 20. A key with a home slot anywhere from 10 to 20 now ends up making the cluster longer, which is why big clusters grow fastest.
+wrong: From slot 12, linear probing steps forward through the filled slots 13 to 19 and stores the key in the first free slot, 20.
+
+=== task: predict medium
+title: Deleting with None
+code:
+```python
+slots = [None] * 5
+for key in [3, 8, 13]:
+    i = key % 5
+    while slots[i] is not None:
+        i = (i + 1) % 5
+    slots[i] = key
+slots[4] = None
+i = 13 % 5
+while slots[i] is not None and slots[i] != 13:
+    i = (i + 1) % 5
+print(slots, slots[i] == 13)
+```
+wrong[[13, None, None, 3, None] True]: The search for 13 starts at slot 3, moves to slot 4 and finds it empty, so it stops there, before it can wrap round to slot 0.
+wrong[[None, None, None, 3, None] False]: 13 is still in slot 0. Only slot 4, where 8 was, became None.
+wrong[[13, None, None, 3, 8] True]: `slots[4] = None` empties the slot that 8 was in.
+hint: First work out where 3, 8 and 13 go: all three have home slot 3.
+hint: 13's path is slots 3, 4 and then 0.
+right: `[13, None, None, 3, None] False`: 13 is still in slot 0, but emptying slot 4 cut its path, so the search stops at slot 4 and misses it. That's why deletes leave tombstones.
+wrong: 3 → slot 3, 8 → slot 4, 13 → wraps round to slot 0. Emptying slot 4 means a search for 13 goes 3, 4 and stops at the empty slot 4, so `slots[i]` is None, not 13.
+
+=== task: order medium
+title: Reusing a tombstone
+prompt: Put the steps of a `put` that reuses tombstones in order.
+items:
+- Start at the key's home slot, with no spare slot noted yet
+- Walk along the path, noting the first tombstone passed as the spare slot
+- If the key turns up further along, update its pair there and stop
+- Reach an empty slot: now it's certain the key isn't in the table
+- Store the pair in the spare slot if there is one, or else in the empty slot
+hint: A tombstone can't be used straight away: the key might be further along.
+hint: Only an empty slot proves the key is missing.
+right: Noting the spare but walking on to an empty slot is what stops a key being stored twice. Reusing the tombstone keeps the path from growing.
+wrong: From the home slot, walk until an empty slot, remembering the first tombstone. Update the key if it's found on the way; otherwise store the pair in the remembered tombstone's slot, or in the empty slot if there was none.
+
+=== task: multi medium
+title: All about tombstones
+prompt: Choose **every** true statement about tombstones in open addressing.
+* `get` steps over a tombstone and keeps searching :: Right. A key may be stored further along the path.
+* `put` can store a new key in a tombstone's slot, after checking that the key isn't further along :: Right. Otherwise the key could end up stored twice.
+* Tombstones make searches longer until the table is rebuilt :: Right. Every search that passes one spends a probe on it.
+* A resize leaves the tombstones behind :: Right. Only the real pairs are put into the new table.
+- A tombstone ends a search, like an empty slot :: Then every key stored past it would be lost.
+- Delete sets the slot to None and puts a tombstone at the end of the table :: The tombstone goes in the deleted pair's own slot, so the path stays unbroken.
+hint: What would happen to keys further along the path if a tombstone stopped searches?
+hint: Four of these are true.
+right: A tombstone keeps the path open for searches, can be reused by `put`, costs a probe until it's cleared, and disappears when the table is resized.
+wrong: Tombstones don't end searches; they're skipped. `put` may reuse one after checking further along. They slow searches until a resize, which drops them.
+
+=== task: parsons medium
+title: Delete with a tombstone
+prompt: Arrange the lines so that `delete` leaves a tombstone, and the program prints:
+
+```output
+True False True
+[None, (1, 'a'), 'deleted', 'deleted', None]
+```
+
+Not every line is needed.
+lines:
+```python
+DELETED = "deleted"
+
+def delete(slots, key):
+    i = key % len(slots)
+    while slots[i] is not None:
+        if slots[i] != DELETED and slots[i][0] == key:
+            slots[i] = DELETED
+            return True
+        i = (i + 1) % len(slots)
+    return False
+
+slots = [None, (1, "a"), (6, "b"), (11, "c"), None]
+print(delete(slots, 6), delete(slots, 6), delete(slots, 11))
+print(slots)
+```
+distractors:
+```python
+            slots[i] = None
+    while slots[i] != DELETED:
+```
+hint: The walk stops only at an empty slot.
+hint: Replace the pair with the marker, not with None, and skip tombstones when comparing keys.
+right: Deleting 6 leaves a tombstone in slot 2, so the second `delete(6)` walks past it and finds nothing, and `delete(11)` still reaches slot 3.
+wrong: Start at the home slot. While the slot isn't None, if it's a pair with the key, replace it with `DELETED` and return True; then step on. Return False at the empty slot.
+
+=== task: code medium
+title: Time to resize?
+prompt: In open addressing, tombstones fill slots in the same way as pairs. Write `needs_resize(slots)` that returns True if more than two-thirds of the slots are filled, counting both pairs and tombstones (the string `"deleted"`), and False otherwise. Empty slots are None. "More than two-thirds" means `3 * filled > 2 * len(slots)`.
+
+For example, `needs_resize([(1, "a"), "deleted", (5, "b"), None, (7, "d"), (9, "c")])` returns True: 5 of the 6 slots are filled.
+starter:
+```python
+def needs_resize(slots):
+    filled = 0
+    # your code here
+    return False
+```
+solution:
+```python
+def needs_resize(slots):
+    filled = 0
+    for slot in slots:
+        if slot is not None:
+            filled += 1
+    return 3 * filled > 2 * len(slots)
+```
+tests:
+- needs_resize([(1, "a"), "deleted", (5, "b"), None, (7, "d"), (9, "c")])
+- needs_resize([(1, "a"), "deleted", (5, "b"), None, None, (9, "c")])
+- needs_resize(["deleted", "deleted", "deleted", None])
+- needs_resize([None] * 5)
+- needs_resize([(2, "x"), None, None])
+- needs_resize([(0, "a"), (1, "b"), (2, "c")])
+fail[1]: 5 of the 6 slots are filled (4 pairs and a tombstone): more than two-thirds.
+fail[2]: Exactly 4 of the 6 slots are filled. That's two-thirds, not more, so no resize yet.
+fail[3]: Three tombstones fill 3 of the 4 slots. They count as filled even though they hold no pairs.
+hint: Count every slot that isn't None: pairs and tombstones alike.
+hint: Then return `3 * filled > 2 * len(slots)`.
+right: Tombstones take up slots and lengthen searches, so they count as filled. A table of tombstones with no empty slot left would make a search for a missing key go round forever.
+wrong: Count the slots that aren't None, pairs and tombstones alike, and return whether three times that count is more than twice the number of slots.
+
+=== task: code hard
+title: Probing with tombstones
+prompt: Write a class `ProbingMap(size)` for integer keys with linear probing and tombstones. Empty slots are None, and a deleted slot holds the string in `DELETED`. Methods:
+- `get(key)`: the value, or None. Step over tombstones; stop at an empty slot,
+- `delete(key)`: replace the key's pair with `DELETED` and return True, or return False,
+- `put(key, value)`: if the key is anywhere along its path, update it there. Otherwise store the pair in the **first tombstone** on its path, or, if there was none, in the empty slot that ended the walk.
+starter:
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self, size):
+        self.slots = [None] * size
+
+    # your code here
+```
+solution:
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self, size):
+        self.slots = [None] * size
+
+    def put(self, key, value):
+        i = key % len(self.slots)
+        spare = None
+        while self.slots[i] is not None:
+            if self.slots[i] == DELETED:
+                if spare is None:
+                    spare = i
+            elif self.slots[i][0] == key:
+                self.slots[i] = (key, value)
+                return
+            i = (i + 1) % len(self.slots)
+        if spare is None:
+            spare = i
+        self.slots[spare] = (key, value)
+
+    def get(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                return self.slots[i][1]
+            i = (i + 1) % len(self.slots)
+        return None
+
+    def delete(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                self.slots[i] = DELETED
+                return True
+            i = (i + 1) % len(self.slots)
+        return False
+```
+tests:
+- (lambda m: [m.put(10, "a"), m.put(24, "b"), m.put(17, "c"), m.delete(24), m.get(17), m.get(24), m.slots][4:])(ProbingMap(7))
+- (lambda m: [m.put(10, "a"), m.put(24, "b"), m.put(17, "c"), m.delete(24), m.put(31, "d"), m.slots][5])(ProbingMap(7))
+- (lambda m: [m.put(10, "a"), m.put(24, "b"), m.put(17, "c"), m.delete(24), m.put(17, "C"), m.slots][5])(ProbingMap(7))
+- (lambda m: [m.put(3, "x"), m.delete(3), m.delete(3), m.get(3), m.put(3, "y"), m.slots][2:])(ProbingMap(5))
+- (lambda m: [m.put(6, "p"), m.put(13, "q"), m.delete(6), m.get(13), m.put(20, "r"), m.slots][3:])(ProbingMap(7))
+fail[1]: Deleting 24 must leave a tombstone in slot 4, so that `get(17)` keeps going past it to slot 5.
+fail[2]: 31 isn't in the table, so it goes into the first tombstone on its path, slot 4.
+fail[3]: 17 is further along, in slot 5, so it's updated there. Storing it in the tombstone's slot would leave two pairs for 17.
+fail[4]: After a delete, the key's slot is a tombstone: a second delete and a `get` don't find it, and putting the key again reuses the tombstone.
+fail[5]: The search for 13 passes the tombstone in slot 6 and wraps round to slot 0. Then 20 reuses the tombstone.
+error[TypeError]: A tombstone is a string and None has no `[0]`: check for `DELETED` and None before using `self.slots[i][0]`.
+error[AttributeError]: Define `put`, `get` and `delete`.
+hint: `get` and `delete`: `while self.slots[i] is not None:`, check `self.slots[i] != DELETED and self.slots[i][0] == key`, then step on with `(i + 1) % len(self.slots)`.
+hint: `put`: start with `spare = None`. On a tombstone, set `spare = i` if spare is still None. On a pair with the key, replace it and return.
+hint: After `put`'s loop the key wasn't found: store the pair at `spare`, or at `i` (the empty slot) if `spare` is None.
+right: Every operation follows the same path and stops only at an empty slot. Reusing the first tombstone keeps paths short, and walking on first makes sure that a key is never stored twice.
+wrong: `get` and `delete` probe past tombstones until they reach the key or an empty slot. `put` probes the same way, remembering the first tombstone; it updates the key if it finds it, and otherwise stores the pair in that tombstone's slot, or in the empty slot.
+
+=== task: code hard
+title: Grow at two-thirds
+prompt: Write a class `ProbingMap` for integer keys, with linear probing and tombstones (`DELETED`). It starts with 8 slots and keeps `self.used`, the number of slots that aren't None: pairs **and** tombstones. Methods:
+- `put(key, value)`: probe from `key % len(self.slots)`, stepping over tombstones and other keys, until the slot is None or holds the key. (This `put` doesn't reuse tombstones.) If the slot was None, add 1 to `used`. Store the pair. Then, if `3 * self.used > 2 * len(self.slots)`, resize: put every **pair** (not the tombstones) into a new list of twice as many slots with linear probing, and set `used` to the number of pairs,
+- `get(key)`: the value, or None,
+- `delete(key)`: replace the key's pair with `DELETED` and return True, or return False. `used` doesn't change: the slot is still filled.
+
+`put` must be O(1) amortized. Keep the pairs in `self.slots`: don't use a Python dict.
+starter:
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self):
+        self.slots = [None] * 8
+        self.used = 0
+
+    # your code here
+```
+solution:
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self):
+        self.slots = [None] * 8
+        self.used = 0
+
+    def find(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                return i
+            i = (i + 1) % len(self.slots)
+        return i
+
+    def put(self, key, value):
+        i = self.find(key)
+        if self.slots[i] is None:
+            self.used += 1
+        self.slots[i] = (key, value)
+        if 3 * self.used > 2 * len(self.slots):
+            old = self.slots
+            self.slots = [None] * (2 * len(old))
+            self.used = 0
+            for pair in old:
+                if pair is not None and pair != DELETED:
+                    self.slots[self.find(pair[0])] = pair
+                    self.used += 1
+
+    def get(self, key):
+        pair = self.slots[self.find(key)]
+        if pair is None:
+            return None
+        return pair[1]
+
+    def delete(self, key):
+        i = self.find(key)
+        if self.slots[i] is None:
+            return False
+        self.slots[i] = DELETED
+        return True
+```
+tests:
+- (lambda m: [[m.put(k, k * 10) for k in range(30)], m.get(7), m.get(29), m.get(30), m.used][1:])(ProbingMap())
+- (lambda m: [[m.put(k * 8, k) for k in range(12)], [m.get(k * 8) for k in range(12)]][1])(ProbingMap())
+- (lambda m: [m.put(5, "a"), m.delete(5), m.delete(5), m.get(5), m.used][1:])(ProbingMap())
+- (lambda m: [[m.put(k, k) for k in range(5)], [m.delete(k) for k in range(5)], m.used, [m.put(k, -k) for k in range(5, 8)], m.used, m.get(6), m.get(2)][2:])(ProbingMap())
+- (lambda m: [m.get(1), m.delete(1), m.used])(ProbingMap())
+forbid[{}]: Keep the pairs in `self.slots`, not in a Python dict.
+forbid[dict(]: Keep the pairs in `self.slots`, not in a Python dict.
+speed: setup=m = ProbingMap() | call=[m.put(i, i) for i in range(n)] | target=O(n)
+slow:
+```python
+DELETED = "deleted"
+
+class ProbingMap:
+    def __init__(self):
+        self.slots = [None] * 8
+        self.used = 0
+
+    def find(self, key):
+        i = key % len(self.slots)
+        while self.slots[i] is not None:
+            if self.slots[i] != DELETED and self.slots[i][0] == key:
+                return i
+            i = (i + 1) % len(self.slots)
+        return i
+
+    def put(self, key, value):
+        i = self.find(key)
+        if self.slots[i] is None:
+            self.used += 1
+        self.slots[i] = (key, value)
+        if 3 * self.used > 2 * len(self.slots):
+            old = self.slots
+            self.slots = [None] * (len(old) + 8)
+            self.used = 0
+            for pair in old:
+                if pair is not None and pair != DELETED:
+                    self.slots[self.find(pair[0])] = pair
+                    self.used += 1
+
+    def get(self, key):
+        pair = self.slots[self.find(key)]
+        if pair is None:
+            return None
+        return pair[1]
+
+    def delete(self, key):
+        i = self.find(key)
+        if self.slots[i] is None:
+            return False
+        self.slots[i] = DELETED
+        return True
+```
+fail[1]: After the resizes every key must still be found: 7 → 70 and 29 → 290, and 30 was never put. 30 pairs fill 30 slots.
+fail[2]: 0, 8, 16 and the rest all have home slot 0 while there are 8 slots, so they form one cluster. After each resize, every key must still be found.
+fail[3]: A deleted key's slot becomes a tombstone: the key isn't found again, but its slot still counts in `used`.
+fail[4]: After all 5 keys are deleted, `used` is still 5. The next put takes it over two-thirds of 8, and the resize keeps only the 1 real pair, so `used` drops to 1 before 6 and 7 are added.
+error[TypeError]: Check for None and for `DELETED` before looking at `self.slots[i][0]`.
+error[AttributeError]: Define `put`, `get` and `delete`.
+hint: Write a helper `find(key)` that probes past tombstones and other keys and returns the slot holding the key, or the empty slot that ended the walk. `put`, `get` and `delete` can all use it.
+hint: In `put`, add 1 to `self.used` only when the slot found is None. Then, if `3 * self.used > 2 * len(self.slots)`, resize.
+hint: To resize: keep `old`, make `2 * len(old)` slots of None, set `used` to 0, and put every pair that isn't None or `DELETED` back with `find`, adding 1 to `used` each time.
+right: Counting tombstones as used makes sure there's always an empty slot, so every search ends. Resizing at two-thirds keeps the probes short, and doubling keeps `put` O(1) amortized. Growing by a fixed 8 slots instead would resize every few puts: O(n²).
+wrong: Probe with a shared `find`. `put` stores at the slot found, counting it if it was None, and doubles the table when it's more than two-thirds used, putting back only the real pairs. `delete` turns the key's slot into a tombstone, which stays counted in `used`.
+
+=== task: code hard
+title: Total probes
+prompt: For a key stored by linear probing, `get` looks at every slot from the key's home slot to the slot it's in, wrapping round the end of the list if the key did. Write `total_probes(slots)` for a table of integer keys (None for an empty slot) that returns the total number of probes needed to find every key in it, once each.
+
+For example, in `[13, None, None, 10, 24, 17, 6]` (7 slots), 10 needs 1 probe (slot 3), 24 needs 2 (slots 3 and 4), 17 needs 3, 6 needs 1, and 13 needs 2 (slot 6, then slot 0): 9 in all.
+starter:
+```python
+def total_probes(slots):
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+def total_probes(slots):
+    total = 0
+    size = len(slots)
+    for s in range(size):
+        if slots[s] is not None:
+            home = slots[s] % size
+            total += (s - home) % size + 1
+    return total
+```
+tests:
+- total_probes([13, None, None, 10, 24, 17, 6])
+- total_probes([None, None, None])
+- total_probes([5])
+- total_probes([9, 14, 19, None, 4])
+- total_probes([15, 8, None, None, None, None, None, 7])
+- total_probes([None, 1, 2, 3])
+fail[1]: 13's home slot is 6 but it's in slot 0: it wrapped round, so it needs 2 probes (slots 6 and 0).
+fail[2]: No keys: 0 probes.
+fail[4]: 9, 14 and 19 all have home slot 4 and wrapped round into slots 0, 1 and 2: they need 2, 3 and 4 probes, and 4 needs 1.
+fail[6]: Every key is in its home slot: 1 probe each.
+hint: A key in slot `s` has home slot `slots[s] % size`, where `size = len(slots)`.
+hint: If the key wrapped round (s < home), it is `s + size - home` steps from home; otherwise `s - home` steps. (`(s - home) % size` gives both in one go.)
+hint: Add the number of steps plus 1 for every slot that isn't None.
+right: The steps from home to slot s, round the end if needed, plus 1 for the home slot itself. Divided by the number of keys, the total gives the average cost of a hit, which climbs as clusters grow.
+wrong: For each filled slot s, find the key's home slot, count the steps forward from home to s (wrapping round), and add that plus 1.
+
+=== task: code hard
+title: The longest cluster
+prompt: A cluster is a run of filled slots (not None) in a row. In a linear probing table, runs wrap round: a run that reaches the last slot carries on at slot 0. Write `longest_cluster(slots)` that returns the length of the longest cluster, counting a run that wraps round the end as one cluster. If every slot is filled, return `len(slots)`; if none is, return 0.
+
+For example, `longest_cluster([13, None, None, 10, 24, 17, 6])` returns 5: slots 3, 4, 5, 6 and 0.
+starter:
+```python
+def longest_cluster(slots):
+    # your code here
+    return 0
+```
+solution:
+```python
+def longest_cluster(slots):
+    size = len(slots)
+    if None not in slots:
+        return size
+    start = slots.index(None)
+    best = 0
+    run = 0
+    for step in range(1, size + 1):
+        if slots[(start + step) % size] is None:
+            run = 0
+        else:
+            run += 1
+            if run > best:
+                best = run
+    return best
+```
+tests:
+- longest_cluster([13, None, None, 10, 24, 17, 6])
+- longest_cluster([None, 1, 2, None, 3, None])
+- longest_cluster([None, None])
+- longest_cluster([4, 5, 6])
+- longest_cluster([1, 2, None, 3, None, 4])
+- longest_cluster([7, None, 8, 9, 10, None])
+fail[1]: The run in slots 3 to 6 carries on round the end into slot 0: one cluster of 5.
+fail[3]: No filled slots: 0.
+fail[4]: Every slot is filled: one cluster as long as the table. A loop that waits for an empty slot would never find one here.
+fail[5]: Slots 5, 0 and 1 form one cluster of 3 across the end of the list.
+hint: If there's no None at all, the answer is `len(slots)`.
+hint: Otherwise start right after an empty slot, `slots.index(None)`. Then no cluster is cut in two by the end of the list.
+hint: Go once round with `slots[(start + step) % size]` for step from 1 to size: add 1 to the run for a filled slot, set it back to 0 at None, and remember the longest run.
+right: Starting right after an empty slot means every cluster is met from its first slot, even one that wraps round. A long cluster is where probes pile up: any key whose home slot is inside it walks to its end.
+wrong: Deal with the all-full table first. Then go once round the ring, starting after an empty slot, counting the current run of filled slots, resetting it at None, and keeping the longest.
+
+=== task: predict hard
+title: Reusing the tombstone
+code:
+```python
+DELETED = "deleted"
+
+def put(slots, key):
+    i = key % len(slots)
+    spare = None
+    while slots[i] is not None:
+        if slots[i] == DELETED:
+            if spare is None:
+                spare = i
+        elif slots[i] == key:
+            return
+        i = (i + 1) % len(slots)
+    if spare is None:
+        spare = i
+    slots[spare] = key
+
+slots = [None] * 6
+for key in [4, 10, 16]:
+    put(slots, key)
+slots[5] = DELETED
+put(slots, 22)
+put(slots, 16)
+print(slots)
+```
+wrong[[16, 22, None, None, 4, 'deleted']]: 22 goes into the first tombstone on its path, slot 5, not the empty slot that ended the walk.
+wrong[[16, 16, None, None, 4, 22]]: 16 is already in slot 0, further along its path, so `put` finds it and returns without storing it again.
+hint: Before the delete, 4, 10 and 16 are in slots 4, 5 and 0: all three have home slot 4.
+hint: 22's home slot is 4. It passes 4, notes the tombstone in slot 5, passes 16 in slot 0 and stops at the empty slot 1.
+right: `[16, None, None, None, 4, 22]`: 22 reuses the tombstone, and the second put of 16 finds 16 in slot 0 and changes nothing.
+wrong: 4, 10 and 16 fill slots 4, 5 and 0. Slot 5 becomes a tombstone. 22 walks 4, 5 (the spare), 0 and 1 (empty), and is stored in slot 5. 16 walks 4, 5 and 0, finds itself and stops.
+
+=== task: predict hard
+title: Clusters join up
+code:
+```python
+slots = [None] * 10
+for key in [3, 4, 13, 6, 7, 23]:
+    i = key % 10
+    while slots[i] is not None:
+        i = (i + 1) % 10
+    slots[i] = key
+print(slots)
+```
+wrong[[None, None, None, 3, 4, 23, 6, 7, 13, None]]: 13 was put before 23, so 13 took slot 5 first, and 23 had to go further.
+wrong[[None, None, 23, 3, 4, 13, 6, 7, None, None]]: Linear probing only moves forward: 23 tries slots 3, 4, 5, 6 and 7, and then 8.
+hint: 13's home slot is 3. Slots 3 and 4 are taken, so it goes to slot 5.
+hint: 6 and 7 go to their home slots. Then 23's home slot, 3, starts a walk through the whole run from 3 to 7.
+right: 13 filled the gap at slot 5 and joined two clusters into one run of five, so 23 needed 6 probes. That's how clusters grow faster the bigger they get.
+wrong: 3 → 3, 4 → 4, 13 → 3, 4, 5. 6 → 6, 7 → 7. 23 → 3, 4, 5, 6, 7, 8.
+
+=== task: cells hard
+title: Probes past a tombstone
+prompt: A table of 7 slots (home slot = `key % 7`) holds keys only, and slot 2 holds a tombstone. How many probes does `get` make for each key? Count every slot looked at, including the empty slot that ends a miss.
+code:
+```python
+slots = [None, 15, "deleted", 8, 22, None, None]
+```
+labels: get(8) | get(22) | get(29) | get(15) | get(2)
+answer: 3 | 4 | 5 | 1 | 4
+wrong[3 | 4 | 4 | 1 | 3]: A miss also looks at the empty slot that ends it: count that slot too.
+wrong[2 | 2 | 2 | 1 | 1]: A tombstone doesn't stop a search: the walk carries on past slot 2.
+hint: 8, 22, 29 and 15 all have home slot 1; 2's home slot is 2.
+hint: Step over the tombstone, and stop at the key or at the empty slot 5.
+right: 3, 4, 5, 1 and 4. The tombstone costs a probe on every search that passes it, which is one reason a resize clears tombstones out.
+wrong: 8: slots 1, 2, 3 → 3. 22: 1, 2, 3, 4 → 4. 29: 1, 2, 3, 4, 5 (empty) → 5. 15: slot 1 → 1. 2: slots 2, 3, 4, 5 (empty) → 4.
+
+=== task: mcq hard
+title: No empty slots left
+prompt: A table with linear probing has 8 slots: 3 hold pairs and 5 hold tombstones, and none is empty. What happens when `get` (the version from this lesson) looks for a key that isn't there?
+* It never stops: with no empty slot, nothing ends the walk, so it goes round and round the table :: Right. That's why tombstones count as filled when deciding to resize.
+- It returns None after checking every slot once :: The loop only stops at the key or an empty slot; it doesn't count how many slots it has checked.
+- It stops at the first tombstone :: Tombstones don't stop a search.
+- It raises an IndexError at the end of the list :: `(i + 1) % size` wraps round, so the index never goes past the end.
+hint: What are the only two things that end the loop?
+hint: Is either of them in this table for a missing key?
+right: With no empty slot and no matching key, the `while` condition is always true. Keeping the table under two-thirds used, tombstones included, guarantees an empty slot.
+wrong: `get` stops only at the key or at an empty slot. Here there's neither, and `%` wraps the index round forever. Counting tombstones as filled and resizing early prevents this.
+
+=== task: multi hard
+title: Why resize early?
+prompt: Choose **every** reason an open addressing hash map resizes when it's about two-thirds full, instead of waiting until it's full.
+* Probes climb steeply as the table fills, because clusters join up into long runs :: Right. At 0.9 full, a miss takes about 50 probes.
+* A search for a missing key needs an empty slot to stop at :: Right. A full table would make such a search loop forever.
+* Doubling makes resizes rare, so `put` stays O(1) amortized :: Right. Resizing early doesn't make resizing frequent.
+- Resizing removes all collisions :: Keys still collide in the bigger table, only less often.
+- At two-thirds full, every key is still in its home slot :: Collisions start long before that; many keys are already past their home slots.
+hint: Look back at the probes for a load factor of 0.5 compared with 0.9.
+hint: What ends a miss?
+right: Low load factors keep clusters short and guarantee empty slots, and doubling keeps the cost of resizing O(1) per put on average.
+wrong: Resize early because probes explode as clusters merge, and because a miss needs an empty slot to end on. Doubling keeps it cheap. Collisions never disappear completely.
+
+=== task: parsons hard
+title: Resize without tombstones
+prompt: Arrange the lines so that `resize` puts every pair into a bigger table and leaves the tombstones behind, and the program prints:
+
+```output
+[None, (11, 'c'), (2, 'b'), None, None, None, None, None, (8, 'a'), None]
+```
+
+Not every line is needed.
+lines:
+```python
+DELETED = "deleted"
+
+def resize(slots, new_size):
+    new = [None] * new_size
+    for pair in slots:
+        if pair is not None and pair != DELETED:
+            i = pair[0] % new_size
+            while new[i] is not None:
+                i = (i + 1) % new_size
+            new[i] = pair
+    return new
+
+old = [(8, "a"), DELETED, (2, "b"), (11, "c"), None]
+print(resize(old, 10))
+```
+distractors:
+```python
+        if pair is not None:
+            i = pair[0] % len(slots)
+```
+hint: Skip both empty slots and tombstones.
+hint: Each pair's home slot is worked out with the new size.
+right: Only the three real pairs are moved, each by probing in the new table: 8 → 8, 2 → 2 and 11 → 1. The tombstone is gone.
+wrong: Make `new_size` empty slots. For every pair that isn't None or `DELETED`, start at `pair[0] % new_size`, probe to a free slot and store it there.
