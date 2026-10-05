@@ -562,20 +562,24 @@ class Interp {
   augAssign0(s, f) {
     const t = s.target;
     if (t.type === 'Name') {
-      const cur = this.loadName(f, t.id);
+      let cur;
+      // `count += 1` with no value yet: Python underlines the name (UnboundLocalError / NameError)
+      try { cur = this.loadName(f, t.id); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
       this.storeName(f, t.id, this.inplace(s.op, cur, this.eval(s.value, f)));
       return;
     }
     if (t.type === 'Attribute') {
       const obj = this.eval(t.value, f);
-      const cur = this.getAttr(obj, t.attr);
+      let cur;
+      try { cur = this.getAttr(obj, t.attr); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
       this.setAttr(obj, t.attr, this.inplace(s.op, cur, this.eval(s.value, f)));
       return;
     }
     if (t.type === 'Subscript') {
       const obj = this.eval(t.value, f);
       const key = this.evalSlice(t.slice, f);
-      const cur = this.getItem(obj, key);
+      let cur;
+      try { cur = this.getItem(obj, key); } catch (err) { if (err instanceof PyThrow && t.col !== undefined) markLoc(err, f, t); throw err; }
       this.setItem(obj, key, this.inplace(s.op, cur, this.eval(s.value, f)));
     }
   }

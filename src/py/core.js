@@ -592,11 +592,12 @@ class Parser {
       } else if (this.eatOp('/')) {
         // positional-only marker: ignored
       } else {
+        const nameTok = this.tok;
         const nm = this.expectName(); addName(nm);
         if (allowAnn && this.eatOp(':')) this.parseTest();
         let def = null;
         if (this.eatOp('=')) { def = this.parseTest(); if (!kwOnly) seenDefault = true; }
-        else if (seenDefault && !kwOnly) this.error('parameter without a default follows parameter with a default');
+        else if (seenDefault && !kwOnly) this.error('parameter without a default follows parameter with a default', nameTok);
         params.push({ name: nm, kind: kwOnly ? 'kwonly' : 'pos', def });
       }
       if (!this.eatOp(',')) break;
@@ -968,9 +969,24 @@ class Parser {
       if (this.isOp('*')) { const line = this.advance().line; args.push({ type: 'Starred', value: this.parseTest(), line }); }
       else if (this.isOp('**')) { this.advance(); keywords.push({ arg: null, value: this.parseTest() }); }
       else if (this.tok.type === 'NAME' && this.peekTok().type === 'OP' && this.peekTok().value === '=') {
-        const nm = this.advance().value;
+        const nameTok = this.advance();
+        const nm = nameTok.value;
         this.advance();
-        keywords.push({ arg: nm, value: this.parseTest() });
+        const value = this.parseTest();
+        // like CPython, a repeated keyword is caught when the code is read, underlining `name=value`
+        if (keywords.some((k) => k.arg === nm)) {
+          let ec = nameTok.endCol;
+          if (value && value.endLine === nameTok.line && value.endCol !== undefined) ec = value.endCol;
+          else {
+            // the value runs onto later lines: underline to the end of this line, as CPython does
+            for (let k = this.i - 1; k >= 0; k--) {
+              const tk = this.toks[k];
+              if (tk.line === nameTok.line && tk.endCol !== undefined && tk.type !== 'NEWLINE') { ec = Math.max(ec, tk.endCol); break; }
+            }
+          }
+          this.error(`keyword argument repeated: ${nm}`, nameTok, undefined, nameTok.col, ec);
+        }
+        keywords.push({ arg: nm, value });
       } else {
         const est = this.tok;
         const e = this.parseNamedTest();
