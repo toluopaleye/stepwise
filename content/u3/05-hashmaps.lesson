@@ -1,0 +1,1138 @@
+=== lesson
+id: ds-hashmaps
+title: Hash maps
+summary: A hash map finds a value by its key in O(1) on average, without searching. A hash function turns the key into a number, and the number picks a bucket. You'll write hash functions, see why different keys can land in the same bucket, build a small hash map with buckets of key-value pairs, keep it fast by resizing, and see what makes the worst case O(n). Python's `dict` and `set` work this way.
+
+=== learn
+### Finding things by key
+A phone book maps names to numbers. Kept as a list of `(name, number)` pairs, finding a name means checking the pairs one by one: O(n). A **hash map** does better: it works out **where** a key is stored from the key itself, so it can go straight there. Python's `dict` is a hash map, which is why `d[key]` is O(1) on average however big the dictionary is.
+
+The idea in three steps:
+
+1. A **hash function** turns the key into a whole number.
+2. That number, `% size`, picks one of `size` **buckets**: places in a list.
+3. The key and its value are stored in that bucket, so looking the key up later goes straight to the same bucket.
+
+### A hash function
+A hash function must give the **same** number every time for the same key. A simple one for strings adds up the code numbers of the characters. `ord(ch)` gives a character's code number: `ord("a")` is 97, `ord("b")` is 98, and each letter after that is one more.
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+for word in ["cat", "dog", "act"]:
+    print(word, simple_hash(word))
+```
+```output
+cat 312
+dog 314
+act 312
+```
+"cat" is 99 + 97 + 116 = 312. But "act" has the same letters, so it gets the same number: adding ignores the order. A better hash mixes in the position of each character, multiplying the total so far by a number such as 31 before adding the next character:
+```python
+def poly_hash(key):
+    h = 0
+    for ch in key:
+        h = h * 31 + ord(ch)
+    return h
+
+print(poly_hash("cat"), poly_hash("act"), poly_hash("ab"), poly_hash("ba"))
+```
+```output
+98262 96402 3105 3135
+```
+Now the order matters: "ab" is 97 × 31 + 98 = 3105, but "ba" is 98 × 31 + 97 = 3135. Python has its own `hash()` built in, but for strings it changes every time a program starts (a safety feature), so this lesson uses its own hash functions to get the same results every run.
+
+### From hash to bucket
+A hash map keeps a list of `size` buckets. The bucket for a key is its hash `% size`, which is always between 0 and `size - 1`:
+
+| key | `simple_hash(key)` | bucket (`% 8`) |
+| --- | --- | --- |
+| "cat" | 312 | 0 |
+| "dog" | 314 | 2 |
+| "bird" | 417 | 1 |
+| "fish" | 426 | 2 |
+
+Working out the bucket costs one pass over the key's characters, which doesn't depend on how many keys the map holds, so for keys of ordinary length it's O(1). Then the map looks only inside that one bucket.
+
+### Collisions
+"dog" and "fish" both land in bucket 2. Two different keys in the same bucket is called a **collision**. Collisions can't be avoided: there are far more possible keys than buckets, so some keys must share. A hash map has to cope with them, and there are two usual ways, each with its own lesson next:
+
+- **separate chaining**: each bucket holds a list of all the `(key, value)` pairs that landed there,
+- **open addressing**: each slot holds one pair, and a key whose slot is taken goes to another free slot nearby.
+
+### A tiny hash map
+Here is a hash map with separate chaining. Each bucket is a list of `[key, value]` pairs; a pair is a small list so that its value can be changed later:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+class HashMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+
+    def put(self, key, value):
+        bucket = self.buckets[simple_hash(key) % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+
+    def get(self, key):
+        bucket = self.buckets[simple_hash(key) % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                return pair[1]
+        return None
+
+m = HashMap(8)
+m.put("dog", 4)
+m.put("fish", 0)
+m.put("cat", 4)
+m.put("dog", 3)
+print(m.get("dog"), m.get("fish"), m.get("cow"))
+print(m.buckets[2])
+```
+```output
+3 0 None
+[['dog', 3], ['fish', 0]]
+```
+- `put` finds the bucket. If the key is already in it, the value is replaced; otherwise a new pair is appended.
+- `get` finds the bucket and checks only the pairs in it. A missing key gives None.
+- Bucket 2 holds both "dog" and "fish": their collision costs one extra comparison, not a search of the whole map.
+
+The buckets are made with a comprehension, so each one is a separate list (the `* size` trap from the 2D arrays lesson applies here too). Animation 1 puts keys into buckets.
+
+### Load factor and resizing
+If the n keys are spread evenly over the buckets, each bucket holds about n / size pairs. That number is the **load factor**. With the load factor kept at about 1 or below, each bucket holds only a pair or two, so `get` and `put` are O(1) on average.
+
+As keys are added the load factor grows, so the map **resizes**: when n / size goes over a limit, it makes twice as many buckets and puts every pair into its new bucket, because `hash % size` changes when `size` does. This **rehashing** is O(n), but doubling makes it rare, so `put` stays O(1) amortized, exactly like appending to a dynamic array. Python's `dict` resizes when it's about two-thirds full. Animation 2 shows a resize.
+
+### The worst case
+A hash map is only as good as its hash function. Here are 16 three-letter animal names in 8 buckets, hashed by their length and by `simple_hash`:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+words = ["cat", "dog", "pig", "cow", "hen", "ant", "bee", "owl",
+         "fox", "yak", "emu", "elk", "bat", "rat", "eel", "ape"]
+by_length = [0] * 8
+by_sum = [0] * 8
+for w in words:
+    by_length[len(w) % 8] += 1
+    by_sum[simple_hash(w) % 8] += 1
+print(by_length)
+print(by_sum)
+```
+```output
+[0, 0, 0, 16, 0, 0, 0, 0]
+[2, 1, 2, 2, 2, 2, 2, 3]
+```
+Hashing by length puts every word in bucket 3, so finding a word means searching all 16 pairs: the hash map has turned into a list, O(n). The sum spreads them out, at most 3 per bucket. In the **worst case**, when every key collides, `get` and `put` are O(n). Good hash functions make that very unlikely, which is why hash maps are described as O(1) **on average**.
+
+### Python's dict and set
+Python's `dict` and `set` are hash tables (CPython uses open addressing). Their keys must be **hashable**: a key's hash must never change, so keys must be values that can't change, like numbers, strings and tuples. A list can change, so it can't be a key: `{[1, 2]: "x"}` raises `TypeError: unhashable type: 'list'`, as you saw in the Dictionaries lesson.
+
+| Operation | `dict` / `set`, on average | worst case |
+| --- | --- | --- |
+| `d[key]`, `d[key] = value`, `key in d` | O(1) | O(n) |
+| `del d[key]` | O(1) | O(n) |
+| going through all n keys | O(n) | O(n) |
+| finding the smallest key | O(n): no order to use | O(n) |
+
+A hash map has no order to exploit, so anything that needs the keys sorted, like the smallest key or the keys between two values, is O(n) (or O(n log n) to sort them). Binary search trees, later in this unit, keep keys in order.
+
+=== keypoints
+- A hash map stores each key in the bucket given by `hash(key) % size`, so it can go straight to the key: `get` and `put` are O(1) on average.
+- A hash function must give the same number for the same key every time. Mixing in each character's position (`h = h * 31 + ord(ch)`) spreads keys better than adding the character codes, which ignores order.
+- Different keys can land in the same bucket: a **collision**. Separate chaining keeps a list of pairs in each bucket; open addressing looks for another free slot.
+- The **load factor** is n / size. When it gets too big, the map doubles its buckets and rehashes every key: O(n) now and then, O(1) amortized.
+- In the worst case, when every key collides (a bad hash function), operations are O(n).
+- `dict` and `set` are hash tables. Their keys must be hashable, meaning unchangeable: strings, numbers and tuples, but not lists.
+
+=== example: Where the keys land
+intro: Ten words hashed into 5 buckets. The program shows each bucket's words, so you can see which keys collide.
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+words = ["apple", "kiwi", "fig", "pear", "lime", "plum", "date", "melon", "grape", "lemon"]
+buckets = [[] for i in range(5)]
+for w in words:
+    buckets[simple_hash(w) % 5].append(w)
+for i in range(5):
+    print(i, buckets[i])
+```
+1-5: Add up the character codes.
+7-8: Five empty buckets, each its own list.
+9-10: Each word goes into the bucket `simple_hash(w) % 5`.
+11-12: "melon" and "lemon" have the same letters, so the sum puts them in the same bucket. The load factor is 10 / 5 = 2, but the words aren't spread evenly: bucket 4 holds four of them, and buckets 2 and 3 one each.
+
+=== example: Growing the buckets
+intro: A hash map with integer keys that doubles its buckets whenever the load factor goes over 1, printing the number of buckets as it grows.
+```python
+class GrowingMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(2)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+        self.count += 1
+        if self.count > len(self.buckets):
+            old = self.buckets
+            self.buckets = [[] for i in range(2 * len(old))]
+            for b in old:
+                for k, v in b:
+                    self.buckets[k % len(self.buckets)].append([k, v])
+            print("resized to", len(self.buckets), "buckets for", self.count, "keys")
+
+m = GrowingMap()
+for k in range(10):
+    m.put(k * 7, k)
+print(m.buckets)
+```
+1-4: Start small: 2 buckets, no keys. An integer is its own hash here: the bucket is `key % size`.
+6-13: The usual chaining put, counting new keys.
+14-20: When there are more keys than buckets, make twice as many and put every pair into its new bucket: `k % size` gives a different answer for the new size.
+22-25: 10 keys cause resizes to 4, 8 and 16 buckets. The rehashing costs add up to less than 2 × 10 moves, so each put is O(1) amortized.
+
+=== animation: Putting keys into buckets
+view: buckets buckets hit=i
+vars key i
+intro: Four ID numbers put into a hash map of 5 buckets. An integer key is its own hash, so the bucket is `key % 5`. Watch three keys collide in bucket 2.
+```python
+buckets = [[] for i in range(5)]
+for key, name in [(12, "Ann"), (7, "Ben"), (22, "Cy"), (5, "Dee")]:
+    i = key % 5
+    buckets[i].append([key, name])
+found = None
+i = 22 % 5
+for pair in buckets[i]:
+    if pair[0] == 22:
+        found = pair[1]
+print(found)
+```
+1: Five empty buckets.
+2: Take the next ID and name, if any are left.
+3: The bucket for {key} is {key} % 5 = {key % 5}.
+4: Add [{key}, {name!r}] to bucket {i}{' (a collision: it already holds ' + str(len(buckets[i])) + ')' if buckets[i] else ''}.
+5: Now look up the name for ID 22.
+6: Its bucket is 22 % 5 = 2.
+7: Only bucket 2 is searched, one pair at a time.
+8: Is this pair's key 22? {pair[0] == 22}.
+9: Found it: {pair[1]!r}.
+10: Three keys share bucket 2, so the search took 3 comparisons. The other buckets were never touched.
+
+=== animation: Resizing
+view: buckets old title=old_buckets
+buckets new hit=j title=new_buckets
+vars key j
+intro: A map with 2 buckets holding 3 keys is too full, so every pair moves into a map of 4 buckets. Watch keys that shared a bucket split up, because `key % 4` differs from `key % 2`.
+```python
+old = [[[4, "a"], [6, "c"]], [[7, "b"]]]
+new = [[] for i in range(4)]
+for bucket in old:
+    for key, value in bucket:
+        j = key % 4
+        new[j].append([key, value])
+print(new)
+```
+1: 2 buckets holding 3 pairs: the load factor is 1.5, too high.
+2: Make 4 empty buckets: twice as many.
+3: Go through the old buckets, one at a time.
+4: Take the next pair in this bucket, if any are left.
+5: {key} goes into bucket {key} % 4 = {key % 4}.
+6: Move [{key}, {value!r}] into new bucket {j}.
+7: 4 and 6 shared a bucket before; now they're in buckets 0 and 2. Every pair moved once: O(n).
+
+=== task: predict easy
+title: Adding up character codes
+code:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+print(simple_hash("ab"), simple_hash("ba"), simple_hash("ab") % 10)
+```
+wrong[195 196 5]: Adding ignores the order: "ab" and "ba" have the same letters, so they get the same total.
+wrong[195 195 195]: `% 10` gives the remainder after dividing by 10: 195 % 10 is 5.
+wrong[97 98 7]: The hash adds up every character's code: 97 + 98 = 195.
+hint: `ord("a")` is 97 and `ord("b")` is 98.
+hint: 97 + 98, in either order.
+right: 195, 195 and 5: "ab" and "ba" collide, because adding doesn't care about the order of the letters.
+wrong: Both words add up to 97 + 98 = 195, and 195 % 10 is 5.
+
+=== task: mcq easy
+title: The one rule
+prompt: What must a hash function always do?
+* Give the same number every time it's given the same key :: Right. Otherwise a key could be stored in one bucket and looked for in another.
+- Give every different key a different number :: That's impossible: there are more possible keys than buckets, so some keys must share.
+- Give bigger numbers to keys that come later in the alphabet :: Hash maps don't need any order; the number only has to pick a bucket.
+- Give a random number each time :: Then `get` would look in the wrong bucket.
+hint: `put` and `get` each work out the bucket separately.
+hint: What would happen if they got different numbers for the same key?
+right: Same key, same number, same bucket: that's what lets `get` find what `put` stored. Collisions between different keys are allowed.
+wrong: The hash decides the bucket, so a key must always get the same hash, or it couldn't be found again.
+
+=== task: fill easy
+title: Pick the bucket
+prompt: Fill in the blank so that the hash picks one of the 8 buckets, and the program prints:
+
+```output
+2
+```
+code:
+```python
+h = 314
+size = 8
+bucket = h ?? size
+print(bucket)
+```
+answer: %
+wrong[//]: That's how many times 8 fits into 314: 39, which is past the last bucket.
+wrong[-]: 314 − 8 is 306, which isn't a bucket either.
+hint: The bucket must be between 0 and 7.
+hint: Which operator gives the remainder?
+right: `314 % 8` is 2: the remainder is always between 0 and size − 1, so it's always a real bucket.
+wrong: The bucket is the hash's remainder after dividing by the number of buckets: `%`.
+
+=== task: code easy
+title: A simple hash
+prompt: Write `simple_hash(key)` that returns the sum of the code numbers, `ord(ch)`, of all the characters in the string `key`.
+
+For example, `simple_hash("cat")` returns 312: 99 + 97 + 116.
+starter:
+```python
+def simple_hash(key):
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+```
+tests:
+- simple_hash("cat")
+- simple_hash("")
+- simple_hash("a")
+- simple_hash("ab")
+- simple_hash("Zz")
+fail[1]: 99 + 97 + 116 = 312: add the code of every character.
+fail[2]: An empty string has no characters: 0.
+fail[5]: Capital Z is 90 and small z is 122: 212.
+hint: Loop over the characters of `key`.
+hint: Add `ord(ch)` to `total` each time.
+right: One pass over the key: O(length of the key), whatever the number of keys in the map.
+wrong: For each character, add `ord(ch)` to the total, and return it.
+
+=== task: predict easy
+title: Buckets by remainder
+code:
+```python
+keys = [12, 7, 22, 5]
+print([k % 5 for k in keys])
+print([k % 7 for k in keys])
+```
+wrong[[2, 2, 2, 0]\n[5, 0, 1, 0]]: 5 % 7 is 5: 5 is smaller than 7, so the remainder is 5 itself.
+wrong[[2, 2, 2, 5]\n[5, 0, 1, 5]]: 5 % 5 is 0: 5 divides by 5 exactly.
+wrong[[2, 7, 2, 5]\n[5, 0, 1, 5]]: 7 % 5 is 2: 7 = 5 + 2.
+hint: With 5 buckets, 12, 7 and 22 all leave a remainder of 2.
+hint: A number smaller than the divisor is its own remainder.
+right: With 5 buckets, three keys collide in bucket 2; with 7 buckets they spread out, and 12 and 5 collide instead. The number of buckets changes which keys collide.
+wrong: % 5: 12 → 2, 7 → 2, 22 → 2, 5 → 0. % 7: 12 → 5, 7 → 0, 22 → 1, 5 → 5.
+
+=== task: multi easy
+title: Allowed as keys
+prompt: Choose **every** value that can be a key of a Python `dict`.
+* `"apple"` :: Right. Strings can't change, so they're hashable.
+* `42` :: Right. Numbers are hashable.
+* `(1, 2)` :: Right. A tuple can't change, so it's hashable.
+* `3.5` :: Right. Floats are hashable too.
+- `[1, 2]` :: Lists can change, so their hash could change: `TypeError: unhashable type: 'list'`.
+- `{"a": 1}` :: Dictionaries can change, so they can't be keys either.
+hint: A key's hash must never change.
+hint: Which of these can be changed after they're made?
+right: Keys must be hashable: unchangeable values like strings, numbers and tuples. Lists and dicts can change, so they can't be keys.
+wrong: Keys: the string, the int, the tuple and the float. Not: the list or the dict, because they can change.
+
+=== task: parsons easy
+title: Look up a key
+prompt: Arrange the lines so that `get` looks for a key in its bucket, and the program prints:
+
+```output
+5 None
+```
+
+Not every line is needed.
+lines:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+def get(buckets, key):
+    bucket = buckets[simple_hash(key) % len(buckets)]
+    for pair in bucket:
+        if pair[0] == key:
+            return pair[1]
+    return None
+
+buckets = [[], [["a", 1], ["e", 5]], [["b", 2]], []]
+print(get(buckets, "e"), get(buckets, "z"))
+```
+distractors:
+```python
+    bucket = buckets[simple_hash(key)]
+        if pair[1] == key:
+```
+hint: The bucket is the hash `% len(buckets)`.
+hint: Each pair is `[key, value]`: compare the key, return the value.
+right: "e" hashes to bucket 1, where it's found after "a"; "z" hashes to bucket 2, which doesn't hold it, so the answer is None. Only one bucket is searched each time.
+wrong: Find the bucket with `simple_hash(key) % len(buckets)`, return `pair[1]` for the pair whose `pair[0]` is the key, and return None after the loop.
+
+=== task: cells easy
+title: Which bucket?
+prompt: A hash map with 6 buckets puts each integer key into bucket `key % 6`. Which bucket does each key go into?
+labels: 13 | 24 | 6 | 40
+answer: 1 | 0 | 0 | 4
+wrong[1 | 4 | 6 | 4]: 24 % 6 is 0, because 24 is 4 × 6 exactly; and there's no bucket 6: 6 % 6 is 0.
+wrong[2 | 4 | 1 | 6]: That divides instead of taking the remainder.
+hint: The remainder after dividing by 6 is between 0 and 5.
+hint: 40 = 6 × 6 + 4.
+right: 1, 0, 0 and 4: 24 and 6 collide in bucket 0.
+wrong: 13 = 2 × 6 + 1 → 1. 24 = 4 × 6 → 0. 6 = 1 × 6 → 0. 40 = 6 × 6 + 4 → 4.
+
+=== task: mcq easy
+title: A collision
+prompt: What is a **collision** in a hash map?
+* Two different keys landing in the same bucket :: Right. The map has to keep both, which is what chaining and open addressing are for.
+- The same key being put twice with different values :: That's an update: the new value replaces the old one.
+- Looking up a key that isn't in the map :: That's a miss: `get` returns None (or `d[key]` raises a KeyError).
+- The map running out of buckets :: The map resizes when it gets too full; that isn't called a collision.
+hint: It's about where keys go.
+hint: Can two different keys have the same hash `% size`?
+right: Different keys can share a bucket because there are more possible keys than buckets. Collisions are normal; a good hash function only keeps them rare.
+wrong: A collision is two different keys hashing to the same bucket.
+
+=== task: predict easy
+title: Putting a key twice
+code:
+```python
+d = {}
+d["a"] = 1
+d["b"] = 2
+d["a"] = 3
+print(d, len(d))
+```
+wrong[{'a': 1, 'b': 2, 'a': 3} 3]: A key appears only once: putting "a" again replaces its value.
+wrong[{'b': 2, 'a': 3} 2]: Replacing a value keeps the key where it was, so "a" still comes first.
+wrong[{'a': 1, 'b': 2} 2]: `d["a"] = 3` replaces the old value, 1.
+hint: Can a dict hold the same key twice?
+hint: The second `d["a"] = ...` finds the key and changes its value.
+right: `{'a': 3, 'b': 2} 2`: a hash map's put first looks for the key in its bucket and updates it if it's there.
+wrong: "a" and "b" are added; then "a" is found and its value becomes 3. Two keys.
+
+=== task: code medium
+title: A better hash
+prompt: Write `poly_hash(key)` that starts with `h = 0` and, for each character in turn, sets `h = h * 31 + ord(ch)`, then returns h. Multiplying before each new character makes the position of every character count, so "ab" and "ba" get different hashes.
+
+For example, `poly_hash("ab")` returns 3105: 97 × 31 + 98.
+starter:
+```python
+def poly_hash(key):
+    h = 0
+    # your code here
+    return h
+```
+solution:
+```python
+def poly_hash(key):
+    h = 0
+    for ch in key:
+        h = h * 31 + ord(ch)
+    return h
+```
+tests:
+- poly_hash("ab")
+- poly_hash("ba")
+- poly_hash("")
+- poly_hash("a")
+- poly_hash("cat")
+- poly_hash("Hi")
+fail[1]: 97 × 31 + 98 = 3105: multiply the total so far by 31 before adding the next code.
+fail[2]: 98 × 31 + 97 = 3135, different from "ab".
+fail[3]: No characters: 0.
+fail[5]: ((99 × 31) + 97) × 31 + 116 = 98262.
+hint: Loop over the characters of `key`.
+hint: Each time: `h = h * 31 + ord(ch)`.
+right: Each character is multiplied by a different power of 31, depending on its position, so swapping letters changes the hash. Java's strings use exactly this hash.
+wrong: For each character, multiply the hash so far by 31 and add the character's code.
+
+=== task: code medium
+title: A hash map with buckets
+prompt: Write a class `HashMap(size)` that stores key-value pairs in `size` buckets, each a list of `[key, value]` pairs, using the `simple_hash` from the starter:
+- `put(key, value)`: if the key is already in its bucket, replace its value; otherwise append a new pair,
+- `get(key)`: return the key's value, or None if it isn't there.
+
+Make the buckets with a comprehension, so that each one is a separate list.
+starter:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+class HashMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+
+    # your code here
+```
+solution:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+class HashMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+
+    def put(self, key, value):
+        bucket = self.buckets[simple_hash(key) % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+
+    def get(self, key):
+        bucket = self.buckets[simple_hash(key) % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                return pair[1]
+        return None
+```
+tests:
+- (lambda m: [m.put("dog", 4), m.put("cat", 2), m.get("dog"), m.get("cat")][2:])(HashMap(8))
+- (lambda m: [m.put("dog", 4), m.put("dog", 3), m.get("dog"), m.buckets[2]][2:])(HashMap(8))
+- (lambda m: [m.get("cow")])(HashMap(4))
+- (lambda m: [m.put("dog", 1), m.put("fish", 2), m.get("fish"), m.get("dog"), m.buckets[2]][2:])(HashMap(8))
+- (lambda m: [m.put("ab", 1), m.put("ba", 2), m.get("ab"), m.get("ba")][2:])(HashMap(5))
+fail[1]: Each key's value comes back from its own bucket.
+fail[2]: Putting "dog" again replaces its value: bucket 2 holds one pair, `["dog", 3]`, not two.
+fail[3]: A key that was never put gives None.
+fail[4]: "dog" and "fish" collide in bucket 2: both pairs live there, and each `get` finds the right one by comparing keys.
+fail[5]: "ab" and "ba" have the same simple hash, so they share a bucket; compare the keys themselves, not their hashes.
+error[AttributeError]: Define both `put` and `get`.
+hint: Find the bucket: `self.buckets[simple_hash(key) % len(self.buckets)]`.
+hint: `put`: if a pair's key matches, set `pair[1] = value` and return; after the loop, append `[key, value]`.
+hint: `get`: return `pair[1]` for the matching pair; after the loop, return None.
+right: Only one bucket is searched, and with a good spread it holds a pair or two: O(1) on average. Comparing the stored keys is what keeps colliding keys apart.
+wrong: Both methods find the key's bucket. `put` updates a matching pair or appends a new one; `get` returns the matching pair's value or None.
+
+=== task: predict medium
+title: Chains
+code:
+```python
+buckets = [[] for i in range(3)]
+for key in [4, 9, 7, 3, 12]:
+    buckets[key % 3].append(key)
+print(buckets)
+```
+wrong[[[9, 3, 12], [4, 7], [], []]]: There are 3 buckets, numbered 0 to 2.
+wrong[[[3, 9, 12], [4, 7], []]]: Each bucket keeps its keys in the order they were added: 9 came before 3.
+wrong[[[9, 3, 12], [], [4, 7]]]: 4 % 3 is 1 and 7 % 3 is 1, so they go into bucket 1.
+hint: 9, 3 and 12 are all divisible by 3.
+hint: 4 and 7 both leave a remainder of 1.
+right: Bucket 0 holds a chain of three keys, bucket 1 two, and bucket 2 none: an uneven spread, so lookups in bucket 0 take longer.
+wrong: 4 → 1, 9 → 0, 7 → 1, 3 → 0, 12 → 0, each appended to its bucket in that order.
+
+=== task: fill medium
+title: Replace the value
+prompt: Fill in the blank so that putting an existing key replaces its value, and the program prints:
+
+```output
+[['cat', 9]]
+```
+code:
+```python
+bucket = [["cat", 2]]
+key = "cat"
+value = 9
+for pair in bucket:
+    if pair[0] == key:
+        pair[1] = ??
+print(bucket)
+```
+answer: value
+wrong[key]: That would store the key as the value: `['cat', 'cat']`.
+wrong[pair[1]]: That leaves the old value, 2, in place.
+hint: Which part of the pair is the value?
+hint: The new value is in `value`.
+right: `pair[1] = value` changes the pair in place, so the key keeps one pair with its newest value.
+wrong: The value is `pair[1]`, and it should become the new `value`.
+
+=== task: cells medium
+title: Load factors
+prompt: The load factor of a hash map is the number of keys divided by the number of buckets. Work it out for each map. Write it as a number, like `0.5` or `2`.
+labels: 6 keys, 8 buckets | 12 keys, 4 buckets | 9 keys, 9 buckets | 3 keys, 12 buckets
+answer: 0.75 | 3 | 1 | 0.25
+wrong[1.33 | 0.33 | 1 | 4]: The load factor is keys ÷ buckets, not buckets ÷ keys.
+wrong[0.75 | 3 | 1 | 4]: 3 keys in 12 buckets is 3 ÷ 12 = 0.25: most buckets are empty.
+hint: Divide the keys by the buckets.
+hint: 6 ÷ 8 = 0.75.
+right: 0.75, 3, 1 and 0.25. A load factor of 3 means about 3 pairs per bucket: time to resize.
+wrong: 6 ÷ 8 = 0.75. 12 ÷ 4 = 3. 9 ÷ 9 = 1. 3 ÷ 12 = 0.25.
+
+=== task: order medium
+title: Putting a key
+prompt: Put the steps of `put(key, value)` in a hash map with separate chaining in order.
+items:
+- Work out the key's hash
+- Take the hash `% size` to choose the bucket
+- Look through that bucket's pairs for the key
+- Replace the value if the key was found, otherwise append a new pair
+hint: The bucket depends on the hash.
+hint: Only the chosen bucket is searched.
+right: Hash, bucket, search the bucket, then update or append: only one bucket is touched.
+wrong: Hash the key, take `% size` for the bucket, look for the key in that bucket, then update its value or add a new pair.
+
+=== task: predict medium
+title: Same letters, different order
+code:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+def poly_hash(key):
+    h = 0
+    for ch in key:
+        h = h * 31 + ord(ch)
+    return h
+
+a = "listen"
+b = "silent"
+print(simple_hash(a) == simple_hash(b), poly_hash(a) == poly_hash(b))
+```
+wrong[False False]: "listen" and "silent" use the same letters, so their character codes add up to the same total.
+wrong[True True]: `poly_hash` multiplies by 31 before each new letter, so the order of the letters changes the result.
+wrong[False True]: It's the other way round: adding ignores the order, and multiplying doesn't.
+hint: Does adding care about order?
+hint: Does `h * 31 + ord(ch)` care about order?
+right: Anagrams always collide with the simple sum, but not with the polynomial hash, which gives each position a different weight.
+wrong: The sums are equal (same letters), so the first is True. The polynomial hashes differ (different order), so the second is False.
+
+=== task: mcq medium
+title: When is it slow?
+prompt: When do a hash map's `get` and `put` become O(n)?
+* When many keys land in the same bucket, for example because the hash function gives many keys the same number :: Right. Then one bucket holds most of the pairs, and searching it is O(n).
+- When the map has a lot of buckets :: More buckets means shorter chains, which is faster.
+- When the keys are strings rather than numbers :: Strings hash fine; what matters is how evenly the hashes spread.
+- When the values are very large :: Values aren't hashed or compared during a lookup; only keys are.
+hint: What does `get` have to search?
+hint: How big can one bucket get?
+right: A hash map is fast only while its buckets are short. A bad hash function, like the length of a word, piles everything into a few buckets: O(n).
+wrong: `get` searches one bucket. If most keys collide into it, that search is as slow as searching a list: O(n).
+
+=== task: multi medium
+title: O(1) on average
+prompt: Choose **every** operation that is O(1) on average for a Python `dict`.
+* `d[key]` :: Right. Hash the key and look in one place.
+* `d[key] = value` :: Right. Hash the key and store (or update) it there.
+* `key in d` :: Right. The same lookup.
+* `del d[key]` :: Right. Find it, then remove it.
+- Finding the smallest key :: A hash map keeps no order, so every key must be checked: O(n).
+- Listing all the keys in sorted order :: That needs sorting: O(n log n).
+hint: Which ones need only one key's position?
+hint: Four of them are.
+right: Anything about one key is O(1) on average. Anything about the order of the keys means looking at all of them.
+wrong: O(1): reading, storing, `in` and `del`. Not: the smallest key (O(n)) and sorted keys (O(n log n)).
+
+=== task: code medium
+title: How full is each bucket?
+prompt: Write `bucket_sizes(keys, size)` that returns a list of `size` counts: how many of the string `keys` land in each bucket, using `simple_hash(key) % size` (from the starter). Use `[0] * size` for the counts.
+
+For example, `bucket_sizes(["cat", "dog", "bird", "fish"], 8)` returns `[1, 1, 2, 0, 0, 0, 0, 0]`.
+starter:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+def bucket_sizes(keys, size):
+    counts = [0] * size
+    # your code here
+    return counts
+```
+solution:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+def bucket_sizes(keys, size):
+    counts = [0] * size
+    for k in keys:
+        counts[simple_hash(k) % size] += 1
+    return counts
+```
+tests:
+- bucket_sizes(["cat", "dog", "bird", "fish"], 8)
+- bucket_sizes([], 3)
+- bucket_sizes(["a", "b", "c", "d"], 2)
+- bucket_sizes(["ab", "ba"], 5)
+- bucket_sizes(["x"], 1)
+fail[1]: "cat" goes to bucket 0, "bird" to 1, and "dog" and "fish" both to 2.
+fail[2]: No keys: every bucket is empty.
+fail[3]: The codes 97, 98, 99, 100 alternate between odd and even: two keys in each bucket.
+fail[4]: "ab" and "ba" both hash to 195, and 195 % 5 is 0.
+error[IndexError]: Use `% size` so the bucket is between 0 and size − 1.
+hint: Loop over the keys.
+hint: Add 1 to `counts[simple_hash(k) % size]`.
+right: Counting the bucket sizes shows how well a hash function spreads the keys. The biggest count is the longest search.
+wrong: For each key, work out its bucket and add 1 to that bucket's count.
+
+=== task: code hard
+title: A hash map that grows
+prompt: Write a class `GrowingMap` for integer keys (an integer is its own hash, so a key's bucket is `key % len(self.buckets)`). It starts with 2 buckets and keeps `self.count`, the number of keys. Methods:
+- `put(key, value)`: update the key if it's there; otherwise add it, add 1 to `count`, and if `count` is now bigger than the number of buckets, resize: make twice as many buckets and put every pair into its new bucket,
+- `get(key)`: the value, or None.
+
+`put` must be O(1) amortized.
+starter:
+```python
+class GrowingMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(2)]
+        self.count = 0
+
+    # your code here
+```
+solution:
+```python
+class GrowingMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(2)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+        self.count += 1
+        if self.count > len(self.buckets):
+            old = self.buckets
+            self.buckets = [[] for i in range(2 * len(old))]
+            for b in old:
+                for k, v in b:
+                    self.buckets[k % len(self.buckets)].append([k, v])
+
+    def get(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                return pair[1]
+        return None
+```
+tests:
+- (lambda m: [[m.put(k, k * 10) for k in range(5)], m.get(3), m.get(4), m.get(9), m.count][1:])(GrowingMap())
+- (lambda m: [m.put(1, "a"), m.put(1, "b"), m.get(1), m.count][2:])(GrowingMap())
+- (lambda m: [[m.put(k * 4, k) for k in range(6)], [m.get(k * 4) for k in range(6)]][1])(GrowingMap())
+- (lambda m: [m.get(7), m.count])(GrowingMap())
+speed: setup=m = GrowingMap() | call=[m.put(i, i) for i in range(n)] | target=O(n)
+slow:
+```python
+class GrowingMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(2)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+        self.count += 1
+
+    def get(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for pair in bucket:
+            if pair[0] == key:
+                return pair[1]
+        return None
+```
+fail[1]: After the resizes, every key must still be found in its new bucket: 3 → 30, 4 → 40, and 9 was never put.
+fail[2]: Putting 1 twice updates it: one key, value "b".
+fail[3]: The keys 0, 4, 8, 12, 16 and 20 all collide while there are 2 or 4 buckets; after resizing, each must still be found.
+fail[4]: An empty map: None, and a count of 0.
+error[AttributeError]: Define both `put` and `get`.
+hint: `put` is the usual chaining put, plus `self.count += 1` when a new key is added.
+hint: When `self.count > len(self.buckets)`, keep the old buckets, make `2 * len(old)` new ones with a comprehension, and append every `[k, v]` into `self.buckets[k % len(self.buckets)]`.
+hint: `get` is the usual chaining get, using the current number of buckets.
+right: Doubling keeps the load factor at 1 or less, so chains stay short, and the rare O(n) rehash averages out to O(1) per put. With a fixed number of buckets, the chains would grow with n and putting n keys would be O(n²).
+wrong: Put as usual; when the count passes the number of buckets, double the buckets and re-insert every pair with the new `% size`. Get as usual.
+
+=== task: code hard
+title: Removing a key
+prompt: Write a class `HashMap` for string keys (using `simple_hash` from the starter) with `put`, `get`, and two more methods:
+- `remove(key)`: remove the key's pair and return True, or return False if the key isn't there,
+- `size()`: return the number of keys in the map.
+
+Keep a count of the keys in `self.count`, updated by `put` and `remove`, so that `size` is O(1).
+starter:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+class HashMap:
+    def __init__(self, n_buckets):
+        self.buckets = [[] for i in range(n_buckets)]
+        self.count = 0
+
+    def bucket_for(self, key):
+        return self.buckets[simple_hash(key) % len(self.buckets)]
+
+    def put(self, key, value):
+        bucket = self.bucket_for(key)
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+        self.count += 1
+
+    def get(self, key):
+        for pair in self.bucket_for(key):
+            if pair[0] == key:
+                return pair[1]
+        return None
+
+    # your code here
+```
+solution:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+class HashMap:
+    def __init__(self, n_buckets):
+        self.buckets = [[] for i in range(n_buckets)]
+        self.count = 0
+
+    def bucket_for(self, key):
+        return self.buckets[simple_hash(key) % len(self.buckets)]
+
+    def put(self, key, value):
+        bucket = self.bucket_for(key)
+        for pair in bucket:
+            if pair[0] == key:
+                pair[1] = value
+                return
+        bucket.append([key, value])
+        self.count += 1
+
+    def get(self, key):
+        for pair in self.bucket_for(key):
+            if pair[0] == key:
+                return pair[1]
+        return None
+
+    def remove(self, key):
+        bucket = self.bucket_for(key)
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                return True
+        return False
+
+    def size(self):
+        return self.count
+```
+tests:
+- (lambda m: [m.put("dog", 1), m.put("fish", 2), m.remove("dog"), m.get("dog"), m.get("fish"), m.size()][2:])(HashMap(8))
+- (lambda m: [m.put("a", 1), m.remove("b"), m.size()][1:])(HashMap(4))
+- (lambda m: [m.remove("x"), m.size()])(HashMap(4))
+- (lambda m: [m.put("a", 1), m.put("a", 2), m.size(), m.remove("a"), m.remove("a"), m.size()][2:])(HashMap(4))
+fail[1]: "dog" and "fish" share bucket 2. Removing "dog" must leave "fish" findable, and the size drops to 1.
+fail[2]: "b" isn't in the map, so `remove` returns False and the size stays 1.
+fail[3]: Removing from an empty map returns False.
+fail[4]: Putting "a" twice is still one key. The first remove returns True; the second finds nothing and returns False.
+error[AttributeError]: Define `remove` and `size`.
+hint: Find the bucket with `self.bucket_for(key)`.
+hint: Loop over its indexes; when `bucket[i][0] == key`, `bucket.pop(i)`, take 1 from `self.count`, and return True.
+hint: After the loop, return False. `size` returns `self.count`.
+right: Removing touches only one short bucket: O(1) on average. Counting keys as they come and go makes `size` O(1) instead of a count over every bucket.
+wrong: Search the key's bucket by index; pop the matching pair, lower the count and return True; return False if it isn't found. `size` returns the count.
+
+=== task: code hard
+title: Group the anagrams
+prompt: Two words are anagrams if they use the same letters, like "eat" and "tea". Write `group_anagrams(words)` that returns a list of groups: each group is a list of words that are anagrams of each other, in the order the words appear, and the groups are in the order their first word appears. Use a dict whose key for each word is its letters in sorted order, `"".join(sorted(w))`, so that all anagrams share a key.
+
+For example, `group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"])` returns `[["eat", "tea", "ate"], ["tan", "nat"], ["bat"]]`.
+starter:
+```python
+def group_anagrams(words):
+    groups = {}
+    # your code here
+    return list(groups.values())
+```
+solution:
+```python
+def group_anagrams(words):
+    groups = {}
+    for w in words:
+        key = "".join(sorted(w))
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(w)
+    return list(groups.values())
+```
+tests:
+- group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"])
+- group_anagrams([])
+- group_anagrams(["a"])
+- group_anagrams(["ab", "ba", "abc"])
+- group_anagrams(["listen", "silent", "enlist", "google"])
+fail[1]: "eat", "tea" and "ate" all sort to "aet"; "tan" and "nat" to "ant"; "bat" is on its own.
+fail[2]: No words, no groups.
+fail[4]: "abc" has different letters from "ab", so it's in a group of its own.
+error[KeyError]: Make an empty list for a key the first time you see it, before appending.
+hint: The key for a word is `"".join(sorted(w))`: anagrams give the same key.
+hint: If the key isn't in `groups` yet, set `groups[key] = []`; then append the word.
+hint: A dict remembers the order its keys were added in, so `list(groups.values())` gives the groups in first-seen order.
+right: Each word is sorted (O(k log k) for k letters) and put in a dict in O(1) on average: O(n × k log k) in all. Comparing every pair of words instead would be O(n²).
+wrong: For each word, sort its letters to make a key; add the word to that key's list, creating the list the first time. Return the lists.
+
+=== task: code hard
+title: Subarrays that add up
+prompt: Write `count_subarrays(nums, k)` that returns how many runs of numbers in a row (subarrays) in `nums` add up to exactly k. It must be O(n).
+
+Walk through the list keeping a running total. A run ending here adds up to k exactly when some earlier running total was `total - k`. So keep a dict counting how many times each running total has happened so far, starting with `{0: 1}` for the empty start, and for each number add `counts.get(total - k, 0)` to the answer.
+
+For example, `count_subarrays([1, 1, 1], 2)` returns 2: the first two 1s, and the last two.
+starter:
+```python
+def count_subarrays(nums, k):
+    counts = {0: 1}
+    total = 0
+    result = 0
+    # your code here
+    return result
+```
+solution:
+```python
+def count_subarrays(nums, k):
+    counts = {0: 1}
+    total = 0
+    result = 0
+    for x in nums:
+        total += x
+        result += counts.get(total - k, 0)
+        counts[total] = counts.get(total, 0) + 1
+    return result
+```
+tests:
+- count_subarrays([1, 1, 1], 2)
+- count_subarrays([1, 2, 3], 3)
+- count_subarrays([], 0)
+- count_subarrays([3, -1, 1, 2, -2], 2)
+- count_subarrays([0, 0, 0], 0)
+- count_subarrays([1, -1, 0], 0)
+speed: setup=nums = [1] * n; k = -1 | call=count_subarrays(nums, k) | target=O(n)
+slow:
+```python
+def count_subarrays(nums, k):
+    counts = {0: 1}
+    total = 0
+    result = 0
+    for i in range(len(nums)):
+        run = 0
+        for j in range(i, len(nums)):
+            run += nums[j]
+            if run == k:
+                result += 1
+    return result
+```
+fail[1]: [1, 1] at the start and [1, 1] at the end both add up to 2.
+fail[2]: [1, 2] and [3] both add up to 3.
+fail[4]: Three runs add up to 2: [3, -1], [-1, 1, 2] and [2].
+fail[5]: With zeros, every run adds up to 0: 3 of length 1, 2 of length 2 and 1 of length 3, so 6.
+fail[6]: [1, -1], [1, -1, 0] and [0] add up to 0.
+error[KeyError]: Use `counts.get(total - k, 0)`, which gives 0 for a total that hasn't happened.
+hint: For each number, add it to `total`.
+hint: Then add `counts.get(total - k, 0)` to `result`: each earlier total of `total - k` starts a run that adds up to k.
+hint: Last, record the new total: `counts[total] = counts.get(total, 0) + 1`.
+right: One pass with O(1) dict work per number: O(n). Adding up every run separately would be O(n²).
+wrong: Keep a running total and a dict of how often each total has appeared (starting with 0 once). At each number, every earlier total equal to `total - k` marks a run ending here that adds up to k.
+
+=== task: predict hard
+title: How many resizes?
+code:
+```python
+size = 2
+count = 0
+resizes = 0
+for key in range(20):
+    count += 1
+    if count > size:
+        size *= 2
+        resizes += 1
+print(size, resizes)
+```
+wrong[40 10]: The size doubles only when the count passes it: at counts 3, 5, 9 and 17.
+wrong[32 5]: After the resize at 17 keys the size is 32, and 20 keys never pass 32.
+wrong[16 3]: At 17 keys the count passes 16, so there's a fourth resize, to 32.
+hint: Resizes happen when count is 3, 5, 9 and 17.
+hint: The size goes 2, 4, 8, 16, 32.
+right: Four resizes for 20 keys: the number of resizes grows like log n, and their total copying stays under 2n.
+wrong: count 3 > 2: size 4. count 5 > 4: size 8. count 9 > 8: size 16. count 17 > 16: size 32. 4 resizes.
+
+=== task: predict hard
+title: After a resize
+code:
+```python
+old = [[2, 8], [5, 3]]
+new = [[] for i in range(4)]
+for bucket in old:
+    for key in bucket:
+        new[key % 4].append(key)
+print(new)
+```
+wrong[[[2, 8], [5, 3], [], []]]: Every key is moved by its new remainder, `key % 4`; the buckets aren't copied as they are.
+wrong[[[2], [8], [5], [3]]]: Each key goes into bucket `key % 4`, not the next empty bucket: 8 % 4 is 0, so 8 comes first.
+wrong[[[8, 2], [5], [], [3]]]: 2 % 4 is 2, not 0: 2 goes into bucket 2.
+hint: 8 % 4 = 0, 2 % 4 = 2.
+hint: 5 % 4 = 1, 3 % 4 = 3.
+right: `[[8], [5], [2], [3]]`: keys that shared a bucket with 2 buckets each get a bucket of their own with 4. That's why a resize must rehash every key.
+wrong: 2 → bucket 2, 8 → bucket 0, 5 → bucket 1, 3 → bucket 3.
+
+=== task: cells hard
+title: Where do they move?
+prompt: A hash map with 4 buckets holds the integer keys 3, 10, 15 and 6 (bucket = `key % 4`). It resizes to 8 buckets. Which bucket does each key move to?
+labels: 3 | 10 | 15 | 6
+answer: 3 | 2 | 7 | 6
+wrong[3 | 2 | 3 | 2]: Those are the old buckets, `key % 4`. After the resize, it's `key % 8`.
+wrong[3 | 10 | 15 | 6]: There are only 8 buckets, 0 to 7: 10 % 8 is 2 and 15 % 8 is 7.
+hint: Divide by 8 and take the remainder.
+hint: 15 = 8 + 7.
+right: 3, 2, 7 and 6. Before, 3 and 15 shared bucket 3, and 10 and 6 shared bucket 2; after the resize, every key has a bucket to itself.
+wrong: 3 % 8 = 3, 10 % 8 = 2, 15 % 8 = 7, 6 % 8 = 6.
+
+=== task: mcq hard
+title: Why resizing keeps it fast
+prompt: Why do hash maps double their number of buckets when they get too full, instead of keeping the same buckets?
+* Doubling keeps the load factor low, so buckets stay short, and the rehashing is rare enough to cost O(1) per put on average :: Right. The same reasoning as doubling a dynamic array.
+- So that no two keys can ever collide again :: Collisions still happen after a resize, only less often.
+- Because Python's `%` only works with even numbers :: `%` works with any positive number of buckets.
+- To keep the keys in sorted order :: Hash maps don't keep keys in order.
+hint: What happens to the chains if the buckets never grow?
+hint: How often does doubling happen?
+right: With a fixed number of buckets, chains grow with n and every operation slows down to O(n). Doubling when full keeps chains short, and since it happens at sizes 2, 4, 8, ..., the copying averages out.
+wrong: Without growing, the load factor and the chains grow with n. Doubling keeps them short, and its O(n) rehash happens so rarely that each put is O(1) amortized.
+
+=== task: multi hard
+title: A good hash function
+prompt: Choose **every** property of a good hash function for a hash map.
+* It gives the same number every time for the same key :: Right. That's the one rule that can never be broken.
+* It spreads different keys evenly over the buckets :: Right. Even spreading keeps every bucket short.
+* It's quick to work out :: Right. It runs on every `get` and `put`.
+* Similar keys, like "ab" and "ba", usually get different hashes :: Right. Using every character and its position avoids piling similar keys together.
+- It gives bigger numbers to bigger keys :: Order doesn't matter to a hash map; even spreading does.
+- It never gives two different keys the same number :: That's impossible when there are more possible keys than numbers; collisions can only be made rare.
+hint: What makes buckets short, and what makes lookups possible at all?
+hint: Four of them are good properties.
+right: Same key, same hash; even spreading; fast; sensitive to every character. Collisions can't be ruled out, only made rare.
+wrong: Good: consistent, evenly spread, fast, different for similar keys. Not needed: order. Not possible: no collisions at all.
+
+=== task: parsons hard
+title: Put with an update
+prompt: Arrange the lines so that `put` updates a key that's already in its bucket, or adds a new pair, and the program prints:
+
+```output
+[[], [['a', 3], ['e', 5]], [['b', 7]], []]
+```
+
+Not every line is needed.
+lines:
+```python
+def simple_hash(key):
+    total = 0
+    for ch in key:
+        total += ord(ch)
+    return total
+
+def put(buckets, key, value):
+    bucket = buckets[simple_hash(key) % len(buckets)]
+    for pair in bucket:
+        if pair[0] == key:
+            pair[1] = value
+            return
+    bucket.append([key, value])
+
+buckets = [[] for i in range(4)]
+put(buckets, "a", 1)
+put(buckets, "e", 5)
+put(buckets, "b", 7)
+put(buckets, "a", 3)
+print(buckets)
+```
+distractors:
+```python
+buckets = [[]] * 4
+            pair = [key, value]
+```
+hint: The new pair is added only after the whole bucket has been searched.
+hint: Change the value inside the stored pair, `pair[1]`; and make each bucket its own list.
+right: "a" is updated in place instead of being added twice, and each key lands in bucket `simple_hash(key) % 4`. `[[]] * 4` would make all four buckets one shared list, and `pair = [key, value]` would make a new pair without changing the stored one.
+wrong: Search the key's bucket; update the value and return if found; after the loop, append the new pair. Make the buckets with a comprehension so they're separate lists.
