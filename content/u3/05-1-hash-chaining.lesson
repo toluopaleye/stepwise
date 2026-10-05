@@ -1,0 +1,1302 @@
+=== lesson
+id: ds-hash-chaining
+title: Separate chaining
+summary: In separate chaining, every bucket of a hash map holds a chain: a list of all the key-value pairs whose keys landed there. You'll write `put`, `get` and `delete` that walk one chain, see how the load factor sets the length of the chains and why keys with a pattern can pile up, watch a resize split every chain in two, and build chains out of linked-list nodes.
+
+=== learn
+### Every bucket is a chain
+In the Hash maps lesson, a collision meant two keys landing in one bucket. **Separate chaining** deals with it by letting a bucket hold any number of pairs: a **chain**, the list of all the `(key, value)` pairs whose keys landed in that bucket. A collision costs nothing special: the new pair joins the end of the chain.
+
+Here are six ID numbers with names, put into 5 buckets in the order 10, 31, 7, 42, 25, 12. An integer key is its own hash, so the bucket is `key % 5`:
+
+| bucket | chain |
+| --- | --- |
+| 0 | `(10, "Ann")`, `(25, "Eve")` |
+| 1 | `(31, "Ben")` |
+| 2 | `(7, "Cy")`, `(42, "Dee")`, `(12, "Fay")` |
+| 3 | empty |
+| 4 | empty |
+
+Every operation does the same two things:
+
+1. Work out the bucket, `key % size`. That's O(1).
+2. Walk along that one chain, comparing each stored key with the key you want.
+
+So the cost of `put`, `get` or `delete` is the length of one chain, never the size of the whole map.
+
+### Put, get and delete
+This `ChainedMap` stores each pair as a tuple `(key, value)` and keeps `self.count`, the number of keys:
+```python
+class ChainedMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+
+    def get(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for k, v in bucket:
+            if k == key:
+                return v
+        return None
+
+    def delete(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                return True
+        return False
+
+m = ChainedMap(5)
+for key, name in [(10, "Ann"), (31, "Ben"), (7, "Cy"), (42, "Dee"), (25, "Eve"), (12, "Fay")]:
+    m.put(key, name)
+print(m.buckets)
+m.put(42, "Dan")
+print(m.get(42), m.get(17), m.count)
+print(m.delete(7), m.delete(7), m.count)
+print(m.buckets[2])
+```
+```output
+[[(10, 'Ann'), (25, 'Eve')], [(31, 'Ben')], [(7, 'Cy'), (42, 'Dee'), (12, 'Fay')], [], []]
+Dan None 6
+True False 5
+[(42, 'Dan'), (12, 'Fay')]
+```
+- `put` walks the chain by index. If the key at index `i` matches, it replaces the whole pair: `bucket[i] = (key, value)`. A tuple can't be changed, so its value can't be changed on its own. (The Hash maps lesson used small lists as pairs and changed `pair[1]`; both ways work.) Only a new key is appended and counted, so updating 42 kept the count at 6.
+- `get` unpacks each pair into `k` and `v`. A key that isn't there, like 17, walks the whole chain and gives None.
+- `delete` finds the pair's index and pops it. Popping from the middle shifts the pairs after it, but a chain holds only a pair or two, so that's O(1) on average. The count drops only when a pair was really removed: the second `delete(7)` found nothing and returned False.
+
+Animation 1 puts pairs into chains one comparison at a time.
+
+### How long are the chains?
+The **load factor**, n / size, is the average chain length: n pairs shared out over `size` buckets. But the chains aren't all the same length. Here 1000 user names are hashed with `poly_hash` from the Hash maps lesson into 250, 1000 and 4000 buckets. The program prints the number of buckets, the load factor, the longest chain and the number of empty buckets:
+```python
+def poly_hash(key):
+    h = 0
+    for ch in key:
+        h = h * 31 + ord(ch)
+    return h
+
+names = ["user" + str(i) for i in range(1000)]
+for size in [250, 1000, 4000]:
+    lengths = [0] * size
+    for name in names:
+        lengths[poly_hash(name) % size] += 1
+    print(size, len(names) / size, max(lengths), lengths.count(0))
+```
+```output
+250 4.0 8 0
+1000 1.0 4 418
+4000 0.25 3 3244
+```
+With a load factor of 1, the average chain has 1 pair, but 418 buckets are empty and the longest chain has 4. A lookup costs the length of the one chain it walks. Write α (the Greek letter alpha) for the load factor:
+
+- a **miss**, looking for a key that isn't there, walks a whole chain: about α comparisons on average,
+- a **hit** stops at its key, on average about halfway along: roughly 1 + α/2 comparisons.
+
+Either way it's O(1 + α): 1 for working out the bucket, α for the chain. Keep α below a fixed limit, and every operation is O(1) on average.
+
+### Keys with a pattern
+`key % size` spreads keys well only if the keys don't share a pattern with `size`. Here are 20 order numbers that all end in 0 (10, 20, 30, up to 200), counted into 10, 8 and 7 buckets:
+```python
+keys = [10 * k for k in range(1, 21)]
+for size in [10, 8, 7]:
+    lengths = [0] * size
+    for key in keys:
+        lengths[key % size] += 1
+    print(size, lengths)
+```
+```output
+10 [20, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+8 [5, 0, 5, 0, 5, 0, 5, 0]
+7 [2, 3, 3, 3, 3, 3, 3]
+```
+- With 10 buckets, every key ends in 0, so `key % 10` is always 0: one chain of 20 pairs, and every lookup searches all of them. The map has become a list: O(n).
+- With 8 buckets, every key is even and so is 8, so every remainder is even: only the 4 even buckets are used, and the chains are twice as long as they should be.
+- With 7 buckets, the keys spread over all 7. 7 is a **prime number**: only 1 and 7 divide it, so it shares nothing with 10, and the pattern can't line up with it.
+
+That's one reason some hash tables use a prime number of buckets. A good hash function and a good number of buckets work together.
+
+### Resizing and rehashing
+As keys are added, α grows and the chains get longer. So a chained map **resizes**: when the count goes over a limit, often 0.75 × the number of buckets, it makes twice as many buckets and **rehashes**, putting every pair into the chain `key % new_size`:
+```python
+def rehash(old, new_size):
+    new = [[] for i in range(new_size)]
+    for bucket in old:
+        for key, value in bucket:
+            new[key % new_size].append((key, value))
+    return new
+
+old = [[(8, "a"), (4, "b")], [(1, "c"), (13, "d"), (5, "e")], [], [(7, "f")]]
+new = rehash(old, 8)
+for j in range(8):
+    print(j, new[j])
+```
+```output
+0 [(8, 'a')]
+1 [(1, 'c')]
+2 []
+3 []
+4 [(4, 'b')]
+5 [(13, 'd'), (5, 'e')]
+6 []
+7 [(7, 'f')]
+```
+- Rehashing doesn't call `put`. The keys are already known to be different, so each pair is appended straight onto its new chain with no searching, and the count doesn't change.
+- The chains split. Old bucket 1 held 1, 13 and 5: 1 stayed in bucket 1, while 13 and 5 moved to bucket 5, which is 1 + 4. When the number of buckets doubles from m to 2m, a key from old bucket b always goes to new bucket b or b + m: 13 % 4 is 1, and 13 % 8 is 5 = 1 + 4.
+- A resize moves all n pairs: O(n). Doubling makes resizes rare, so `put` stays O(1) amortized. Example 2 counts the moves, and Animation 2 shows this resize pair by pair.
+
+### Chains as linked lists
+Textbooks often make each chain a linked list, with one node per pair. The map keeps a list of **heads**: `heads[i]` is the first node of bucket i's chain, or None if the bucket is empty.
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+class LinkedChainMap:
+    def __init__(self, size):
+        self.heads = [None] * size
+
+    def put(self, key, value):
+        i = key % len(self.heads)
+        node = self.heads[i]
+        while node is not None:
+            if node.key == key:
+                node.value = value
+                return
+            node = node.next
+        self.heads[i] = Node(key, value, self.heads[i])
+
+    def get(self, key):
+        node = self.heads[key % len(self.heads)]
+        while node is not None:
+            if node.key == key:
+                return node.value
+            node = node.next
+        return None
+
+m = LinkedChainMap(4)
+for key, name in [(5, "Ann"), (9, "Ben"), (13, "Cy")]:
+    m.put(key, name)
+m.put(9, "Bo")
+node = m.heads[1]
+while node is not None:
+    print(node.key, node.value)
+    node = node.next
+print(m.get(13), m.get(2))
+```
+```output
+13 Cy
+9 Bo
+5 Ann
+Cy None
+```
+- A new key goes in **at the head**: `Node(key, value, self.heads[i])` points at the old first node, then becomes the new first node. That's O(1) with no shifting, and it's why bucket 1 lists the newest key, 13, first.
+- `put` changes a found key's value in place: 9 became "Bo" without a new node.
+- `get` follows `.next` until it finds the key or reaches None, exactly like searching a linked list.
+- `[None] * size` is safe here, unlike `[[]] * size`: a head is only ever replaced, `self.heads[i] = ...`, never changed in place.
+
+### Separate chaining in practice
+Java's `HashMap` uses separate chaining. It starts with 16 buckets and doubles them when there are more than 0.75 × as many keys as buckets. Since Java 8, a chain that grows past 8 pairs (once the map has at least 64 buckets) is turned into a balanced search tree, so searching even a very long chain takes about O(log n) steps instead of O(n). Python's `dict` uses open addressing instead: the next lesson.
+
+| Operation | on average (α kept below a limit) | worst case (one long chain) |
+| --- | --- | --- |
+| `put`, `get`, `delete` | O(1) | O(n) |
+| resize (rehash every pair) | O(n), but O(1) amortized per `put` | O(n) |
+| listing every key | O(size + n): every bucket is visited | O(size + n) |
+
+Chaining's strengths: deleting a pair removes it from its chain and nothing else, and the load factor can even go over 1 without the map breaking. Its cost is memory: a separate list for every bucket, or a node object for every pair.
+
+=== keypoints
+- In separate chaining, each bucket holds a chain: every `(key, value)` pair whose key landed there. `put`, `get` and `delete` work out the bucket, then walk only that chain.
+- A tuple pair can't be changed, so `put` updates a key by replacing the pair at its index: `bucket[i] = (key, value)`. `delete` pops the pair at its index. The count changes only for a new key or a real delete.
+- The load factor α = n / size is the average chain length. A miss walks a whole chain (about α comparisons), a hit about half of one: O(1 + α), which is O(1) while α stays below a limit.
+- Keys with a pattern can share a factor with the number of buckets and pile into a few chains; a prime number of buckets spreads them out.
+- A resize makes twice as many buckets and appends every pair to the chain `key % new_size`: O(n), but rare, so `put` is O(1) amortized. Doubling from m to 2m sends each pair in bucket b to bucket b or b + m.
+- A chain can be a linked list: a new node goes in at the head in O(1), and `get` follows `.next` until it finds the key or reaches None.
+
+=== example: Counting words in chains
+intro: A chained map with string keys counts how often each word appears, then shows the chains, so you can see which words collided.
+```python
+def poly_hash(key):
+    h = 0
+    for ch in key:
+        h = h * 31 + ord(ch)
+    return h
+
+class ChainedMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+
+    def put(self, key, value):
+        bucket = self.buckets[poly_hash(key) % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+
+    def get(self, key, default):
+        for k, v in self.buckets[poly_hash(key) % len(self.buckets)]:
+            if k == key:
+                return v
+        return default
+
+counts = ChainedMap(5)
+for word in "the cat sat on the mat and the dog sat on the cat".split():
+    counts.put(word, counts.get(word, 0) + 1)
+print(counts.get("the", 0), counts.get("sat", 0), counts.get("cow", 0))
+for i in range(5):
+    print(i, counts.buckets[i])
+```
+1-5: The polynomial hash from the Hash maps lesson turns a word into a number.
+7-9: Five empty chains, each its own list.
+11-17: Walk the word's chain. If the word is there, replace its whole pair; otherwise append a new pair.
+19-23: Like `dict.get`: the word's count, or `default` if the word isn't in its chain.
+25-27: For each word, store its count plus 1. `get(word, 0)` gives 0 the first time a word is seen.
+28: "the" appears 4 times and "sat" twice. "cow" was never seen, so its count is the default, 0.
+29-30: 7 different words in 5 buckets: a load factor of 1.4. Chain 2 holds three words and chain 0 none, so finding "and" takes 3 comparisons.
+
+=== example: Resizing at three-quarters full
+intro: A chained map that doubles its buckets whenever the keys outnumber three-quarters of the buckets, counting how many pairs its resizes move.
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+        self.moves = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+        if self.count > 0.75 * len(self.buckets):
+            self.resize(2 * len(self.buckets))
+
+    def resize(self, new_size):
+        old = self.buckets
+        self.buckets = [[] for i in range(new_size)]
+        for bucket in old:
+            for key, value in bucket:
+                self.buckets[key % new_size].append((key, value))
+                self.moves += 1
+        print(self.count, "keys: now", new_size, "buckets")
+
+m = ChainedMap()
+for key in range(100):
+    m.put(key, str(key))
+print("moves:", m.moves, "for", m.count, "keys")
+```
+1-5: Start with 8 buckets. Count the keys, and count every pair that a resize moves.
+7-14: The chaining `put` from this lesson: update an existing key, or append and count a new one.
+15-16: More keys than 0.75 × the buckets: double the buckets.
+18-25: Rehash. Every pair is appended to the chain `key % new_size`, with no searching, and the count doesn't change.
+27-30: 100 keys cause 5 resizes, at 7, 13, 25, 49 and 97 keys. They move 7 + 13 + 25 + 49 + 97 = 191 pairs in all: fewer than 2 per `put`, so `put` is O(1) amortized.
+
+=== animation: Putting pairs into chains
+view: buckets buckets hit=b
+vars key name b i found
+intro: Five pairs are put into a chained map with 4 buckets. Each put checks the key's chain before adding to it. Watch three keys share chain 1, and the second put of 9 update its pair instead of adding one.
+```python
+buckets = [[] for i in range(4)]
+for key, name in [(5, "Ann"), (9, "Ben"), (2, "Cy"), (13, "Dee"), (9, "Bo")]:
+    b = key % 4
+    found = False
+    for i in range(len(buckets[b])):
+        if buckets[b][i][0] == key:
+            buckets[b][i] = (key, name)
+            found = True
+    if not found:
+        buckets[b].append((key, name))
+print(buckets)
+```
+1: Four empty chains.
+2: Take the next pair to put, if any are left.
+3: {key} goes in bucket {key} % 4 = {key % 4}.
+4: Before adding, check whether {key} is already in chain {b}.
+5: Take the next pair in chain {b}, if any are left.
+6: Is the stored key {buckets[b][i][0]} equal to {key}? {buckets[b][i][0] == key}.
+7: Yes: replace the whole pair with ({key}, {name!r}). A tuple can't be changed, so the pair is replaced.
+8: Remember that the key was found.
+9: {'The key was found and updated, so nothing is added.' if found else 'The key is not in the chain yet.'}
+10: Append ({key}, {name!r}) to the end of chain {b}{': a collision' if buckets[b] else ''}.
+11: Chain 1 holds three keys, so finding 13 takes 3 comparisons. Putting 9 again updated it: the map still has 4 keys.
+
+=== animation: A resize splits the chains
+view: buckets old hit=b title=old_buckets
+buckets new hit=j title=new_buckets
+vars b key j
+intro: A map with 4 buckets holds 6 pairs, so it doubles to 8 buckets and rehashes every pair. Watch each pair from old bucket b land in new bucket b or b + 4.
+```python
+old = [[(8, "a"), (4, "b")], [(1, "c"), (13, "d"), (5, "e")], [], [(7, "f")]]
+new = [[] for i in range(8)]
+for b in range(4):
+    for key, value in old[b]:
+        j = key % 8
+        new[j].append((key, value))
+print(new)
+```
+1: 4 buckets holding 6 pairs: the load factor is 1.5, over the limit of 0.75.
+2: Make 8 empty chains: twice as many.
+3: Go through the old buckets in order.
+4: Take the next pair in old chain {b}, if any are left.
+5: {key} was in old bucket {b}. Its new bucket is {key} % 8 = {key % 8}: {'the same number' if key % 8 == b else str(b) + ' + 4'}.
+6: Append ({key}, {value!r}) to new chain {j}, with no searching.
+7: Every pair from old bucket b went to new bucket b or b + 4, and each pair moved once: O(n).
+
+=== task: predict easy
+title: Replacing a tuple pair
+code:
+```python
+bucket = [(5, "Ann"), (9, "Ben")]
+for i in range(len(bucket)):
+    if bucket[i][0] == 9:
+        bucket[i] = (9, "Bo")
+print(bucket)
+```
+wrong[[(5, 'Ann'), (9, 'Ben'), (9, 'Bo')]]: `bucket[i] = ...` replaces the item at index i; it doesn't add another one.
+wrong[[(5, 'Ann'), (9, 'Ben')]]: The loop finds the key 9 at index 1 and replaces that pair with `(9, "Bo")`.
+wrong[[(9, 'Bo'), (5, 'Ann')]]: The new pair goes where the old one was, at index 1; nothing moves to the front.
+hint: `bucket[i][0]` is the key of the pair at index i.
+hint: Which index holds the key 9, and what does `bucket[i] = ...` do there?
+right: `[(5, 'Ann'), (9, 'Bo')]`: the pair at index 1 is replaced by a new tuple. That's how `put` updates a key when the pairs are tuples, which can't be changed.
+wrong: At i = 1, `bucket[1][0]` is 9, so `bucket[1]` becomes `(9, 'Bo')`. The pair at index 0 doesn't match, so it stays.
+
+=== task: mcq easy
+title: What a bucket holds
+prompt: In a hash map with separate chaining, what does each bucket hold?
+* A list of every key-value pair whose key landed in that bucket :: Right. That list is the bucket's chain, and a collision adds one more pair to it.
+- Exactly one key-value pair :: That's open addressing. With chaining, a bucket can hold any number of pairs.
+- The keys in sorted order :: A chain keeps its pairs in the order they were put; nothing is sorted.
+- Only the values, because the bucket number already tells you the key :: Many keys share a bucket, so each pair must keep its key to be told apart from the others.
+hint: What happens to a second key that lands in a bucket that's already used?
+hint: Separate chaining lets one bucket hold more than one pair.
+right: Each bucket holds a chain: all the pairs whose keys landed there. `get` walks that one chain, comparing keys.
+wrong: A bucket's chain is a list of every `(key, value)` pair whose key landed in that bucket, in the order they were put.
+
+=== task: fill easy
+title: Remove the pair
+prompt: Fill in the blank so that the pair with the key 8 is removed from the chain, and the program prints:
+
+```output
+[(4, 'a'), (12, 'c')]
+```
+code:
+```python
+bucket = [(4, "a"), (8, "b"), (12, "c")]
+key = 8
+for i in range(len(bucket)):
+    if bucket[i][0] == key:
+        bucket.??(i)
+        break
+print(bucket)
+```
+answer: pop
+wrong[remove]: `remove(i)` looks for an item *equal to* 1, not the item at index 1, so it raises `ValueError: list.remove(x): x not in list`.
+wrong[append]: `append(i)` adds the index, 1, to the end of the chain instead of removing anything.
+hint: You know where the pair is: at index `i`.
+hint: Which list method removes the item at a given index?
+right: `bucket.pop(i)` removes the pair at index i, and the pairs after it shift one place left. In a chain of a pair or two, that's quick.
+wrong: The pair's index is `i`, and `pop(i)` removes the item at an index. `remove` would look for an item equal to i instead.
+
+=== task: code easy
+title: The load factor
+prompt: Write `load_factor(buckets)` that returns the load factor of a chained hash map: the total number of pairs in all the chains, divided by the number of buckets.
+
+For example, `load_factor([[(1, "a")], [], [(2, "b"), (6, "c")], []])` returns 0.75: 3 pairs in 4 buckets.
+starter:
+```python
+def load_factor(buckets):
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+def load_factor(buckets):
+    total = 0
+    for bucket in buckets:
+        total += len(bucket)
+    return total / len(buckets)
+```
+tests:
+- load_factor([[(1, "a")], [], [(2, "b"), (6, "c")], []])
+- load_factor([[], [], []])
+- load_factor([[(5, "x"), (7, "y")]])
+- load_factor([[(0, 0), (2, 0), (4, 0)], [(1, 0)]])
+- load_factor([[(3, "a")], [(4, "b")], [], [], [], [], [], []])
+fail[1]: 1 + 0 + 2 + 0 = 3 pairs in 4 buckets: 3 / 4 = 0.75.
+fail[2]: No pairs at all: 0 / 3 = 0.0.
+fail[4]: 4 pairs in 2 buckets: 2.0. With chaining, the load factor can go over 1.
+hint: Add up `len(bucket)` for every bucket.
+hint: Then divide by `len(buckets)`, the number of buckets.
+right: Pairs ÷ buckets is the average chain length, and that's what decides how long a lookup takes on average.
+wrong: Count the pairs by adding up the length of every chain, then divide by the number of buckets.
+
+=== task: cells easy
+title: How long is each chain?
+prompt: The integer keys 10, 3, 15, 8, 21 and 5 are put into a chained map with 5 buckets (bucket = `key % 5`). How many pairs does each chain hold?
+labels: bucket 0 | bucket 1 | bucket 2 | bucket 3 | bucket 4
+answer: 3 | 1 | 0 | 2 | 0
+wrong[2 | 1 | 1 | 1 | 1]: Keys aren't shared out one per bucket: each goes into bucket `key % 5`, so 10, 15 and 5 all land in bucket 0.
+wrong[2 | 1 | 0 | 2 | 0]: 5 % 5 is 0 too: 10, 15 and 5 all go in bucket 0.
+hint: Work out key % 5 for each key.
+hint: 10, 15 and 5 are all multiples of 5.
+right: 3, 1, 0, 2 and 0. The load factor is 6 / 5 = 1.2, but chain 0 holds 3 pairs and two buckets are empty.
+wrong: 10 → 0, 3 → 3, 15 → 0, 8 → 3, 21 → 1, 5 → 0. So bucket 0 holds 3, bucket 1 holds 1, bucket 3 holds 2, and buckets 2 and 4 are empty.
+
+=== task: multi easy
+title: What get does
+prompt: Choose **every** step that `get(key)` takes in a hash map with separate chaining.
+* Work out the key's bucket from its hash :: Right. `key % size` (or `hash % size`) picks one bucket.
+* Compare the key with each stored key in that bucket's chain, one at a time :: Right. That's the only searching it does.
+* Return None (or a default) if it reaches the end of the chain without a match :: Right. A miss walks the whole chain first.
+- Look through every bucket until it finds the key :: Only one bucket is searched; that's what makes it fast.
+- Sort the chain first :: Chains aren't sorted; a short chain is searched from the start.
+- Move the pair to a new bucket :: `get` only reads. Pairs move only when the map resizes.
+hint: How many buckets does `get` look in?
+hint: What happens when the key isn't in its chain?
+right: Bucket, then a walk along that one chain, then the value or None. Its cost is the length of one chain.
+wrong: `get` hashes the key to find its bucket, compares the key with each pair in that chain, and returns the value, or None after the last pair.
+
+=== task: parsons easy
+title: Delete from a chain
+prompt: Arrange the lines so that `delete` removes a key's pair from its chain, and the program prints:
+
+```output
+True False
+[[(4, 'a')], [(5, 'c')]]
+```
+
+Not every line is needed.
+lines:
+```python
+def delete(buckets, key):
+    bucket = buckets[key % len(buckets)]
+    for i in range(len(bucket)):
+        if bucket[i][0] == key:
+            bucket.pop(i)
+            return True
+    return False
+
+buckets = [[(4, "a"), (8, "b")], [(5, "c")]]
+print(delete(buckets, 8), delete(buckets, 7))
+print(buckets)
+```
+distractors:
+```python
+        if bucket[i] == key:
+            bucket.pop(key)
+```
+hint: Find the bucket first, then walk it by index.
+hint: When the key matches, pop index i and return True. Return False only after the loop.
+right: 8 is found at index 1 of chain 0 and popped. 7 belongs in chain 1, which doesn't hold it, so the answer is False and nothing changes.
+wrong: Work out the bucket, loop over its indexes, and when `bucket[i][0]` is the key, `pop(i)` and return True. After the loop, return False.
+
+=== task: mcq easy
+title: Why look before appending?
+prompt: Why does `put` walk the key's chain before it appends a new pair?
+* So that a key that's already there gets its value replaced, instead of getting a second pair :: Right. A map holds each key once, so `put` on an existing key is an update.
+- To keep the chain in sorted order :: Chains aren't kept sorted; new pairs go on the end.
+- To find an empty bucket for the new pair :: The bucket is fixed by the hash. Chaining never looks for another bucket.
+- Because appending to a list is slow :: Appending is O(1). The walk is for finding the key.
+hint: What should `put(9, "Bo")` do if 9 is already in the map?
+hint: How many pairs should one key have?
+right: Each key appears once. Walking the chain first finds an existing key to update; only a new key is appended and counted.
+wrong: If `put` appended without looking, putting the same key twice would leave two pairs for it, and the count would be wrong. The walk finds the key so that it can be updated.
+
+=== task: predict easy
+title: Empty buckets and a long chain
+code:
+```python
+buckets = [[] for i in range(6)]
+for key in [1, 7, 13, 2, 8]:
+    buckets[key % 6].append(key)
+lengths = [len(b) for b in buckets]
+print(lengths.count(0), max(lengths))
+```
+wrong[1 3]: `lengths.count(0)` counts the empty buckets: buckets 0, 3, 4 and 5 are empty, so 4.
+wrong[4 1]: 1, 7 and 13 all leave a remainder of 1 when divided by 6, so chain 1 holds 3 keys.
+wrong[4 5]: `max(lengths)` is the longest chain, 3, not the number of keys.
+hint: Work out key % 6 for each key: 1, 7 and 13 give the same answer.
+hint: `lengths.count(0)` counts the empty buckets; `max(lengths)` is the longest chain.
+right: `4 3`: 5 keys in 6 buckets is a load factor under 1, yet one chain holds 3 keys and 4 buckets are empty. 1, 7 and 13 differ by 6, so they share a remainder.
+wrong: 1, 7, 13 → bucket 1; 2, 8 → bucket 2. The lengths are [0, 3, 2, 0, 0, 0]: four empty buckets, and the longest chain has 3.
+
+=== task: order easy
+title: Deleting a key
+prompt: Put the steps of `delete(key)` in a hash map with separate chaining in order.
+items:
+- Work out the key's bucket: `key % size`
+- Walk that bucket's chain, comparing each stored key with the key
+- At the matching pair, pop it from the chain by its index
+- Take 1 from the count and return True
+hint: Which chain to search depends on the key.
+hint: The count goes down only once the pair is really gone.
+right: Bucket, walk, pop, count: only one chain is touched, so `delete` is O(1) on average.
+wrong: Find the bucket from the key, search its chain for the key, pop that pair, then lower the count and return True.
+
+=== task: code medium
+title: A map with tuple pairs
+prompt: Write a class `ChainedMap(size)` for integer keys (an integer is its own hash, so a key's bucket is `key % len(self.buckets)`). Each bucket is a list of `(key, value)` tuples, and `self.count` is the number of keys. Methods:
+- `put(key, value)`: if the key is there, replace its pair (a tuple can't be changed, so put a new tuple at its index); otherwise append a new pair and add 1 to the count,
+- `get(key)`: the key's value, or None,
+- `delete(key)`: remove the key's pair, take 1 from the count and return True; return False if the key isn't there.
+starter:
+```python
+class ChainedMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+        self.count = 0
+
+    # your code here
+```
+solution:
+```python
+class ChainedMap:
+    def __init__(self, size):
+        self.buckets = [[] for i in range(size)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+
+    def get(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for k, v in bucket:
+            if k == key:
+                return v
+        return None
+
+    def delete(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                return True
+        return False
+```
+tests:
+- (lambda m: [m.put(3, "a"), m.put(8, "b"), m.put(13, "c"), m.get(8), m.get(13), m.buckets[3], m.count][3:])(ChainedMap(5))
+- (lambda m: [m.put(4, "x"), m.put(4, "y"), m.get(4), m.buckets[0], m.count][2:])(ChainedMap(4))
+- (lambda m: [m.put(1, "a"), m.put(5, "b"), m.delete(1), m.get(5), m.get(1), m.count][2:])(ChainedMap(4))
+- (lambda m: [m.delete(2), m.get(2), m.count])(ChainedMap(3))
+- (lambda m: [m.put(6, 1), m.delete(6), m.delete(6), m.count][1:])(ChainedMap(4))
+fail[1]: 3, 8 and 13 all land in bucket 3 (they differ by 5). Each must be found by comparing keys, and the chain keeps them in the order they were put.
+fail[2]: Putting 4 twice updates it: one pair, `(4, 'y')`, and a count of 1.
+fail[3]: 1 and 5 share bucket 1. Deleting 1 must leave 5 in place, and the count drops to 1.
+fail[4]: An empty map: `delete` returns False, `get` returns None, and the count stays 0.
+fail[5]: The second delete finds nothing, so it returns False and doesn't change the count.
+error[TypeError]: A tuple can't be changed, so `bucket[i][1] = value` fails. Replace the whole pair: `bucket[i] = (key, value)`.
+error[AttributeError]: Define `put`, `get` and `delete`.
+hint: Every method starts with `bucket = self.buckets[key % len(self.buckets)]`.
+hint: `put` and `delete` loop with `for i in range(len(bucket))` and compare `bucket[i][0]` with the key.
+hint: Update with `bucket[i] = (key, value)`, remove with `bucket.pop(i)`, and change `self.count` only for a new key or a real removal.
+right: Each method touches one chain, so all three are O(1) on average. Keeping the count in step with real changes means the map's size can be read in O(1).
+wrong: Find the bucket with `key % len(self.buckets)`. `put`: replace a matching pair at its index, or append and count. `get`: return the matching value or None. `delete`: pop the matching index, lower the count and return True; otherwise return False.
+
+=== task: predict medium
+title: Counting comparisons
+code:
+```python
+chain = [(3, "a"), (11, "b"), (19, "c"), (27, "d")]
+
+def comparisons(key):
+    n = 0
+    for k, v in chain:
+        n += 1
+        if k == key:
+            return n
+    return n
+
+print(comparisons(19), comparisons(35), comparisons(3))
+```
+wrong[3 0 1]: A key that isn't in the chain is compared with every pair before the loop ends: 4 comparisons.
+wrong[2 4 0]: `n` goes up before each comparison, so finding the first pair costs 1 comparison, and finding 19, the third pair, costs 3.
+wrong[3 4 4]: The loop returns as soon as it finds 3, at the first pair: 1 comparison.
+hint: `n` counts the pairs looked at, including the one that matches.
+hint: 35 isn't in the chain. How many pairs does the loop look at before it ends?
+right: `3 4 1`: a hit stops at its key, and a miss walks the whole chain. That's why a miss costs about α comparisons, and a hit about 1 + α/2.
+wrong: 19 is the third pair: 3. 35 isn't there, so all 4 pairs are compared: 4. 3 is the first pair: 1.
+
+=== task: fill medium
+title: Rehash with the new size
+prompt: Fill in the blank so that every pair moves into its chain in the bigger map, and the program prints:
+
+```output
+[[(4, 'a')], [], [(2, 'b')], [(7, 'c')]]
+```
+code:
+```python
+old = [[(4, "a"), (2, "b")], [(7, "c")]]
+new_size = 4
+new = [[] for i in range(new_size)]
+for bucket in old:
+    for key, value in bucket:
+        new[key % ??].append((key, value))
+print(new)
+```
+answer: new_size
+wrong[len(old)]: `len(old)` is the old size, 2, so every pair lands in its old bucket number, `[[(4, 'a'), (2, 'b')], [(7, 'c')], [], []]`, and buckets 2 and 3 are never used.
+wrong[len(bucket)]: That's the length of the chain being moved. It has nothing to do with where a key belongs in the new map.
+hint: The pairs are moving into `new`, which has `new_size` buckets.
+hint: A key's bucket is the key `%` the number of buckets in the map it's going into.
+right: `key % new_size`: 4 → 0, 2 → 2, 7 → 3. Using the old size would put every key back at its old bucket number and leave the new buckets empty.
+wrong: Each pair's new bucket is `key % new_size`, because a key's bucket depends on how many buckets there are now.
+
+=== task: cells medium
+title: Where does the chain go?
+prompt: A chained map with 4 buckets holds the keys 3, 7, 11, 15 and 19, all in bucket 3 (bucket = `key % 4`). It doubles to 8 buckets. Which new bucket does each key move to?
+labels: 3 | 7 | 11 | 15 | 19
+answer: 3 | 7 | 3 | 7 | 3
+wrong[3 | 3 | 3 | 3 | 3]: Those are the old buckets, `key % 4`. After doubling, the bucket is `key % 8`.
+wrong[3 | 7 | 11 | 15 | 19]: There are only 8 buckets, 0 to 7: 11 % 8 is 3, 15 % 8 is 7 and 19 % 8 is 3.
+hint: Take each key % 8.
+hint: Every key from old bucket 3 goes to bucket 3 or 3 + 4.
+right: 3, 7, 3, 7 and 3: chain 3 splits into bucket 3 (3, 11 and 19) and bucket 7 (7 and 15). Doubling from m to 2m always splits a chain between b and b + m.
+wrong: 3 % 8 = 3, 7 % 8 = 7, 11 % 8 = 3, 15 % 8 = 7, 19 % 8 = 3.
+
+=== task: mcq medium
+title: The cost of a miss
+prompt: A chained hash map has 1000 buckets and holds 3000 keys, spread evenly. About how many comparisons does `get` make for a key that isn't in the map?
+* About 3 :: Right. A miss walks one whole chain, and the chains average 3000 / 1000 = 3 pairs.
+- About 1 :: Only if the load factor were 1. Here each chain holds about 3 pairs, and a miss checks them all.
+- About 1000 :: `get` searches one chain, not one pair from every bucket.
+- About 3000 :: That would be searching every pair, which only happens if every key is in one chain.
+hint: What is the load factor?
+hint: A miss compares the key with every pair in its chain.
+right: The load factor, 3, is the average chain length, and a miss compares with a whole chain: about 3 comparisons, however big the map is.
+wrong: 3000 keys ÷ 1000 buckets = 3 pairs per chain on average. A key that isn't there is compared with every pair in its chain: about 3.
+
+=== task: predict medium
+title: Multiples of 4
+code:
+```python
+keys = [4, 8, 12, 16, 20, 24]
+for size in [8, 7]:
+    lengths = [0] * size
+    for k in keys:
+        lengths[k % size] += 1
+    print(lengths)
+```
+wrong[[1, 1, 1, 1, 1, 1, 0, 0]\n[0, 1, 1, 1, 1, 1, 1]]: Every key is a multiple of 4, and so is 8, so `k % 8` is always 0 or 4: only two buckets are used.
+wrong[[6, 0, 0, 0, 0, 0, 0, 0]\n[0, 1, 1, 1, 1, 1, 1]]: 4 % 8 is 4, not 0: the keys alternate between buckets 4 and 0.
+wrong[[3, 0, 0, 0, 3, 0, 0, 0]\n[3, 0, 0, 0, 3, 0, 0]]: 7 isn't a multiple of 4, so the keys don't line up with it: they leave the remainders 4, 1, 5, 2, 6 and 3.
+hint: With 8 buckets, the remainders alternate: 4, 0, 4, 0, 4, 0.
+hint: 7 shares no factor with 4, so work out each remainder: 24 % 7 is 3.
+right: With 8 buckets, the keys share the factor 4 with 8 and use only buckets 0 and 4: two chains of 3. With 7 buckets, a prime, every key gets a bucket of its own.
+wrong: % 8 gives 4, 0, 4, 0, 4, 0, so buckets 0 and 4 get 3 keys each. % 7 gives 4, 1, 5, 2, 6, 3, so buckets 1 to 6 get one key each and bucket 0 none.
+
+=== task: order medium
+title: Resizing a chained map
+prompt: Put the steps of resizing a chained hash map in order.
+items:
+- A new key takes the count over 0.75 × the number of buckets
+- Keep a reference to the old buckets
+- Make twice as many empty buckets
+- Go through every pair in every old chain
+- Append each pair to the new chain `key % new_size`, without searching it
+hint: The old pairs must still be reachable after the new buckets are made.
+hint: The pairs are moved last, one at a time.
+right: Trigger, keep the old buckets, make the new ones, then move every pair: O(n) for this one `put`, but rare enough to be O(1) amortized.
+wrong: The resize starts when the count passes the limit. Keep the old buckets, make twice as many new ones, then walk every old chain and append each pair to its new chain.
+
+=== task: multi medium
+title: A load factor of at most 0.75
+prompt: A chained hash map always keeps its load factor at 0.75 or below. Choose **every** statement that must be true.
+* The average chain holds at most 0.75 pairs :: Right. The load factor is the average chain length.
+* At least a quarter of the buckets are empty :: Right. There are at most 0.75 × size keys, so at most that many buckets can hold anything.
+* `get` is O(1) on average :: Right. A short average chain means few comparisons.
+- Every chain holds at most 1 pair :: The average is low, but some chains can still hold 2, 3 or more.
+- No two keys are ever in the same bucket :: Collisions still happen; they're rarer, not impossible.
+hint: The load factor is an average.
+hint: If there are fewer keys than buckets, can every bucket be used?
+right: A low load factor limits the average chain and the number of buckets with anything in them, but not the longest chain.
+wrong: The average chain is at most 0.75, so lookups are O(1) on average, and at most 0.75 × size buckets hold keys. Collisions still happen, so a chain can hold more than one pair.
+
+=== task: parsons medium
+title: Search a linked chain
+prompt: Arrange the lines so that `get` searches a chain of linked nodes, and the program prints:
+
+```output
+b None
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+def get(heads, key):
+    node = heads[key % len(heads)]
+    while node is not None:
+        if node.key == key:
+            return node.value
+        node = node.next
+    return None
+
+heads = [Node(4, "a", Node(8, "b")), None, Node(6, "c"), None]
+print(get(heads, 8), get(heads, 5))
+```
+distractors:
+```python
+    while node.next is not None:
+            return key
+```
+hint: Start at the head of the key's bucket.
+hint: Move along with `node = node.next` until you find the key or run out of nodes.
+right: 8 % 4 is 0, so the walk starts at 4 and moves on to 8: "b". 5 % 4 is 1, and bucket 1's head is None, so the loop never runs: None.
+wrong: Find the head with `heads[key % len(heads)]`. While `node` isn't None, return `node.value` if its key matches, or else step to `node.next`. Return None after the loop.
+
+=== task: code medium
+title: Put at the head
+prompt: The starter has a `Node` class and a map stored as a list of chain heads: `heads[i]` is the first node of bucket i's chain, or None. Write `put(heads, key, value)` for integer keys (bucket = `key % len(heads)`):
+- if a node with the key is in the chain, change its `value`,
+- otherwise add a new node **at the head** of the chain: `Node(key, value, heads[i])`, stored in `heads[i]`.
+
+`chain(heads, i)` gives the pairs in chain i, from the head, so that you can test your code.
+starter:
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+def chain(heads, i):
+    result = []
+    node = heads[i]
+    while node is not None:
+        result.append((node.key, node.value))
+        node = node.next
+    return result
+
+def put(heads, key, value):
+    i = key % len(heads)
+    # your code here
+```
+solution:
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+def chain(heads, i):
+    result = []
+    node = heads[i]
+    while node is not None:
+        result.append((node.key, node.value))
+        node = node.next
+    return result
+
+def put(heads, key, value):
+    i = key % len(heads)
+    node = heads[i]
+    while node is not None:
+        if node.key == key:
+            node.value = value
+            return
+        node = node.next
+    heads[i] = Node(key, value, heads[i])
+```
+tests:
+- (lambda h: [put(h, 5, "a"), put(h, 9, "b"), chain(h, 1)][2])([None] * 4)
+- (lambda h: [put(h, 2, "x"), put(h, 2, "y"), chain(h, 2)][2])([None] * 4)
+- (lambda h: [put(h, 1, "a"), put(h, 4, "b"), put(h, 7, "c"), put(h, 4, "B"), chain(h, 1), chain(h, 0)][4:])([None] * 3)
+- (lambda h: [put(h, 0, "z"), chain(h, 0)][1])([None])
+fail[1]: 5 and 9 share bucket 1. The newer key goes in front, so the chain is 9, then 5.
+fail[2]: Putting 2 again changes its node's value; it doesn't add a second node.
+fail[3]: An update must leave the node where it is: the chain is 7, then 4 (now "B"), then 1.
+error[AttributeError]: None has no `.key`: stop the walk when `node` is None, with `while node is not None`.
+hint: Walk the chain from `node = heads[i]` while `node is not None`.
+hint: If `node.key == key`, set `node.value = value` and return; otherwise move on with `node = node.next`.
+hint: After the loop, `heads[i] = Node(key, value, heads[i])` puts the new node in front.
+right: Inserting at the head is O(1): the new node points at the old first node, and nothing shifts. The walk before it is what stops a key from appearing twice.
+wrong: Search the chain for the key and change its value if it's found. If the walk reaches None, make a new node whose `next` is the old head, and store it as the new head.
+
+=== task: code hard
+title: Grow at three-quarters
+prompt: Write a class `ChainedMap` for integer keys, with chains of `(key, value)` tuples. It starts with 8 buckets and keeps `self.count`, the number of keys. Methods:
+- `put(key, value)`: update or add as usual (bucket = `key % len(self.buckets)`). After adding a new key, if `self.count > 0.75 * len(self.buckets)`, resize to twice as many buckets, putting every pair into the chain `key % new_size`,
+- `get(key)`: the value, or None,
+- `delete(key)`: remove the key's pair and return True, or return False.
+
+`put` must be O(1) amortized. Keep the pairs in the chains: don't use a Python dict.
+starter:
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+
+    # your code here
+```
+solution:
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+        if self.count > 0.75 * len(self.buckets):
+            old = self.buckets
+            self.buckets = [[] for i in range(2 * len(old))]
+            for b in old:
+                for k, v in b:
+                    self.buckets[k % len(self.buckets)].append((k, v))
+
+    def get(self, key):
+        for k, v in self.buckets[key % len(self.buckets)]:
+            if k == key:
+                return v
+        return None
+
+    def delete(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                return True
+        return False
+```
+tests:
+- (lambda m: [[m.put(k, k * k) for k in range(20)], m.get(7), m.get(19), m.get(20), m.count][1:])(ChainedMap())
+- (lambda m: [[m.put(k * 8, k) for k in range(10)], [m.get(k * 8) for k in range(10)]][1])(ChainedMap())
+- (lambda m: [m.put(3, "a"), m.put(3, "b"), m.delete(3), m.delete(3), m.get(3), m.count][2:])(ChainedMap())
+- (lambda m: [[m.put(k, str(k)) for k in range(30)], [m.delete(k) for k in range(0, 30, 3)], m.get(4), m.get(6), m.count][2:])(ChainedMap())
+forbid[{}]: Keep the pairs in the chains of `self.buckets`, not in a Python dict.
+forbid[dict(]: Keep the pairs in the chains of `self.buckets`, not in a Python dict.
+speed: setup=m = ChainedMap() | call=[m.put(i, i) for i in range(n)] | target=O(n)
+slow:
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+
+    def get(self, key):
+        for k, v in self.buckets[key % len(self.buckets)]:
+            if k == key:
+                return v
+        return None
+
+    def delete(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                return True
+        return False
+```
+fail[1]: After the resizes, every key must still be found: 7 → 49 and 19 → 361. 20 was never put.
+fail[2]: 0, 8, 16 and the rest all land in bucket 0 while there are 8 buckets. After each resize they must be found in their new chains.
+fail[3]: Putting 3 twice is one key. The second delete finds nothing, so it returns False, and the count ends at 0.
+fail[4]: Deleting 10 of the 30 keys leaves 20: 4 is still there, and 6 is gone.
+error[AttributeError]: Define `put`, `get` and `delete`.
+error[TypeError]: A tuple can't be changed: replace the whole pair with `bucket[i] = (key, value)`.
+hint: Start from this lesson's chaining `put`, `get` and `delete`, with `self.count` going up for a new key and down for a real delete.
+hint: After appending a new pair, check `if self.count > 0.75 * len(self.buckets):` and resize.
+hint: To resize: `old = self.buckets`, make `2 * len(old)` new chains with a comprehension, and append every `(k, v)` from the old chains to `self.buckets[k % len(self.buckets)]`.
+right: Resizing at 0.75 keeps the average chain under 1 pair, so every operation is O(1) on average, and the doublings add fewer than 2 moves per put. With 8 fixed buckets, the chains would grow with n, and n puts would cost O(n²).
+wrong: Put as usual. When a new key takes the count over 0.75 × the buckets, double the buckets and re-append every pair at `key % new_size`. `get` and `delete` work on the current buckets.
+
+=== task: code hard
+title: Delete from a linked chain
+prompt: The starter stores a map as a list of chain heads, like `LinkedChainMap`. Write `delete(heads, key)` that removes the node with the key from its chain (bucket = `key % len(heads)`) and returns True, or returns False if the key isn't there.
+
+Watch out for two cases: the node can be the head of its chain (then `heads[i]` must change), or further along (then the node before it must skip over it). `build` makes a map by putting each new node at the head, and `chain(heads, i)` lists the keys in chain i.
+starter:
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+def build(pairs, size):
+    heads = [None] * size
+    for key, value in pairs:
+        i = key % size
+        heads[i] = Node(key, value, heads[i])
+    return heads
+
+def chain(heads, i):
+    result = []
+    node = heads[i]
+    while node is not None:
+        result.append(node.key)
+        node = node.next
+    return result
+
+def delete(heads, key):
+    i = key % len(heads)
+    # your code here
+    return False
+```
+solution:
+```python
+class Node:
+    def __init__(self, key, value, next=None):
+        self.key = key
+        self.value = value
+        self.next = next
+
+def build(pairs, size):
+    heads = [None] * size
+    for key, value in pairs:
+        i = key % size
+        heads[i] = Node(key, value, heads[i])
+    return heads
+
+def chain(heads, i):
+    result = []
+    node = heads[i]
+    while node is not None:
+        result.append(node.key)
+        node = node.next
+    return result
+
+def delete(heads, key):
+    i = key % len(heads)
+    prev = None
+    node = heads[i]
+    while node is not None:
+        if node.key == key:
+            if prev is None:
+                heads[i] = node.next
+            else:
+                prev.next = node.next
+            return True
+        prev = node
+        node = node.next
+    return False
+```
+tests:
+- (lambda h: [delete(h, 9), chain(h, 1)])(build([(1, "a"), (5, "b"), (9, "c")], 4))
+- (lambda h: [delete(h, 5), chain(h, 1)])(build([(1, "a"), (5, "b"), (9, "c")], 4))
+- (lambda h: [delete(h, 1), chain(h, 1)])(build([(1, "a"), (5, "b"), (9, "c")], 4))
+- (lambda h: [delete(h, 13), delete(h, 2), chain(h, 1)])(build([(1, "a"), (5, "b"), (9, "c")], 4))
+- (lambda h: [delete(h, 6), delete(h, 6), chain(h, 0)])(build([(6, "x")], 2))
+fail[1]: 9 is the head of chain 1, because it was added last. Deleting it must make `heads[1]` point at the next node, 5.
+fail[2]: 5 is in the middle of the chain: the node before it, 9, must skip over it to 1.
+fail[3]: 1 is the last node: the node before it, 5, must point at None.
+fail[4]: 13 belongs in chain 1 but isn't there, and chain 2 is empty: both deletes return False, and nothing changes.
+fail[5]: After the only node is deleted, the chain is empty, and a second delete returns False.
+error[AttributeError]: None has no `.key` or `.next`: check that `node is not None` before using it.
+hint: Walk with two names, `prev = None` and `node = heads[i]`, moving both along: `prev = node`, then `node = node.next`.
+hint: When `node.key == key`: if `prev is None`, the node is the head, so set `heads[i] = node.next`; otherwise set `prev.next = node.next`.
+hint: Return True after unlinking the node, and False after the loop.
+right: Unlinking is O(1) once the node is found: one link changes. The walk is as long as the chain, so `delete` is O(1) on average, the same as with a list chain, but with no shifting.
+wrong: Keep a pointer to the node before the current one. When the key is found, link around it: the head moves on if it was first; otherwise `prev.next` skips it. Return True, or False if the walk reaches None.
+
+=== task: code hard
+title: Move to the front
+prompt: Some keys are looked up far more often than others. A chain can keep them near the front: each time `get` finds a key, it moves that pair to the **front** of its chain, so the next lookup finds it with one comparison.
+
+Write `get(buckets, key)` for a map whose buckets are lists of `(key, value)` tuples (bucket = `key % len(buckets)`). It returns the key's value after moving its pair to index 0 of its chain, keeping the other pairs in order. If the key isn't there, it returns None and changes nothing.
+starter:
+```python
+def get(buckets, key):
+    bucket = buckets[key % len(buckets)]
+    # your code here
+    return None
+```
+solution:
+```python
+def get(buckets, key):
+    bucket = buckets[key % len(buckets)]
+    for i in range(len(bucket)):
+        if bucket[i][0] == key:
+            pair = bucket.pop(i)
+            bucket.insert(0, pair)
+            return pair[1]
+    return None
+```
+tests:
+- (lambda b: [get(b, 9), b[1]])([[], [(1, "a"), (5, "b"), (9, "c")]])
+- (lambda b: [get(b, 5), get(b, 9), b[1]])([[], [(1, "a"), (5, "b"), (9, "c")]])
+- (lambda b: [get(b, 1), b[1]])([[], [(1, "a"), (5, "b")]])
+- (lambda b: [get(b, 7), get(b, 4), b])([[(4, "x")], [(3, "y")]])
+- (lambda b: [get(b, 6), b[0]])([[(2, "p"), (4, "q"), (6, "r"), (8, "s")], []])
+fail[1]: 9 was found at the end of chain 1. It must move to the front, with the other pairs keeping their order behind it.
+fail[2]: Each lookup moves its own key to the front: after finding 5 and then 9, the chain is 9, 5, 1.
+fail[3]: A key that's already at the front stays there.
+fail[4]: A missing key returns None and leaves every chain as it was.
+fail[5]: Only the found pair moves. The pairs before it each shift one place back, and the pair after it stays where it was.
+hint: Find the pair's index `i` in the chain.
+hint: `pair = bucket.pop(i)` takes the pair out, and `bucket.insert(0, pair)` puts it at the front.
+hint: Return `pair[1]`. After the loop, return None.
+right: Moving a found pair to the front costs one walk, and afterwards a popular key is found with one comparison. With chains of a pair or two it hardly matters; with long chains and a few popular keys, it saves a lot.
+wrong: Walk the chain by index. When the key matches, pop the pair, insert it at index 0, and return its value. If no pair matches, return None without changing anything.
+
+=== task: code hard
+title: Shrink after deletes
+prompt: A map that has lost most of its keys wastes memory on empty buckets. Add a `delete(key)` method to the starter's `ChainedMap`: remove the key's pair, take 1 from the count and return True, or return False if the key isn't there. After removing a pair, if the map has more than 8 buckets and `self.count < 0.25 * len(self.buckets)`, shrink to **half** as many buckets with the starter's `resize` method.
+starter:
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+        if self.count > 0.75 * len(self.buckets):
+            self.resize(2 * len(self.buckets))
+
+    def resize(self, new_size):
+        old = self.buckets
+        self.buckets = [[] for i in range(new_size)]
+        for bucket in old:
+            for key, value in bucket:
+                self.buckets[key % new_size].append((key, value))
+
+    def get(self, key):
+        for k, v in self.buckets[key % len(self.buckets)]:
+            if k == key:
+                return v
+        return None
+
+    # your code here
+```
+solution:
+```python
+class ChainedMap:
+    def __init__(self):
+        self.buckets = [[] for i in range(8)]
+        self.count = 0
+
+    def put(self, key, value):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self.count += 1
+        if self.count > 0.75 * len(self.buckets):
+            self.resize(2 * len(self.buckets))
+
+    def resize(self, new_size):
+        old = self.buckets
+        self.buckets = [[] for i in range(new_size)]
+        for bucket in old:
+            for key, value in bucket:
+                self.buckets[key % new_size].append((key, value))
+
+    def get(self, key):
+        for k, v in self.buckets[key % len(self.buckets)]:
+            if k == key:
+                return v
+        return None
+
+    def delete(self, key):
+        bucket = self.buckets[key % len(self.buckets)]
+        for i in range(len(bucket)):
+            if bucket[i][0] == key:
+                bucket.pop(i)
+                self.count -= 1
+                if len(self.buckets) > 8 and self.count < 0.25 * len(self.buckets):
+                    self.resize(len(self.buckets) // 2)
+                return True
+        return False
+```
+tests:
+- (lambda m: [[m.put(k, k) for k in range(13)], len(m.buckets), [m.delete(k) for k in range(6)], len(m.buckets), m.count][1:])(ChainedMap())
+- (lambda m: [[m.put(k, k) for k in range(13)], [m.delete(k) for k in range(10)], len(m.buckets), m.count, [m.get(k) for k in range(13)]][2:])(ChainedMap())
+- (lambda m: [m.put(1, "a"), m.delete(1), m.delete(1), len(m.buckets), m.count][1:])(ChainedMap())
+- (lambda m: [[m.put(k * 16, k) for k in range(7)], [m.delete(k * 16) for k in range(5)], len(m.buckets), [m.get(k * 16) for k in range(7)]][2:])(ChainedMap())
+- (lambda m: [m.delete(99), m.count, len(m.buckets)])(ChainedMap())
+fail[1]: 13 keys make the map grow to 32 buckets. After 6 deletes, 7 keys are left: fewer than 0.25 × 32 = 8, so it shrinks to 16 buckets.
+fail[2]: With 3 keys left in 16 buckets (fewer than 4), it shrinks again, to 8. The keys that are left must still be found after each shrink.
+fail[3]: The map never goes below 8 buckets, and a second delete of the same key returns False.
+fail[4]: After shrinking from 16 to 8 buckets, the keys that are left must be found in their new chains.
+fail[5]: Deleting from an empty map returns False and changes nothing.
+error[AttributeError]: Define `delete`.
+hint: Start with the usual chaining delete: find the index, `pop` it, and take 1 from the count.
+hint: Then, before returning True, check `if len(self.buckets) > 8 and self.count < 0.25 * len(self.buckets):`.
+hint: Shrink with `self.resize(len(self.buckets) // 2)`; it rehashes every pair for you.
+right: Shrinking at a quarter full but growing at three-quarters full leaves a gap between the two limits, so the map can't flip between sizes on every put and delete. Each resize is O(n), and both are rare: O(1) amortized.
+wrong: Delete as usual. After a real removal, if there are more than 8 buckets and fewer keys than a quarter of them, call `resize` with half as many buckets. Return True, or False if the key wasn't found.
+
+=== task: predict hard
+title: Counting the moves
+code:
+```python
+size = 4
+count = 0
+moves = 0
+for key in range(12):
+    count += 1
+    if count > 0.75 * size:
+        moves += count
+        size *= 2
+print(size, moves)
+```
+wrong[32 23]: At 12 keys, the count equals 0.75 × 16 = 12, which isn't more than 12, so there's no third resize.
+wrong[8 4]: At 7 keys, 7 > 0.75 × 8 = 6, so there's a second resize, which moves 7 pairs.
+wrong[16 12]: Each resize moves every pair in the map: `count` of them (4, then 7), not the number of buckets.
+hint: With 4 buckets the limit is 3 keys; with 8 it's 6; with 16 it's 12.
+hint: A resize happens when the count goes *over* the limit, and it moves `count` pairs.
+right: `16 11`: resizes at 4 keys (moving 4) and at 7 keys (moving 7). 11 moves for 12 puts: fewer than 1 per put on average.
+wrong: count 4 > 3: move 4, size 8. count 7 > 6: move 7, size 16. count 12 is not > 12, so there are no more resizes. Size 16, 11 moves.
+
+=== task: predict hard
+title: Newest first
+code:
+```python
+class Node:
+    def __init__(self, key, next=None):
+        self.key = key
+        self.next = next
+
+heads = [None] * 3
+for key in [4, 7, 2, 10, 5]:
+    i = key % 3
+    heads[i] = Node(key, heads[i])
+for i in range(3):
+    keys = []
+    node = heads[i]
+    while node is not None:
+        keys.append(node.key)
+        node = node.next
+    print(i, keys)
+```
+wrong[0 []\n1 [4, 7, 10]\n2 [2, 5]]: Each new node goes in front of the old head, so the newest key comes first.
+wrong[0 []\n1 [10]\n2 [5]]: `Node(key, heads[i])` points the new node at the old head, so the older nodes stay in the chain behind it.
+wrong[0 []\n1 [10, 7, 4]\n2 [2, 5]]: 5 was added after 2, so it goes in front of 2 as well.
+hint: `Node(key, heads[i])` makes a node whose `next` is the current head.
+hint: Then `heads[i]` is set to the new node, so it's now first.
+right: Inserting at the head is O(1), and it leaves each chain in newest-first order: 10, 7, 4 and 5, 2.
+wrong: 4, 7 and 10 go in bucket 1, and 2 and 5 in bucket 2. Each new node becomes the head, so chain 1 reads 10, 7, 4 and chain 2 reads 5, 2. Bucket 0 is empty.
+
+=== task: cells hard
+title: Comparisons per lookup
+prompt: A chained map with 4 buckets (bucket = `key % 4`) has the chains below. How many key comparisons does `get` make for each key? A comparison is checking one stored key.
+code:
+```python
+buckets = [[(8, "a"), (4, "b"), (12, "c")], [(9, "d")], [], [(7, "e"), (3, "f")]]
+```
+labels: get(12) | get(16) | get(3) | get(6) | get(9)
+answer: 3 | 3 | 2 | 0 | 1
+wrong[3 | 0 | 2 | 0 | 1]: 16 isn't in the map, but `get` doesn't know that until it has compared 16 with every pair in chain 0: 3 comparisons.
+wrong[3 | 3 | 2 | 1 | 1]: 6 % 4 is 2, and chain 2 is empty, so there's nothing to compare: 0.
+hint: Find each key's chain with key % 4.
+hint: A hit stops at its key; a miss checks every pair in its chain.
+right: 3, 3, 2, 0 and 1. A miss costs a whole chain and an empty chain costs nothing: the cost of `get` is about the length of one chain.
+wrong: 12 → chain 0, third pair: 3. 16 → chain 0, not there: all 3. 3 → chain 3, second pair: 2. 6 → chain 2, empty: 0. 9 → chain 1, first pair: 1.
+
+=== task: mcq hard
+title: Why [None] * size is safe
+prompt: `LinkedChainMap` makes its heads with `[None] * size`, but a map with list chains must use `[[] for i in range(size)]`. Why is `*` safe for the heads?
+* Each head is only ever replaced (`heads[i] = ...`), and replacing one slot doesn't affect the others :: Right. `*` puts the same None in every slot, but a slot that's given a new node points at that node alone.
+- None takes up less memory than an empty list :: Memory isn't the problem. The trouble with `[[]] * size` is that every slot is the same list.
+- `*` makes separate copies of None, but not of lists :: `*` never copies: every slot refers to the same object in both cases. With lists, changing that one list in place shows up in every slot.
+- Linked chains can never collide :: They collide like list chains do: colliding nodes are linked into one chain.
+hint: `[[]] * 4` holds the same list four times. Does `[None] * 4` hold the same None four times?
+hint: What's the difference between `heads[i] = node` and `buckets[i].append(pair)`?
+right: Both `*` versions repeat one object. That's harmless for None, because the code replaces slots and never changes the object itself. With lists, `append` changes the one shared list, so every bucket would see the change.
+wrong: `*` repeats the same object in every slot. Lists are changed in place by `append`, so one shared list would break every bucket. Heads are replaced with `heads[i] = ...`, which changes only that slot.
+
+=== task: multi hard
+title: Doubling a chained map
+prompt: A chained map doubles from m buckets to 2m buckets and rehashes every pair. Choose **every** true statement.
+* A pair from old bucket b ends up in new bucket b or b + m :: Right. `key % 2m` is either `key % m` or `key % m + m`.
+* Each pair can be appended to its new chain without searching the chain first :: Right. The keys are already known to be different.
+* The rehash takes O(n + m) steps: every old bucket is visited and every pair is moved :: Right. And since m is about the same size as n, that's O(n).
+- Each old chain can be copied as it is into the new bucket with the same number :: The keys in one old chain usually belong in two different new buckets.
+- The load factor doubles :: Twice as many buckets for the same keys halves the load factor.
+hint: Try a key: 13 % 4 is 1. What is 13 % 8?
+hint: What happens to n / size when size doubles?
+right: Rehashing splits each chain between b and b + m, appends without searching, and halves the load factor, all in O(n + m) steps.
+wrong: 13 % 4 = 1 and 13 % 8 = 5 = 1 + 4: pairs go to b or b + m, so chains can't be copied whole. Appending needs no search, the whole rehash is O(n + m), and the load factor halves.
+
+=== task: parsons hard
+title: The resize method
+prompt: Arrange the lines so that `resize` rehashes the map into `new_size` buckets, and the program prints:
+
+```output
+[[(4, 'a')], [], [(2, 'b'), (6, 'c')], [(7, 'd')]]
+```
+
+Not every line is needed.
+lines:
+```python
+class ChainedMap:
+    def __init__(self, buckets):
+        self.buckets = buckets
+
+    def resize(self, new_size):
+        old = self.buckets
+        self.buckets = [[] for i in range(new_size)]
+        for bucket in old:
+            for key, value in bucket:
+                self.buckets[key % new_size].append((key, value))
+
+m = ChainedMap([[(4, "a"), (2, "b"), (6, "c")], [(7, "d")]])
+m.resize(4)
+print(m.buckets)
+```
+distractors:
+```python
+                self.buckets[key % len(old)].append((key, value))
+        for bucket in self.buckets:
+```
+hint: Save the old buckets before replacing them.
+hint: Loop over `old`, and use the new size for every key's bucket.
+right: The old chains are kept in `old`, new empty chains replace them, and every pair is appended at `key % new_size`. Old chain 0 split between new buckets 0 and 2.
+wrong: Keep `old = self.buckets`, make `new_size` empty chains, then append every pair from every old chain to `self.buckets[key % new_size]`.
