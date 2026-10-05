@@ -1,0 +1,1480 @@
+=== lesson
+id: ds-linked-singly
+title: Singly linked lists
+summary: A singly linked list's nodes link forwards only, from the head to the last node. You'll wrap one in a class with a head, a tail and a size, delete values with the `prev` and `cur` walk, use a dummy node to take the special case out of deleting the head, see why removing the last node is O(n), reverse a list by flipping its links, and find its middle with a slow and a fast pointer.
+
+=== learn
+### A class for the whole list
+So far a linked list has been a `head` variable. A class keeps the head, a `tail` (the last node) and a `size` together, and gives each operation a name:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+class SinglyLinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+        self.size = 0
+
+    def push_front(self, x):
+        self.head = Node(x, self.head)
+        if self.tail is None:
+            self.tail = self.head
+        self.size += 1
+
+    def append(self, x):
+        node = Node(x)
+        if self.tail is None:
+            self.head = node
+        else:
+            self.tail.next = node
+        self.tail = node
+        self.size += 1
+
+    def __repr__(self):
+        items = []
+        node = self.head
+        while node is not None:
+            items.append(str(node.val))
+            node = node.next
+        return " -> ".join(items)
+
+lst = SinglyLinkedList()
+lst.append(2)
+lst.append(3)
+lst.push_front(1)
+print(lst, "| size", lst.size)
+```
+```output
+1 -> 2 -> 3 | size 3
+```
+- `size` goes up by 1 on every insert (and down by 1 on every delete), so the length is always known: O(1), like `len` of a Python list.
+- `tail` makes `append` O(1). Without it, `append` would walk to the last node: O(n).
+- The first node added to an empty list is both the head and the tail.
+- `__repr__`, from the Classes lesson, decides what `print` shows.
+
+The rest of this lesson writes each operation as a function that takes `head` and returns the head afterwards, because the head can change. That's how most linked list code is written. Inside a class, the same code works on `self.head`.
+
+### Deleting a value: `prev` and `cur`
+Deleting a node means changing the link that points **at** it, and that link is in the node before it. A singly linked node doesn't know which node comes before it, so walk with two names: `cur`, the node you're checking, and `prev`, the node before `cur`:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def delete_value(head, x):
+    prev = None
+    cur = head
+    while cur is not None and cur.val != x:
+        prev = cur
+        cur = cur.next
+    if cur is None:
+        return head
+    if prev is None:
+        return cur.next
+    prev.next = cur.next
+    return head
+
+head = Node(4, Node(7, Node(1, Node(7))))
+head = delete_value(head, 7)
+print(to_list(head))
+head = delete_value(head, 4)
+print(to_list(head))
+head = delete_value(head, 9)
+print(to_list(head))
+```
+```output
+[4, 1, 7]
+[1, 7]
+[1, 7]
+```
+Deleting the first 7 from 4 → 7 → 1 → 7:
+
+| | `prev` | `cur` | `cur.val == 7`? |
+| --- | --- | --- | --- |
+| start | None | 4 | no: move both on |
+| after one step | 4 | 7 | yes: stop |
+
+Then `prev.next = cur.next` links 4 straight to 1. The walk ends in one of three ways:
+
+1. `cur` is None: x isn't in the list, so nothing changes.
+2. `prev` is None: x is in the head, so the node after it becomes the head.
+3. Otherwise, `prev.next = cur.next` links around `cur`.
+
+Only the first 7 goes: the walk stops at the first match. Animation 1 shows the two names moving.
+
+### A dummy node at the front
+The head is a special case because no node comes before it. A common trick takes the special case away: put a **dummy** node in front of the head. It holds no real value, but now every real node, the head too, has a node before it:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def delete_value(head, x):
+    dummy = Node(None, head)
+    prev = dummy
+    while prev.next is not None and prev.next.val != x:
+        prev = prev.next
+    if prev.next is not None:
+        prev.next = prev.next.next
+    return dummy.next
+
+head = delete_value(Node(4, Node(7, Node(1))), 4)
+print(head.val, head.next.val)
+```
+```output
+7 1
+```
+Here `prev.next` is the node being checked. When x is in the head, `prev` stays on the dummy, and `prev.next = prev.next.next` makes the dummy skip the head. The real list starts at `dummy.next`, so that's what the function returns. The dummy costs one extra node, O(1), and saves an `if` in every function that might change the head.
+
+### Removing the last node: O(n)
+A tail makes adding at the end O(1). Removing from the end is different: afterwards, the node **before** the old last node must link to None, and only a walk from the head can find it:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def pop_back(head):
+    if head.next is None:
+        return None, head.val
+    node = head
+    while node.next.next is not None:
+        node = node.next
+    val = node.next.val
+    node.next = None
+    return head, val
+
+head, val = pop_back(Node(1, Node(2, Node(3))))
+print(val, head.val, head.next.val, head.next.next)
+```
+```output
+3 1 2 None
+```
+`pop_back` returns two things: the head (None if the list is now empty) and the removed value. The walk stops at the second-to-last node, where `node.next.next` is None. That's O(n), even with a tail, because the tail can't tell you which node comes before it. So a stack built on a singly linked list pushes and pops at the **front**, where both are O(1). The Doubly linked lists lesson removes this limit.
+
+### Reversing the list
+Reversing turns 1 → 2 → 3 into 3 → 2 → 1 by flipping every link to point backwards, without making any new nodes. Walk with three names: `prev`, the part that's already reversed; `cur`, the node being flipped; and `nxt`, the rest of the list, saved before `cur`'s link is overwritten:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+head = reverse(Node(1, Node(2, Node(3))))
+print(head.val, head.next.val, head.next.next.val, head.next.next.next)
+```
+```output
+3 2 1 None
+```
+Each pass of the loop does four things:
+
+1. `nxt = cur.next` saves the rest of the list, because the next line overwrites that link.
+2. `cur.next = prev` flips `cur`'s link to point back at the reversed part.
+3. `prev = cur`: the reversed part now starts at `cur`.
+4. `cur = nxt`: move on to the rest.
+
+| After pass | Reversed part, from `prev` | Rest, from `cur` |
+| --- | --- | --- |
+| (start) | empty | 1 → 2 → 3 |
+| 1 | 1 | 2 → 3 |
+| 2 | 2 → 1 | 3 |
+| 3 | 3 → 2 → 1 | empty |
+
+When `cur` is None, `prev` holds the old last node, which is the new head. It's O(n) time and O(1) extra space: three names, however long the list is. Animation 2 shows the links flipping.
+
+### Finding the middle
+There are two ways to find the middle node:
+
+1. Count the nodes (n), then walk n // 2 links from the head: two walks.
+2. Walk with two names in one pass: `slow` moves one node at a time and `fast` moves two. When `fast` reaches the end, `slow` has gone half as far, so it's in the middle.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+
+print(middle(Node(1, Node(2, Node(3, Node(4, Node(5)))))))
+print(middle(Node(1, Node(2, Node(3, Node(4))))))
+```
+```output
+3
+3
+```
+For 1 → 2 → 3 → 4 → 5, `fast` visits 1, 3 and 5 while `slow` visits 1, 2 and 3. With an even number of nodes, like 1 → 2 → 3 → 4, there are two middle nodes, and this stops at the second one, 3: the node at index n // 2, the same one the counting way finds. The loop condition stops `fast` before it falls off the end: `and` stops at the first False, so `fast.next` is only read when `fast` is a node. Both ways are O(n). The Fast and slow pointers lesson in Unit 4 uses the same idea for other problems.
+
+### The cost table
+
+| Operation | Cost |
+| --- | --- |
+| `push_front`, pop from the front | O(1) |
+| `append`, with a tail | O(1) |
+| `append`, without a tail | O(n) |
+| pop from the back | O(n): walk to the node before the last one |
+| length, with a `size` counter | O(1) |
+| find or delete a value | O(n) |
+| reverse | O(n) time, O(1) extra space |
+| find the middle | O(n) |
+
+=== keypoints
+- A class keeps `head`, `tail` and `size` together: `push_front`, popping from the front and `append` (with the tail) are O(1), and so is the size.
+- To delete a node, change the link of the node before it: walk with `prev` and `cur`, then `prev.next = cur.next`. Deleting the head is the special case, when `prev` is None.
+- A dummy node in front of the head gives every real node a node before it, so the head needs no special case. Return `dummy.next`.
+- Removing the last node is O(n), even with a tail: only a walk from the head finds the node before it.
+- Reverse in place with `prev`, `cur` and `nxt`: save `nxt = cur.next`, flip `cur.next = prev`, then move `prev` and `cur` on. O(n) time, O(1) extra space.
+- Find the middle by counting and walking n // 2 links, or in one pass with `slow` (one node a step) and `fast` (two nodes a step).
+
+=== example: A complete list class
+intro: A singly linked list class with a head, a tail and a size. It adds at both ends, pops from the front, and deletes a value with the `prev` and `cur` walk, keeping the tail and the size right.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+class SinglyLinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+        self.size = 0
+
+    def push_front(self, x):
+        self.head = Node(x, self.head)
+        if self.tail is None:
+            self.tail = self.head
+        self.size += 1
+
+    def append(self, x):
+        node = Node(x)
+        if self.tail is None:
+            self.head = node
+        else:
+            self.tail.next = node
+        self.tail = node
+        self.size += 1
+
+    def pop_front(self):
+        node = self.head
+        self.head = node.next
+        if self.head is None:
+            self.tail = None
+        self.size -= 1
+        return node.val
+
+    def delete(self, x):
+        prev = None
+        cur = self.head
+        while cur is not None and cur.val != x:
+            prev = cur
+            cur = cur.next
+        if cur is None:
+            return False
+        if prev is None:
+            self.head = cur.next
+        else:
+            prev.next = cur.next
+        if cur is self.tail:
+            self.tail = prev
+        self.size -= 1
+        return True
+
+    def __repr__(self):
+        items = []
+        node = self.head
+        while node is not None:
+            items.append(str(node.val))
+            node = node.next
+        return "[" + " -> ".join(items) + "]"
+
+songs = SinglyLinkedList()
+for title in ["Blue", "Gold", "Red"]:
+    songs.append(title)
+songs.push_front("Pink")
+print(songs, songs.size)
+print(songs.delete("Red"), songs, songs.tail.val)
+print(songs.pop_front(), songs, songs.size)
+```
+1-4: The node class: a value and a link to the next node.
+6-10: An empty list: no head, no tail, size 0.
+12-25: Adding at either end is O(1). The first node added is both the head and the tail.
+27-33: Popping from the front moves the head on. If that empties the list, the tail must go too.
+35-50: The `prev` and `cur` walk. Deleting the head moves the head; deleting the last node moves the tail back to `prev`. `cur is self.tail` asks whether `cur` is the very same node as the tail.
+52-58: `__repr__` shows the values from the head onwards.
+60-66: Red was the tail, so after it's deleted, the tail is Gold.
+
+=== example: Reverse and middle
+intro: Lists of 1 to 5 nodes, each reversed in place, with the middle found by the slow and fast pointers.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+
+for n in range(1, 6):
+    head = None
+    for x in range(n, 0, -1):
+        head = Node(x, head)
+    print(to_list(head), "middle", middle(head), "reversed", to_list(reverse(head)))
+```
+14-22: Reverse by flipping links: save the rest, flip, then move both names on.
+24-30: `slow` moves one node for every two that `fast` moves.
+32-36: Build 1 → ... → n by inserting n, n − 1, ..., 1 at the front. The middle is the node at index n // 2: for 2 nodes that's the second one, and for 4 nodes the third one.
+
+=== animation: Deleting a value
+view: linked head ptr=prev,cur
+intro: Deleting 1 from 4 → 7 → 1 → 9. Watch `prev` stay one node behind `cur`, so that when `cur` finds the 1, the node before it is right there.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(4, Node(7, Node(1, Node(9))))
+prev = None
+cur = head
+while cur is not None and cur.val != 1:
+    prev = cur
+    cur = cur.next
+prev.next = cur.next
+print(head.val, head.next.val, head.next.next.val)
+```
+1: The node class: a value and a link to the next node.
+3: Store this node's value, {val}.
+4: Store the link to the next node.
+6: The list 4 → 7 → 1 → 9.
+7: No node comes before the head, so `prev` starts as None.
+8: `cur` starts at the head.
+9: Is `cur` a node whose value isn't 1? {'Yes: ' + str(cur.val) + ' is not the value we want, so keep walking.' if cur is not None and cur.val != 1 else 'No: cur holds 1, so stop here.'}
+10: `prev` moves up to `cur`, the {cur.val}.
+11: `cur` moves one node on, to the {cur.next.val}.
+12: Link {prev.val} straight to {cur.next.val}, around the 1.
+13: 4, 7, 9: the 1 is out, and nothing links to it any more.
+
+=== animation: Reversing the links
+view: linked prev
+linked cur ptr=nxt
+intro: Reversing 1 → 2 → 3. The first picture is the reversed part, starting at `prev`; the second is the rest, starting at `cur`. Watch one node move across on every pass.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+prev = None
+cur = head
+while cur is not None:
+    nxt = cur.next
+    cur.next = prev
+    prev = cur
+    cur = nxt
+head = prev
+print(head.val, head.next.val, head.next.next.val)
+```
+1: The node class: a value and a link to the next node.
+3: Store this node's value, {val}.
+4: Store the link to the next node.
+6: The list 1 → 2 → 3.
+7: Nothing is reversed yet, so `prev` starts as None.
+8: `cur` starts at the head.
+9: {'cur holds ' + str(cur.val) + ', so there is still a link to flip.' if cur is not None else 'cur is None: every link has been flipped.'}
+10: Save the rest of the list first: `nxt` is the node after {cur.val}, {'the ' + str(cur.next.val) if cur.next is not None else 'None'}.
+11: Flip {cur.val}'s link to point back at {'the ' + str(prev.val) if prev is not None else 'None'}.
+12: The reversed part now starts at {cur.val}.
+13: Move on to the rest: {'the ' + str(nxt.val) if nxt is not None else 'None, the end'}.
+14: The old last node, {prev.val}, is the new head.
+15: 3, 2, 1: every link flipped, and no new nodes were made.
+
+=== task: predict easy
+title: One step behind
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(3, Node(8, Node(5, Node(8))))
+prev = None
+cur = head
+while cur is not None and cur.val != 5:
+    prev = cur
+    cur = cur.next
+print(prev.val, cur.val)
+```
+wrong[3 5]: `prev` is always the node right before `cur`. When `cur` reaches the 5, `prev` is the 8 before it.
+wrong[5 8]: `cur` stops on the first node whose value is 5, and `prev` is one node behind it.
+wrong[8 8]: The loop stops when `cur.val` is 5, so `cur` holds 5, not 8.
+hint: The loop stops as soon as `cur` holds 5.
+hint: `prev` is one node behind `cur`.
+right: `cur` stops on the 5 and `prev` on the node before it, the first 8. That's exactly what deleting the 5 needs: `prev.next = cur.next`.
+wrong: `cur` goes 3, 8, 5 and stops; `prev` goes None, 3, 8. So `prev` holds 8 and `cur` holds 5.
+
+=== task: mcq easy
+title: Why `prev`?
+prompt: You've found the node `cur` that you want to delete from a singly linked list. Why do you also need `prev`, the node before it?
+* The link that points at `cur` is in the node before it, and that's the link that has to change :: Right. `prev.next = cur.next` makes the list skip `cur`.
+- `prev` holds a copy of `cur`'s value :: `prev` is a different node, with its own value.
+- So that the walk can go backwards :: A singly linked list can't walk backwards. That's why `prev` has to be remembered on the way.
+- Python can't free `cur` without it :: Python frees a node once nothing links to it. Changing `prev.next` is what makes that happen.
+hint: Which link has to change to skip `cur`?
+hint: Which node holds that link?
+right: Deleting means making the list skip `cur`, and the only link that leads to `cur` belongs to the node before it.
+wrong: To skip `cur`, the node before it must link to `cur.next`. A singly linked node can't find the node before it, so the walk keeps it in `prev`.
+
+=== task: fill easy
+title: Flip the link
+prompt: Fill in the blank so that each node's link is flipped, and the program prints:
+
+```output
+3 2 1
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+prev = None
+cur = head
+while cur is not None:
+    nxt = cur.next
+    cur.next = ??
+    prev = cur
+    cur = nxt
+print(prev.val, prev.next.val, prev.next.next.val)
+```
+answer: prev
+wrong[nxt]: That leaves every link pointing forwards, so nothing is reversed: `prev` ends on 3, whose link is None.
+wrong[None]: That cuts every link, so the nodes end up on their own, and 3 doesn't link to 2.
+hint: The link should point backwards, at the part that's already reversed.
+hint: The reversed part starts at `prev`.
+right: `cur.next = prev` flips each link to point back at the reversed part. When the loop ends, `prev` is the new head: 3 → 2 → 1.
+wrong: Each node should link back to the node before it, which is `prev`. So the blank is `prev`.
+
+=== task: code easy
+title: Is it there?
+prompt: Write `contains(head, x)` that returns True if any node of the list holds x, and False otherwise.
+
+For example, `contains(Node(4, Node(9)), 9)` returns True.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def contains(head, x):
+    # your code here
+    return False
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def contains(head, x):
+    node = head
+    while node is not None:
+        if node.val == x:
+            return True
+        node = node.next
+    return False
+```
+tests:
+- contains(Node(4, Node(9)), 9)
+- contains(Node(4, Node(9)), 4)
+- contains(Node(4, Node(9)), 5)
+- contains(None, 1)
+- contains(Node("a", Node("b", Node("c"))), "c")
+fail[1]: 9 is in the last node. Keep walking until `node` is None, checking every node on the way.
+fail[2]: The head itself holds 4.
+fail[5]: "c" is in the last node: check every node, the last one too.
+error[AttributeError]: Stop at the end: loop `while node is not None:`.
+hint: Walk from the head with `node`.
+hint: If `node.val == x`, return True. If the walk reaches None, return False.
+right: A search checks node by node: O(n), and it stops as soon as it finds x.
+wrong: Walk from the head; return True at the first node holding x, and False when you reach None.
+
+=== task: predict easy
+title: Slow and fast
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3, Node(4, Node(5)))))
+slow = head
+fast = head
+while fast is not None and fast.next is not None:
+    slow = slow.next
+    fast = fast.next.next
+print(slow.val, fast.val)
+```
+wrong[2 3]: Each pass moves `fast` two nodes, 1 → 3 → 5, and `slow` one node, 1 → 2 → 3.
+wrong[3 None]: `fast` stops on 5, the last node: `fast.next` is None, so the loop ends without moving it again.
+wrong[5 5]: `slow` moves one node per pass, half as far as `fast`.
+hint: The loop runs while `fast` and `fast.next` are both nodes.
+hint: Pass 1: slow 2, fast 3. Pass 2: slow 3, fast 5.
+right: `fast` reaches the last node after two passes, and `slow`, at half the speed, is on the middle node, 3.
+wrong: Pass 1 moves slow to 2 and fast to 3. Pass 2 moves slow to 3 and fast to 5. Then `fast.next` is None, so the loop stops.
+
+=== task: multi easy
+title: O(1) in the list class
+prompt: A `SinglyLinkedList` keeps `head`, `tail` and `size`. Choose **every** operation that is O(1).
+* `push_front` :: Right. A new node becomes the head.
+* `append` :: Right. The new node goes after `tail`.
+* Popping from the front :: Right. The head moves on.
+* Reading the size :: Right. `size` is kept up to date.
+- Popping from the back :: The node before the tail can only be found with a walk: O(n).
+- Deleting a value :: The value has to be found first: O(n).
+hint: Which ones work at the head, at the tail, or on a stored number?
+hint: Four of them are.
+right: The head, the tail and the size are all at hand, so changes there are O(1). Popping from the back and deleting a value need a walk.
+wrong: O(1): `push_front`, `append`, popping from the front, the size. O(n): popping from the back (find the node before the tail) and deleting a value (find it first).
+
+=== task: parsons easy
+title: Delete with `prev` and `cur`
+prompt: Arrange the lines so that `delete_value` removes the first node holding x, and the program prints:
+
+```output
+[4, 1, 9]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def delete_value(head, x):
+    prev = None
+    cur = head
+    while cur is not None and cur.val != x:
+        prev = cur
+        cur = cur.next
+    if cur is None:
+        return head
+    if prev is None:
+        return cur.next
+    prev.next = cur.next
+    return head
+
+head = delete_value(Node(4, Node(7, Node(1, Node(9)))), 7)
+print([head.val, head.next.val, head.next.next.val])
+```
+distractors:
+```python
+        prev = cur.next
+    prev.next = cur
+```
+hint: `prev` follows one node behind `cur`.
+hint: To skip `cur`, link `prev` to the node after `cur`.
+right: The walk stops with `cur` on the 7 and `prev` on the 4, and `prev.next = cur.next` links 4 to 1. The two `if`s handle a value that isn't there and a match at the head.
+wrong: Walk with `prev = None` and `cur = head` until `cur` holds x; return early if it wasn't found or if it's the head; otherwise link `prev.next = cur.next`.
+
+=== task: cells easy
+title: Reversing, pass by pass
+prompt: `reverse` is run on 1 → 2 → 3 → 4. What does the reversed part (starting at `prev`) hold after each pass of the loop? Write the values from `prev` onwards, separated by commas, like `5, 6`.
+labels: after pass 1 | after pass 2 | after pass 3 | after pass 4
+answer: 1 | 2, 1 | 3, 2, 1 | 4, 3, 2, 1
+wrong[1 | 1, 2 | 1, 2, 3 | 1, 2, 3, 4]: Each flipped node links back to the reversed part, so every new node goes in **front** of it: 2, 1, not 1, 2.
+wrong[4 | 4, 3 | 4, 3, 2 | 4, 3, 2, 1]: The walk starts at the head, so the first node to be flipped is 1, not 4.
+hint: Pass 1 flips the 1: its link now points to None.
+hint: Pass 2 flips the 2 to point back at the 1.
+right: On every pass one node moves from the rest onto the front of the reversed part, so after pass k, `prev` holds k, k − 1, ..., 1.
+wrong: Pass 1: 1. Pass 2: 2 links back to 1. Pass 3: 3 links back to 2. Pass 4: 4, 3, 2, 1, with `prev` on the new head, 4.
+
+=== task: mcq easy
+title: What the dummy is for
+prompt: Why do many linked list functions put a dummy node in front of the head?
+* So that every real node, the head too, has a node before it, and changing the head needs no special case :: Right. The function returns `dummy.next` at the end.
+- To make the list faster to walk :: The walk is the same, plus one node.
+- To store the length of the list :: The dummy holds no real value. A `size` counter stores the length.
+- To mark the end of the list :: The end is marked by None, after the last node.
+hint: Which node has no node before it?
+hint: What would `prev` be when the head has to change?
+right: With a dummy, `prev` always has a node to stand on, so `prev.next = prev.next.next` works for the head as well. The real list is `dummy.next`.
+wrong: The head is the only node with nothing before it. A dummy in front gives it one, so the head can be changed like any other node.
+
+=== task: predict easy
+title: Stopping one early
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+node = head
+steps = 0
+while node.next.next is not None:
+    node = node.next
+    steps += 1
+node.next = None
+print(node.val, steps, head.next.next)
+```
+wrong[3 2 None]: The loop stops when `node.next.next` is None, which happens when `node` is 2, the second-to-last node.
+wrong[2 1 3]: `node.next = None` cuts the link from 2 to 3, so `head.next.next` is now None.
+wrong[1 0 None]: From 1, `node.next.next` is 3, not None, so the loop runs once and moves `node` to 2.
+hint: The loop needs `node.next.next` to be a node.
+hint: When `node` is 2, `node.next.next` is None.
+right: `node` stops on the second-to-last node, 2, after 1 step, and `node.next = None` drops the 3. In a long list that walk is O(n): the cost of popping from the back.
+wrong: From 1, `node.next.next` is 3, so `node` moves to 2 (1 step). From 2, `node.next.next` is None, so the loop stops. Then 2's link is cut.
+
+=== task: code medium
+title: Delete a value
+prompt: Write `delete_value(head, x)` that deletes the first node holding x and returns the head of the list. If no node holds x, return the list unchanged. Use the `prev` and `cur` walk, or a dummy node. The starter includes `to_list` for the tests.
+
+For example, `to_list(delete_value(Node(4, Node(7, Node(1))), 7))` gives `[4, 1]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def delete_value(head, x):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def delete_value(head, x):
+    dummy = Node(None, head)
+    prev = dummy
+    while prev.next is not None and prev.next.val != x:
+        prev = prev.next
+    if prev.next is not None:
+        prev.next = prev.next.next
+    return dummy.next
+```
+tests:
+- to_list(delete_value(Node(4, Node(7, Node(1))), 7))
+- to_list(delete_value(Node(4, Node(7, Node(1))), 4))
+- to_list(delete_value(Node(4, Node(7, Node(1))), 1))
+- to_list(delete_value(Node(4, Node(7, Node(1))), 5))
+- delete_value(Node(9), 9)
+- to_list(delete_value(Node(2, Node(5, Node(2))), 2))
+fail[1]: The 7 is in the middle: link the 4 straight to the 1.
+fail[2]: The 4 is in the head, so the node after it becomes the head. Return that node (or use a dummy and return `dummy.next`).
+fail[3]: The 1 is the last node: the 7 must now link to None.
+fail[4]: 5 isn't in the list, so nothing changes.
+fail[5]: Deleting the only node leaves an empty list: None.
+fail[6]: Only the first 2 is deleted.
+error[AttributeError]: Check that `cur` (or `prev.next`) isn't None before reading its value.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: Walk with `prev = None` and `cur = head` until `cur` is None or holds x.
+hint: If `cur` is None, return `head`. If `prev` is None, return `cur.next`.
+hint: Otherwise set `prev.next = cur.next` and return `head`.
+right: One walk, O(n), then one link change. The head is the only special case, and a dummy node removes it.
+wrong: Find x with `prev` one node behind `cur`. Not found: return the head. Found in the head: return `cur.next`. Otherwise link `prev.next = cur.next` and return the head.
+
+=== task: code medium
+title: Reverse in place
+prompt: Write `reverse(head)` that reverses a linked list in place and returns the new head. Change the links of the nodes you have: don't make new nodes, and don't change any `val`.
+
+It must be O(n). The starter includes `to_list` for the tests.
+
+For example, `to_list(reverse(Node(1, Node(2, Node(3)))))` gives `[3, 2, 1]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def reverse(head):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+```
+tests:
+- to_list(reverse(Node(1, Node(2, Node(3)))))
+- reverse(None)
+- to_list(reverse(Node(7)))
+- (lambda h: [to_list(reverse(h)), h.val, h.next])(Node(1, Node(2, Node(3))))
+- to_list(reverse(Node("a", Node("b"))))
+forbid[Node(]: Reverse the links of the nodes you already have, without making new nodes.
+speed: setup=nodes = [Node(i) for i in range(n)]; [setattr(nodes[i], 'next', nodes[i + 1]) for i in range(n - 1)]; head = nodes[0] | call=reverse(head) | target=O(n)
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def reverse(head):
+    new_head = None
+    new_tail = None
+    while head is not None:
+        if head.next is None:
+            last = head
+            head = None
+        else:
+            node = head
+            while node.next.next is not None:
+                node = node.next
+            last = node.next
+            node.next = None
+        if new_head is None:
+            new_head = last
+        else:
+            new_tail.next = last
+        new_tail = last
+    return new_head
+```
+fail[1]: Every link should point backwards: 3 → 2 → 1, with 3 as the new head.
+fail[2]: An empty list reversed is still empty: return None.
+fail[4]: The old head, 1, ends up last, so its link must be None.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: Use three names: `prev = None`, `cur = head`, and `nxt` inside the loop.
+hint: In the loop: `nxt = cur.next`, `cur.next = prev`, `prev = cur`, `cur = nxt`.
+hint: When `cur` is None, return `prev`.
+right: Each node is visited once and its link flipped: O(n) time and O(1) extra space. Taking the last node again and again would walk the list n times: O(n²).
+wrong: Walk with `prev` and `cur`: save `nxt = cur.next`, flip `cur.next = prev`, then `prev = cur` and `cur = nxt`. Return `prev`.
+
+=== task: predict medium
+title: Two passes
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3, Node(4))))
+prev = None
+cur = head
+for step in range(2):
+    nxt = cur.next
+    cur.next = prev
+    prev = cur
+    cur = nxt
+print(prev.val, prev.next.val, prev.next.next)
+print(cur.val, cur.next.val, cur.next.next)
+```
+wrong[2 1 None\n3 2 1]: Only two passes run, so only the 1 and the 2 are flipped. The 3 still links forwards, to the 4.
+wrong[1 2 None\n3 4 None]: Each pass puts the flipped node in front of the reversed part: after two passes `prev` is 2, which links back to 1.
+wrong[2 1 3\n3 4 None]: The 1 was flipped first, to point at None, so the reversed part ends after the 1.
+hint: Pass 1 flips the 1 to point at None. Pass 2 flips the 2 to point at the 1.
+hint: The 3 and the 4 haven't been touched yet.
+right: Halfway through, the list is in two pieces: the reversed part 2 → 1 from `prev`, and the untouched rest 3 → 4 from `cur`.
+wrong: After pass 1: `prev` is 1 (→ None) and `cur` is 2. After pass 2: `prev` is 2 (→ 1 → None) and `cur` is 3 (→ 4 → None).
+
+=== task: fill medium
+title: Don't fall off the end
+prompt: Fill in the blank so that `fast` never falls off the end, and the program prints the middle of each list:
+
+```output
+3
+4
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and ??:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+
+print(middle(Node(1, Node(2, Node(3, Node(4, Node(5)))))))
+print(middle(Node(1, Node(2, Node(3, Node(4, Node(5, Node(6))))))))
+```
+answer: fast.next is not None
+wrong[fast.next.next is not None]: When `fast` is the last node, `fast.next` is None, and `fast.next.next` fails with an AttributeError.
+wrong[slow.next is not None]: It's `fast` that might fall off: `fast = fast.next.next` needs `fast.next` to be a node.
+hint: `fast = fast.next.next` needs `fast.next` to be a node.
+hint: Check `fast.next` as well as `fast`.
+right: `fast is not None and fast.next is not None` makes sure `fast`'s two moves land on nodes or on the final None. `and` checks `fast` first, so `fast.next` is only read when `fast` is a node.
+wrong: The second move reads `fast.next.next`, so `fast.next` must not be None: the blank is `fast.next is not None`.
+
+=== task: cells medium
+title: The middle of each list
+prompt: The slow and fast `middle` from this lesson is run on the list 1 → 2 → ... → n. What value does it return for each n?
+labels: n = 1 | n = 2 | n = 5 | n = 6
+answer: 1 | 2 | 3 | 4
+wrong[1 | 1 | 3 | 3]: With an even number of nodes, the loop stops at the **second** of the two middle nodes: index n // 2.
+wrong[1 | 2 | 3 | 3]: For n = 6, `slow` moves 3 times, 1 → 2 → 3 → 4, while `fast` goes 1 → 3 → 5 → None.
+hint: The middle is the node at index n // 2.
+hint: For n = 6 that's index 3, which holds 4.
+right: Index n // 2 every time: 0, 1, 2 and 3, which hold 1, 2, 3 and 4.
+wrong: n = 1: the only node, 1. n = 2: `slow` moves once, to 2. n = 5: twice, to 3. n = 6: three times, to 4.
+
+=== task: order medium
+title: One pass of the loop
+prompt: Put the four lines of one pass of the reverse loop in order.
+items:
+- `nxt = cur.next`, to save the rest of the list
+- `cur.next = prev`, to flip the link
+- `prev = cur`, so the reversed part starts at `cur`
+- `cur = nxt`, to move on to the rest
+hint: The flip overwrites the link to the rest, so the rest has to be saved first.
+hint: `prev` has to move before `cur` does, because `prev` takes `cur`'s old value.
+right: Save, flip, then move `prev` and `cur` on, in that order. Any other order loses the rest of the list or the reversed part.
+wrong: Save `nxt` first, then flip `cur.next`, then set `prev = cur`, and last `cur = nxt`.
+
+=== task: predict medium
+title: The dummy at work
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(5, Node(6))
+dummy = Node(None, head)
+prev = dummy
+while prev.next is not None and prev.next.val != 5:
+    prev = prev.next
+prev.next = prev.next.next
+print(dummy.next.val, dummy.next.next, prev is dummy)
+```
+wrong[5 6 True]: The 5 is in the head, and the dummy is the node before it. `prev.next = prev.next.next` makes the dummy skip the 5.
+wrong[6 None False]: `prev` never moves: the first node it checks, `prev.next`, already holds 5. So `prev` is still the dummy.
+hint: Which node is `prev.next` on the first check?
+hint: The loop body doesn't run at all.
+right: The head was deleted by the same line that deletes any other node, because the dummy stands in front of it. The list is now `dummy.next`: 6.
+wrong: `prev.next` is the head, 5, so the loop stops at once, with `prev` on the dummy. The dummy then skips the 5, so `dummy.next` is 6, which links to None.
+
+=== task: mcq medium
+title: Why is popping the back O(n)?
+prompt: A singly linked list keeps a `tail`, so appending is O(1). Why is removing the last node still O(n)?
+* The node before the tail must become the new tail, and only a walk from the head can find it :: Right. A singly linked node doesn't know the node before it.
+- Removing a node shifts the nodes after it :: Nothing shifts in a linked list; only links change.
+- The tail has to be copied into a new node :: Nothing is copied: the node before the tail gets `next = None`.
+- It isn't: with a tail it's O(1) :: The tail gives you the last node, but not the one before it, which is the one that changes.
+hint: Which node's link changes when the last node goes?
+hint: Can the tail tell you which node comes before it?
+right: Removing the last node changes the second-to-last node's link, and finding that node takes a walk: O(n). A doubly linked list has it in `tail.prev`.
+wrong: The second-to-last node has to link to None and become the tail. Only a walk from the head can find it in a singly linked list.
+
+=== task: multi medium
+title: Reversing in place
+prompt: Choose **every** true sentence about the in-place `reverse` from this lesson.
+* It makes no new nodes :: Right. It only changes links.
+* The old head ends up last, linking to None :: Right. On the first pass its link is flipped to `prev`, which is None.
+* It uses O(1) extra space :: Right. Three names, whatever the length.
+* It returns `prev`, the old last node :: Right. When `cur` is None, `prev` is on the old last node.
+- It takes O(n²) time :: Each node is visited once: O(n).
+- It needs to know the length of the list first :: It walks until `cur` is None.
+hint: What does the loop make, and how many times does it run?
+hint: Four of them are true.
+right: One pass, three names, every link flipped: O(n) time, O(1) extra space, and the old last node is the new head.
+wrong: True: no new nodes, the old head ends up last, O(1) extra space, `prev` is returned. False: it's O(n) time, and it needs no length.
+
+=== task: code medium
+title: The middle node
+prompt: Write `middle(head)` that returns the value of the middle node of a list that isn't empty. With an even number of nodes, return the second of the two middle nodes: the node at index n // 2.
+
+For example, `middle(Node(1, Node(2, Node(3, Node(4)))))` returns 3.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    # your code here
+    return head.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+```
+tests:
+- middle(Node(1, Node(2, Node(3, Node(4, Node(5))))))
+- middle(Node(1, Node(2, Node(3, Node(4)))))
+- middle(Node(7))
+- middle(Node(1, Node(2)))
+- middle(Node("a", Node("b", Node("c"))))
+fail[1]: Five nodes: the middle is the third one, 3.
+fail[2]: Four nodes have two middles, 2 and 3. Return the second one, at index 4 // 2 = 2.
+fail[4]: Two nodes: the second one is at index 2 // 2 = 1.
+error[AttributeError]: Loop `while fast is not None and fast.next is not None:`, so that `fast.next.next` is only read when `fast.next` is a node.
+hint: Use `slow` and `fast`, both starting at the head.
+hint: While `fast` and `fast.next` are nodes, move `slow` one node and `fast` two.
+hint: Return `slow.val`.
+right: `fast` covers the list twice as fast, so when it reaches the end, `slow` is halfway: O(n), in one pass.
+wrong: Move `slow` one node and `fast` two nodes at a time, while `fast is not None and fast.next is not None`, then return `slow.val`. Counting the nodes and walking n // 2 links works too.
+
+=== task: code hard
+title: Merge two sorted lists
+prompt: `a` and `b` are the heads of two linked lists whose values are in increasing order. Write `merge_sorted(a, b)` that joins all their nodes into one list in increasing order and returns its head. Relink the nodes you have, instead of making new ones: start from a dummy node, and each time attach the smaller of the two front nodes. When the two front values are equal, take the node from `a` first. The starter includes `to_list`.
+
+For example, `to_list(merge_sorted(Node(1, Node(4)), Node(2, Node(3, Node(5)))))` gives `[1, 2, 3, 4, 5]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def merge_sorted(a, b):
+    dummy = Node(None)
+    tail = dummy
+    # your code here
+    return dummy.next
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def merge_sorted(a, b):
+    dummy = Node(None)
+    tail = dummy
+    while a is not None and b is not None:
+        if a.val <= b.val:
+            tail.next = a
+            a = a.next
+        else:
+            tail.next = b
+            b = b.next
+        tail = tail.next
+    if a is not None:
+        tail.next = a
+    else:
+        tail.next = b
+    return dummy.next
+```
+tests:
+- to_list(merge_sorted(Node(1, Node(4)), Node(2, Node(3, Node(5)))))
+- to_list(merge_sorted(None, Node(2, Node(3))))
+- to_list(merge_sorted(Node(1), None))
+- merge_sorted(None, None)
+- to_list(merge_sorted(Node(1, Node(3)), Node(1, Node(2))))
+- to_list(merge_sorted(Node(5, Node(6)), Node(1, Node(2))))
+- (lambda a, b: [to_list(merge_sorted(a, b)), a.next.val])(Node(1, Node(4)), Node(2))
+fail[1]: Take the smaller front node each time: 1 (from a), 2 and 3 (from b), 4 (from a), then the rest of b, 5.
+fail[2]: When one list is empty, the answer is the other list.
+fail[6]: All of b comes first here. When b runs out, attach the rest of a in one go.
+fail[7]: Relink the nodes you have: the 1 from `a` should now link to the 2 from `b`. If it still links to 4, the merged list was built from new nodes.
+error[AttributeError]: Loop only while both `a` and `b` are nodes, then attach whichever list is left.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: While both lists have nodes, link `tail.next` to the smaller front node, and move that list on.
+hint: Then move `tail` on: `tail = tail.next`.
+hint: When one list runs out, link `tail.next` to the rest of the other, and return `dummy.next`.
+right: Each node is attached once: O(n + m) time, and O(1) extra space, because no node is copied. Merge sort, in Unit 4, merges like this.
+wrong: Keep a dummy and a `tail`. Attach the smaller of the two front nodes after `tail` again and again; when a list runs out, attach the rest of the other; return `dummy.next`.
+
+=== task: code hard
+title: Is it a palindrome?
+prompt: Write `is_palindrome(head)` that returns True if the list's values read the same forwards and backwards, like 1 → 2 → 2 → 1. Don't copy the values into a Python list or a string. Instead:
+
+1. find the middle node with `slow` and `fast`,
+2. reverse the list from the middle node on, with the `reverse` function in the starter,
+3. walk from the head and from the reversed half together, comparing values.
+
+For example, `is_palindrome(Node(1, Node(2, Node(1))))` returns True.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+def is_palindrome(head):
+    # your code here
+    return True
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+def is_palindrome(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    second = reverse(slow)
+    first = head
+    while second is not None:
+        if first.val != second.val:
+            return False
+        first = first.next
+        second = second.next
+    return True
+```
+tests:
+- is_palindrome(Node(1, Node(2, Node(1))))
+- is_palindrome(Node(1, Node(2, Node(2, Node(1)))))
+- is_palindrome(Node(1, Node(2)))
+- is_palindrome(Node(7))
+- is_palindrome(None)
+- is_palindrome(Node(1, Node(2, Node(3, Node(1)))))
+- is_palindrome(Node("r", Node("a", Node("c", Node("e", Node("c", Node("a", Node("r"))))))))
+- is_palindrome(Node(1, Node(1, Node(2))))
+forbid[append(]: Don't copy the values into a Python list: compare the two halves of the linked list itself.
+forbid[[::-1]]: Don't reverse a copy: reverse the second half of the linked list with `reverse`.
+fail[1]: 1, 2, 1 reads the same backwards.
+fail[3]: 1, 2 reads 2, 1 backwards: not a palindrome.
+fail[5]: An empty list reads the same both ways: True.
+fail[6]: 1, 2, 3, 1 backwards is 1, 3, 2, 1: the 2 and the 3 don't match.
+fail[8]: 1, 1, 2 backwards is 2, 1, 1: the first values already differ.
+error[AttributeError]: Walk the two halves while the reversed half (`second`) still has nodes. It's never longer than the first half.
+hint: Find the middle: `slow` moves one node and `fast` two, while `fast` and `fast.next` are nodes.
+hint: `second = reverse(slow)` turns the second half around, so it can be walked from the end of the list.
+hint: Walk `first` from the head and `second` from the reversed half together. Any mismatch means False.
+right: Three walks of about n / 2 nodes and a few names: O(n) time, O(1) extra space. The list is left changed; reversing the second half again would put it back.
+wrong: Find the middle with `slow` and `fast`, reverse from the middle on, then compare the first half with the reversed second half, value by value.
+
+=== task: code hard
+title: Rotate right
+prompt: Write `rotate_right(head, k)` that moves the last k nodes of a list, in order, to the front, and returns the new head. Rotating 1 → 2 → 3 → 4 → 5 by 2 gives 4 → 5 → 1 → 2 → 3. k can be bigger than the length: rotating a list of n nodes by n changes nothing, so only k % n matters. An empty list stays empty. The starter includes `to_list`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def rotate_right(head, k):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def rotate_right(head, k):
+    if head is None:
+        return None
+    n = 1
+    tail = head
+    while tail.next is not None:
+        tail = tail.next
+        n += 1
+    k = k % n
+    if k == 0:
+        return head
+    new_tail = head
+    for step in range(n - k - 1):
+        new_tail = new_tail.next
+    new_head = new_tail.next
+    new_tail.next = None
+    tail.next = head
+    return new_head
+```
+tests:
+- to_list(rotate_right(Node(1, Node(2, Node(3, Node(4, Node(5))))), 2))
+- to_list(rotate_right(Node(1, Node(2, Node(3))), 1))
+- to_list(rotate_right(Node(1, Node(2, Node(3))), 3))
+- to_list(rotate_right(Node(1, Node(2, Node(3))), 4))
+- rotate_right(None, 5)
+- to_list(rotate_right(Node(9), 7))
+- to_list(rotate_right(Node(1, Node(2)), 0))
+fail[1]: The last two nodes, 4 and 5, move to the front: 3 becomes the new last node, and the old last node, 5, links to the old head, 1.
+fail[3]: Rotating 3 nodes by 3 brings every node back to where it started.
+fail[4]: 4 % 3 = 1, so this is the same as rotating by 1.
+fail[5]: An empty list has nothing to rotate: return None.
+error[ZeroDivisionError]: Handle the empty list before working out `k % n`.
+error[AttributeError]: The new tail is n − k − 1 links from the head; check how many links you walk.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: Walk to the last node, counting the nodes (n) on the way. Then set `k = k % n`, and if it's 0, return the head unchanged.
+hint: The new tail is n − k − 1 links from the head, and the new head is the node after it.
+hint: Cut after the new tail (`new_tail.next = None`) and link the old tail to the old head.
+right: Two walks and three link changes: O(n), and no node moves in memory. A rotation of an array would move every item.
+wrong: Count the nodes and find the tail; reduce k with `k % n`; walk n − k − 1 links to the new tail; make the node after it the head, cut the link, and join the old tail to the old head.
+
+=== task: code hard
+title: Swap the pairs
+prompt: Write `swap_pairs(head)` that swaps every two neighbouring nodes, turning 1 → 2 → 3 → 4 into 2 → 1 → 4 → 3, and returns the new head. With an odd number of nodes, the last one stays where it is. Swap the nodes by changing links, not values. A dummy node in front of the head helps. The starter includes `to_list`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def swap_pairs(head):
+    # your code here
+    return head
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(head):
+    items = []
+    node = head
+    while node is not None:
+        items.append(node.val)
+        node = node.next
+    return items
+
+def swap_pairs(head):
+    dummy = Node(None, head)
+    prev = dummy
+    while prev.next is not None and prev.next.next is not None:
+        first = prev.next
+        second = first.next
+        first.next = second.next
+        second.next = first
+        prev.next = second
+        prev = first
+    return dummy.next
+```
+tests:
+- to_list(swap_pairs(Node(1, Node(2, Node(3, Node(4))))))
+- to_list(swap_pairs(Node(1, Node(2, Node(3)))))
+- to_list(swap_pairs(Node(1)))
+- swap_pairs(None)
+- (lambda h: [to_list(swap_pairs(h)), h.val, h.next.val])(Node(1, Node(2, Node(3, Node(4)))))
+fail[1]: Each pair swaps: 2, 1, then 4, 3. After a pair is swapped, its second node (the 1) must link to the next pair's new first node (the 4).
+fail[2]: The last node, 3, has no partner, so it stays at the end.
+fail[5]: The node holding 1 should now come after 2 and link to the 4.
+error[AttributeError]: Only swap while two nodes are left: `prev.next is not None and prev.next.next is not None`.
+error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
+hint: Start with `dummy = Node(None, head)` and `prev = dummy`: `prev` is always the node before the next pair.
+hint: For the pair `first = prev.next` and `second = first.next`: set `first.next = second.next`, then `second.next = first`, then `prev.next = second`.
+hint: Then move `prev` to `first`, which is now the second node of the pair.
+right: Three link changes per pair, in one walk: O(n). The dummy makes the first pair work like every other pair.
+wrong: With a dummy before the head, take the next two nodes again and again: the node before them links to the second, the second links to the first, and the first links to whatever came after the pair. Then move on past the pair.
+
+=== task: predict hard
+title: A forgotten save
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+prev = None
+cur = head
+while cur is not None:
+    cur.next = prev
+    prev = cur
+    cur = cur.next
+print(prev.val, prev.next)
+```
+wrong[3 2]: Without `nxt`, `cur = cur.next` follows the link that was flipped a moment before: it's None, so the loop stops after one pass.
+wrong[2 1]: The loop runs only once. On the first pass, `cur.next = prev` sets 1's link to None, and `cur = cur.next` then makes `cur` None.
+hint: After `cur.next = prev`, what is `cur.next`?
+hint: On the first pass, `prev` is None.
+right: `cur = cur.next` follows the link that has only now been flipped to None, so the loop ends after one pass, and the 2 and the 3 are lost. That's why `nxt = cur.next` must come first.
+wrong: Pass 1 sets 1's link to None, then `prev = 1`, then `cur = cur.next`, which is now None. The loop ends with `prev` on 1, whose link is None.
+
+=== task: predict hard
+title: An even number of nodes
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3, Node(4, Node(5, Node(6))))))
+slow = head
+fast = head
+steps = 0
+while fast is not None and fast.next is not None:
+    slow = slow.next
+    fast = fast.next.next
+    steps += 1
+print(slow.val, steps, fast)
+```
+wrong[3 2 5]: From 5, `fast.next` is 6, a node, so the loop runs a third time: `fast` jumps over 6 to None, and `slow` moves to 4.
+wrong[4 3 6]: From 5, `fast = fast.next.next` jumps two nodes: past 6, to None.
+wrong[3 3 None]: `slow` moves once on every pass: 1 → 2 → 3 → 4 after three passes.
+hint: `fast` goes 1 → 3 → 5 → ?
+hint: The node after 6 is None.
+right: Three passes: `fast` goes 1 → 3 → 5 → None and `slow` goes 1 → 2 → 3 → 4, the second of the two middle nodes (index 6 // 2 = 3).
+wrong: Pass 1: slow 2, fast 3. Pass 2: slow 3, fast 5. Pass 3: slow 4, fast 6's next, None. Then `fast` is None, so the loop stops.
+
+=== task: cells hard
+title: Rotations
+prompt: `rotate_right` moves the last k nodes of 1 → 2 → 3 → 4 → 5 to the front. Which value is at the head afterwards, for each k?
+labels: k = 1 | k = 2 | k = 5 | k = 7
+answer: 5 | 4 | 1 | 4
+wrong[5 | 4 | 1 | 3]: k = 7 is a full turn (5) plus 2 more: 7 % 5 = 2, the same as k = 2.
+wrong[2 | 3 | 1 | 3]: That rotates left. Rotating right moves the **last** k nodes to the front.
+hint: Rotating by k brings the last k nodes to the front, so the new head is the node at index n − k.
+hint: Only k % 5 matters.
+right: The new head is the node at index n − (k % n): index 4 holds 5, index 3 holds 4, index 0 holds 1, and index 3 again holds 4.
+wrong: k = 1: 5 comes first. k = 2: 4 and 5 come first. k = 5: a full turn, so 1. k = 7: 7 % 5 = 2, so 4.
+
+=== task: mcq hard
+title: A stack on a linked list
+prompt: You build a stack on a singly linked list that keeps a head and a tail. Where should `push` and `pop` work, and why?
+* At the head: adding and removing there are both O(1) :: Right. `head = Node(x, head)` pushes and `head = head.next` pops.
+- At the tail: adding there is O(1) with the tail :: Adding is, but removing the last node needs the node before it: O(n).
+- One at each end :: Then the first item in would be the first item out: that's a queue, not a stack.
+- In the middle, so that both ends stay free :: Reaching the middle is a walk: O(n).
+hint: Which end can both add and remove in O(1)?
+hint: Removing the last node needs the node before it.
+right: The head is the only place where a singly linked list can both add and remove in O(1). The Stacks lesson builds on this.
+wrong: Push and pop at the head: each is a single change to `head`. At the tail, popping would need an O(n) walk.
+
+=== task: multi hard
+title: Needing the node before
+prompt: In a singly linked list, choose **every** operation that needs the node **before** the node it changes or removes.
+* Deleting the node that holds a given value :: Right. The node before it must link around it.
+* Removing the last node :: Right. The second-to-last node must link to None.
+* Inserting a new node in front of a node you're holding :: Right. The node before the held node must link to the new node.
+- Inserting a new node after a node you're holding :: Only the held node's link changes.
+- `push_front` :: Only `head` changes.
+- Changing the value of a node you're holding :: No link changes at all.
+hint: Which link has to change in each case?
+hint: Three of them do.
+right: Whenever the link pointing **at** a node has to change, you need the node before it, and a singly linked list has to walk to find it.
+wrong: These need the node before: deleting a value, removing the last node, inserting in front of a held node. These don't: inserting after a held node, `push_front`, changing a value.
+
+=== task: parsons hard
+title: Reverse a list
+prompt: Arrange the lines so that `reverse` flips every link and returns the new head, and the program prints:
+
+```output
+3 2 1
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def reverse(head):
+    prev = None
+    cur = head
+    while cur is not None:
+        nxt = cur.next
+        cur.next = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+head = reverse(Node(1, Node(2, Node(3))))
+print(head.val, head.next.val, head.next.next.val)
+```
+distractors:
+```python
+    return cur
+        cur = cur.next
+```
+hint: Save the rest of the list before flipping a link.
+hint: When `cur` runs off the end, `prev` is on the new head.
+right: Save, flip, move `prev`, move `cur`: each node is flipped once, O(n). `cur = cur.next` would follow the link that had only now been flipped.
+wrong: Inside the loop: `nxt = cur.next`, `cur.next = prev`, `prev = cur`, `cur = nxt`. After the loop, `return prev`.
