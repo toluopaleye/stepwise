@@ -1,0 +1,1596 @@
+=== lesson
+id: ds-linked-circular
+title: Circular linked lists
+summary: In a circular linked list the last node links back to the first, so the list has no end. You'll walk round exactly once without looping forever, keep a pointer to the last node so that both ends are O(1), insert and delete in a circle (including the one-node circle that links to itself), take turns round robin, and play the Josephus game.
+
+=== learn
+### The last node links back
+In a **circular** linked list, the last node's `next` isn't None: it's the first node. The links go round in a circle:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node("A")
+b = Node("B")
+c = Node("C")
+a.next = b
+b.next = c
+c.next = a
+node = a
+for step in range(7):
+    print(node.val, end=" ")
+    node = node.next
+print()
+print(c.next is a)
+```
+```output
+A B C A B C A
+True
+```
+Following `next` never reaches None: after C comes A again. A circle has no real first node, so you can start anywhere. Circles suit anything that repeats: players taking turns, a playlist on repeat, traffic lights cycling through their colours.
+
+### Walking round once
+`while node is not None:` never stops on a circular list, because no link is None. To go round once, remember where you started, and stop when you get back there:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(start):
+    items = []
+    if start is None:
+        return items
+    node = start
+    while True:
+        items.append(node.val)
+        node = node.next
+        if node is start:
+            break
+    return items
+
+a = Node("A")
+b = Node("B")
+c = Node("C")
+a.next = b
+b.next = c
+c.next = a
+print(to_list(a))
+print(to_list(b))
+print(to_list(None))
+```
+```output
+['A', 'B', 'C']
+['B', 'C', 'A']
+[]
+```
+- `node is start` asks whether `node` is the very same node as `start`. Comparing values (`node.val == start.val`) would stop too early if two nodes held the same value.
+- The check comes **after** the first node is visited, because at the start `node is start` is already True. A `while True:` loop with a `break` at the end runs the body at least once.
+- An empty circular list is None, and it has to be checked first: there's no node to start from.
+
+Animation 1 shows a walk round.
+
+### A pointer to the last node
+A circular list usually keeps a pointer to its **last** node, `tail`, instead of the first. The first node is always `tail.next`, so one pointer gives you both ends:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def push_front(tail, x):
+    new = Node(x)
+    if tail is None:
+        new.next = new
+        return new
+    new.next = tail.next
+    tail.next = new
+    return tail
+
+def push_back(tail, x):
+    tail = push_front(tail, x)
+    return tail.next
+
+tail = None
+tail = push_back(tail, 2)
+print(to_list(tail), tail.next is tail)
+tail = push_back(tail, 3)
+tail = push_front(tail, 1)
+print(to_list(tail), tail.val, tail.next.val)
+```
+```output
+[2] True
+[1, 2, 3] 3 1
+```
+- **The first node in an empty list links to itself.** One node is a circle of one: its `next` is itself, and it's both the first and the last node.
+- `push_front` puts the new node between the tail and the old first node. The tail stays, so the new node is now first: O(1).
+- `push_back` does the same, then moves the tail onto the new node, so it becomes last instead: O(1). It's `push_front` followed by one step of the tail.
+- Both functions return the tail, because the tail changes when the list was empty, and when adding at the back.
+
+### Deleting from a circle
+To delete a node, the node before it links past it, as in any singly linked list. Two cases need care: deleting the only node leaves an empty list (None), and deleting the last node moves the tail back to the node before it:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def pop_front(tail):
+    first = tail.next
+    if first is tail:
+        return None, first.val
+    tail.next = first.next
+    return tail, first.val
+
+c = Node(3)
+b = Node(2, c)
+a = Node(1, b)
+c.next = a
+tail = c
+tail, val = pop_front(tail)
+print(val, tail.val, tail.next.val)
+tail, val = pop_front(tail)
+tail, val = pop_front(tail)
+print(val, tail)
+```
+```output
+1 3 2
+3 None
+```
+`pop_front` removes `tail.next`, the first node, by linking the tail past it: O(1). When the first node is the tail itself, it was the only node, so the list becomes None. Removing the **last** node is O(n) here, as in any singly linked list: the node before the tail can only be found by walking round.
+
+Moving the tail one step, `tail = tail.next`, **rotates** the circle: the old first node becomes the last, and the next one becomes first. In an array, the same rotation moves every item: O(n). Here it's O(1).
+
+### Taking turns: round robin
+A circular list is a natural way to take turns: the current player plays, then the turn passes to `next`, round and round. A computer shares its processor between programs in the same way, called **round robin**: each program runs for a short slice of time, then the next one gets a turn. A program that finishes leaves the circle, which needs the node before it, so the loop keeps `prev`:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+work = {"A": 3, "B": 1, "C": 2}
+c = Node("C")
+b = Node("B", c)
+a = Node("A", b)
+c.next = a
+prev = c
+finished = []
+while True:
+    node = prev.next
+    work[node.val] -= 1
+    if work[node.val] > 0:
+        prev = node
+    elif node is prev:
+        finished.append(node.val)
+        break
+    else:
+        prev.next = node.next
+        finished.append(node.val)
+print(finished)
+```
+```output
+['B', 'C', 'A']
+```
+Each pass of the loop gives one slice of time to `prev.next`. A program with work left stays, and `prev` moves on to it. A finished program is linked out with `prev.next = node.next`, and `prev` stays put, so the next program gets the following turn. When the last program finishes, it's the only node, so `node is prev`. B needs 1 slice, C needs 2 and A needs 3, so they finish in the order B, C, A.
+
+### The Josephus game
+In the **Josephus game**, n people stand in a circle. Counting starts at person 1, and every k-th person counted leaves the circle; counting goes on from the next person. The last one left wins. A circular list plays it directly:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def josephus(n, k):
+    people = [Node(i) for i in range(1, n + 1)]
+    for i in range(n):
+        people[i].next = people[(i + 1) % n]
+    prev = people[n - 1]
+    out = []
+    while prev.next is not prev:
+        for step in range(k - 1):
+            prev = prev.next
+        leaving = prev.next
+        prev.next = leaving.next
+        out.append(leaving.val)
+    return out, prev.val
+
+print(josephus(7, 3))
+print(josephus(5, 2))
+```
+```output
+([3, 6, 2, 7, 5, 1], 4)
+([2, 4, 1, 5], 3)
+```
+- `people[(i + 1) % n]` links each person to the next, and `%` makes the last person link back to person 1.
+- `prev` starts at the last person, so `prev.next` is person 1, the first one counted.
+- Each round, `prev` moves k − 1 steps, so `prev.next` is the k-th person counted. That person is linked out, and counting goes on from the next one.
+- The game ends when one person is left: their node links to itself, so `prev.next is prev`.
+
+Each of the n − 1 rounds walks k − 1 steps and removes a node in O(1), so the game is O(n × k). With a Python list, `people.pop(i)` would also shift every person after i on each removal. Animation 2 plays a small game.
+
+=== keypoints
+- In a circular linked list, the last node's `next` is the first node, so no link is None.
+- To walk round once, remember the start node and stop when `node is start`, checking after visiting each node. Check for an empty list (None) first.
+- Keep a pointer to the last node: the first node is `tail.next`, so adding at the front, adding at the back and removing from the front are all O(1).
+- The first node of an empty circle links to itself. Removing the only node leaves None.
+- `tail = tail.next` rotates the circle in O(1).
+- Circles model taking turns: round robin, and the Josephus game, where removing each person is O(1) once you're next to them.
+
+=== example: Traffic lights
+intro: A traffic light cycles through its colours, each for a number of seconds. A circular list repeats the cycle without any special case for going back to the start.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+red = Node(("red", 4))
+green = Node(("green", 3))
+amber = Node(("amber", 1))
+red.next = green
+green.next = amber
+amber.next = red
+
+light = red
+second = 0
+while second < 12:
+    colour, length = light.val
+    print(second, colour)
+    second += length
+    light = light.next
+```
+1-4: The node class: each node's value here is a tuple, (colour, seconds).
+6-11: Three colours in a circle: red → green → amber → red.
+13-19: Each pass shows the current colour, adds its length to the clock, and moves to the next colour. After amber, `next` leads back to red with no extra code. The loop stops by the clock, not at the end of the list, because there is no end.
+
+=== example: Rotating a circle
+intro: With a pointer to the last node, rotating the circle one step is a single assignment, whatever its size.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def to_list(tail):
+    items = []
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+nodes = [Node(x) for x in [1, 2, 3, 4, 5]]
+for i in range(5):
+    nodes[i].next = nodes[(i + 1) % 5]
+tail = nodes[4]
+print(to_list(tail))
+for turn in range(3):
+    tail = tail.next
+    print(to_list(tail))
+```
+6-14: Walk round once from the first node, `tail.next`, and stop after the tail.
+16-19: Five nodes in a circle; the tail is the last one, 5.
+20-23: `tail = tail.next` makes the old first node the last one: the circle turns by one, O(1). An array would have to move every item.
+
+=== animation: Walking round once
+view: linked a ptr=start,node
+intro: A circle A → B → C → A, walked once starting from B. Watch `node` go round and the loop stop when it's back at `start`.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node("A")
+b = Node("B")
+c = Node("C")
+a.next = b
+b.next = c
+c.next = a
+start = b
+node = start
+while True:
+    print(node.val)
+    node = node.next
+    if node is start:
+        break
+```
+1: The node class: a value and a link to the next node.
+3: Store this node's value, {val}.
+4: Store the link: None for now.
+6: Make three nodes.
+9: A links to B.
+10: B links to C.
+11: C links back to A: now it's a circle, and no link is None.
+12: Start the walk at B.
+13: `node` starts at the start.
+14: `while True` runs the body at least once.
+15: Visit {node.val}.
+16: Move on to {node.next.val}.
+17: Is `node` back at the start? {'Yes: it is B again, so stop.' if node is start else 'No: it is ' + node.val + ', so keep going.'}
+18: Back at B after visiting every node once.
+
+=== animation: The Josephus game
+view: linked prev ptr=leaving
+intro: Five people in a circle, and every 2nd person counted leaves. The picture is drawn starting from `prev`, so it turns as `prev` moves; the node after `prev` is always the next one counted.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+people = [Node(i) for i in range(1, 6)]
+for i in range(5):
+    people[i].next = people[(i + 1) % 5]
+prev = people[4]
+while prev.next is not prev:
+    prev = prev.next
+    leaving = prev.next
+    prev.next = leaving.next
+    print(leaving.val, end=" ")
+print("| winner:", prev.val)
+```
+1: The node class: a value and a link to the next node.
+3: Store this person's number, {val}.
+4: No link yet.
+6: Make five people, numbered 1 to 5.
+7: Link each person to the next one.
+8: Person {i + 1} links to person {(i + 1) % 5 + 1}.
+9: `prev` starts at person 5, so person 1 is the first counted.
+10: Is more than one person left? {'Yes.' if prev.next is not prev else 'No: person ' + str(prev.val) + ' links to themselves.'}
+11: Count one: `prev` moves on to person {prev.next.val}.
+12: The next person counted, person {prev.next.val}, is the 2nd: they leave.
+13: Person {prev.val} now links past person {leaving.val}, to person {leaving.next.val}.
+14: Person {leaving.val} is out.
+15: The last person left wins: person {prev.val}.
+
+=== task: predict easy
+title: Round and round
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+nodes = [Node(i) for i in [1, 2, 3, 4]]
+for i in range(4):
+    nodes[i].next = nodes[(i + 1) % 4]
+node = nodes[2]
+for step in range(6):
+    print(node.val, end=" ")
+    node = node.next
+```
+wrong[3 4]: The last node links back to the first, so the walk carries on: after 4 comes 1.
+wrong[1 2 3 4 1 2]: The walk starts at `nodes[2]`, which holds 3.
+wrong[3 4 None]: No link in a circle is None: `nodes[3].next` is `nodes[0]`, because `(3 + 1) % 4` is 0.
+hint: `(i + 1) % 4` links the last node, `nodes[3]`, back to `nodes[0]`.
+hint: Start at 3 and take 6 steps.
+right: 3 4 1 2 3 4: the `% 4` closes the circle, so the walk goes round and round with no end.
+wrong: From 3: 3, 4, then round to 1, 2, 3, 4. Six values in all.
+
+=== task: mcq easy
+title: Waiting for None
+prompt: What happens when `while node is not None: node = node.next` runs on a circular linked list?
+* It never stops, because no link in a circle is None :: Right. To go round once, stop when you're back at the start instead.
+- It stops after one round :: Nothing in that condition notices that the walk is back at the start.
+- It raises an error at the last node :: The last node links to the first, so there's no error: the walk carries on.
+- It stops at the first node :: The first node isn't None either.
+hint: Which link in a circle is None?
+hint: When would `node` ever become None?
+right: In a circle every `next` is a node, so `node` never becomes None and the loop runs forever. Remember the start node and stop when `node is start`.
+wrong: The condition waits for None, and a circle has none. The loop has to stop when it gets back to the node it started from.
+
+=== task: fill easy
+title: Stop at the start
+prompt: Fill in the blank so that the loop goes round the circle exactly once, and the program prints:
+
+```output
+3
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node("A")
+b = Node("B")
+c = Node("C")
+a.next = b
+b.next = c
+c.next = a
+start = c
+node = start
+count = 0
+while True:
+    count += 1
+    node = node.next
+    if node is ??:
+        break
+print(count)
+```
+answer: start
+wrong[a]: The walk starts at c, so the first move lands on a, and the loop stops after counting only 1 node.
+hint: The walk should stop when it's back where it began.
+hint: Where it began is saved in `start`.
+right: `node is start` becomes True only after the walk has visited all three nodes and come back to c.
+wrong: The loop must stop when `node` is back at the node it started from: `start`.
+
+=== task: code easy
+title: Count the circle
+prompt: Write `count_nodes(tail)` that returns how many nodes a circular linked list has, given its last node, `tail`. An empty list has tail None. The starter includes `build_circle(items)`, which builds a circle and returns its tail.
+
+For example, `count_nodes(build_circle([4, 8, 1]))` returns 3.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def count_nodes(tail):
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def count_nodes(tail):
+    count = 0
+    if tail is None:
+        return count
+    node = tail.next
+    while True:
+        count += 1
+        if node is tail:
+            break
+        node = node.next
+    return count
+```
+tests:
+- count_nodes(build_circle([4, 8, 1]))
+- count_nodes(None)
+- count_nodes(build_circle(["solo"]))
+- count_nodes(build_circle([5, 5, 5, 5]))
+fail[1]: Three nodes. Start at the first node, `tail.next`, count each node, and stop after counting the tail.
+fail[3]: One node links to itself: count it once.
+fail[4]: All four nodes hold 5, so stop by comparing nodes with `is`, not values.
+error[AttributeError]: Check for an empty circle (tail None) first.
+error[NameError]: Keep the `build_circle` helper from the starter: the tests use it.
+hint: If `tail` is None, return 0.
+hint: Start at `node = tail.next` and count in a `while True:` loop.
+hint: Stop (`break`) after counting the node that `is` the tail.
+right: One walk round: O(n). The check against the tail is what stops the loop in a list that has no end.
+wrong: Return 0 for None. Otherwise walk from `tail.next`, adding 1 per node, and stop after the tail.
+
+=== task: predict easy
+title: A circle of one
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+solo = Node(7)
+solo.next = solo
+print(solo.next is solo, solo.next.next.next.val)
+```
+wrong[False 7]: `solo.next = solo` makes the node link to itself, so `solo.next` is the very same node.
+wrong[True None]: Each `.next` leads back to the same node, which holds 7.
+hint: What does `solo.next = solo` do?
+hint: However many `.next`s you follow, you stay on the same node.
+right: A one-node circle links to itself: it's both the first and the last node, and every `.next` leads back to it.
+wrong: `solo.next` is `solo`, so `solo.next is solo` is True, and `solo.next.next.next` is still `solo`, whose value is 7.
+
+=== task: multi easy
+title: True about circles
+prompt: Choose **every** true sentence about circular linked lists.
+* No link is None :: Right. The last node links back to the first.
+* A walk can start at any node :: Right. A circle has no real first node.
+* A one-node circle links to itself :: Right. Its `next` is itself.
+* Stopping when `node is start` goes round exactly once :: Right. The walk visits every node once and is back at the start.
+- The last node's `next` is None :: That's a singly linked list. A circular list links it to the first node.
+- A circular list can't also be doubly linked :: It can: the first node's `prev` is the last node too.
+hint: What's special about the last node?
+hint: Four of them are true.
+right: A circle has no end and no fixed start: every node links on, and a walk stops only when it's back where it began.
+wrong: True: no None links, any start, a one-node circle links to itself, `node is start` stops after one round. False: the last node links to the first, and circles can be doubly linked.
+
+=== task: parsons easy
+title: Add up once round
+prompt: Arrange the lines so that `total` adds up every value in the circle once, starting from `start`, and the program prints:
+
+```output
+15
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def total(start):
+    result = 0
+    node = start
+    while True:
+        result += node.val
+        node = node.next
+        if node is start:
+            break
+    return result
+
+a = Node(5)
+b = Node(8)
+c = Node(2)
+a.next = b
+b.next = c
+c.next = a
+print(total(b))
+```
+distractors:
+```python
+        if node.next is start:
+        result = node.val
+```
+hint: Visit a node first, then move, then check whether you're back at the start.
+hint: Add each node's value to `result`.
+right: 8 + 2 + 5 = 15: every node once, starting and ending at b. Checking `node.next is start` would stop one node early.
+wrong: In the `while True:` loop: add `node.val`, move to `node.next`, and break when `node is start`. Then return the total.
+
+=== task: cells easy
+title: Steps round a circle
+prompt: A circle holds 10, 20, 30, 40 and 50, in that order, and a walk starts at 10. Which value is the walk on after each number of steps?
+labels: 2 steps | 5 steps | 7 steps | 13 steps
+answer: 30 | 10 | 30 | 40
+wrong[30 | 50 | 50 | 50]: The walk doesn't stop at the last node: after 50 it goes back to 10.
+wrong[30 | 10 | 30 | 30]: 13 steps is two full rounds (10 steps) and 3 more: 40.
+hint: Every 5 steps the walk is back at 10.
+hint: Only the steps left over after full rounds matter: 13 % 5 = 3.
+right: After k steps the walk is on item k % 5: 2 → 30, 0 → 10, 2 → 30, 3 → 40.
+wrong: 2 steps: 30. 5 steps: a full round, back to 10. 7 steps: 7 % 5 = 2, so 30. 13 steps: 13 % 5 = 3, so 40.
+
+=== task: mcq easy
+title: Why point at the last node?
+prompt: A circular linked list usually keeps a pointer to its last node, `tail`, rather than to its first node. Why?
+* The first node is `tail.next`, so one pointer reaches both ends in O(1) :: Right. Adding at the front, adding at the back and removing from the front are all O(1).
+- The last node is the one that's read most :: Both ends matter. The point is that the tail gives you both.
+- A pointer to the first node isn't allowed in a circle :: It's allowed, but from the first node, reaching the last node takes a walk.
+- Walking is faster from the last node :: A walk round is O(n) from any node.
+hint: Which node comes right after the last one?
+hint: From the first node, how would you reach the last one?
+right: `tail` is the last node and `tail.next` is the first, so both ends are one step away. A pointer to the first node would need an O(n) walk to reach the last one.
+wrong: In a circle, the last node links to the first. So holding the last node gives you the first one too, for free.
+
+=== task: predict easy
+title: One step of the tail
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+c = Node(3)
+b = Node(2, c)
+a = Node(1, b)
+c.next = a
+tail = c
+tail = tail.next
+print(tail.val, tail.next.val)
+```
+wrong[3 1]: `tail = tail.next` moves the tail on to 1. The first node, `tail.next`, is now 2.
+wrong[1 3]: The node after 1 is 2: the links haven't changed, only which node is called the tail.
+hint: Which node does `tail.next` hold before the move?
+hint: After the move, the first node is the one after the new tail.
+right: The tail moved one step, so the circle now reads 2, 3, 1: the old first node is last. That's a rotation in O(1).
+wrong: Before: tail 3, first 1. `tail = tail.next` makes the tail 1, so the first node, `tail.next`, is 2.
+
+=== task: code medium
+title: The circle as a list
+prompt: Write `to_list(tail)` that returns the values of a circular linked list as a Python list, from the first node (`tail.next`) round to the tail. An empty list (tail None) gives `[]`. The starter includes `build_circle`.
+
+For example, `to_list(build_circle([1, 2, 3]))` returns `[1, 2, 3]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    # your code here
+    return items
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+```
+tests:
+- to_list(build_circle([1, 2, 3]))
+- to_list(None)
+- to_list(build_circle(["x"]))
+- to_list(build_circle([4, 4, 4]))
+fail[1]: Start at the first node, `tail.next`, which holds 1, and stop after the tail, 3.
+fail[3]: A one-node circle: its `tail.next` is itself, so the walk adds "x" and stops.
+fail[4]: All three nodes hold 4. Stop by comparing nodes with `is`: `node.val == tail.val` is already True at the first node.
+error[AttributeError]: Check for an empty circle (tail None) before reading `tail.next`.
+error[NameError]: Keep the `build_circle` helper from the starter: the tests use it.
+hint: If `tail` is None, return the empty list.
+hint: Start at `node = tail.next`. In a `while True:` loop, append `node.val`.
+hint: After appending, `break` if `node is tail`; otherwise move on to `node.next`.
+right: One round: O(n). Comparing nodes with `is` stops at the right node even when values repeat.
+wrong: Return `[]` for None. Otherwise walk from `tail.next`, appending each value, and stop after the node that `is` the tail.
+
+=== task: code medium
+title: Add at the back
+prompt: Write `push_back(tail, x)` that adds a node holding x at the back of a circular linked list and returns the new tail. The list may be empty (tail None): then the new node links to itself. It must be O(1). The starter includes `build_circle` and `to_list`.
+
+For example, `to_list(push_back(build_circle([1, 2]), 3))` returns `[1, 2, 3]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def push_back(tail, x):
+    new = Node(x)
+    # your code here
+    return tail
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def push_back(tail, x):
+    new = Node(x)
+    if tail is None:
+        new.next = new
+        return new
+    new.next = tail.next
+    tail.next = new
+    return new
+```
+tests:
+- to_list(push_back(build_circle([1, 2]), 3))
+- to_list(push_back(None, 5))
+- (lambda t: t.next is t)(push_back(None, 5))
+- push_back(build_circle([1, 2]), 3).next.val
+- to_list(push_back(push_back(None, "a"), "b"))
+fail[1]: The new node goes between the tail and the first node, and then it becomes the tail: 1, 2, 3.
+fail[2]: Adding to an empty circle makes a one-node circle.
+fail[3]: The only node must link to itself: `new.next = new`.
+fail[4]: The new tail's `next` must be the first node, 1.
+error[AttributeError]: An empty circle has tail None: handle it before reading `tail.next`.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: If `tail` is None, the new node links to itself and is the tail: `new.next = new`, `return new`.
+hint: Otherwise link it in after the tail: `new.next = tail.next` (the first node), then `tail.next = new`.
+hint: The new node is the new tail: return it.
+right: Two links and no walk: O(1). Returning the new node as the tail is what puts it at the back rather than the front.
+wrong: Empty: the node links to itself. Otherwise the new node links to the first node, the old tail links to the new node, and the new node is returned as the tail.
+
+=== task: predict medium
+title: Four people
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+people = [Node(i) for i in range(1, 5)]
+for i in range(4):
+    people[i].next = people[(i + 1) % 4]
+prev = people[3]
+while prev.next is not prev:
+    prev = prev.next
+    leaving = prev.next
+    prev.next = leaving.next
+    print(leaving.val, end=" ")
+print("|", prev.val)
+```
+wrong[2 4 1 | 3]: After 4 leaves, `prev` is 3, so the next count moves `prev` to 1, and the person after 1 leaves: 3.
+wrong[1 3 2 | 4]: `prev` starts at person 4, so the first `prev = prev.next` moves to 1, and the person after 1, 2, leaves first.
+wrong[2 4 3 | 3]: Once 3 has left, only 1 is in the circle: 1 links to itself, and 1 wins.
+hint: Each round, `prev` moves one person on, and the person after `prev` leaves.
+hint: Round 1: `prev` moves to 1, and 2 leaves.
+right: 2, 4, then 3 leave, and 1 is left linking to itself. Every round is one step and one link change.
+wrong: Round 1: prev 1, 2 leaves. Round 2: prev 3, 4 leaves. Round 3: prev 1 (3 links to 1 now), 3 leaves. Then 1 links to itself: 1 wins.
+
+=== task: fill medium
+title: The first node
+prompt: Fill in the blank so that the first node of an empty circular list is set up correctly, and the program prints:
+
+```output
+9 9 True
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+tail = None
+new = Node(9)
+new.next = ??
+tail = new
+print(tail.val, tail.next.val, tail.next is tail)
+```
+answer: new
+wrong[None]: Then the list ends with None, so it isn't a circle: `tail.next.val` fails.
+wrong[tail]: At that moment `tail` is still None, so the new node would link to None.
+hint: In a circle of one, the next node after the only node is...
+hint: ...the node itself.
+right: `new.next = new`: the only node links to itself, so it's both the first and the last node of the circle.
+wrong: A one-node circle links to itself: the blank is `new`.
+
+=== task: cells medium
+title: Who wins?
+prompt: In the Josephus game with k = 2, every 2nd person counted leaves the circle, starting the count at person 1. Who is the last person left, for each number of people n?
+labels: n = 3 | n = 5 | n = 6 | n = 7
+answer: 3 | 3 | 5 | 7
+wrong[1 | 1 | 1 | 1]: Person 1 is counted first, but with k = 2 it's the 2nd person counted who leaves, so person 1 isn't safe.
+wrong[2 | 2 | 2 | 2]: Person 2 is the first to leave, so they can't be the last one left.
+hint: Play it out: with n = 3, person 2 leaves, then the count goes 3, 1, so 1 leaves.
+hint: With n = 5, the people leave in the order 2, 4, 1, 5.
+right: n = 3: 2 then 1 leave, 3 wins. n = 5: 2, 4, 1, 5 leave, 3 wins. n = 6: 2, 4, 6, 3, 1 leave, 5 wins. n = 7: 2, 4, 6, 1, 5, 3 leave, 7 wins.
+wrong: Simulate the circle: every second person counted leaves, and counting goes on from the next person. The winners are 3, 3, 5 and 7.
+
+=== task: order medium
+title: One round of Josephus
+prompt: Put the steps of one round of the Josephus game in order, using a circular linked list and `prev`, the node before the next person to be counted.
+items:
+- Move `prev` forward k − 1 times, counting people
+- Name the person after `prev` as `leaving`: the k-th person counted
+- Link `prev.next` to `leaving.next`, past the person leaving
+- Start the next count from `prev.next`
+hint: The person who leaves is the one right after `prev`, once `prev` has counted k − 1 people.
+hint: Unlinking needs `leaving` to be named first, so that its `next` is known.
+right: Count k − 1, name the k-th, unlink it, and carry on from the next person. Unlinking is O(1), so each round costs k steps.
+wrong: Walk `prev` k − 1 steps, take `leaving = prev.next`, set `prev.next = leaving.next`, and the next round starts counting at `prev.next`.
+
+=== task: predict medium
+title: Taking turns
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+work = {"A": 2, "B": 3, "C": 1}
+c = Node("C")
+b = Node("B", c)
+a = Node("A", b)
+c.next = a
+prev = c
+finished = []
+while True:
+    node = prev.next
+    work[node.val] -= 1
+    if work[node.val] > 0:
+        prev = node
+    elif node is prev:
+        finished.append(node.val)
+        break
+    else:
+        prev.next = node.next
+        finished.append(node.val)
+print(finished)
+```
+wrong[['A', 'B', 'C']]: Programs finish when their work runs out, not in the order they start. C needs only 1 turn, so it finishes first.
+wrong[['C', 'B', 'A']]: A needs 2 turns and B needs 3. A gets its 2nd turn before B gets its 3rd, so A finishes second.
+hint: The turns go A, B, C, A, B, ... and each turn does 1 unit of work.
+hint: C finishes on turn 3, A on turn 4.
+right: Turn 3 finishes C, turn 4 finishes A, and B, alone in the circle, finishes on turn 6. Finished programs are linked out, so they get no more turns.
+wrong: Turn 1: A (1 left). Turn 2: B (2 left). Turn 3: C finishes. Turn 4: A finishes. Then B is alone, and finishes two turns later: C, A, B.
+
+=== task: mcq medium
+title: Nodes, not values
+prompt: To stop a walk after one round, why compare `node is start` and not `node.val == start.val`?
+* Two different nodes can hold the same value, so comparing values could stop before the walk has gone round :: Right. `is` asks whether it's the very same node.
+- `is` is the only way to compare numbers :: `==` compares numbers fine. The question is which thing to compare: the node or its value.
+- `node.val == start.val` would never be True :: It's True at the start node, and also at any other node with the same value.
+- They always give the same answer :: Not when values repeat: in 4, 7, 4, the third node's value equals the first node's.
+hint: What if two nodes in the circle hold the same value?
+hint: What does `is` compare?
+right: Values can repeat, but each node is a different object. `node is start` is True only at the start node itself.
+wrong: In a circle like 4 → 7 → 4 → 4, comparing values stops at the second node holding 4. Comparing nodes with `is` stops only back at the start.
+
+=== task: multi medium
+title: O(1) with a tail pointer
+prompt: A singly linked circular list keeps a pointer to its last node, `tail`. Choose **every** operation that is O(1).
+* Adding at the front :: Right. Link the new node in after the tail.
+* Adding at the back :: Right. Link it in after the tail, then make it the tail.
+* Removing the first node :: Right. `tail.next = tail.next.next`.
+* Rotating by one step :: Right. `tail = tail.next`.
+- Removing the last node :: The node before the tail can only be found by walking round: O(n).
+- Finding a value :: Every node may need checking: O(n).
+hint: Which ones only touch the tail and the node after it?
+hint: Four of them are O(1).
+right: Everything next to the tail is O(1), because the tail and the first node are side by side in the circle. Removing the tail itself needs the node before it.
+wrong: O(1): both adds, removing the first node, rotating. O(n): removing the last node and finding a value.
+
+=== task: code medium
+title: Rotate the circle
+prompt: Write `rotate(tail, k)` that rotates a circular linked list k steps, moving the first node to the back k times, and returns the new tail. k can be far bigger than the length, so walk only k % n steps, where n is the number of nodes: the whole function must be O(n). An empty list stays None. The starter includes `build_circle` and `to_list`.
+
+For example, `to_list(rotate(build_circle([1, 2, 3, 4]), 1))` returns `[2, 3, 4, 1]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def rotate(tail, k):
+    # your code here
+    return tail
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def rotate(tail, k):
+    if tail is None:
+        return None
+    n = 1
+    node = tail.next
+    while node is not tail:
+        node = node.next
+        n += 1
+    for step in range(k % n):
+        tail = tail.next
+    return tail
+```
+tests:
+- to_list(rotate(build_circle([1, 2, 3, 4]), 1))
+- to_list(rotate(build_circle([1, 2, 3, 4]), 6))
+- to_list(rotate(build_circle([1, 2, 3]), 3))
+- rotate(None, 5)
+- to_list(rotate(build_circle([7]), 100))
+- to_list(rotate(build_circle([1, 2]), 0))
+speed: setup=tail = build_circle(list(range(n))) | call=rotate(tail, n * n + 3) | target=O(n) | sizes=50,100,200,400
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def rotate(tail, k):
+    if tail is None:
+        return None
+    for step in range(k):
+        tail = tail.next
+    return tail
+```
+fail[1]: Rotating by 1 moves the first node, 1, to the back: the tail moves on one node.
+fail[2]: 6 steps round a circle of 4 is the same as 2 steps: 6 % 4.
+fail[3]: 3 steps round a circle of 3 is a full round: nothing changes.
+fail[4]: An empty circle stays empty: None.
+error[ZeroDivisionError]: Check for an empty list before working out `k % n`.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: Return None for an empty list. Otherwise count the nodes, n, by walking round once.
+hint: Then move the tail `k % n` times: `tail = tail.next`.
+hint: Return the tail.
+right: Counting is one round, O(n), and the rotation is fewer than n steps, so it's O(n) however big k is. Stepping k times would cost O(k): with k = n², that's O(n²).
+wrong: Count the nodes, reduce k to `k % n`, and move the tail that many steps forward.
+
+=== task: code hard
+title: The Josephus game
+prompt: Write `josephus(n, k)` for n people numbered 1 to n standing in a circle: counting starts at person 1, and every k-th person counted leaves; counting goes on from the next person. Return a list of all n people in the order they leave, with the last person left at the end.
+
+Use a circular linked list, so that each person leaves in O(1). With k fixed, the whole game must be O(n). (Removing people from a Python list with `pop(i)` shifts everyone after them, which makes it O(n²).)
+
+For example, `josephus(5, 2)` returns `[2, 4, 1, 5, 3]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def josephus(n, k):
+    order = []
+    # your code here
+    return order
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def josephus(n, k):
+    order = []
+    people = [Node(i) for i in range(1, n + 1)]
+    for i in range(n):
+        people[i].next = people[(i + 1) % n]
+    prev = people[n - 1]
+    while prev.next is not prev:
+        for step in range(k - 1):
+            prev = prev.next
+        leaving = prev.next
+        prev.next = leaving.next
+        order.append(leaving.val)
+    order.append(prev.val)
+    return order
+```
+tests:
+- josephus(5, 2)
+- josephus(7, 3)
+- josephus(1, 4)
+- josephus(4, 1)
+- josephus(6, 3)
+speed: setup=k = 3 | call=josephus(n, k) | target=O(n)
+slow:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def josephus(n, k):
+    people = list(range(1, n + 1))
+    order = []
+    i = 0
+    while len(people) > 1:
+        i = (i + k - 1) % len(people)
+        order.append(people.pop(i))
+    order.append(people[0])
+    return order
+```
+fail[1]: With 5 people and k = 2, the order is 2, 4, 1, 5, and 3 is left.
+fail[2]: The classic game: 3, 6, 2, 7, 5, 1 leave, and 4 is left.
+fail[3]: One person is left at once: `[1]`.
+fail[4]: With k = 1, everyone leaves in order, and the last person, 4, is left.
+error[AttributeError]: Build the circle first: link each person to `people[(i + 1) % n]`.
+hint: Make n nodes, link each to the next with `% n`, and start `prev` at the last person.
+hint: While `prev.next is not prev`: move `prev` k − 1 times, then unlink `prev.next` and append its value.
+hint: When the loop ends, `prev` is the last person left: append them too.
+right: Each of the n − 1 rounds is k − 1 steps and one O(1) unlink: O(n × k), which is O(n) for a fixed k. Popping from a Python list shifts the people after the gap, O(n) per round.
+wrong: Build the circle, start `prev` at person n, and repeatedly count k − 1 steps and unlink the next person, recording them. Add the last person at the end.
+
+=== task: code hard
+title: Round robin
+prompt: Programs take turns in a circle. Each turn gives the current program 1 unit of work; a program that has no work left leaves the circle; the turn then passes to the next program. Write `finish_order(jobs)`, where `jobs` is a list of `(name, units)` pairs in turn order (every program needs at least 1 unit), and return the names in the order the programs finish. Use a circular linked list, with `prev` one node behind the current program so that a finished program can be unlinked.
+
+For example, `finish_order([("A", 3), ("B", 1), ("C", 2)])` returns `["B", "C", "A"]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def finish_order(jobs):
+    finished = []
+    # your code here
+    return finished
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def finish_order(jobs):
+    finished = []
+    if len(jobs) == 0:
+        return finished
+    left = {}
+    nodes = []
+    for name, units in jobs:
+        left[name] = units
+        nodes.append(Node(name))
+    n = len(nodes)
+    for i in range(n):
+        nodes[i].next = nodes[(i + 1) % n]
+    prev = nodes[n - 1]
+    while True:
+        node = prev.next
+        left[node.val] -= 1
+        if left[node.val] > 0:
+            prev = node
+        elif node is prev:
+            finished.append(node.val)
+            return finished
+        else:
+            prev.next = node.next
+            finished.append(node.val)
+```
+tests:
+- finish_order([("A", 3), ("B", 1), ("C", 2)])
+- finish_order([("A", 2), ("B", 3), ("C", 1)])
+- finish_order([("solo", 4)])
+- finish_order([])
+- finish_order([("x", 1), ("y", 1)])
+- finish_order([("A", 2), ("B", 2)])
+fail[1]: B needs 1 turn, C 2 and A 3: they finish B, C, A.
+fail[2]: C finishes on turn 3, A on turn 4, and B, left alone, on turn 6.
+fail[3]: A single program takes every turn until it finishes.
+fail[4]: No programs: nothing finishes.
+fail[6]: A and B each need 2 turns. A's 2nd turn comes before B's 2nd turn, so A finishes first.
+error[KeyError]: Keep a dictionary from each name to the units it still needs.
+error[AttributeError]: Make sure the circle is closed: the last node must link back to the first.
+hint: Build the circle from the names, and keep the units each program still needs in a dictionary.
+hint: Start with `prev` on the last program, so `prev.next` is the first. Each turn: `node = prev.next`, and take 1 from its units.
+hint: Units left: `prev = node`. None left: if `node is prev` it was the last program, so finish; otherwise unlink it with `prev.next = node.next` and keep `prev` where it is.
+right: Each turn is O(1): one unit of work, then either a step or an O(1) unlink. The whole run is O(total units).
+wrong: Build the circle and a dictionary of units left. Each turn, work on `prev.next`; move `prev` on if it has work left, unlink it if it's done, and stop when the last program finishes.
+
+=== task: code hard
+title: Insert into a sorted circle
+prompt: A circular linked list holds numbers in increasing order, going round from the first node (`tail.next`, the smallest) to the tail (the largest). Write `insert_sorted(tail, x)` that inserts a node holding x so that the circle stays in order, and returns the tail: the new node becomes the tail when x is at least as big as every value, or when the list was empty. The starter includes `build_circle` and `to_list`.
+
+For example, `to_list(insert_sorted(build_circle([1, 3, 5]), 4))` returns `[1, 3, 4, 5]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def insert_sorted(tail, x):
+    new = Node(x)
+    # your code here
+    return tail
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def insert_sorted(tail, x):
+    new = Node(x)
+    if tail is None:
+        new.next = new
+        return new
+    if x >= tail.val:
+        new.next = tail.next
+        tail.next = new
+        return new
+    prev = tail
+    while prev.next.val <= x:
+        prev = prev.next
+    new.next = prev.next
+    prev.next = new
+    return tail
+```
+tests:
+- to_list(insert_sorted(build_circle([1, 3, 5]), 4))
+- to_list(insert_sorted(build_circle([1, 3, 5]), 0))
+- to_list(insert_sorted(build_circle([1, 3, 5]), 6))
+- to_list(insert_sorted(None, 2))
+- to_list(insert_sorted(build_circle([2]), 1))
+- insert_sorted(build_circle([1, 3, 5]), 9).val
+- to_list(insert_sorted(build_circle([1, 3, 5]), 3))
+fail[1]: 4 goes between 3 and 5.
+fail[2]: 0 is the smallest, so it goes right after the tail and becomes the first node; the tail stays 5.
+fail[3]: 6 is the largest, so it goes after the old tail and becomes the new tail.
+fail[4]: An empty list becomes a one-node circle that links to itself.
+fail[6]: The function must return the new tail, the node holding 9.
+error[AttributeError]: Handle the empty list (tail None) first.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: Empty list: the new node links to itself and is returned as the tail.
+hint: If x is at least the tail's value, link the new node in after the tail and return it as the new tail.
+hint: Otherwise walk `prev` from the tail while `prev.next.val <= x`, link the new node in after `prev`, and return the old tail.
+right: One walk at most, O(n), and an O(1) link. Starting the walk at the tail means x smaller than everything goes in right after the tail, at the front, with no extra case.
+wrong: Handle the empty list, then the new-largest case. Otherwise walk from the tail until the next value is bigger than x, and link the new node in there.
+
+=== task: code hard
+title: Picking teams
+prompt: Players stand in a circle and count off "1, 2, 1, 2, ..." starting from the first node (`tail.next`). Write `split_teams(tail)` that splits the circle into two circles, team 1 and team 2, by relinking the nodes you have, keeping each team in the order they were counted. Return a list of the two new tails, `[tail1, tail2]` (None for an empty team). The starter includes `build_circle` and `to_list`.
+
+For example, splitting 1, 2, 3, 4, 5 gives the circles 1, 3, 5 and 2, 4.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def split_teams(tail):
+    tails = [None, None]
+    # your code here
+    return tails
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build_circle(items):
+    tail = None
+    for x in items:
+        node = Node(x)
+        if tail is None:
+            node.next = node
+        else:
+            node.next = tail.next
+            tail.next = node
+        tail = node
+    return tail
+
+def to_list(tail):
+    items = []
+    if tail is None:
+        return items
+    node = tail.next
+    while True:
+        items.append(node.val)
+        if node is tail:
+            break
+        node = node.next
+    return items
+
+def split_teams(tail):
+    tails = [None, None]
+    if tail is None:
+        return tails
+    node = tail.next
+    team = 0
+    while True:
+        nxt = node.next
+        last = node is tail
+        t = tails[team]
+        if t is None:
+            node.next = node
+        else:
+            node.next = t.next
+            t.next = node
+        tails[team] = node
+        team = 1 - team
+        if last:
+            break
+        node = nxt
+    return tails
+```
+tests:
+- [to_list(t) for t in split_teams(build_circle([1, 2, 3, 4, 5]))]
+- [to_list(t) for t in split_teams(build_circle(["a", "b", "c", "d"]))]
+- [to_list(t) for t in split_teams(build_circle([1, 2]))]
+- [to_list(t) for t in split_teams(build_circle([9]))]
+- split_teams(None)
+- (lambda ts: [ts[0].next.val, ts[1].next.val])(split_teams(build_circle([1, 2, 3, 4, 5, 6])))
+fail[1]: Counting off from 1: team 1 gets 1, 3 and 5, and team 2 gets 2 and 4.
+fail[3]: Two players: one each.
+fail[4]: One player goes to team 1, and team 2 is empty: None.
+fail[5]: An empty circle gives two empty teams: `[None, None]`.
+fail[6]: Each tail's `next` must be its team's first player: 1 for team 1 and 2 for team 2.
+error[AttributeError]: Save `node.next` before relinking `node`: once it's moved to a team, its old link is gone.
+error[NameError]: Keep the helpers from the starter: the tests use them.
+hint: Walk from `tail.next`, but save `nxt = node.next` and whether `node is tail` before changing anything, because relinking breaks the old circle.
+hint: Add each node to the back of its team's circle, as in `push_back`: if the team is empty it links to itself, otherwise it goes after the team's tail. Then it becomes the team's tail.
+hint: Switch teams with `team = 1 - team`, stop after the old tail, and return `tails`.
+right: One walk round, and each node is relinked in O(1): O(n), with no new nodes. Saving the next node first is what keeps the walk going while the old circle is taken apart.
+wrong: Walk the circle once, saving the next node before each move. Push each node onto the back of team 1 or team 2 in turn, keeping each team's tail, and return both tails.
+
+=== task: predict hard
+title: The last one out
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+solo = Node(4)
+solo.next = solo
+tail = solo
+tail.next = tail.next.next
+print(tail.val, tail.next is tail)
+```
+wrong[4 False]: `tail.next.next` is `solo.next`, which is `solo` again, so `tail.next` still points at `solo`.
+wrong[None True]: The node didn't go anywhere: `tail` still holds it, and its value is 4.
+hint: What is `tail.next.next` in a circle of one?
+hint: Removing the first node by linking past it doesn't work when the first node is the tail.
+right: 4 True: "linking past" the only node links it to itself again, so nothing is removed. That's why removing the last node of a circle needs its own case: the list becomes None.
+wrong: `tail.next` is `solo` and `tail.next.next` is `solo` too, so the assignment changes nothing: the node still links to itself.
+
+=== task: predict hard
+title: Six people, every third
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+people = [Node(i) for i in range(1, 7)]
+for i in range(6):
+    people[i].next = people[(i + 1) % 6]
+prev = people[5]
+while prev.next is not prev:
+    for step in range(2):
+        prev = prev.next
+    leaving = prev.next
+    prev.next = leaving.next
+    print(leaving.val, end=" ")
+print("|", prev.val)
+```
+wrong[3 6 2 5 1 | 4]: After 6 leaves, the count goes 1, 2, 4: person 3 has already gone, so 4 is the third one counted.
+wrong[3 6 4 2 5 | 6]: 6 left in round 2, so they can't be the winner. After 5 leaves, only 1 is left.
+wrong[2 4 6 3 1 | 5]: Every **third** person leaves: `prev` moves two steps, so the count is 1, 2, 3, and 3 leaves first.
+hint: Round 1: counting 1, 2, 3, so 3 leaves.
+hint: Round 2 counts 4, 5, 6. Round 3 counts 1, 2, 4.
+right: 3, 6, 4, 2 and 5 leave, and 1 is left. Each round counts on from the person after the one who left, skipping the people already gone.
+wrong: The counts are 1-2-3 (3 out), 4-5-6 (6 out), 1-2-4 (4 out), 5-1-2 (2 out), 5-1-5 (5 out). Person 1 is left.
+
+=== task: cells hard
+title: When does each program finish?
+prompt: Three programs take turns round robin, in the order A, B, C, each turn doing 1 unit of work, and a finished program leaves the circle. A needs 2 units, B needs 3 and C needs 1. Turns are numbered from 1. On which turn does each program finish?
+labels: A | B | C
+answer: 4 | 6 | 3
+wrong[2 | 5 | 3]: Each program gets one turn per round, not all of its turns in a row: A's second turn comes after B and C have had theirs.
+wrong[4 | 5 | 3]: After A finishes on turn 4, B is alone and needs 2 more units: turns 5 and 6.
+hint: Turns 1, 2, 3 go to A, B and C. C finishes on turn 3.
+hint: Turn 4 goes to A (its 2nd unit), then B has the circle to itself.
+right: A on turn 4, B on turn 6, C on turn 3: the short job finishes first, and nobody waits more than one round for their next turn.
+wrong: Turn 1: A. Turn 2: B. Turn 3: C, done. Turn 4: A, done. Turn 5: B. Turn 6: B, done.
+
+=== task: mcq hard
+title: Josephus, two ways
+prompt: Playing Josephus with a Python list and `people.pop(i)` is O(n²), but with a circular linked list it's O(n × k). Where does the difference come from?
+* `pop(i)` shifts every person after position i, O(n) per removal, while unlinking a node is O(1) once `prev` is next to it :: Right. The counting costs k − 1 steps either way; the removal is what differs.
+- The circular list doesn't need to count :: It does: `prev` moves k − 1 steps every round.
+- A Python list can't wrap round to the start :: It can, with `% len(people)`. That part works fine.
+- The circular list uses less memory :: It uses more: a node and a link per person. The difference is time.
+hint: Both versions count the same way. What does each do to remove a person?
+hint: What does `pop(i)` do to the items after i?
+right: Removing from the middle of an array shifts the items after it; removing from a linked list changes one link. With n − 1 removals, that's O(n²) against O(n × k).
+wrong: The counting is k − 1 steps in both. The list's `pop(i)` then shifts up to n people, while the circle unlinks one node in O(1).
+
+=== task: multi hard
+title: Loops that stop
+prompt: `start` and `node` are both the same node of a circular linked list of 5 nodes. Choose **every** loop that stops.
+* `for step in range(5): node = node.next` :: Right. It runs exactly 5 times, whatever the links.
+* `while True:` with `node = node.next`, then `if node is start: break` :: Right. It's back at the start after 5 moves.
+* `while node.next is not start: node = node.next` :: Right. It stops on the node before the start, after 4 moves.
+- `while node is not None: node = node.next` :: No link in a circle is None, so `node` never becomes None.
+- `while node.next is not None: node = node.next` :: `node.next` is always a node in a circle, so this never stops either.
+hint: Which conditions can ever change in a circle?
+hint: Three of them stop.
+right: Loops that count, or that look for a particular node, stop. Loops that wait for None never do, because a circle has no None.
+wrong: These stop: the counted `for`, the `while True` with `is start`, and `node.next is not start`. These run forever: the two that wait for None.
+
+=== task: parsons hard
+title: The Josephus function
+prompt: Arrange the lines so that `josephus` returns the people in the order they leave and the person left at the end, and the program prints:
+
+```output
+([2, 4, 1, 5], 3)
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def josephus(n, k):
+    people = [Node(i) for i in range(1, n + 1)]
+    for i in range(n):
+        people[i].next = people[(i + 1) % n]
+    prev = people[n - 1]
+    out = []
+    while prev.next is not prev:
+        for step in range(k - 1):
+            prev = prev.next
+        leaving = prev.next
+        prev.next = leaving.next
+        out.append(leaving.val)
+    return out, prev.val
+
+print(josephus(5, 2))
+```
+distractors:
+```python
+    prev = people[0]
+        for step in range(k):
+```
+hint: `prev` must start one person before person 1, which is the last person.
+hint: Each round, `prev` moves k − 1 steps, so the k-th person counted is `prev.next`.
+right: Starting `prev` at person n makes person 1 the first counted, and k − 1 steps put the k-th person right after `prev`, ready to be unlinked in O(1).
+wrong: Build and link the circle, start `prev` at `people[n - 1]`, and loop while more than one person is left: move k − 1 steps, unlink `prev.next`, and record them. Return the order and `prev.val`.
