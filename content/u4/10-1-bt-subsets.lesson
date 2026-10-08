@@ -1,0 +1,1107 @@
+=== lesson
+id: algo-bt-subsets
+title: Subsets
+summary: A subset is any group of the items, from none of them to all of them. Backtracking lists every subset by deciding, for each item in turn, whether it's in or out. You'll build all 2ⁿ subsets in two ways, look for subsets with a given total, prune with sorted items, and skip repeats when items are equal.
+
+=== learn
+### Every group of items
+A **subset** is any selection of the items, where the order doesn't matter: from `[a, b, c]`, the subsets are `[]`, `[a]`, `[b]`, `[c]`, `[a, b]`, `[a, c]`, `[b, c]` and `[a, b, c]`. The empty subset and the whole list both count. All the subsets together are called the **power set**.
+
+To count them, notice that each item is either in a subset or out of it, and that the choices don't depend on each other:
+
+| a | b | c | subset |
+| --- | --- | --- | --- |
+| in | in | in | [a, b, c] |
+| in | in | out | [a, b] |
+| in | out | in | [a, c] |
+| in | out | out | [a] |
+| out | in | in | [b, c] |
+| out | in | out | [b] |
+| out | out | in | [c] |
+| out | out | out | [] |
+
+Two choices for each of n items give 2 × 2 × … × 2 = **2ⁿ** subsets.
+
+### Include or exclude
+That table is a tree of choices: the first level decides `a`, the next `b`, the last `c`, and every leaf is one subset. Backtracking follows it directly. `i` is the index of the item being decided. Each call explores two branches: one with `items[i]` in the path, and one without it:
+```python
+def subsets(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    subsets(items, i + 1, path, results)
+    path.pop()
+    subsets(items, i + 1, path, results)
+
+results = []
+subsets([1, 2, 3], 0, [], results)
+print(results)
+```
+```output
+[[1, 2, 3], [1, 2], [1, 3], [1], [2, 3], [2], [3], []]
+```
+The first branch chooses (`append`), explores and undoes (`pop`). The second branch needs no choice at all: the item is left out, and the search moves on to the next item. Every complete path, at `i == len(items)`, is a subset, so the results come out in the same order as the table. Animation 1 runs this search.
+
+### Choosing the next item
+A second way builds each subset by adding items in the order they appear. Every call records its path, because every path is already a subset, then tries each item that comes after the last one added:
+```python
+def subsets2(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        path.append(items[j])
+        subsets2(items, j + 1, path, results)
+        path.pop()
+
+results = []
+subsets2([1, 2, 3], 0, [], results)
+print(results)
+```
+```output
+[[], [1], [1, 2], [1, 2, 3], [1, 3], [2], [2, 3], [3]]
+```
+`start` stops a subset from being built twice: after choosing `2`, the search only offers items after it, so `[2, 1]` is never built as well as `[1, 2]`. The two versions find the same 8 subsets, in different orders. This one has a node for every subset, not only at the leaves, which makes it handy when you want to stop growing a subset early.
+
+### How much work?
+Each extra item doubles the number of subsets:
+
+| n | subsets, 2ⁿ |
+| --- | --- |
+| 3 | 8 |
+| 10 | 1,024 |
+| 20 | 1,048,576 |
+| 30 | 1,073,741,824 |
+
+Copying each subset into the results takes up to n steps, so listing them all is **O(n × 2ⁿ)**. That's fine for 20 items and hopeless for 50. When there are too many subsets to list, the questions people ask are usually narrower, like "which subsets add up to 10?", and then pruning can skip most of them.
+
+### Subsets with a given total
+To find the subsets whose items add up to a target, carry the running total along. When all the items are positive, a total that's already above the target can only grow, so that branch is pruned:
+```python
+def with_total(items, target, i, path, total, results):
+    if total > target:
+        return
+    if i == len(items):
+        if total == target:
+            results.append(path[:])
+        return
+    path.append(items[i])
+    with_total(items, target, i + 1, path, total + items[i], results)
+    path.pop()
+    with_total(items, target, i + 1, path, total, results)
+
+results = []
+with_total([3, 1, 4, 2, 5], 6, 0, [], 0, results)
+print(results)
+```
+```output
+[[3, 1, 2], [1, 5], [4, 2]]
+```
+The total is passed to each call as a new number, so it needs no undo; only the shared `path` does.
+
+### Pruning with sorted items
+Sorting the items first makes pruning stronger. In the loop version, items are tried from smallest to biggest, so as soon as one item pushes the total over the target, every item after it would too. The loop can `break` instead of trying them:
+```python
+def sorted_total(items, target, start, path, total, results):
+    if total == target:
+        results.append(path[:])
+        return
+    for j in range(start, len(items)):
+        if total + items[j] > target:
+            break
+        path.append(items[j])
+        sorted_total(items, target, j + 1, path, total + items[j], results)
+        path.pop()
+
+results = []
+sorted_total(sorted([3, 1, 4, 2, 5]), 6, 0, [], 0, results)
+print(results)
+```
+```output
+[[1, 2, 3], [1, 5], [2, 4]]
+```
+`break` cuts off the rest of the loop, and with it all the branches the bigger items would have started. The subsets come out with their items in sorted order.
+
+### Equal items
+If the items contain repeats, like `[1, 2, 2]`, the two 2s are different items but make the same subsets: `[1, 2]` can be built with either 2. To list each different subset once, sort the items, so equal ones sit together, and in the loop version skip an item that's equal to the one before it **at the same level**:
+```python
+def unique_subsets(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        if j > start and items[j] == items[j - 1]:
+            continue
+        path.append(items[j])
+        unique_subsets(items, j + 1, path, results)
+        path.pop()
+
+results = []
+unique_subsets(sorted([2, 1, 2]), 0, [], results)
+print(results)
+```
+```output
+[[], [1], [1, 2], [1, 2, 2], [2], [2, 2]]
+```
+`j > start` is the key: the first copy of a value is always allowed at each level, so `[2, 2]` can still use both 2s, one per level. A later copy in the same loop would only start a branch identical to the first one. Animation 2 shows the skip.
+
+### Subsets as binary numbers
+The in-or-out table has a neat match in counting. Write the numbers 0 to 2ⁿ − 1 in binary, with n digits: each digit says whether one item is in. For `[a, b, c]`, 5 is 101 in binary, so its subset has `a` and `c`. Digit i of a number m is `(m // 2 ** i) % 2`:
+```python
+items = ["a", "b", "c"]
+for m in range(2 ** len(items)):
+    subset = []
+    for i in range(len(items)):
+        if (m // 2 ** i) % 2 == 1:
+            subset.append(items[i])
+    print(m, subset)
+```
+```output
+0 []
+1 ['a']
+2 ['b']
+3 ['a', 'b']
+4 ['c']
+5 ['a', 'c']
+6 ['b', 'c']
+7 ['a', 'b', 'c']
+```
+This lists the subsets without recursion, but it can't prune: it always visits all 2ⁿ of them.
+
+=== keypoints
+- A subset is any selection of the items, from none to all. n items have 2ⁿ subsets: each item is in or out.
+- Include or exclude: decide item i, exploring with it (append, recurse, pop) and then without it. Record the path when every item has been decided.
+- Choosing the next item: record every path, then for each j from `start`, append `items[j]`, recurse with `j + 1`, pop.
+- Listing all subsets is O(n × 2ⁿ).
+- With positive items, prune when the total passes the target. With sorted items, `break` the loop at the first item that's too big.
+- Repeated items: sort, then skip `items[j]` when `j > start` and it equals `items[j - 1]`.
+
+=== example: Toppings within a budget
+intro: A pizza can have any set of toppings, and each topping has a price. This search lists every set of toppings that costs at most 5, adding toppings in list order and pruning as soon as a set goes over budget.
+```python
+toppings = [("olives", 2), ("ham", 4), ("corn", 1), ("onion", 2)]
+
+def menus(start, path, cost, budget):
+    print(path, cost)
+    for j in range(start, len(toppings)):
+        name, price = toppings[j]
+        if cost + price > budget:
+            continue
+        path.append(name)
+        menus(j + 1, path, cost + price, budget)
+        path.pop()
+
+menus(0, [], 0, 5)
+```
+1: Each topping is a (name, price) pair.
+3-4: Every set of toppings that's within budget is printed, starting with no toppings at all.
+5-6: Try each topping after the last one added.
+7-8: A topping that would break the budget is skipped. The toppings aren't sorted by price, so the loop can't `break`: a cheaper topping later on might still fit.
+9-11: Choose it, explore, undo.
+13: Ten sets of toppings cost 5 or less, from no toppings at all to olives, corn and onion.
+
+=== example: Two equal halves
+intro: Can a list of numbers be split into two groups with equal totals? That's the same as finding a subset that adds up to half of the total. The search stops at the first such subset it finds.
+```python
+def find(nums, target, i, path, total):
+    if total == target:
+        return True
+    if i == len(nums) or total > target:
+        return False
+    path.append(nums[i])
+    if find(nums, target, i + 1, path, total + nums[i]):
+        return True
+    path.pop()
+    return find(nums, target, i + 1, path, total)
+
+nums = [3, 1, 4, 2, 2]
+half = sum(nums) // 2
+group = []
+if sum(nums) % 2 == 0 and find(nums, half, 0, group, 0):
+    rest = nums[:]
+    for x in group:
+        rest.remove(x)
+    print(group, rest)
+else:
+    print("no equal split")
+```
+1-3: Reaching the target means the path is one half of the split.
+4-5: Out of items, or over the target: this branch fails.
+6-8: Include `nums[i]`; if that leads to a solution, pass True straight back up without undoing anything, so `path` keeps the answer.
+9-10: Otherwise undo, and try without `nums[i]`.
+12-15: The total is 12, so each half must add up to 6. An odd total could never be split evenly.
+16-19: The rest of the numbers make the other half.
+
+=== animation: Include, then exclude
+view: array path
+array results
+vars i
+intro: Each call decides one item, `items[i]`: first it explores with the item in the path, then without it. The `i` of every waiting call is shown, one per level. Every complete path is a subset.
+```python
+def subsets(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    subsets(items, i + 1, path, results)
+    path.pop()
+    subsets(items, i + 1, path, results)
+
+results = []
+subsets([1, 2, 3], 0, [], results)
+```
+1: Defines subsets. Nothing runs yet.
+2: {'Every item has been decided: the path is a subset.' if i == len(items) else 'Decide whether ' + str(items[i]) + ', item ' + str(i) + ', is in the subset.'}
+3: Record a copy: {path}.
+4: Back to the previous call.
+5: Include {items[i]}.
+6: Explore everything with {items[i]} in.
+7: Undo: take {items[i]} out again.
+8: Explore everything with {items[i]} left out.
+10: No results yet.
+11: Find every subset of [1, 2, 3].
+
+=== animation: Skipping repeats
+view: array items ptr=start,j
+array path
+array results
+intro: The items are sorted, so the two 2s sit together. In each call's loop, an item equal to the one before it is skipped, unless it's the first item that loop tries. That keeps `[1, 2]` and `[2]` from being found twice, while `[2, 2]` can still use both 2s.
+```python
+def unique_subsets(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        if j > start and items[j] == items[j - 1]:
+            continue
+        path.append(items[j])
+        unique_subsets(items, j + 1, path, results)
+        path.pop()
+
+results = []
+unique_subsets([1, 2, 2], 0, [], results)
+```
+1: Defines unique_subsets. Nothing runs yet.
+2: Every path is a subset: record {path}.
+3: Next item to add, from index {start} on. When none are left, this call is finished.
+4: {'Is ' + str(items[j]) + ' a repeat of the item before it, in this same loop? ' + str(j > start and items[j] == items[j - 1]) + '.'}
+5: Yes: it would only build the same subsets again. Skip it.
+6: Add {items[j]}.
+7: Explore the subsets that continue from here.
+8: Undo: remove {items[j]}.
+10: No results yet.
+11: The items are sorted: [1, 2, 2].
+
+=== task: predict easy
+title: Two items
+code:
+```python
+def subsets(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    subsets(items, i + 1, path, results)
+    path.pop()
+    subsets(items, i + 1, path, results)
+
+results = []
+subsets([1, 2], 0, [], results)
+print(results)
+```
+wrong[[[], [1], [2], [1, 2]]]: The branch that includes an item is explored first, so the full subset [1, 2] comes first and the empty one last.
+wrong[[[1, 2], [1], [2]]]: Leaving both items out is a subset too: [].
+wrong[[[1, 2], [2], [1], []]]: Item 1 is decided first. Both subsets with 1 in come before both subsets without it.
+hint: The first decision is about 1: in, then out.
+hint: Under each choice for 1, the decision about 2 is in, then out.
+right: `[[1, 2], [1], [2], []]`: with 1 (with 2, without 2), then without 1 (with 2, without 2).
+wrong: Follow the tree: include 1 then include 2 gives [1, 2]; drop 2: [1]. Back at the top, drop 1, then include 2: [2]; drop 2: [].
+
+=== task: mcq easy
+title: How many subsets?
+prompt: How many subsets does a list of 5 different items have, counting the empty subset and the whole list?
+* 32 :: Right. Each item is in or out: 2⁵ = 32.
+- 5 :: That's the number of subsets with exactly one item.
+- 25 :: That's 5², but the choices multiply 2 × 2 × 2 × 2 × 2.
+- 120 :: That's 5!, the number of orders of 5 items.
+hint: Each item has two choices: in or out.
+hint: The choices for different items are independent, so they multiply.
+right: 2 × 2 × 2 × 2 × 2 = 32 subsets, from the empty one to all five items.
+wrong: For each of the 5 items, a subset either has it or doesn't. That's 2 choices, 5 times over: 2⁵ = 32.
+
+=== task: cells easy
+title: Counting subsets of three
+prompt: Think of all the subsets of `[a, b, c]`. Fill in how many there are of each kind.
+labels: subsets containing a | subsets with exactly 2 items | subsets with neither a nor b | all subsets
+answer: 4 | 3 | 2 | 8
+wrong[3 | 3 | 2 | 8]: With a in, b and c can each be in or out: [a], [a, b], [a, c], [a, b, c] is 4.
+wrong[4 | 3 | 1 | 8]: With a and b out, c can still be in or out: [] and [c].
+wrong[4 | 3 | 2 | 7]: The empty subset counts too: 8.
+hint: Fixing a as in leaves 2 free choices.
+hint: Pairs: [a, b], [a, c], [b, c].
+right: 4 contain a (half of all 8), 3 have two items, 2 have neither a nor b ([] and [c]), and there are 8 in all.
+wrong: Fix the items the question fixes, then count the choices left: a in leaves b and c free (4); a and b out leaves c free (2).
+
+=== task: code easy
+title: The power set
+prompt: Write `power_set(items)` that returns every subset of the list, using include or exclude: for each item in turn, explore with it first, then without it. Use a helper `build(items, i, path, results)`.
+starter:
+```python
+def build(items, i, path, results):
+    # your code here
+    pass
+
+def power_set(items):
+    results = []
+    build(items, 0, [], results)
+    return results
+```
+solution:
+```python
+def build(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    build(items, i + 1, path, results)
+    path.pop()
+    build(items, i + 1, path, results)
+
+def power_set(items):
+    results = []
+    build(items, 0, [], results)
+    return results
+```
+tests:
+- power_set([1, 2, 3])
+- power_set([])
+- power_set(["x"])
+- power_set([5, 6])
+- (lambda: len(power_set(list(range(6)))))()
+fail[1]: [[1, 2, 3], [1, 2], [1, 3], [1], [2, 3], [2], [3], []].
+fail[2]: The empty list has one subset, itself: [[]].
+fail[3]: [['x'], []].
+fail[5]: 6 items have 2⁶ = 64 subsets.
+hint: When `i == len(items)`, record `path[:]` and return.
+hint: Include: `path.append(items[i])`, recurse with `i + 1`, `path.pop()`.
+hint: Exclude: recurse with `i + 1` again, without changing the path.
+right: Each call decides one item twice over, in and then out, so the leaves of the tree are exactly the 2ⁿ subsets.
+wrong: At each item, explore with it (append, recurse, pop) and then without it (recurse). Record a copy of the path when every item has been decided.
+
+=== task: fill easy
+title: In, then out
+prompt: Fill in the blanks so that the search includes item i, then leaves it out, and the program prints:
+
+```output
+[['a', 'b'], ['a'], ['b'], []]
+```
+code:
+```python
+def subsets(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[??])
+    subsets(items, i + 1, path, results)
+    path.pop()
+    subsets(items, ??, path, results)
+
+results = []
+subsets(["a", "b"], 0, [], results)
+print(results)
+```
+answer: i | i + 1
+wrong[i | i]: The second call must move on to the next item. With `i`, it decides the same item again, forever: a RecursionError.
+wrong[0 | i + 1]: Every include would add `items[0]`, the first item, whatever is being decided.
+hint: The item being decided is at index i.
+hint: Leaving it out still moves on to the next item.
+right: `items[i]` is the item being decided, and both branches continue with `i + 1`.
+wrong: Append `items[i]`, and recurse with `i + 1` in both branches.
+
+=== task: multi easy
+title: True of subsets
+prompt: Choose **every** true statement.
+* A list of n items has 2ⁿ subsets :: Right. Each item is in or out.
+* The empty list is a subset of every list :: Right. Leaving every item out gives [].
+* In include or exclude, the subsets are the leaves of the tree :: Right. A path is complete once every item has been decided.
+- [1, 2] and [2, 1] are different subsets :: Order doesn't matter in a subset: they're the same one.
+- Listing all subsets of n items takes O(n) time :: There are 2ⁿ of them, so it takes O(n × 2ⁿ).
+- Every subset has at least one item :: The empty subset has none.
+hint: Does order matter in a subset?
+hint: How many subsets are there to list?
+right: 2ⁿ subsets, including the empty one, found at the leaves of the include-or-exclude tree. Order doesn't matter, and listing them all is exponential.
+wrong: A subset is a selection where order doesn't matter, and the empty selection counts. There are 2ⁿ of them, so listing them takes exponential time.
+
+=== task: parsons easy
+title: Choosing the next item
+prompt: Arrange the lines so that `subsets2` records every subset by adding items in list order, as in the lesson, and the program prints:
+
+```output
+[[], [1], [1, 2], [2]]
+```
+
+Not every line is needed.
+lines:
+```python
+def subsets2(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        path.append(items[j])
+        subsets2(items, j + 1, path, results)
+        path.pop()
+
+results = []
+subsets2([1, 2], 0, [], results)
+print(results)
+```
+distractors:
+```python
+        subsets2(items, start + 1, path, results)
+    for j in range(len(items)):
+```
+hint: Every call records its path first: every path is a subset.
+hint: The next call only offers items after the one that was added: `j + 1`.
+right: [] is recorded first, then [1] and [1, 2], then [2]. Starting each loop at `start` means [2, 1] is never built.
+wrong: Record a copy of the path, then for each j from start: append `items[j]`, recurse with `j + 1`, pop.
+
+=== task: order easy
+title: Which subset comes first?
+prompt: `subsets2` from the lesson runs on `[a, b, c]`. Put these subsets in the order it records them.
+items:
+- []
+- [a, b, c]
+- [a, c]
+- [b]
+- [b, c]
+hint: Every subset that starts with a is recorded before any that starts with b.
+hint: [a, b, c] is reached by adding b and c to [a] before [a, c] is tried.
+right: The full order is [], [a], [a, b], [a, b, c], [a, c], [b], [b, c], [c].
+wrong: The search goes deep first: [] then [a], [a, b], [a, b, c]; back to [a] for [a, c]; then [b] and [b, c]; then [c].
+
+=== task: predict easy
+title: Adding up to five
+code:
+```python
+def with_total(items, target, i, path, total, results):
+    if total > target:
+        return
+    if i == len(items):
+        if total == target:
+            results.append(path[:])
+        return
+    path.append(items[i])
+    with_total(items, target, i + 1, path, total + items[i], results)
+    path.pop()
+    with_total(items, target, i + 1, path, total, results)
+
+results = []
+with_total([1, 2, 3, 4], 5, 0, [], 0, results)
+print(results)
+```
+wrong[[[2, 3], [1, 4]]]: Subsets with 1 in are explored first, so [1, 4] is found before [2, 3].
+wrong[[[1, 4]]]: [2, 3] also adds up to 5.
+wrong[[[1, 4], [2, 3], [5]]]: There's no 5 in the list. Only subsets of [1, 2, 3, 4] count.
+hint: Which subsets of [1, 2, 3, 4] add up to 5?
+hint: The search includes an item before it tries leaving it out.
+right: `[[1, 4], [2, 3]]`: the two subsets that make 5, the one with 1 first.
+wrong: Only {1, 4} and {2, 3} make 5. Everything with 1 in is searched first, so [1, 4] comes before [2, 3].
+
+=== task: mcq easy
+title: Why start at start?
+prompt: In `subsets2`, the loop runs `for j in range(start, len(items)):`, and each call passes `j + 1` as the next start. Why not loop over every item each time?
+* So that each subset is built in only one order, with its items in list order :: Right. Without it, [1, 2] and [2, 1] would both be built.
+- To make the search faster, though it finds the same results either way :: Looping over every item would give wrong results: repeats, and paths that use the same item twice.
+- Because Python can't loop over the same list twice :: It can. The restriction is there for correctness.
+- So that the empty subset isn't recorded :: The empty subset is recorded first, either way.
+hint: What would happen after choosing 2, if 1 were offered again?
+hint: Should [2, 1] count as a new subset?
+right: Only offering items after the last one added builds each subset in exactly one order, so every subset is recorded once.
+wrong: If every call looped from 0, a path could add an item before one it already has, giving the same subset in another order, or even the same item twice.
+
+=== task: code medium
+title: Fill the bag
+prompt: A bag can hold `capacity` kilograms. Write `best_bag(weights, capacity)` that returns the biggest total weight of a subset of the items that fits in the bag. Use include or exclude, and prune a branch as soon as its total is over the capacity. Use a helper `best(weights, capacity, i, total)` that returns the best total reachable from this point.
+starter:
+```python
+def best(weights, capacity, i, total):
+    # your code here
+    pass
+
+def best_bag(weights, capacity):
+    return best(weights, capacity, 0, 0)
+```
+solution:
+```python
+def best(weights, capacity, i, total):
+    if total > capacity:
+        return -1
+    if i == len(weights):
+        return total
+    take = best(weights, capacity, i + 1, total + weights[i])
+    leave = best(weights, capacity, i + 1, total)
+    return max(take, leave)
+
+def best_bag(weights, capacity):
+    return best(weights, capacity, 0, 0)
+```
+tests:
+- best_bag([5, 3, 4, 2], 10)
+- best_bag([5, 3, 4, 2], 6)
+- best_bag([7, 8], 5)
+- best_bag([], 3)
+- best_bag([2, 2, 2], 5)
+fail[1]: 5 + 3 + 2 = 10 fits exactly.
+fail[2]: 4 + 2 = 6.
+fail[3]: Nothing fits, so the best is the empty bag: 0.
+fail[5]: Two of the 2s make 4; all three would be 6, too much.
+hint: A branch whose total is over the capacity can't be used: return something smaller than any real total, like −1.
+hint: At the end of the items, return the total.
+hint: Return the bigger of taking `weights[i]` and leaving it.
+right: Every subset that fits is reached, and branches that overflow are cut off at once, so the answer is the best fitting total.
+wrong: Recurse twice for each item, with and without it, return −1 for an overfull branch and the total at the end, and keep the bigger result.
+
+=== task: code medium
+title: Repeats, in or out
+prompt: Write `unique_subsets(items)` that returns every different subset of a list that may contain repeats, each one once. Sort the items first, then use include or exclude, with one change: when you leave an item **out**, leave out all its copies too, by skipping ahead to the next different value. Include first, then exclude. Use a helper `build(items, i, path, results)`.
+starter:
+```python
+def build(items, i, path, results):
+    # your code here
+    pass
+
+def unique_subsets(items):
+    results = []
+    build(sorted(items), 0, [], results)
+    return results
+```
+solution:
+```python
+def build(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    build(items, i + 1, path, results)
+    path.pop()
+    j = i
+    while j < len(items) and items[j] == items[i]:
+        j += 1
+    build(items, j, path, results)
+
+def unique_subsets(items):
+    results = []
+    build(sorted(items), 0, [], results)
+    return results
+```
+tests:
+- unique_subsets([1, 2, 2])
+- unique_subsets([2, 2])
+- unique_subsets([])
+- unique_subsets([3, 1])
+- (lambda: len(unique_subsets([1, 1, 2, 2, 2])))()
+fail[1]: [[1, 2, 2], [1, 2], [1], [2, 2], [2], []].
+fail[2]: Zero, one or two 2s: [[2, 2], [2], []].
+fail[4]: With no repeats, all 4 subsets: [[1, 3], [1], [3], []].
+fail[5]: 0 to 2 ones and 0 to 3 twos: 3 × 4 = 12 subsets.
+hint: Including works as usual: append `items[i]`, recurse with `i + 1`, pop.
+hint: To exclude, move j forward past every item equal to `items[i]`, then recurse from j.
+hint: That way a value is either skipped completely, or included at least once, and the number of copies used is decided one at a time.
+right: Each distinct value is used 0, 1, 2… times up to its count, and leaving it out skips all its copies at once, so no subset is built twice.
+wrong: Include `items[i]` as usual. To exclude it, skip every copy of that value before recursing, so the search never builds the same subset from a different copy.
+
+=== task: predict medium
+title: Repeats without the skip
+code:
+```python
+def subsets2(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        path.append(items[j])
+        subsets2(items, j + 1, path, results)
+        path.pop()
+
+results = []
+subsets2([1, 2, 2], 0, [], results)
+print(len(results), results.count([1, 2]), results.count([2]))
+```
+wrong[6 1 1]: Without the skip, the two 2s count as different items: 2³ = 8 subsets, some of them the same.
+wrong[8 1 1]: [1, 2] can be built with either 2, so it appears twice; so does [2].
+wrong[8 2 1]: [2] is built once from the first 2 and once from the second: 2.
+hint: The two 2s are at different indexes, so the search treats them as different items.
+hint: Count how many index choices give [1, 2], and how many give [2].
+right: `8 2 2`: every one of the 8 index choices is recorded, so [1, 2] and [2] each appear twice. Sorting and skipping repeats gives 6 different subsets.
+wrong: The search makes 2³ = 8 subsets of the three positions. [1, 2] uses the 2 at index 1 or the one at index 2, and so does [2].
+
+=== task: cells medium
+title: Totals of [2, 3, 5]
+prompt: Think of all 8 subsets of `[2, 3, 5]` and their totals. Fill in how many subsets have each kind of total.
+labels: total exactly 5 | total exactly 10 | total more than 5
+answer: 2 | 1 | 3
+wrong[1 | 1 | 3]: [5] and [2, 3] both total 5.
+wrong[2 | 1 | 4]: The totals over 5 are [2, 5] = 7, [3, 5] = 8 and [2, 3, 5] = 10: three.
+wrong[2 | 0 | 3]: [2, 3, 5] totals 10.
+hint: List the totals: [] 0, [2] 2, [3] 3, [5] 5, [2, 3] 5, [2, 5] 7, [3, 5] 8, [2, 3, 5] 10.
+hint: Two different subsets can have the same total.
+right: Totals 5: [5] and [2, 3]. Total 10: the whole list. Over 5: 7, 8 and 10.
+wrong: Work out all 8 totals (0, 2, 3, 5, 5, 7, 8, 10) and count: two 5s, one 10, and three totals above 5.
+
+=== task: fill medium
+title: The skip
+prompt: Fill in the blanks so that `unique_subsets` skips repeated values at the same level, and the program prints:
+
+```output
+[[], [1], [1, 1], [1, 1, 2], [1, 2], [2]]
+```
+code:
+```python
+def unique_subsets(items, start, path, results):
+    results.append(path[:])
+    for j in range(start, len(items)):
+        if j > ?? and items[j] == items[j - 1]:
+            continue
+        path.append(items[j])
+        unique_subsets(items, ??, path, results)
+        path.pop()
+
+results = []
+unique_subsets([1, 1, 2], 0, [], results)
+print(results)
+```
+answer: start | j + 1
+wrong[0 | j + 1]: `j > 0` also skips the second 1 one level down, after the first 1 was added, so [1, 1] and [1, 1, 2] are lost.
+wrong[start | start + 1]: The next call must start after the item that was added, `j + 1`. Using `start + 1` can offer the same item again or one before it.
+hint: The first item each loop tries is always allowed, even if it equals the item before it in the list.
+hint: The next call continues after the item that was added.
+right: `j > start` skips a repeat only when an equal item was already tried in this same loop, and `j + 1` continues after the added item.
+wrong: Skip when `j > start` and the item equals the one before it; recurse with `j + 1`.
+
+=== task: mcq medium
+title: Twenty items
+prompt: About how many steps does it take to list every subset of 20 items, copying each one into the results?
+* About 20 million :: Right. 2²⁰ ≈ 1 million subsets, each up to 20 items to copy.
+- About 400 :: That's 20², a polynomial. The number of subsets is 2²⁰.
+- About 1 million :: That's the number of subsets, but each copy costs up to 20 steps too.
+- About 2.4 × 10¹⁸ :: That's 20!, the number of orders of 20 items, far more than the number of subsets.
+hint: How many subsets do 20 items have?
+hint: How long can each subset be?
+right: n × 2ⁿ = 20 × 1,048,576 ≈ 21 million steps: fine for a computer, but each extra item doubles it.
+wrong: There are 2²⁰ ≈ 1,000,000 subsets, and copying one takes up to 20 steps, so about 20 million steps in all.
+
+=== task: predict medium
+title: Who's in how many?
+code:
+```python
+def subsets(items, i, path, results):
+    if i == len(items):
+        results.append(path[:])
+        return
+    path.append(items[i])
+    subsets(items, i + 1, path, results)
+    path.pop()
+    subsets(items, i + 1, path, results)
+
+results = []
+subsets(["a", "b", "c"], 0, [], results)
+counts = {}
+for s in results:
+    for x in s:
+        counts[x] = counts.get(x, 0) + 1
+print(len(results), counts)
+```
+wrong[8 {'a': 1, 'b': 1, 'c': 1}]: counts adds up every subset each item is in, not only one.
+wrong[8 {'a': 7, 'b': 6, 'c': 5}]: Each item is in exactly half of the subsets: the other items can be anything.
+wrong[8 {'a': 8, 'b': 8, 'c': 8}]: An item isn't in every subset: [] and the subsets without it don't count.
+hint: Fix a as in. How many ways are there to choose b and c?
+hint: The same goes for every item.
+right: `8 {'a': 4, 'b': 4, 'c': 4}`: each item is in half of the 2³ subsets, 2² = 4 of them.
+wrong: For an item to be in a subset, the other two items are still free: 2 × 2 = 4 subsets contain it. That's the same for a, b and c.
+
+=== task: multi medium
+title: Is it a subset problem?
+prompt: Choose **every** problem whose answers are subsets of a list: each item is either in or out, and the order doesn't matter.
+* Choosing which toppings go on a pizza :: Right. Each topping is on or off.
+* Choosing which tasks to do today so they fit into 8 hours :: Right. Each task is done or not, with a total to respect.
+* Splitting a team into group A and group B :: Right. Group A is a subset; group B is everyone else.
+- Arranging 5 books on a shelf :: The order is the answer: that's a permutation.
+- Finding the shortest route between two cities :: That's a path in a graph, not a selection of items.
+- Reading a list from start to end :: Nothing is being chosen.
+hint: Ask: for each item, is the only question whether it's in?
+hint: If the order of the chosen items matters, it's a permutation problem instead.
+right: Toppings, tasks and teams are all in-or-out choices for each item. Book arrangements need an order, and routes are paths.
+wrong: Subset problems make one yes/no decision per item, with order not mattering. Ordering books is a permutation; a route is a graph search.
+
+=== task: parsons medium
+title: Stop at the target
+prompt: Arrange the lines so that `find_all` records every subset whose total is the target, recording a subset as soon as its total is reached (all items are positive, so adding more could only overshoot), and the program prints:
+
+```output
+[[2, 3], [4, 1]]
+```
+
+Not every line is needed.
+lines:
+```python
+def find_all(items, target, i, path, total, results):
+    if total == target:
+        results.append(path[:])
+        return
+    if i == len(items) or total > target:
+        return
+    path.append(items[i])
+    find_all(items, target, i + 1, path, total + items[i], results)
+    path.pop()
+    find_all(items, target, i + 1, path, total, results)
+
+results = []
+find_all([2, 4, 1, 3], 5, 0, [], 0, results)
+print(results)
+```
+distractors:
+```python
+    if i == len(items) and total > target:
+    find_all(items, target, i, path, total, results)
+```
+hint: Check for the target first, then for running out of items or overshooting.
+hint: Include the item, then exclude it, moving on to `i + 1` each time.
+right: Recording at the target and stopping when over it prunes every branch that can't help. [2, 3] is found before [4, 1] because 2 is included first.
+wrong: Base cases: total equals the target (record, return); out of items or over the target (return). Then include `items[i]` (append, recurse, pop) and exclude it (recurse).
+
+=== task: order medium
+title: Include-first order
+prompt: Include-or-exclude `subsets` from the lesson runs on `[x, y, z]`. Put these subsets in the order it records them.
+items:
+- [x, y, z]
+- [x, z]
+- [y, z]
+- [y]
+- []
+hint: Subsets with x come before subsets without it.
+hint: Within each group, subsets with y come first, then with z before without it.
+right: The full order is [x, y, z], [x, y], [x, z], [x], [y, z], [y], [z], [].
+wrong: Include before exclude at every level: x in (y in: z in, z out; y out: z in, z out), then x out (the same pattern).
+
+=== task: code hard
+title: As close as possible
+prompt: Write `closest_sum(items, target)` that returns the subset total closest to `target`. If two totals are equally close, return the smaller one. The items are positive. Use include or exclude with a helper `search(items, target, i, total)` that returns the best total reachable from this point, and prune: once the total is more than the target, adding items only moves it further away, so that total is the best this branch can do.
+starter:
+```python
+def search(items, target, i, total):
+    # your code here
+    pass
+
+def closest_sum(items, target):
+    return search(items, target, 0, 0)
+```
+solution:
+```python
+def better(a, b, target):
+    if abs(a - target) < abs(b - target):
+        return a
+    if abs(b - target) < abs(a - target):
+        return b
+    return min(a, b)
+
+def search(items, target, i, total):
+    if total >= target or i == len(items):
+        return total
+    take = search(items, target, i + 1, total + items[i])
+    leave = search(items, target, i + 1, total)
+    return better(take, leave, target)
+
+def closest_sum(items, target):
+    return search(items, target, 0, 0)
+```
+tests:
+- closest_sum([5, 9, 13], 20)
+- closest_sum([3, 7], 8)
+- closest_sum([1, 2, 4], 7)
+- closest_sum([], 5)
+- closest_sum([10], 3)
+- closest_sum([6, 4, 9], 12)
+fail[1]: 5 + 13 = 18 and 9 + 13 = 22 are both 2 away from 20: the smaller one, 18, wins.
+fail[2]: 7 is 1 away from 8; 10 is 2 away.
+fail[3]: 1 + 2 + 4 = 7 exactly.
+fail[4]: Only the empty subset: 0.
+fail[5]: 0 is 3 away from 3, and 10 is 7 away: 0.
+fail[6]: 4 + 9 = 13 is 1 away, closer than 10 (2 away).
+hint: Stop when `total >= target` (adding more only moves further up) or when the items run out, and return the total.
+hint: Otherwise compare the best total with `items[i]` and the best without it.
+hint: A helper that picks the closer of two totals, preferring the smaller on a tie, keeps the comparison readable.
+right: Every branch either reaches the target or passes it once and stops, so the search tries each useful total, and the tie rule makes the answer unique.
+wrong: Explore taking and leaving each item. A branch ends when the items run out or the total reaches the target; return the closer of the two branch results, the smaller one on a tie.
+
+=== task: code hard
+title: The fairest split
+prompt: Split a list of numbers into two groups, every number in exactly one group, so that the difference between the two group totals is as small as possible. Write `min_difference(nums)` that returns that smallest difference. Each subset of the numbers can be group A, with the rest as group B: if A totals `a`, the difference is `abs(total - 2 * a)`. Use a helper `search(nums, i, a, total)`.
+starter:
+```python
+def search(nums, i, a, total):
+    # your code here
+    pass
+
+def min_difference(nums):
+    return search(nums, 0, 0, sum(nums))
+```
+solution:
+```python
+def search(nums, i, a, total):
+    if i == len(nums):
+        return abs(total - 2 * a)
+    with_it = search(nums, i + 1, a + nums[i], total)
+    without = search(nums, i + 1, a, total)
+    return min(with_it, without)
+
+def min_difference(nums):
+    return search(nums, 0, 0, sum(nums))
+```
+tests:
+- min_difference([1, 6, 11, 5])
+- min_difference([3, 1, 4, 2, 2])
+- min_difference([10])
+- min_difference([])
+- min_difference([1, 2, 3, 9])
+fail[1]: 1 + 6 + 5 = 12 against 11: a difference of 1.
+fail[2]: [3, 1, 2] and [4, 2] both make 6: 0.
+fail[3]: One group has 10 and the other nothing: 10.
+fail[4]: Two empty groups: 0.
+fail[5]: 1 + 2 + 3 = 6 against 9: 3.
+hint: Each number goes in group A or not: include or exclude, carrying A's total.
+hint: When every number is placed, group B totals `total - a`, so the difference is `abs(total - 2 * a)`.
+hint: Return the smaller difference of the two branches.
+right: Every way to split is one subset for group A, so trying them all finds the fairest split: 2ⁿ splits, fine for a few dozen numbers at most.
+wrong: Decide for each number whether it's in group A, carrying A's total, and at the end return how far the two totals are apart. Keep the smallest result.
+
+=== task: code hard
+title: No two neighbours
+prompt: Write `no_adjacent(n)` that returns every subset of the numbers 0 to n − 1 that contains no two consecutive numbers, like [0, 2] but not [1, 2]. Use the choose-the-next-item search: record every path, and after choosing j, only offer numbers from `j + 2` on. Use a helper `build(n, start, path, results)`.
+starter:
+```python
+def build(n, start, path, results):
+    # your code here
+    pass
+
+def no_adjacent(n):
+    results = []
+    build(n, 0, [], results)
+    return results
+```
+solution:
+```python
+def build(n, start, path, results):
+    results.append(path[:])
+    for j in range(start, n):
+        path.append(j)
+        build(n, j + 2, path, results)
+        path.pop()
+
+def no_adjacent(n):
+    results = []
+    build(n, 0, [], results)
+    return results
+```
+tests:
+- no_adjacent(3)
+- no_adjacent(0)
+- no_adjacent(1)
+- no_adjacent(4)
+- (lambda: len(no_adjacent(10)))()
+fail[1]: [[], [0], [0, 2], [1], [2]].
+fail[2]: Only the empty subset: [[]].
+fail[4]: [[], [0], [0, 2], [0, 3], [1], [1, 3], [2], [3]].
+fail[5]: 144 subsets of 0 to 9 have no two neighbours.
+hint: Every path is a valid subset, so record it at the start of every call.
+hint: After choosing j, the next choice must skip j + 1: start the next call at `j + 2`.
+hint: The counts 1, 2, 3, 5, 8, … are the Fibonacci numbers.
+right: Starting the next loop at `j + 2` rules out the neighbour of every number chosen, so every path is valid, and no invalid branch is ever built.
+wrong: Record each path, then for j from start to n − 1: append j, recurse from `j + 2`, pop.
+
+=== task: code hard
+title: Counting small subsets
+prompt: The items are positive and sorted. Write `count_at_most(items, limit)` that returns how many subsets have a total of at most `limit`, counting the empty subset. Use the choose-the-next-item search with a helper `count(items, limit, start, total)`, and since the items are sorted, `break` as soon as an item would push the total over the limit. The speed check uses longer and longer lists with a small limit, where almost every subset is too big.
+starter:
+```python
+def count(items, limit, start, total):
+    # your code here
+    pass
+
+def count_at_most(items, limit):
+    return count(items, limit, 0, 0)
+```
+solution:
+```python
+def count(items, limit, start, total):
+    found = 1
+    for j in range(start, len(items)):
+        if total + items[j] > limit:
+            break
+        found += count(items, limit, j + 1, total + items[j])
+    return found
+
+def count_at_most(items, limit):
+    return count(items, limit, 0, 0)
+```
+tests:
+- count_at_most([1, 2, 3], 3)
+- count_at_most([1, 2, 3], 0)
+- count_at_most([2, 2], 4)
+- count_at_most([5], 4)
+- count_at_most([1, 1, 1], 2)
+speed: setup=items = list(range(1, n + 1)) | call=count_at_most(items, 3) | target=O(n)
+slow:
+```python
+def count(items, limit, start, total):
+    if start == len(items):
+        if total <= limit:
+            return 1
+        return 0
+    return count(items, limit, start + 1, total + items[start]) + count(items, limit, start + 1, total)
+
+def count_at_most(items, limit):
+    return count(items, limit, 0, 0)
+```
+forbid[sorted(]: The items are already sorted.
+forbid[.sort(]: The items are already sorted.
+fail[1]: [], [1], [2], [3] and [1, 2]: 5.
+fail[2]: Only the empty subset: 1.
+fail[3]: [], each 2 on its own, and both: 4.
+fail[4]: Only the empty subset fits: 1.
+fail[5]: [], three single 1s and three pairs of 1s: 7.
+hint: Each call counts its own path, which fits: start with `found = 1`.
+hint: For j from start: if `total + items[j]` is over the limit, `break`; otherwise add the count from `j + 1` with the new total.
+hint: Trying every subset would take 2ⁿ steps, far too many for the speed check.
+right: The sorted break stops each loop at the first item that doesn't fit, so the search only touches the few subsets that fit, however long the list is.
+wrong: Count this path, then for each later item: break if it doesn't fit (nothing after it fits either), otherwise add the subsets that continue with it.
+
+=== task: predict hard
+title: What the pruning saves
+code:
+```python
+def calls(items, target, i, total, prune):
+    count = 1
+    if prune and total > target:
+        return count
+    if i == len(items):
+        return count
+    count += calls(items, target, i + 1, total + items[i], prune)
+    count += calls(items, target, i + 1, total, prune)
+    return count
+
+print(calls([5, 1, 2], 3, 0, 0, False), calls([5, 1, 2], 3, 0, 0, True))
+```
+wrong[15 8]: The call that includes 5 is still made, and counts once, before it returns.
+wrong[8 5]: Every call counts, including the ones in the middle of the tree: 1 + 2 + 4 + 8 = 15 without pruning.
+wrong[15 15]: With pruning, the call that includes 5 returns straight away, without exploring 1 and 2.
+hint: Without pruning, the tree has 1 + 2 + 4 + 8 calls.
+hint: With pruning, the branch that includes 5 stops after one call. The branch without 5 is explored as before: 1 + 2 + 4 calls.
+right: `15 9`: the branch that includes 5 shrinks from 7 calls to 1, because 5 is already over the target.
+wrong: Unpruned: 15 calls. Pruned: the root, the 5-branch (1 call, it overshoots), and the no-5 branch with its full subtree of 1 + 2 + 4 = 7 calls: 9.
+
+=== task: predict hard
+title: Break or continue?
+code:
+```python
+def checks(items, target, start, total, use_break, c):
+    if total == target:
+        return
+    for j in range(start, len(items)):
+        c[0] += 1
+        if total + items[j] > target:
+            if use_break:
+                break
+            continue
+        checks(items, target, j + 1, total + items[j], use_break, c)
+
+for use_break in [True, False]:
+    c = [0]
+    checks([1, 2, 3, 4, 5], 4, 0, 0, use_break, c)
+    print(c[0])
+```
+wrong[17\n11]: The first run uses break, which stops each loop at the first item that's too big, so it makes fewer checks.
+wrong[11\n11]: With continue, every loop still checks all the bigger items after the first one that's too big.
+wrong[5\n5]: The loops inside the recursive calls check items too, and every check is counted.
+hint: `c` is a one-item list, so every call adds to the same count.
+hint: With continue, a loop checks every remaining item even after one is too big; with break, it stops there.
+right: `11` then `17`: both find the same subsets, but break skips the checks of items that can't fit, since the list is sorted.
+wrong: Trace the loops. With break, each loop stops at its first item that's too big. With continue, it checks the rest of the items too, one by one, adding 6 more checks in all.
+
+=== task: cells hard
+title: Subsets with repeats
+prompt: Think of the different subsets of `[1, 2, 2, 3]`, counting subsets with the same items only once, so [1, 2] made with either 2 counts once. Fill in the numbers.
+labels: different subsets | different subsets with at least one 2 | different subsets with total 5
+answer: 12 | 8 | 2
+wrong[16 | 8 | 2]: 16 counts the two 2s as different items. As values, there are 0, 1 or 2 twos: 2 × 3 × 2 = 12 subsets.
+wrong[12 | 4 | 2]: At least one 2 means one or two 2s: 2 choices for 1, 2 for the number of 2s, 2 for 3: 8.
+wrong[12 | 8 | 3]: The totals of 5 are [2, 3] and [1, 2, 2]. [1, 2, 2] uses both 2s, and there's only one way to do that.
+hint: Count by values: 1 is in or out, there are zero, one or two 2s, and 3 is in or out.
+hint: The subsets with total 5 are [2, 3] and [1, 2, 2].
+right: 2 × 3 × 2 = 12 different subsets, 8 of which have at least one 2, and 2 of which total 5.
+wrong: Treat the 2s as a count: 0, 1 or 2 of them, with 1 and 3 each in or out. That's 12 subsets, 2 × 2 × 2 = 8 of them with a 2.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the subset searches from this lesson. Choose **every** change that gives wrong results.
+* Recording `path` instead of `path[:]` :: Right. Every entry is the same list, which is empty when the search ends.
+* In `subsets2`, recursing with `start + 1` instead of `j + 1` :: Right. The next call can offer items at or before the one that was added, so subsets repeat or reuse items.
+* In include or exclude, leaving out `path.pop()` before the exclude call :: Right. The item stays in the path even in the branch that's meant to leave it out.
+- Exploring the exclude branch before the include branch :: The same subsets are found, in a different order.
+- In `subsets2`, recording the path after the loop instead of before it :: Every path is still recorded once, in a different order.
+- Passing `path + [items[i]]` to the include call instead of append and pop :: Each call gets a new list, so nothing needs undoing.
+hint: Which changes leave the wrong items in the path, or store a list that keeps changing?
+hint: Changing the order of the results isn't a bug.
+right: Recording the shared list, restarting from the wrong index, and a missing pop all corrupt the results. Reordering the branches or the recording, or passing new lists, only changes the order.
+wrong: A subset search must record copies, move forward from the item that was added, and undo every append. The order in which branches are explored or paths are recorded doesn't matter.
+
+=== task: fill hard
+title: Totals from binary numbers
+prompt: Each number m from 0 to 2ⁿ − 1 stands for one subset: digit i of m in binary, `(m // 2 ** i) % 2`, says whether `nums[i]` is in. Fill in the blanks so that the program lists the total of every subset, and prints:
+
+```output
+[0, 3, 5, 8, 6, 9, 11, 14]
+```
+code:
+```python
+nums = [3, 5, 6]
+sums = []
+for m in range(2 ** ??):
+    total = 0
+    for i in range(len(nums)):
+        if (m // 2 ** ??) % 2 == 1:
+            total += nums[i]
+    sums.append(total)
+print(sums)
+```
+answer: len(nums) | i
+wrong[len(nums) - 1 | i]: Only 2² = 4 numbers are tried, so only the subsets of the first two items are listed.
+wrong[len(nums) | m]: Digit i of m is `(m // 2 ** i) % 2`. With `2 ** m`, the same digit is tested for every item, and it's never 1.
+hint: n items need 2ⁿ numbers, one per subset.
+hint: Item i is controlled by digit i.
+right: `range(2 ** len(nums))` gives one number per subset, and digit i of m decides whether `nums[i]` is added. 5 is 101 in binary: 3 + 6 = 9.
+wrong: Loop m over `range(2 ** len(nums))`, and add `nums[i]` when `(m // 2 ** i) % 2 == 1`.
+
+=== task: parsons hard
+title: The best value that fits
+prompt: Each item is a (weight, value) pair, and a bag has room for a total weight. Arrange the lines so that `best` returns the biggest total value of items that fit, deciding each item with include or exclude and returning values instead of recording paths. The program prints:
+
+```output
+7
+```
+
+Not every line is needed.
+lines:
+```python
+def best(items, i, room):
+    if i == len(items):
+        return 0
+    weight, value = items[i]
+    skip = best(items, i + 1, room)
+    if weight <= room:
+        take = value + best(items, i + 1, room - weight)
+        return max(skip, take)
+    return skip
+
+print(best([(2, 3), (3, 4), (4, 5), (5, 6)], 0, 5))
+```
+distractors:
+```python
+        take = value + best(items, i + 1, room)
+    skip = best(items, i, room)
+```
+hint: Out of items: no more value can be added.
+hint: Taking an item uses up its weight, so the rest of the search has less room.
+right: The items of weight 2 and 3 fit in 5 and are worth 3 + 4 = 7. Each call returns the best value for the items from i on, so no path needs to be stored.
+wrong: Base case: no items left, value 0. Otherwise compute the best value without the item, and, if it fits, with it (its value plus the best for the rest with less room). Return the bigger.
