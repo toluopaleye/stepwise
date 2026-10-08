@@ -1,0 +1,1226 @@
+=== lesson
+id: algo-binary
+title: Binary search
+summary: Binary search finds a value in a sorted list by checking the middle item and throwing away the half where the value can't be. You'll trace `lo`, `hi` and `mid` step by step, see why the list must be sorted and why a million items take only 20 checks, spot the small mistakes that break it, write a recursive version, and use Python's `bisect` module.
+
+=== learn
+### Halve the list with every check
+**Binary search** finds a target in a **sorted** list by checking the **middle** item first. If the middle item is smaller than the target, the target can only be to its right, because everything to its left is even smaller. If the middle item is bigger, the target can only be to its left. Either way, one check throws away half the list. It's how you find a word in a paper dictionary: open it near the middle, see whether your word comes before or after that page, and never look at the other half again. Searching for 23 in the sorted list `[2, 5, 8, 12, 16, 23, 38, 56, 72, 91]`:
+
+| check | indexes still possible | middle index | middle item | compared with 23 |
+| --- | --- | --- | --- | --- |
+| 1 | 0 to 9 | 4 | 16 | too small: keep 5 to 9 |
+| 2 | 5 to 9 | 7 | 56 | too big: keep 5 to 6 |
+| 3 | 5 to 6 | 5 | 23 | found at index 5 |
+
+Three checks, where linear search would need six. Seven of the ten items are never looked at.
+
+### The code: lo, hi and mid
+Two variables mark the part of the list where the target could still be: `lo` is its first index and `hi` its last. Each turn checks the item in the middle, at index `mid`, then moves `lo` or `hi` past it:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+print(binary_search(nums, 23), binary_search(nums, 2), binary_search(nums, 91))
+```
+```output
+5 0 9
+```
+| line | what it does |
+| --- | --- |
+| `lo = 0` and `hi = len(items) - 1` | at first, the whole list is possible |
+| `while lo <= hi:` | carry on while that part holds at least one item |
+| `mid = (lo + hi) // 2` | the middle index, rounded down: (0 + 9) // 2 = 4 |
+| `lo = mid + 1` | the middle item is too small: keep only the part to its right |
+| `hi = mid - 1` | the middle item is too big: keep only the part to its left |
+| `return -1` | the part is empty: the target isn't in the list |
+
+The `+ 1` and `- 1` leave out the middle item, because it has already been checked. Animation 1 runs this code.
+
+### When the target isn't there
+If the target is missing, the part still possible shrinks until it's empty. Searching the same list for 40:
+
+| check | lo | hi | mid | item | then |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0 | 9 | 4 | 16 | too small: lo = 5 |
+| 2 | 5 | 9 | 7 | 56 | too big: hi = 6 |
+| 3 | 5 | 6 | 5 | 23 | too small: lo = 6 |
+| 4 | 6 | 6 | 6 | 38 | too small: lo = 7 |
+| none | 7 | 6 | | | lo > hi: stop and return −1 |
+
+After four checks, `lo` is 7 and `hi` is 6. No index is at least 7 and at most 6, so the part is empty and 40 can't be in the list:
+```python
+print(binary_search(nums, 40))
+```
+```output
+-1
+```
+Look at where `lo` stopped: 7 is exactly where 40 would have to go to keep the list sorted, after 38 at index 6 and before 56 at index 7. That position is called the **insertion point**. The next lesson uses it to find the first and last copies of a value.
+
+### Off-by-one mistakes
+Binary search is short, but one wrong character breaks it. Each of these changes looks harmless:
+
+| change | what goes wrong | example |
+| --- | --- | --- |
+| `while lo < hi:` | the loop stops when one item is left, without checking it | `binary_search([7], 7)` returns −1 |
+| `lo = mid` instead of `lo = mid + 1` | when `lo` and `hi` are next to each other, `mid` equals `lo`, so `lo` never moves: the loop runs forever | searching `[3, 7]` for 9 |
+| `hi = len(items)` at the start | `mid` can land one place past the end | searching `[3, 7]` for 9 raises an IndexError |
+| `mid = (lo + hi) / 2` | `/` always gives a float, and a list index must be an int | a TypeError on the first check |
+
+One rule keeps them straight: `lo` and `hi` are both **inside** the part still possible. So the loop runs while `lo <= hi`, because one item left still has to be checked, and each turn moves `lo` or `hi` **past** `mid`, never onto it. Animation 2 shows `lo < hi` missing the last item.
+
+### O(log n) checks
+Each check at least halves the part still possible. For a sorted list of 1,000 items, the part shrinks to at most 500, 250, 125, 62, 31, 15, 7, 3 and then 1 item. That's nine halvings, plus one check on the last item: never more than 10 checks.
+
+| n | linear search, worst case | binary search, worst case |
+| --- | --- | --- |
+| 10 | 10 | 4 |
+| 1,000 | 1,000 | 10 |
+| 1,000,000 | 1,000,000 | 20 |
+| 1,000,000,000 | 1,000,000,000 | 30 |
+
+The worst case is the number of times n can be halved, rounding down, before it reaches 1, plus one. That's about log₂ n. Doubling the length of the list adds only one check, so binary search is **O(log n)**. It uses the same few variables whatever the size of the list: O(1) space.
+
+### Only on sorted data
+Binary search throws half the list away on the strength of one comparison. That's only safe when the list is sorted. On an unsorted list it can miss an item that's there:
+```python
+print(binary_search([8, 3, 9, 1, 5], 3))
+print(binary_search(sorted([8, 3, 9, 1, 5]), 3))
+```
+```output
+-1
+1
+```
+In the unsorted list, the middle item is 9. It's bigger than 3, so the search keeps indexes 0 to 1 and checks 8. That's bigger too, so the search keeps only what's left of index 0, which is nothing, and gives up, though 3 is at index 1. After sorting, the list is `[1, 3, 5, 8, 9]`, and 3 is found at index 1.
+
+Sorting costs O(n log n), more than one linear search, O(n). So:
+
+| situation | best choice |
+| --- | --- |
+| one search in unsorted data | linear search: O(n) |
+| many searches in data that's already sorted | binary search: O(log n) each |
+| many searches in unsorted data | sort once, O(n log n), then binary search each time; or build a set, O(n), if you only need yes or no |
+
+### Searching sorted records
+The items can be records instead of numbers, as long as the list is sorted by the field you search on. Compare that field of the middle record. Here each event is a `(year, name)` tuple, and the list is sorted by year:
+```python
+events = [(1903, "first flight"), (1928, "penicillin"), (1957, "Sputnik"),
+          (1969, "Moon landing"), (1991, "the Web")]
+
+def find_year(events, year):
+    lo = 0
+    hi = len(events) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if events[mid][0] == year:
+            return events[mid][1]
+        elif events[mid][0] < year:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return None
+
+print(find_year(events, 1969), find_year(events, 2000))
+```
+```output
+Moon landing None
+```
+`events[mid][0]` is the year of the middle event and `events[mid][1]` its name. Searching for 1969, the first check finds 1957, too early, so `lo` moves to 3, and the second check finds 1969.
+
+> For a list sorted from biggest to smallest, swap the two moves: a middle item **bigger** than the target means the target is to its **right**.
+
+### A recursive version
+Binary search can also be written with **recursion**. Each call searches the part from `lo` to `hi`, and calls itself on the half that's left:
+```python
+def search(items, target, lo, hi):
+    if lo > hi:
+        return -1
+    mid = (lo + hi) // 2
+    if items[mid] == target:
+        return mid
+    elif items[mid] < target:
+        return search(items, target, mid + 1, hi)
+    else:
+        return search(items, target, lo, mid - 1)
+
+print(search(nums, 23, 0, len(nums) - 1), search(nums, 40, 0, len(nums) - 1))
+```
+```output
+5 -1
+```
+The base case, `lo > hi`, is an empty part: not found. Searching `nums` for 23 makes three calls: on indexes 0 to 9, then 5 to 9, then 5 to 6, which finds it. Each call halves the part, so there are at most about log₂ n calls: O(log n) time. But each call waits on the call stack until the call it made returns, so this version needs O(log n) space, where the loop needs O(1).
+
+### Python's bisect module
+Python's `bisect` module has binary search built in. `bisect_left(items, x)` returns the insertion point of `x`: the position where it would go to keep the list sorted. If `x` is in the list, that's the index of its first copy, so it can be turned into a search:
+```python
+from bisect import bisect_left, insort
+
+def index_of(items, x):
+    i = bisect_left(items, x)
+    if i < len(items) and items[i] == x:
+        return i
+    return -1
+
+print(index_of(nums, 23), index_of(nums, 40), bisect_left(nums, 40))
+insort(nums, 40)
+print(nums)
+```
+```output
+5 -1 7
+[2, 5, 8, 12, 16, 23, 38, 40, 56, 72, 91]
+```
+`bisect_left` never says "not found": for 40 it gives 7, the insertion point, so `index_of` checks that `items[i]` really is `x`. The `i < len(items)` test comes first because the insertion point can be `len(items)`, one past the end. `insort` uses the same search to put 40 in its place. Finding the place is O(log n), but inserting shifts the later items along, so `insort` is O(n).
+
+=== keypoints
+- Binary search only works on a **sorted** list. It checks the middle item and keeps only the half where the target can be.
+- `lo` and `hi` mark the part still possible, and `mid = (lo + hi) // 2`. Middle too small: `lo = mid + 1`. Too big: `hi = mid - 1`. Loop `while lo <= hi`.
+- When the target is missing, `lo` passes `hi` and the search returns −1. `lo` is then the insertion point, where the target would go.
+- Each check halves what's left: at most about log₂ n + 1 checks (10 for 1,000 items, 20 for a million). O(log n) time and O(1) space; the recursive version needs O(log n) space.
+- Common bugs: `lo < hi` skips the last item, `lo = mid` can loop forever, `hi = len(items)` reads past the end, and `/` makes a float index.
+- `bisect_left(items, x)` gives the insertion point; check `i < len(items) and items[i] == x` to use it as a search. `insort` inserts in order: O(log n) to find the place, O(n) to insert.
+
+=== example: Checking a guest list
+intro: Twelve guests are on the list, in no order. The program sorts the list once, then checks each person at the door with a binary search that counts its checks.
+```python
+guests = ["Raj", "Ana", "Tom", "Eva", "Max", "Ben",
+          "Zoe", "Kim", "Lea", "Ian", "Ola", "Sam"]
+guests.sort()
+print(guests)
+
+def on_list(names, target):
+    lo = 0
+    hi = len(names) - 1
+    checks = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        checks += 1
+        if names[mid] == target:
+            return True, checks
+        elif names[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return False, checks
+
+for name in ["Max", "Ana", "Bob", "Zoe"]:
+    found, checks = on_list(guests, name)
+    if found:
+        print(f"{name} is on the list ({checks} checks)")
+    else:
+        print(f"{name} is not on the list ({checks} checks)")
+```
+1-4: The names arrive in no order, so the list is sorted once, alphabetically.
+6-19: Binary search that also counts its checks. It returns two values: whether the name was found, and how many checks that took.
+15: `<` compares strings alphabetically, letter by letter: "Ben" < "Bob" because "e" comes before "o".
+21-26: Each guest at the door is one search. Twelve names never need more than 4 checks; a linear search could need 12.
+
+=== example: Keeping scores sorted
+intro: Scores arrive one at a time. `insort` puts each one in its sorted place, so the list is always ready for binary search, and `bisect_left` answers questions about it.
+```python
+from bisect import bisect_left, insort
+
+scores = []
+for s in [48, 91, 15, 77, 62, 30]:
+    insort(scores, s)
+    print("added", s, "->", scores)
+
+def index_of(items, x):
+    i = bisect_left(items, x)
+    if i < len(items) and items[i] == x:
+        return i
+    return -1
+
+print(index_of(scores, 77), index_of(scores, 50))
+print(bisect_left(scores, 50), "scores are below 50")
+```
+1: `bisect_left` finds a position by binary search; `insort` uses that search to insert an item in its sorted place.
+3-6: Each new score goes straight into its place, so the list is sorted after every step.
+8-12: A search built on `bisect_left`: the insertion point is the answer only if the item there really is `x`.
+14: 77 is at index 4. 50 isn't there: its insertion point is 3, but `scores[3]` is 62.
+15: The insertion point is also the number of items smaller than `x`: 15, 30 and 48 come before 50.
+
+=== animation: Binary search, step by step
+view: array nums ptr=lo,mid,hi range=lo:hi
+vars target lo hi mid
+intro: Two searches on the same sorted list: one for 23, found after three checks, and one for 40, which isn't there. The shaded cells are the part still possible, from `lo` to `hi`.
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+print(binary_search(nums, 23))
+print(binary_search(nums, 40))
+```
+1: Defines binary_search. Nothing runs yet.
+2: lo starts at 0, the first index.
+3: hi starts at {len(items) - 1}, the last index: at first, the whole list is possible.
+4: Is anything left to search? lo = {lo}, hi = {hi}: {lo <= hi}.
+5: The middle of {lo} to {hi} is ({lo} + {hi}) // 2 = {(lo + hi) // 2}.
+6: Is the middle item, {items[mid]}, equal to {target}? {items[mid] == target}.
+7: Found {target} at index {mid}.
+8: Is {items[mid]} smaller than {target}? {items[mid] < target}.
+9: Too small, so {target} can only be to the right of index {mid}: lo moves to {mid + 1}.
+11: Too big, so {target} can only be to the left of index {mid}: hi moves to {mid - 1}.
+12: lo = {lo} has passed hi = {hi}: nothing is left, so {target} isn't in the list. lo stopped at {lo}, where {target} would go.
+14: Ten numbers, sorted from smallest to largest.
+15: Search for 23.
+16: Search for 40, which isn't in the list.
+
+=== animation: The lo < hi mistake
+view: array nums ptr=lo,mid,hi range=lo:hi
+vars target lo hi mid
+intro: Two searches for 9, the last item of `[3, 7, 9]`. The first function loops while `lo < hi`, the second while `lo <= hi`. Watch what happens when only one item is left.
+```python
+def buggy(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+def fixed(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [3, 7, 9]
+print(buggy(nums, 9))
+print(fixed(nums, 9))
+```
+1: The buggy version: its loop runs while lo < hi.
+2: lo starts at 0.
+3: hi starts at {len(items) - 1}.
+4: Is lo < hi? {lo} < {hi}: {lo < hi}.
+5: The middle of {lo} to {hi} is {(lo + hi) // 2}.
+6: Is {items[mid]} equal to {target}? {items[mid] == target}.
+8: Is {items[mid]} smaller than {target}? {items[mid] < target}.
+9: Too small: lo moves to {mid + 1}.
+12: The loop stopped with lo and hi both {lo}: one item, {items[lo]}, was left, and it was never checked. The answer −1 is wrong.
+14: The fixed version: its loop runs while lo <= hi.
+15: lo starts at 0.
+16: hi starts at {len(items) - 1}.
+17: Is lo <= hi? {lo} <= {hi}: {lo <= hi}. When lo equals hi, one item is still left to check.
+18: The middle of {lo} to {hi} is {(lo + hi) // 2}.
+19: Is {items[mid]} equal to {target}? {items[mid] == target}.
+20: Found {target} at index {mid}.
+21: Is {items[mid]} smaller than {target}? {items[mid] < target}.
+22: Too small: lo moves to {mid + 1}.
+27: Three sorted numbers. Both functions search them for 9, the last one.
+28: The buggy version first.
+29: Now the fixed version, on the same list.
+
+=== task: predict easy
+title: Three searches
+code:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [3, 8, 12, 19, 25, 31, 40]
+print(binary_search(nums, 19), binary_search(nums, 3), binary_search(nums, 26))
+```
+wrong[4 1 -1]: Indexes start at 0: 19 is the 4th item, at index 3, and 3 is at index 0.
+wrong[3 0 5]: 26 isn't in the list, so the search returns -1. 5 is where 26 would go, but the function doesn't return that.
+wrong[3 0 None]: When the loop ends without a match, the last line returns -1.
+hint: The function returns the index of the target, counting from 0.
+hint: 26 isn't in the list.
+right: `3 0 -1`: 19 is the middle item, found on the first check; 3 is at index 0; 26 isn't there.
+wrong: 19 is at index 3, the very first middle. 3 is at index 0. 26 is missing, so lo passes hi and the search returns -1.
+
+=== task: mcq easy
+title: What binary search needs
+prompt: Binary search only gives correct answers on a list that is...
+* sorted :: Right. Throwing half the list away after one comparison is only safe when the order is known.
+- short :: Any length works. Binary search is most useful on long lists, where it saves the most checks.
+- free of repeated values :: Repeats are fine: it finds one of the copies.
+- made of numbers :: Strings work too, sorted alphabetically: anything `<` can compare.
+hint: Binary search decides which half to drop by comparing with one item.
+hint: When is it safe to say "everything to the left of this item is smaller"?
+right: Sorted: then a middle item that's too small means everything to its left is too small as well, and that half can be dropped.
+wrong: Binary search drops half the list after one comparison. That's only safe if the list is sorted, so that the dropped half can't hold the target.
+
+=== task: cells easy
+title: Tracing the middles
+prompt: Binary search looks for 31 in `[3, 8, 12, 19, 25, 31, 40]`. Fill in the trace.
+labels: first mid | item at the first mid | lo after the first check | second mid | checks in total
+answer: 3 | 19 | 4 | 5 | 2
+wrong[3 | 19 | 3 | 5 | 2]: lo moves **past** the middle, to mid + 1 = 4, because index 3 has been checked.
+wrong[3 | 19 | 4 | 4 | 3]: The second middle is (4 + 6) // 2 = 5, and that's 31: found on the 2nd check.
+wrong[4 | 25 | 5 | 5 | 2]: The first middle is (0 + 6) // 2 = 3.
+hint: The first mid is (0 + 6) // 2.
+hint: 19 is smaller than 31, so lo becomes mid + 1.
+right: mid 3 holds 19, too small, so lo = 4; the next mid is (4 + 6) // 2 = 5, which holds 31: 2 checks.
+wrong: lo = 0 and hi = 6 give mid 3, where 19 is too small. lo moves to 4, and (4 + 6) // 2 = 5 is where 31 is. Two checks.
+
+=== task: code easy
+title: Write binary search
+prompt: Write `binary_search(items, target)` for a sorted list: return the index of `target`, or -1 if it isn't there. Use `lo`, `hi` and `mid`. The speed check uses long lists, so a linear search is too slow.
+starter:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    # your code here
+    return -1
+```
+solution:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+```
+tests:
+- binary_search([2, 5, 8, 12, 16, 23, 38, 56, 72, 91], 23)
+- binary_search([2, 5, 8, 12, 16, 23, 38, 56, 72, 91], 2)
+- binary_search([2, 5, 8, 12, 16, 23, 38, 56, 72, 91], 91)
+- binary_search([2, 5, 8, 12, 16, 23, 38, 56, 72, 91], 40)
+- binary_search([], 5)
+- binary_search([7], 7)
+speed: setup=items = list(range(n)) | call=binary_search(items, n - 1) | target=O(log n)
+slow:
+```python
+def binary_search(items, target):
+    for i in range(len(items)):
+        if items[i] == target:
+            return i
+    return -1
+```
+forbid[.index(]: Use binary search, not `.index`, which is a linear search.
+fail[1]: 23 is at index 5.
+fail[3]: The last item, 91, is at index 9. The loop must still run when lo equals hi.
+fail[6]: In a one-item list, lo and hi are both 0, so the loop must run while `lo <= hi`.
+hint: Loop `while lo <= hi:` and work out `mid = (lo + hi) // 2`.
+hint: If `items[mid]` is the target, return mid. If it's smaller, set `lo = mid + 1`; otherwise set `hi = mid - 1`.
+hint: After the loop, return -1.
+right: Each turn halves the part still possible, so a sorted list of a million items takes at most 20 checks: O(log n).
+wrong: Keep lo and hi around the part where the target could be. Check the middle, move lo or hi past it, and stop when lo passes hi.
+
+=== task: fill easy
+title: The loop and the middle
+prompt: Fill in the blanks so that the search works, and the program prints:
+
+```output
+2 -1
+```
+code:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo ?? hi:
+        mid = (lo + hi) ?? 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+print(binary_search([3, 7, 9], 9), binary_search([3, 7, 9], 4))
+```
+answer: <= | //
+wrong[< | //]: With `<`, the loop stops when lo and hi are both 2, so 9, the one item left, is never checked: `-1 -1`.
+wrong[<= | /]: `/` always gives a float, here 1.0, and a list index must be an int: TypeError.
+hint: The loop must still run when one item is left, with lo equal to hi.
+hint: The middle index must be a whole number.
+right: `while lo <= hi` checks the last remaining item too, and `//` rounds the middle down to a whole index.
+wrong: Use `<=` so that a part of one item is still searched, and `//` so that `mid` is an int.
+
+=== task: multi easy
+title: True of binary search
+prompt: Choose **every** statement that is true of binary search.
+* It needs the list to be sorted :: Right. Otherwise the half it drops might hold the target.
+* Each check rules out about half of what's left :: Right. That's where the speed comes from.
+* It needs at most 10 checks for a sorted list of 1,000 items :: Right. 1,000 can be halved 9 times before reaching 1, plus one last check.
+- It starts by checking the first item :: That's linear search. Binary search starts in the middle.
+- It is O(n) because it might check every item :: It never checks more than about log₂ n items: O(log n).
+- It can only search lists of numbers :: Strings work too, and anything else `<` can compare, as long as it's sorted.
+hint: Where does the first check happen?
+hint: How much of the list is left after each check?
+right: Sorted data, half ruled out per check, and so about log₂ n checks: 10 for 1,000 items.
+wrong: Binary search starts in the middle of a sorted list and halves the part still possible with every check, so it's O(log n). It works on anything sorted that `<` can compare.
+
+=== task: parsons easy
+title: Put binary search together
+prompt: Arrange the lines so that `binary_search` works, and the program prints:
+
+```output
+3 4 -1
+```
+
+Not every line is needed.
+lines:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [4, 9, 15, 20, 31]
+print(binary_search(nums, 20), binary_search(nums, 31), binary_search(nums, 5))
+```
+distractors:
+```python
+    while lo < hi:
+        mid = (lo + hi) / 2
+```
+hint: Set lo and hi first, then loop while there's something left to search.
+hint: Inside the loop: work out mid, check it, then move lo or hi past it.
+right: The loop runs while `lo <= hi`, so 31, the last item, is still checked when lo and hi meet at index 4.
+wrong: Start with lo = 0 and hi = the last index. Loop while `lo <= hi`, find `mid` with `//`, return it on a match, and otherwise move lo or hi past it. Return -1 after the loop.
+
+=== task: order easy
+title: Searching for 9
+prompt: Binary search looks for 9 in `[1, 3, 5, 7, 9, 11, 13]`. Put the steps in order.
+items:
+- Check index 3: 7 is smaller than 9, so lo = 4
+- Check index 5: 11 is bigger than 9, so hi = 4
+- Check index 4: 9 is the target
+- Return 4
+hint: The first middle is (0 + 6) // 2 = 3.
+hint: After lo = 4, the middle of 4 to 6 is 5.
+right: Middles 3, 5 and 4: three checks to find 9 at index 4.
+wrong: Start in the middle, index 3 (7, too small), then the middle of 4 to 6, index 5 (11, too big), then index 4, which holds 9.
+
+=== task: predict easy
+title: Printing the middles
+code:
+```python
+nums = [2, 4, 6, 8, 10, 12, 14]
+target = 12
+lo = 0
+hi = len(nums) - 1
+while lo <= hi:
+    mid = (lo + hi) // 2
+    print(mid, nums[mid])
+    if nums[mid] == target:
+        break
+    elif nums[mid] < target:
+        lo = mid + 1
+    else:
+        hi = mid - 1
+```
+wrong[3 8\n4 10\n5 12]: After 8, the search jumps to the middle of indexes 4 to 6, which is 5. It doesn't step along one item at a time.
+wrong[3 8]: 8 is smaller than 12, so the loop goes on to a second check.
+wrong[3 8\n5 12\n6 14]: `break` leaves the loop as soon as 12 is found.
+hint: The first middle is (0 + 6) // 2.
+hint: After the first check, lo = 4 and hi = 6.
+right: `3 8` then `5 12`: 8 is too small, so the search moves to the middle of 4 to 6, which is 12.
+wrong: mid = 3 holds 8, too small, so lo = 4. The middle of 4 to 6 is 5, which holds 12, and `break` ends the loop.
+
+=== task: mcq easy
+title: At most how many checks?
+prompt: A sorted list has 1,000 items. At most how many checks does binary search need to find an item, or to decide that it isn't there?
+* 10 :: Right. 1,000 can be halved 9 times before reaching 1, and the last item takes one more check.
+- 500 :: That's half the list: about the average for linear search.
+- 1,000 :: That's linear search's worst case.
+- 3 :: That would be enough if each check divided the list by 10. Binary search divides it by 2.
+hint: Each check halves the part still possible.
+hint: 1,000 → 500 → 250 → 125 → 62 → 31 → 15 → 7 → 3 → 1.
+right: 10: nine halvings take 1,000 items down to 1, and one more check looks at it. That's about log₂ 1,000.
+wrong: Count the halvings: 500, 250, 125, 62, 31, 15, 7, 3, 1. That's 9, plus a check on the last item: 10.
+
+=== task: code medium
+title: Sorted the other way
+prompt: `items` is sorted from **biggest to smallest**. Write `search_desc(items, target)` that returns the index of `target`, or -1, using binary search. Now a middle item bigger than the target means the target is to its **right**.
+starter:
+```python
+def search_desc(items, target):
+    lo = 0
+    hi = len(items) - 1
+    # your code here
+    return -1
+```
+solution:
+```python
+def search_desc(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] > target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+```
+tests:
+- search_desc([91, 72, 56, 38, 23, 16, 12, 8, 5, 2], 23)
+- search_desc([91, 72, 56, 38, 23, 16, 12, 8, 5, 2], 91)
+- search_desc([91, 72, 56, 38, 23, 16, 12, 8, 5, 2], 2)
+- search_desc([91, 72, 56, 38, 23, 16, 12, 8, 5, 2], 40)
+- search_desc([5], 5)
+speed: setup=items = list(range(n, 0, -1)) | call=search_desc(items, 1) | target=O(log n)
+slow:
+```python
+def search_desc(items, target):
+    for i in range(len(items)):
+        if items[i] == target:
+            return i
+    return -1
+```
+forbid[.index(]: Use binary search, not `.index`, which is a linear search.
+fail[1]: 23 is at index 4.
+fail[2]: The biggest item, 91, comes first: index 0.
+fail[3]: The smallest item, 2, comes last: index 9.
+hint: The loop is the same as the usual binary search.
+hint: If `items[mid] > target`, the target is smaller, and the smaller items are to the right: `lo = mid + 1`.
+hint: Otherwise the target is to the left: `hi = mid - 1`.
+right: Only the comparison flips. The halving is the same, so it's still O(log n).
+wrong: Use the usual loop, but when the middle item is bigger than the target, move lo past mid, because the items get smaller to the right.
+
+=== task: code medium
+title: Look up a user
+prompt: `users` is a list of dictionaries sorted by their `"id"` field. Write `find_user(users, user_id)` that uses binary search on the ids and returns the `"name"` of the user with that id, or None if there isn't one.
+starter:
+```python
+def find_user(users, user_id):
+    # your code here
+    return None
+```
+solution:
+```python
+def find_user(users, user_id):
+    lo = 0
+    hi = len(users) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if users[mid]["id"] == user_id:
+            return users[mid]["name"]
+        elif users[mid]["id"] < user_id:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return None
+```
+tests:
+- find_user([{"id": 3, "name": "Ana"}, {"id": 8, "name": "Ben"}, {"id": 15, "name": "Cy"}, {"id": 21, "name": "Dee"}], 15)
+- find_user([{"id": 3, "name": "Ana"}, {"id": 8, "name": "Ben"}, {"id": 15, "name": "Cy"}, {"id": 21, "name": "Dee"}], 3)
+- find_user([{"id": 3, "name": "Ana"}, {"id": 8, "name": "Ben"}, {"id": 15, "name": "Cy"}, {"id": 21, "name": "Dee"}], 10)
+- find_user([], 3)
+- find_user([{"id": 7, "name": "Eli"}], 7)
+speed: setup=users = [{"id": i, "name": "u" + str(i)} for i in range(n)] | call=find_user(users, n - 1) | target=O(log n)
+slow:
+```python
+def find_user(users, user_id):
+    for u in users:
+        if u["id"] == user_id:
+            return u["name"]
+    return None
+```
+fail[1]: The user with id 15 is Cy.
+fail[2]: id 3 belongs to the first user, Ana.
+fail[3]: No user has id 10: return None.
+error[TypeError]: Compare the id, `users[mid]["id"]`, with `user_id`, not the whole dictionary.
+error[KeyError]: The fields are called `"id"` and `"name"`.
+hint: Use the usual binary search, but compare `users[mid]["id"]` with `user_id`.
+hint: When the ids match, return `users[mid]["name"]`.
+hint: Return None after the loop.
+right: The list is sorted by id, so the middle record's id tells you which half to keep: O(log n), the same as with plain numbers.
+wrong: Binary search on `users[mid]["id"]`: return the name on a match, otherwise move lo or hi past mid, and return None when lo passes hi.
+
+=== task: predict medium
+title: The lo < hi bug
+code:
+```python
+def search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [10, 20, 30, 40, 50]
+print(search(nums, 30), search(nums, 50), search(nums, 10))
+```
+wrong[2 4 0]: That's what a correct search gives. Here the loop needs `lo < hi`, so it stops when lo and hi are both 4, before 50 is checked.
+wrong[2 -1 -1]: 10 is found: after the first check, lo = 0 and hi = 1, so the loop runs again and checks index 0.
+hint: 30 is the first middle.
+hint: For 50, follow lo and hi until they're equal. Does the loop run then?
+right: `2 -1 0`: 30 is the first middle. For 50, lo reaches 4 and hi is 4, so `lo < hi` is False and 50 is never checked. 10 is found at index 0.
+wrong: 30 is at the first middle, index 2. For 50: lo goes to 3, then 4, and with lo equal to hi the loop stops, returning -1. For 10: hi goes to 1, then index 0 is checked and matches.
+
+=== task: cells medium
+title: Where the search stops
+prompt: Binary search looks for 20 in `[3, 6, 9, 14, 18, 25, 31]`, which doesn't contain it. Fill in the values.
+labels: checks made | lo at the end | hi at the end | the result | where 20 would go to keep the list sorted
+answer: 3 | 5 | 4 | -1 | 5
+wrong[3 | 4 | 4 | -1 | 4]: The loop only stops once lo has passed hi. After the third check (18 at index 4), lo becomes 5.
+wrong[3 | 5 | 4 | 5 | 5]: The search returns -1 when the target isn't there. lo holds the place where it would go.
+wrong[4 | 5 | 4 | -1 | 5]: Three items are checked: 14, 25 and 18. The last loop test compares lo and hi, not an item.
+wrong[3 | 5 | 4 | -1 | 4]: 20 goes after 18, which is at index 4, so its place is index 5: where lo stopped.
+hint: Middles: (0 + 6) // 2, then the middle of what's left.
+hint: The loop stops when lo > hi.
+right: Checks at 14, 25 and 18; then lo = 5 and hi = 4, the result is -1, and lo = 5 is where 20 belongs, between 18 and 25.
+wrong: 14 is too small (lo = 4), 25 too big (hi = 4), 18 too small (lo = 5). Now lo > hi, so the search returns -1, and lo = 5 is the insertion point.
+
+=== task: fill medium
+title: The recursive version
+prompt: Fill in the blanks: the base case of the recursive search, and the `hi` for the first call. The program should print:
+
+```output
+4 5 -1
+```
+code:
+```python
+def search(items, target, lo, hi):
+    if lo ?? hi:
+        return -1
+    mid = (lo + hi) // 2
+    if items[mid] == target:
+        return mid
+    elif items[mid] < target:
+        return search(items, target, mid + 1, hi)
+    else:
+        return search(items, target, lo, mid - 1)
+
+def find(items, target):
+    return search(items, target, 0, ??)
+
+nums = [4, 9, 15, 20, 31, 47]
+print(find(nums, 31), find(nums, 47), find(nums, 50))
+```
+answer: > | len(items) - 1
+wrong[>= | len(items) - 1]: `lo >= hi` gives up when one item is left, so 47, the last item, is never checked: `4 -1 -1`.
+wrong[> | len(items)]: `hi` must be the last index. With `len(items)`, the search for 50 reaches index 6, one past the end: IndexError.
+wrong[< | len(items) - 1]: That returns -1 at once whenever there's more than one item to search: `-1 -1 -1`.
+hint: The part from lo to hi is empty only when lo has passed hi.
+hint: hi is the index of the last item.
+right: `lo > hi` means the part is empty, and the first call covers indexes 0 to `len(items) - 1`, the whole list.
+wrong: Stop with -1 only when `lo > hi`, so a part of one item is still checked, and start with hi = `len(items) - 1`, the last valid index.
+
+=== task: mcq medium
+title: lo = mid
+prompt: A binary search has `lo = mid` where it should have `lo = mid + 1`. What happens when it searches `[3, 7]` for 9?
+* It loops forever, because lo and mid both stay 0 :: Right. With lo = 0 and hi = 1, mid is 0; 3 < 9 sets lo to 0 again, and nothing changes.
+- It returns -1 :: It never gets there: lo never moves past hi.
+- It returns 1 :: 9 isn't in the list, and the loop never ends anyway.
+- It raises an IndexError :: mid stays 0, which is a valid index. The problem is that nothing changes.
+hint: Work out mid when lo = 0 and hi = 1.
+hint: After `lo = mid`, has anything changed?
+right: `(0 + 1) // 2` is 0, so `lo = mid` sets lo to 0, which it already was. The loop repeats the same check forever. `mid + 1` always moves lo forward.
+wrong: mid = (0 + 1) // 2 = 0, and `lo = mid` leaves lo at 0. lo and hi never change, so the loop never ends.
+
+=== task: predict medium
+title: bisect_left
+code:
+```python
+from bisect import bisect_left
+
+nums = [10, 20, 30, 40]
+print(bisect_left(nums, 30), bisect_left(nums, 25), bisect_left(nums, 5), bisect_left(nums, 99))
+```
+wrong[2 -1 -1 -1]: `bisect_left` never returns -1. It gives the position where the value is, or would go.
+wrong[2 1 0 3]: 25 would go after 20, which is at index 1, so its position is 2. 99 goes after everything: position 4.
+wrong[2 2 0 3]: 99 is bigger than every item, so it would go at the very end: position 4, the length of the list.
+hint: `bisect_left` returns where the value would be inserted to keep the list sorted.
+hint: A value bigger than everything goes at position `len(nums)`.
+right: `2 2 0 4`: 30 is at index 2; 25 would go at 2, before 30; 5 at the front; 99 at the end, position 4.
+wrong: 30 is at index 2. 25 belongs between 20 and 30: position 2. 5 belongs at the front: 0. 99 belongs after 40: position 4.
+
+=== task: multi medium
+title: Ready for binary search?
+prompt: Choose **every** list that the usual binary search, with `<` comparisons, can search correctly as it is.
+* `[1, 4, 4, 9, 12]` :: Right. Sorted, and repeats are fine.
+* `["ant", "bee", "cat", "dog"]` :: Right. Strings in alphabetical order.
+* `[-8, -3, 0, 2]` :: Right. Negative numbers come before 0 in sorted order.
+- `[5, 3, 8, 1]` :: Not sorted: the half that's dropped might hold the target.
+- `[9, 7, 4, 2]` :: Sorted the other way. The usual comparisons send the search to the wrong half; it needs them flipped.
+- `[1, 2, 3, 10, 5]` :: Nearly sorted isn't sorted: 10 before 5 breaks the order.
+hint: Check each list: is every item at least as big as the one before it?
+hint: Repeated values don't break the order.
+right: The three lists sorted from smallest to largest work. Unsorted, nearly sorted and reversed lists don't.
+wrong: Binary search needs the list in increasing order (repeats allowed). A list in any other order, even almost sorted or sorted backwards, can send it to the wrong half.
+
+=== task: parsons medium
+title: Recursive binary search
+prompt: Arrange the lines so that the recursive `search` works, and the program prints:
+
+```output
+5 -1
+```
+
+Not every line is needed.
+lines:
+```python
+def search(items, target, lo, hi):
+    if lo > hi:
+        return -1
+    mid = (lo + hi) // 2
+    if items[mid] == target:
+        return mid
+    elif items[mid] < target:
+        return search(items, target, mid + 1, hi)
+    else:
+        return search(items, target, lo, mid - 1)
+
+nums = [4, 9, 15, 20, 31, 47]
+print(search(nums, 47, 0, 5), search(nums, 10, 0, 5))
+```
+distractors:
+```python
+        search(items, target, mid + 1, hi)
+    if lo >= hi:
+```
+hint: The base case comes first: an empty part means not found.
+hint: Each recursive call must be returned, or its answer is lost.
+right: The base case stops at an empty part; each call checks the middle and returns the answer of the call on the half that's left.
+wrong: Check `lo > hi` first. Then work out mid, return it on a match, and otherwise **return** the search of the right or left half.
+
+=== task: order medium
+title: Shrinking the range
+prompt: Binary search looks for 78 in `[5, 12, 19, 27, 33, 41, 50, 64, 78]`. Put the parts it searches in order.
+items:
+- indexes 0 to 8, middle 33
+- indexes 5 to 8, middle 50
+- indexes 7 to 8, middle 64
+- index 8 on its own, middle 78: found
+hint: The first middle is (0 + 8) // 2 = 4.
+hint: Each part starts one place after the previous middle, because 78 is bigger than each middle item.
+right: The part shrinks from 9 items to 4, then 2, then 1: four checks find 78 at index 8.
+wrong: 33 is too small, so lo = 5; 50 is too small, so lo = 7; 64 is too small, so lo = 8; then index 8 holds 78.
+
+=== task: code hard
+title: Recursive binary search
+prompt: Write `search(items, target, lo, hi)`: a **recursive** binary search of the part of a sorted list from index `lo` to index `hi`. Return the index of `target`, or -1. Don't use a loop: each call checks the middle and calls itself on one half.
+starter:
+```python
+def search(items, target, lo, hi):
+    # your code here
+    return -1
+```
+solution:
+```python
+def search(items, target, lo, hi):
+    if lo > hi:
+        return -1
+    mid = (lo + hi) // 2
+    if items[mid] == target:
+        return mid
+    elif items[mid] < target:
+        return search(items, target, mid + 1, hi)
+    else:
+        return search(items, target, lo, mid - 1)
+```
+tests:
+- search([4, 9, 15, 20, 31, 47], 31, 0, 5)
+- search([4, 9, 15, 20, 31, 47], 4, 0, 5)
+- search([4, 9, 15, 20, 31, 47], 47, 0, 5)
+- search([4, 9, 15, 20, 31, 47], 10, 0, 5)
+- search([4, 9, 15, 20, 31, 47], 4, 1, 5)
+- search([], 3, 0, -1)
+speed: setup=items = list(range(n)) | call=search(items, n - 1, 0, n - 1) | target=O(log n)
+slow:
+```python
+def search(items, target, lo, hi):
+    for i in range(lo, hi + 1):
+        if items[i] == target:
+            return i
+    return -1
+```
+forbid[while]: Use recursion instead of a `while` loop.
+fail[1]: 31 is at index 4.
+fail[3]: 47 is at index 5: the last call searches the part from 5 to 5, which must still be checked.
+fail[5]: Only search from `lo` to `hi`. 4 is at index 0, outside the part from 1 to 5, so the answer is -1.
+error[IndexError]: Check `if lo > hi: return -1` before reading `items[mid]`.
+error[RecursionError]: Each call must shrink the part: use `mid + 1` and `mid - 1`, and stop when `lo > hi`.
+hint: Base case: if `lo > hi`, the part is empty: return -1.
+hint: Otherwise work out `mid = (lo + hi) // 2` and compare `items[mid]` with the target.
+hint: Return `search(items, target, mid + 1, hi)` or `search(items, target, lo, mid - 1)`. Don't forget the `return`.
+right: Each call halves the part, so there are at most about log₂ n calls: O(log n) time, and O(log n) space for the calls waiting on the call stack.
+wrong: Return -1 when lo > hi. Otherwise check the middle, return it if it matches, and return the result of searching the half that's left.
+
+=== task: code hard
+title: The closest value, fast
+prompt: `items` is sorted and not empty. Write `closest(items, target)` that returns the item closest to `target`; if two items are equally close, return the smaller one. The speed check uses long lists, so use binary search. When the loop ends without finding `target`, `items[hi]` is the item right below where it would go, and `items[lo]` the item right above.
+starter:
+```python
+def closest(items, target):
+    # your code here
+    return items[0]
+```
+solution:
+```python
+def closest(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return items[mid]
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    if hi < 0:
+        return items[0]
+    if lo >= len(items):
+        return items[-1]
+    if target - items[hi] <= items[lo] - target:
+        return items[hi]
+    return items[lo]
+```
+tests:
+- closest([2, 5, 8, 12, 16], 13)
+- closest([2, 5, 8, 12, 16], 15)
+- closest([2, 5, 8, 12, 16], 10)
+- closest([2, 5, 8, 12, 16], 1)
+- closest([2, 5, 8, 12, 16], 99)
+- closest([7], 3)
+- closest([2, 5, 8, 12, 16], 8)
+speed: setup=items = list(range(0, 2 * n, 2)) | call=closest(items, n + 1) | target=O(log n)
+slow:
+```python
+def closest(items, target):
+    best = items[0]
+    for x in items:
+        if abs(x - target) < abs(best - target):
+            best = x
+    return best
+```
+fail[1]: 12 is 1 away from 13; 16 is 3 away.
+fail[2]: 16 is 1 away from 15; 12 is 3 away.
+fail[3]: 8 and 12 are both 2 away from 10: return the smaller one, 8.
+fail[4]: 1 is below every item, so the closest is the first one, 2.
+fail[5]: 99 is above every item, so the closest is the last one, 16.
+error[IndexError]: When the target is bigger than every item, lo ends at `len(items)`, one past the end: return the last item in that case.
+hint: Run the usual binary search, and return the target if you find it.
+hint: After the loop, lo = hi + 1: items[hi] is right below the target's place and items[lo] right above.
+hint: If hi is -1, return items[0]; if lo is len(items), return items[-1]. Otherwise compare `target - items[hi]` with `items[lo] - target`.
+right: The loop does O(log n) work and leaves lo and hi on either side of the target's place; one more comparison picks the closer item, the smaller one on a tie.
+wrong: Binary search for the target. If it isn't there, the closest item is items[hi], right below, or items[lo], right above. Handle the two ends of the list, where one of them doesn't exist.
+
+=== task: code hard
+title: Search a sorted grid
+prompt: Each row of `grid` is sorted, and each row starts with a number bigger than the last number of the row above, so reading the rows one after another gives one long sorted list. Write `in_grid(grid, target)` that returns True if `target` is in the grid. Use one binary search over all `rows * cols` cells: position k in the long list is at row `k // cols`, column `k % cols`.
+starter:
+```python
+def in_grid(grid, target):
+    if not grid:
+        return False
+    rows = len(grid)
+    cols = len(grid[0])
+    # your code here
+    return False
+```
+solution:
+```python
+def in_grid(grid, target):
+    if not grid:
+        return False
+    rows = len(grid)
+    cols = len(grid[0])
+    lo = 0
+    hi = rows * cols - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        value = grid[mid // cols][mid % cols]
+        if value == target:
+            return True
+        elif value < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return False
+```
+tests:
+- in_grid([[1, 3, 5], [7, 9, 11], [13, 15, 17]], 9)
+- in_grid([[1, 3, 5], [7, 9, 11], [13, 15, 17]], 17)
+- in_grid([[1, 3, 5], [7, 9, 11], [13, 15, 17]], 6)
+- in_grid([[1, 3, 5], [7, 9, 11], [13, 15, 17]], 1)
+- in_grid([[2, 4]], 4)
+- in_grid([], 4)
+speed: setup=grid = [[r * 10 + c for c in range(10)] for r in range(n)] | call=in_grid(grid, 10 * n - 1) | target=O(log n)
+slow:
+```python
+def in_grid(grid, target):
+    for row in grid:
+        if target in row:
+            return True
+    return False
+```
+fail[1]: 9 is in the middle row.
+fail[2]: 17 is the very last cell.
+fail[4]: 1 is the very first cell.
+fail[5]: One row of two cells: 4 is at position 1.
+error[IndexError]: The last position is `rows * cols - 1`, and position k is at `grid[k // cols][k % cols]`.
+hint: Treat the grid as one sorted list of `rows * cols` items: lo = 0 and hi = rows * cols - 1.
+hint: For a middle position `mid`, the value is `grid[mid // cols][mid % cols]`.
+hint: Then it's the usual binary search: return True on a match, and False when lo passes hi.
+right: One binary search over R × C cells takes O(log(R × C)) checks. `//` and `%` turn a position in the long list into a row and a column.
+wrong: Number the cells 0 to rows × cols − 1 in reading order, binary search those positions, and read each middle cell with `grid[mid // cols][mid % cols]`.
+
+=== task: code hard
+title: Search with bisect
+prompt: Write `index_of(items, x)` for a sorted list, using `bisect_left`: return the index of `x`, or -1 if it isn't there. Remember that `bisect_left` gives the insertion point even when `x` is missing.
+starter:
+```python
+from bisect import bisect_left
+
+def index_of(items, x):
+    i = bisect_left(items, x)
+    # your code here
+    return i
+```
+solution:
+```python
+from bisect import bisect_left
+
+def index_of(items, x):
+    i = bisect_left(items, x)
+    if i < len(items) and items[i] == x:
+        return i
+    return -1
+```
+tests:
+- index_of([10, 20, 30, 40], 30)
+- index_of([10, 20, 30, 40], 25)
+- index_of([10, 20, 30, 40], 99)
+- index_of([10, 20, 30, 40], 10)
+- index_of([], 5)
+- index_of([5, 5, 5], 5)
+speed: setup=items = list(range(n)) | call=index_of(items, n // 2) | target=O(log n)
+slow:
+```python
+from bisect import bisect_left
+
+def index_of(items, x):
+    if x in items:
+        return bisect_left(items, x)
+    return -1
+```
+require[bisect_left(]: Use `bisect_left` to find the place.
+fail[2]: 25 isn't in the list. `bisect_left` gives 2, its insertion point, but `items[2]` is 30: return -1.
+fail[3]: 99 would go at position 4, past the last item. Check `i < len(items)` and return -1.
+fail[5]: An empty list holds nothing: -1.
+error[IndexError]: When x is bigger than every item, i is `len(items)`. Check `i < len(items)` before reading `items[i]`.
+hint: `i = bisect_left(items, x)` is where x is, or where it would go.
+hint: x is there only if `i < len(items)` and `items[i] == x`.
+hint: Put `i < len(items)` first, so `items[i]` is only read when i is a real index.
+right: `bisect_left` does the O(log n) search; the two checks turn "where it would go" into "where it is, or -1". `x in items` would add a linear search.
+wrong: Get the insertion point with `bisect_left`, then return it only if it's inside the list and holds x; otherwise return -1.
+
+=== task: predict hard
+title: Searching unsorted data
+code:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+data = [5, 1, 4, 2, 3]
+print(binary_search(data, 4), binary_search(data, 1), binary_search(data, 2))
+```
+wrong[2 1 3]: Those are the right positions, but binary search doesn't find them all: the list isn't sorted, so it drops the half that holds 1.
+wrong[-1 -1 -1]: 4 is the first middle item, so it's found at once.
+wrong[2 1 -1]: For 1, the middle is 4, too big, so the search keeps indexes 0 to 1 and checks 5, also too big. It never reaches index 1.
+hint: The first middle is index 2, which holds 4.
+hint: For 1 and 2, the search sees 4 and then 5, both too big. Which part is left after that?
+right: `2 -1 -1`: 4 sits at the first middle. For 1 and 2, the search sees 4 and 5, both bigger, so it drops everything, though both are in the list.
+wrong: 4 is at the first middle, index 2. For 1 and for 2, 4 is too big (hi = 1), then 5 at index 0 is too big (hi = -1), so the search ends with -1. The list isn't sorted, so dropping halves loses items.
+
+=== task: predict hard
+title: Which copy?
+code:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+print(binary_search([1, 2, 2, 2, 3], 2))
+print(binary_search([2, 2, 2, 2, 3, 4, 5], 2))
+print(binary_search([1, 1, 2], 1))
+```
+wrong[1\n0\n0]: Binary search doesn't look for the first copy. It returns whichever copy a middle lands on first.
+wrong[3\n3\n1]: It doesn't look for the last copy either: the first middle of `[1, 2, 2, 2, 3]` is index 2, which is already a 2.
+wrong[2\n3\n0]: In `[1, 1, 2]` the first middle is index 1, which holds a 1.
+hint: Work out the first middle of each list.
+hint: Does the first middle already hold the target?
+right: `2`, `3` and `1`: each first middle already holds the target, so the search stops there. With repeats, it can return any copy; the next lesson finds the first or the last one.
+wrong: The first middles are index 2, index 3 and index 1, and each holds the target, so those are the answers. Binary search stops at the first match it meets, whichever copy that is.
+
+=== task: cells hard
+title: Checks for growing lists
+prompt: What's the largest number of checks binary search can need for a sorted list of each size?
+labels: 1 item | 7 items | 8 items | 100 items | 1,000,000 items
+answer: 1 | 3 | 4 | 7 | 20
+wrong[0 | 3 | 4 | 7 | 20]: A list of 1 item still needs one check, to see whether it's the target.
+wrong[1 | 3 | 3 | 7 | 20]: 8 items: after one check, up to 4 can be left, then 2, then 1, so four checks.
+wrong[1 | 3 | 4 | 50 | 20]: 50 is half the list. Binary search halves each time: 100, 50, 25, 12, 6, 3, 1 is six halvings, so seven checks.
+hint: Count how many times n can be halved, rounding down, before it reaches 1. Then add 1.
+hint: Doubling the size adds one check.
+right: 1, 3, 4, 7 and 20: the halvings to reach 1, plus one check on the last item. That's about log₂ n + 1.
+wrong: 1 item: 1 check. 7: 3, 1 is two halvings, so 3 checks. 8: 4, 2, 1 is three, so 4. 100: six halvings, 7 checks. A million: nineteen halvings, 20 checks.
+
+=== task: multi hard
+title: Changes that break it
+prompt: Each change is made to the usual binary search. Choose **every** change that makes it give a wrong answer, crash or never finish for some sorted list.
+* `while lo < hi:` :: Right. It stops with one item unchecked: searching `[7]` for 7 gives -1.
+* `lo = mid` instead of `lo = mid + 1` :: Right. When lo and hi are next to each other, lo can stop moving: an endless loop.
+* `hi = len(items)` at the start :: Right. mid can reach `len(items)`, one past the end: IndexError.
+* `mid = (lo + hi) / 2` :: Right. `/` gives a float, and a float can't be a list index: TypeError.
+- `mid = lo + (hi - lo) // 2` :: This is the same middle written another way: lo + (hi − lo) // 2 always equals (lo + hi) // 2.
+- Testing `items[mid] > target` before `items[mid] < target` :: The order of the two tests doesn't matter, as long as each one moves the right end.
+hint: For each change, try a list of one or two items.
+hint: Which changes leave the middle and the moves exactly as they were?
+right: The first four each break a rule: check the last item, move past mid, stay inside the list, and use whole-number indexes. The last two give the same answers as the usual code.
+wrong: `lo < hi`, `lo = mid`, `hi = len(items)` and `/` each break something. Writing the middle as `lo + (hi - lo) // 2`, or swapping the order of the two tests, changes nothing.
+
+=== task: fill hard
+title: Oldest first
+prompt: `people` is sorted by age from **oldest to youngest**. Fill in the blanks so that `who_is` finds the person of a given age with binary search, and the program prints:
+
+```output
+Dee None
+```
+code:
+```python
+people = [("Eli", 55), ("Cy", 42), ("Ana", 34), ("Dee", 27), ("Ben", 19)]
+
+def who_is(people, age):
+    lo = 0
+    hi = len(people) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if people[mid][??] == age:
+            return people[mid][??]
+        elif people[mid][1] ?? age:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return None
+
+print(who_is(people, 27), who_is(people, 50))
+```
+answer: 1 | 0 | >
+wrong[1 | 0 | <]: The list goes from oldest to youngest, so a middle age bigger than the target means look right: `>`. With `<` the search goes the wrong way: `None None`.
+wrong[0 | 1 | >]: Index 0 is the name, and a name never equals an age, so nothing is found: `None None`.
+wrong[1 | 1 | >]: That returns the age you searched for, 27. The name is at index 0.
+hint: Each person is a `(name, age)` tuple.
+hint: Ages get smaller to the right. If the middle age is bigger than the target, which way is the target?
+right: Compare the age, `people[mid][1]`, return the name, `people[mid][0]`, and move right when the middle person is older than the target, because the list gets younger to the right.
+wrong: Index 1 is the age and index 0 the name. In a list sorted from oldest to youngest, a middle age bigger than the target means the target is to the right: `>`.
+
+=== task: parsons hard
+title: Count the smaller items
+prompt: This binary search never stops early: it keeps narrowing until lo passes hi, and then `lo` is the number of items smaller than `x`. Arrange the lines so that the program prints:
+
+```output
+4 0 2
+```
+
+Not every line is needed.
+lines:
+```python
+def count_below(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+scores = [12, 25, 31, 47, 58, 63]
+print(count_below(scores, 50), count_below(scores, 5), count_below(scores, 31))
+```
+distractors:
+```python
+        if items[mid] <= x:
+    return hi
+```
+hint: Items smaller than x are to the left of where x would go.
+hint: When the middle item is smaller than x, the place for x is to its right: move lo.
+right: lo ends at the insertion point, after every item smaller than x: 4 scores are below 50, none below 5, and 2 below 31.
+wrong: Move lo past mid when `items[mid] < x`, and hi below mid otherwise. When lo passes hi, lo is the insertion point, which counts the items smaller than x.
