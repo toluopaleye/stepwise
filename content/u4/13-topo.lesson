@@ -1,0 +1,1176 @@
+=== lesson
+id: algo-topo
+title: Topological sort
+summary: Some jobs have to wait for others: you can't cook the vegetables before you've chopped them. A topological sort puts the jobs of a dependency graph in an order where every job comes after everything it waits for. You'll check whether an order respects every dependency, build an order by doing whatever job is free, see why a cycle makes any order impossible, and meet the two standard algorithms, which the next two lessons cover in detail.
+
+=== learn
+### Jobs that wait for other jobs
+Cooking dinner: the vegetables have to be bought before they're chopped, chopped (with the water boiled) before they're cooked, and cooked (with the table set) before dinner is served. Each "before" is an arrow from one job to another:
+```text
+buy ──→ chop ──→ cook ──→ serve
+                  ↑         ↑
+boil ─────────────┘         │
+table ──────────────────────┘
+```
+That's a **directed graph**: an edge u → v says u must happen before v. In Python, each job lists the jobs that have to wait for it:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+```
+A **topological order** is a list of all the jobs in which every edge points forward: for every edge u → v, u comes somewhere before v. Finding one is called **topological sorting**.
+
+### Checking an order
+An order is valid if it contains every job exactly once and no edge points backwards. Recording each job's position makes each edge a quick comparison:
+```python
+def is_valid(graph, order):
+    if sorted(order) != sorted(graph):
+        return False
+    pos = {}
+    for i, v in enumerate(order):
+        pos[v] = i
+    for u in graph:
+        for v in graph[u]:
+            if pos[u] >= pos[v]:
+                return False
+    return True
+
+print(is_valid(dinner, ["boil", "buy", "chop", "table", "cook", "serve"]))
+print(is_valid(dinner, ["buy", "cook", "chop", "boil", "table", "serve"]))
+```
+```output
+True
+False
+```
+The first order is fine. The second cooks before chopping: the edge chop → cook points backwards. `sorted(order) != sorted(graph)` catches an order with a job missing or repeated, and `>=` rather than `>` also rejects a job with an edge to itself, which would have to come before itself.
+
+### Prerequisites
+The graph lists, for each job, what comes after it. The method below needs the opposite: what each job is waiting for, its **prerequisites**. Turning every edge round gives them:
+```python
+def needs_of(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    return needs
+
+print(needs_of(dinner))
+```
+```output
+{'buy': [], 'chop': ['buy'], 'boil': [], 'cook': ['chop', 'boil'], 'table': [], 'serve': ['cook', 'table']}
+```
+The number of prerequisites a job has is its **in-degree**, the number of edges coming into it. Jobs with in-degree 0, here buy, boil and table, can be done straight away.
+
+### Do whatever is free
+That suggests a method: find a job whose prerequisites are all done, do it, and repeat until every job is done.
+```python
+def simple_order(graph):
+    needs = needs_of(graph)
+    done = []
+    while len(done) < len(graph):
+        free = None
+        for v in graph:
+            if v not in done and all(u in done for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            return None
+        done.append(free)
+    return done
+
+print(simple_order(dinner))
+```
+```output
+['buy', 'chop', 'boil', 'cook', 'table', 'serve']
+```
+`all(u in done for u in needs[v])` is True when every prerequisite of v is already done; a job with no prerequisites passes at once. Each round takes the first free job in the dictionary's order, so chop, freed by buy, is taken before boil. Animation 1 runs this method.
+
+### Cycles make it impossible
+If a job waits, through a chain of other jobs, for itself, there's no order at all. Here a must come before b, b before c, and c before a, so none of the three can ever go first:
+```python
+loop = {"a": ["b"], "b": ["c"], "c": ["a"], "d": ["a"]}
+print(simple_order(loop))
+```
+```output
+None
+```
+d is free and gets done, but then no job is free although three are left, so the method returns None. Animation 2 gets stuck in the same way.
+
+A directed graph with no cycles is called a **DAG**, a directed acyclic graph, and every DAG has at least one topological order. There's always a free job: start at any job not done and keep stepping back to an unfinished prerequisite. Without a cycle you can't step back forever, so you reach a job with none left.
+
+### Many right answers
+Most DAGs have more than one topological order: the dinner graph has 15. buy, boil and table don't depend on each other, so they can come in any order, and table could even wait until right before serve. Any order that passes `is_valid` is correct.
+
+Each algorithm produces one particular order, depending on the order it looks at the jobs. When a single answer is wanted, for example in a test, a tie-breaking rule such as "take the free job that comes first alphabetically" makes it unique.
+
+### Faster methods
+`simple_order` searches through all the jobs, and their prerequisites, to find each free job: V rounds of up to O(V + E) work, which is O(V × (V + E)) in all. The two standard algorithms keep track of what's free as they go and take O(V + E):
+
+| algorithm | idea | covered in |
+| --- | --- | --- |
+| Kahn's algorithm | count each job's unfinished prerequisites; keep a queue of the free jobs; finishing a job lowers the counts of the jobs waiting for it | the next lesson |
+| DFS-based sort | run DFS along the edges; a job finishes only after everything that waits for it, so the reversed finishing order is topological | the lesson after |
+
+Both also detect cycles.
+
+### Where it's used
+Build tools compile each file after the files it imports. Spreadsheets recalculate a cell after the cells its formula refers to. Package installers install a package's dependencies first. Course planners, recipe apps and project schedulers all do the same thing: when jobs depend on other jobs, a topological sort finds an order that works, or shows that none does.
+
+=== keypoints
+- A dependency graph has an edge u → v when u must happen before v. A topological order lists every job so that all edges point forward.
+- Check an order by recording each job's position and testing that `pos[u] < pos[v]` for every edge u → v.
+- A job's prerequisites are the jobs with edges into it; their number is its in-degree. Jobs with none can go first.
+- Repeatedly doing a job whose prerequisites are all done builds a topological order. If no job is free but some are left, there's a cycle.
+- A cycle makes any order impossible. A DAG, a directed graph with no cycles, always has at least one order, and usually several.
+- Kahn's algorithm and the DFS-based sort, in the next two lessons, find an order in O(V + E).
+
+=== example: Checking a study plan
+intro: A course plan lists modules in the order a student will take them. The check finds every prerequisite that the plan breaks.
+```python
+before = {
+    "intro": ["data", "web"],
+    "data": ["algo"],
+    "web": ["project"],
+    "algo": ["project"],
+    "project": [],
+}
+plan = ["intro", "web", "project", "data", "algo"]
+
+pos = {course: i for i, course in enumerate(plan)}
+for u in before:
+    for v in before[u]:
+        if pos[u] >= pos[v]:
+            print(u, "must come before", v)
+```
+1-7: Each module lists the modules that need it first: intro before data and web, and both data and algo before project.
+8: The student's plan.
+10: Each module's position in the plan.
+11-14: An edge u → v is broken when u is planned later than v. The plan schedules the project before algo, which the project needs.
+
+=== example: Getting dressed
+intro: Some clothes must go on before others. Doing whatever is free, again and again, gives an order that works.
+```python
+clothes = {
+    "socks": ["shoes"],
+    "pants": ["shoes", "belt"],
+    "shirt": ["belt", "tie"],
+    "tie": ["jacket"],
+    "belt": ["jacket"],
+    "shoes": [],
+    "jacket": [],
+}
+
+needs = {item: [] for item in clothes}
+for item in clothes:
+    for later in clothes[item]:
+        needs[later].append(item)
+
+done = []
+while len(done) < len(clothes):
+    for item in clothes:
+        if item not in done and all(x in done for x in needs[item]):
+            done.append(item)
+            break
+print(" -> ".join(done))
+```
+1-9: Each item lists the items that go on after it: socks and pants before shoes, the shirt before the belt and the tie, and so the jacket last.
+11-14: Turn the edges round: what each item has to wait for.
+16-21: Each round, put on the first item whose prerequisites are all on. This graph has no cycle, so a free item always exists.
+22: Socks, pants and shirt first; the tie and belt once the shirt is on; shoes; and the jacket last.
+
+=== animation: Doing whatever is free
+view: graph g pos=A:60,40;B:60,160;C:180,100;D:300,100 directed=1 visited=done current=v vlabel=done
+vars done free
+intro: Green jobs are done, and the yellow one is being checked. Each round looks through the jobs in order for one whose prerequisites are all done. `all([...])` makes the list of checks first, then asks whether every one is True: the same test as in the lesson.
+```python
+g = {"A": ["C"], "B": ["C", "D"], "C": ["D"], "D": []}
+needs = {"A": [], "B": [], "C": ["A", "B"], "D": ["B", "C"]}
+
+done = []
+while len(done) < len(g):
+    free = None
+    for v in g:
+        if v not in done and all([u in done for u in needs[v]]):
+            free = v
+            break
+    if free is None:
+        break
+    done.append(free)
+```
+1: A and B come before C, and B and C come before D.
+2: The prerequisites of each job: the same edges, turned round.
+4: Nothing is done yet.
+5: {str(len(done)) + ' of 4 jobs are done: ' + ('keep going.' if len(done) < 4 else 'finished.')}
+6: Start looking for a free job.
+7: Look at the next job.
+8: {'Is ' + str(v) + ' free? ' + ('No: it is done already.' if v in done else 'Yes: all its prerequisites are done.' if all(u in done for u in needs[v]) else 'No: it still waits for ' + ', '.join(u for u in needs[v] if u not in done) + '.')}
+9: {v} is free.
+10: Stop looking: one free job is enough for this round.
+11: {'No free job was found.' if free is None else 'A free job was found: ' + str(free) + '.'}
+12: Nothing is free: there must be a cycle.
+13: Do {free}.
+
+=== animation: Stuck on a cycle
+view: graph g pos=A:60,100;B:180,100;C:300,100 directed=1 visited=done current=v vlabel=done
+vars done free
+intro: A comes before B, but B and C each wait for the other. After A is done, nothing is free, though two jobs are left.
+```python
+g = {"A": ["B"], "B": ["C"], "C": ["B"]}
+needs = {"A": [], "B": ["A", "C"], "C": ["B"]}
+
+done = []
+while len(done) < len(g):
+    free = None
+    for v in g:
+        if v not in done and all([u in done for u in needs[v]]):
+            free = v
+            break
+    if free is None:
+        break
+    done.append(free)
+```
+1: A comes before B, and B and C each come before the other.
+2: B waits for A and C; C waits for B.
+4: Nothing is done yet.
+5: {str(len(done)) + ' of 3 jobs are done: ' + ('keep going.' if len(done) < 3 else 'finished.')}
+6: Start looking for a free job.
+7: Look at the next job.
+8: {'Is ' + str(v) + ' free? ' + ('No: it is done already.' if v in done else 'Yes: all its prerequisites are done.' if all(u in done for u in needs[v]) else 'No: it still waits for ' + ', '.join(u for u in needs[v] if u not in done) + '.')}
+9: {v} is free.
+10: Stop looking: one free job is enough for this round.
+11: {'No free job was found, though jobs are left.' if free is None else 'A free job was found: ' + str(free) + '.'}
+12: Nothing is free: B and C wait for each other in a cycle, so no order exists.
+13: Do {free}.
+
+=== task: predict easy
+title: Whatever is free
+code:
+```python
+morning = {"wake": ["shower", "coffee"], "shower": ["dress"], "coffee": ["leave"],
+           "dress": ["leave"], "leave": []}
+
+needs = {v: [] for v in morning}
+for u in morning:
+    for v in morning[u]:
+        needs[v].append(u)
+
+done = []
+while len(done) < len(morning):
+    for v in morning:
+        if v not in done and all(u in done for u in needs[v]):
+            done.append(v)
+            break
+print(done)
+```
+wrong[['wake', 'coffee', 'shower', 'dress', 'leave']]: Each round scans the jobs in the dictionary's order, and shower is listed before coffee. Both are free after wake, so shower is taken first.
+wrong[['wake', 'shower', 'dress', 'coffee', 'leave']]: After shower, the scan starts again from the top: coffee comes before dress in the dictionary, and both are free.
+wrong[['leave', 'dress', 'coffee', 'shower', 'wake']]: That's backwards. A job is free only when everything it waits for is done, so wake, which waits for nothing, comes first.
+hint: Work out what each job waits for: shower and coffee wait for wake, dress for shower, leave for coffee and dress.
+hint: Each round starts scanning from the top of the dictionary and takes the first free job.
+right: `['wake', 'shower', 'coffee', 'dress', 'leave']`. Each round takes the first job, in dictionary order, whose prerequisites are all done.
+wrong: Round 1: only wake is free. Round 2: shower and coffee are free; shower is listed first. Round 3: coffee. Round 4: dress. Round 5: leave, now that coffee and dress are both done.
+
+=== task: mcq easy
+title: Which way does it point?
+prompt: In a dependency graph written like `{"wash": ["dry"], "dry": []}`, what does the edge from wash to dry mean?
+* Washing must happen before drying :: Right. Each job lists the jobs that have to wait for it.
+- Drying must happen before washing :: The arrow points from the job that comes first to the job that waits.
+- Washing and drying must happen at the same time :: An edge is an order, not a pairing.
+- Drying can't happen at all unless washing is skipped :: Both jobs happen; the edge only says which comes first.
+hint: In the lesson, `"buy": ["chop"]` means buy before chop.
+hint: The list holds the jobs that wait.
+right: An edge u → v means u comes before v. A topological order must keep every such pair in that order.
+wrong: The key is the earlier job and its list holds the later ones: wash, then dry.
+
+=== task: cells easy
+title: Waiting for how many?
+prompt: How many prerequisites does each job have? That's its in-degree: the number of edges coming into it.
+code:
+```python
+graph = {"A": ["C", "D"], "B": ["D"], "C": ["E"], "D": ["E"], "E": []}
+```
+labels: A | B | C | D | E
+answer: 0 | 0 | 1 | 2 | 2
+wrong[2 | 1 | 1 | 1 | 0]: That counts edges going out of each job, the length of its own list. A prerequisite is an edge coming in.
+wrong[0 | 0 | 1 | 2 | 4]: E waits only for the jobs with edges straight into it: C and D. A and B are earlier, but not direct prerequisites.
+wrong[0 | 0 | 1 | 1 | 2]: D appears in two lists, A's and B's, so two edges come into it.
+hint: Count how many lists each job appears in.
+hint: A job that appears in no list can be done first.
+right: 0, 0, 1, 2 and 2. A and B appear in no list, so they can start straight away; D and E each wait for two jobs.
+wrong: C appears in A's list. D appears in A's and B's. E appears in C's and D's. A and B appear nowhere.
+
+=== task: code easy
+title: Is the order valid?
+prompt: Write `is_valid(graph, order)` that returns True if `order` is a topological order of `graph`: it contains every job exactly once, and for every edge u → v, u comes before v. `graph` maps each job to the list of jobs that must come after it. Record each job's position, then check every edge. Use `>=` when comparing positions, so a job that lists itself fails.
+starter:
+```python
+def is_valid(graph, order):
+    # your code here
+    return True
+```
+solution:
+```python
+def is_valid(graph, order):
+    if sorted(order) != sorted(graph):
+        return False
+    pos = {}
+    for i, v in enumerate(order):
+        pos[v] = i
+    for u in graph:
+        for v in graph[u]:
+            if pos[u] >= pos[v]:
+                return False
+    return True
+```
+tests:
+- is_valid({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []}, ["boil", "buy", "chop", "table", "cook", "serve"])
+- is_valid({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []}, ["buy", "cook", "chop", "boil", "table", "serve"])
+- is_valid({"a": ["b"], "b": []}, ["a"])
+- is_valid({"a": ["b"], "b": []}, ["a", "b", "b"])
+- is_valid({}, [])
+- is_valid({"a": ["a"]}, ["a"])
+- is_valid({"x": [], "y": []}, ["y", "x"])
+fail[1]: Every edge points forward: True.
+fail[2]: cook comes before chop, but the edge chop → cook needs chop first: False.
+fail[3]: b is missing: False. Compare the jobs in the order with the jobs in the graph.
+fail[4]: b appears twice: False.
+fail[5]: No jobs, no edges: True.
+fail[6]: a must come before itself, which is impossible: False. Compare with `>=`.
+fail[7]: No edges at all, so any order of the jobs is fine: True.
+error[KeyError]: A job in the graph isn't in the order. Check that the order has exactly the graph's jobs before looking up positions.
+hint: `sorted(order) != sorted(graph)` catches missing, extra or repeated jobs.
+hint: Build `pos[v] = i` with `enumerate(order)`, then return False if any edge u → v has `pos[u] >= pos[v]`.
+right: Checking the set of jobs first makes every position lookup safe, and one comparison per edge then decides the rest: O(V + E) for the check.
+wrong: First compare the sorted order with the sorted jobs. Then record positions and test every edge: if u isn't strictly before v, the order is invalid.
+
+=== task: fill easy
+title: Turning the edges round
+prompt: Fill in the blanks so that `needs_of` lists each job's prerequisites, the jobs it waits for, and the program prints:
+
+```output
+{'buy': [], 'chop': ['buy'], 'boil': [], 'cook': ['chop', 'boil'], 'table': [], 'serve': ['cook', 'table']}
+```
+code:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+
+def needs_of(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[??].append(??)
+    return needs
+
+print(needs_of(dinner))
+```
+answer: v | u
+wrong[u | v]: That copies the graph as it is: each job would list the jobs that wait for it, not the ones it waits for.
+wrong[v | v]: Each job would list itself once for every edge into it, instead of the jobs those edges come from.
+hint: The edge u → v means v waits for u.
+hint: So u goes into v's list.
+right: For each edge u → v, appending u to `needs[v]` turns the edge round, so every job ends up listing the jobs that come before it.
+wrong: v is the job that waits, so it's `needs[v].append(u)`.
+
+=== task: multi easy
+title: True of topological orders
+prompt: Choose **every** true statement.
+* In a topological order, every edge points from an earlier job to a later one :: Right. That's what makes it topological.
+* A graph can have several different topological orders :: Right. Jobs that don't depend on each other can come in either order.
+* If the graph has a cycle, it has no topological order :: Right. Every job in the cycle would have to come before itself.
+- A job with no prerequisites must come first in every order :: It can come first, but it doesn't have to: in the dinner graph, table can wait until right before serve.
+- Every directed graph has at least one topological order :: Only graphs without cycles, DAGs, do.
+- Sorting the jobs alphabetically always gives a topological order :: The alphabet has nothing to do with the edges.
+hint: Can two jobs that don't depend on each other swap places?
+hint: What happens to a job on a cycle?
+right: Topological orders keep every edge pointing forward, they're often not unique, and a cycle rules them out altogether.
+wrong: The edges, not the names, decide the order. Independent jobs can be arranged in more than one way, and a job with no prerequisites can come later, but a cycle leaves no valid order at all.
+
+=== task: parsons easy
+title: Ready to start
+prompt: Arrange the lines so that `first_jobs` returns, in sorted order, the jobs that wait for nothing: the ones that appear in no job's list. The program prints:
+
+```output
+['boil', 'buy', 'table']
+```
+
+Not every line is needed.
+lines:
+```python
+def first_jobs(graph):
+    has_need = set()
+    for u in graph:
+        for v in graph[u]:
+            has_need.add(v)
+    return sorted(v for v in graph if v not in has_need)
+```
+distractors:
+```python
+            has_need.add(u)
+    return sorted(has_need)
+```
+after:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+print(first_jobs(dinner))
+```
+hint: A job that appears in some list has an edge coming into it: it waits for something.
+hint: The answer is every job that never appears in a list.
+right: Every job at the end of an edge goes into `has_need`, so what's left over waits for nothing. These are the jobs a topological sort can start with.
+wrong: Loop over every edge u → v and add v to a set. Return the sorted jobs that aren't in the set.
+
+=== task: order easy
+title: Only one way
+prompt: Each job lists the jobs that must wait for it. Exactly one order respects every edge. Put the jobs in that order.
+
+```python
+after = {"paint": ["dry"], "measure": ["cut", "paint"], "cut": ["sand"],
+         "sand": ["paint"], "dry": ["hang"], "hang": []}
+```
+items:
+- measure
+- cut
+- sand
+- paint
+- dry
+- hang
+hint: Which job appears in no list?
+hint: paint needs both measure and sand, and sand needs cut.
+right: measure, cut, sand, paint, dry and hang. The chain measure → cut → sand → paint → dry → hang runs through every job, so there's no freedom left: the order is forced.
+wrong: Only measure waits for nothing. Then cut, then sand, and only then paint, which needs measure and sand. Then dry and hang.
+
+=== task: predict easy
+title: Going round
+code:
+```python
+graph = {"a": ["b"], "b": ["c"], "c": ["b", "d"], "d": []}
+
+needs = {v: [] for v in graph}
+for u in graph:
+    for v in graph[u]:
+        needs[v].append(u)
+
+done = []
+while len(done) < len(graph):
+    free = None
+    for v in graph:
+        if v not in done and all(u in done for u in needs[v]):
+            free = v
+            break
+    if free is None:
+        break
+    done.append(free)
+print(done)
+```
+wrong[['a', 'b', 'c', 'd']]: b waits for a and for c, and c waits for b. After a, neither b nor c can ever be free.
+wrong[None]: This version breaks out of the loop instead of returning None, and prints the jobs that did get done.
+wrong[[]]: a waits for nothing, so it's free in the first round.
+hint: List what each job waits for: b waits for a and c; c waits for b; d waits for c.
+hint: After a is done, is anything free?
+right: `['a']`. a is done, but b and c each wait for the other, and d waits for c, so the search stops with three jobs never done.
+wrong: Round 1 does a. In round 2, b still waits for c, c waits for b, and d waits for c: nothing is free, so the loop breaks, leaving only a in `done`.
+
+=== task: mcq easy
+title: Recalculating a spreadsheet
+prompt: In a spreadsheet, C1 = A1 + B1 and B1 = A1 × 2. When A1 changes, why must B1 be recalculated before C1?
+* C1's formula uses B1, so B1 must hold its new value before C1 adds it up :: Right. Recalculating in topological order means every cell's inputs are up to date when it's worked out.
+- Because B comes before C in the alphabet :: The names don't matter; the references do. A cell named Z1 could have to go first.
+- Because B1 is closer to A1 on the screen :: Position on the screen doesn't matter, only which cells each formula refers to.
+- It doesn't matter: the spreadsheet can recalculate them in any order :: If C1 went first, it would add up B1's old value and give a wrong total.
+hint: Which cells does C1's formula read?
+hint: What would C1 get if B1 still held its old value?
+right: The references form a dependency graph: A1 → B1, A1 → C1 and B1 → C1. Any topological order, here A1, B1, C1, recalculates every cell after its inputs.
+wrong: C1 reads B1, so B1 has to be updated first, or C1 would use a stale value. Spreadsheets recalculate cells in a topological order of their references.
+
+=== task: code medium
+title: Stuck jobs
+prompt: Write `blocked(graph)` that returns, sorted, the jobs that can never be done: the ones left over when no remaining job is free. Repeatedly do a free job, one whose prerequisites are all done, until none is left; then return the jobs not done. A graph with no cycle gives `[]`.
+starter:
+```python
+def blocked(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    # your code here
+    return []
+```
+solution:
+```python
+def blocked(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    while True:
+        free = None
+        for v in graph:
+            if v not in done and all(u in done for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            break
+        done.append(free)
+    return sorted(v for v in graph if v not in done)
+```
+tests:
+- blocked({"a": ["b"], "b": ["c"], "c": ["b", "d"], "d": []})
+- blocked({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- blocked({"x": ["x"], "y": []})
+- blocked({"a": ["b"], "b": ["a"], "c": ["d"], "d": []})
+- blocked({"p": ["q"], "q": ["r"], "r": ["p"], "s": ["p"]})
+fail[1]: b and c wait for each other, and d waits for c: ['b', 'c', 'd'].
+fail[2]: No cycle, so every job gets done: [].
+fail[3]: x waits for itself: ['x'].
+fail[4]: a and b are stuck in a cycle; c and d are fine: ['a', 'b'].
+fail[5]: p, q and r form a cycle. s waits for nothing, so it's done: ['p', 'q', 'r'].
+hint: Loop until no free job is found, rather than until everything is done.
+hint: Afterwards, every job not in `done` is blocked: on a cycle, or waiting, directly or not, for a job that is.
+right: Jobs on a cycle never become free, and neither does anything downstream of them, so they're exactly what's left when the loop runs out of free jobs.
+wrong: Do free jobs until there are none. Return the sorted list of jobs that never got done.
+
+=== task: code medium
+title: First in the alphabet
+prompt: Write `alphabetical_order(graph)` that returns the topological order you get by always doing the free job that comes first alphabetically, or None if there's a cycle. A job is free when it isn't done and all its prerequisites are. This gives a single, predictable answer when many orders are possible.
+starter:
+```python
+def alphabetical_order(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    # your code here
+    return done
+```
+solution:
+```python
+def alphabetical_order(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    while len(done) < len(graph):
+        free = None
+        for v in sorted(graph):
+            if v not in done and all(u in done for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            return None
+        done.append(free)
+    return done
+```
+tests:
+- alphabetical_order({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- alphabetical_order({"c": [], "b": ["c"], "a": ["c"]})
+- alphabetical_order({"z": ["a"], "a": [], "m": []})
+- alphabetical_order({"a": ["b"], "b": ["a"]})
+- alphabetical_order({"x": []})
+fail[1]: boil and buy are free first, in alphabetical order; then chop, cook, table and serve: ['boil', 'buy', 'chop', 'cook', 'table', 'serve'].
+fail[2]: a and b are both free; a first: ['a', 'b', 'c'].
+fail[3]: a waits for z, so m goes first, then z, then a: ['m', 'z', 'a'].
+fail[4]: A cycle: None.
+fail[5]: One job: ['x'].
+hint: Scan `sorted(graph)` instead of `graph`, and take the first free job.
+hint: If a round finds nothing free, return None.
+right: Scanning in sorted order means each round picks the smallest free name, which fixes one particular order out of all the valid ones.
+wrong: Build the prerequisites, then repeat: scan the jobs in sorted order, take the first free one, and add it to `done`. Return None if no job is free.
+
+=== task: predict medium
+title: Same graph, different order
+prompt: `one` and `two` have exactly the same edges; only the order of their keys differs. What does it print?
+code:
+```python
+def simple_order(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    while len(done) < len(graph):
+        for v in graph:
+            if v not in done and all(u in done for u in needs[v]):
+                done.append(v)
+                break
+    return done
+
+one = {"x": ["z"], "y": ["z"], "z": []}
+two = {"y": ["z"], "x": ["z"], "z": []}
+print(simple_order(one), simple_order(two))
+```
+wrong[['x', 'y', 'z'] ['x', 'y', 'z']]: The method takes the first free job in the dictionary's order, and `two` lists y first.
+wrong[['x', 'y', 'z'] None]: Both graphs are the same DAG, so both have orders; only which one is found changes.
+wrong[['z', 'x', 'y'] ['z', 'y', 'x']]: z waits for x and y, so it has to come last in both.
+hint: x and y are both free at the start. Which is found first in each dictionary?
+hint: z waits for both.
+right: `['x', 'y', 'z'] ['y', 'x', 'z']`. Both are valid. The method's answer depends on the order it looks at the jobs, which is why tests usually check that an order is valid rather than expecting one particular order.
+wrong: In `one`, x is found first, then y, then z. In `two`, y is listed first, so it's done first. Either way z, which waits for both, is last.
+
+=== task: cells medium
+title: Valid or not?
+prompt: For this graph, is each order a valid topological order? Write yes or no.
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
+
+orders = [["A", "B", "C", "D"],
+          ["A", "C", "B", "D"],
+          ["B", "A", "C", "D"],
+          ["A", "B", "D", "C"],
+          ["A", "C", "B"]]
+```
+labels: order 1 | order 2 | order 3 | order 4 | order 5
+answer: yes | yes | no | no | no
+wrong[yes | no | no | no | no]: B and C don't depend on each other, so either can come second.
+wrong[yes | yes | no | yes | no]: In order 4, D comes before C, but the edge C → D needs C first.
+wrong[yes | yes | no | no | yes]: Order 5 leaves out D. A topological order must contain every job.
+hint: Check each edge: A before B, A before C, B before D, C before D.
+hint: Is every job there exactly once?
+right: yes, yes, no, no, no. A must be first and D last; B and C can swap. Order 3 puts B before A, order 4 puts D before C, and order 5 is missing D.
+wrong: The edges A → B, A → C, B → D and C → D force A first and D last, with B and C in either order between. Every job must appear.
+
+=== task: fill medium
+title: Is it free?
+prompt: Fill in the blanks so that each round finds a job that isn't done and whose prerequisites are all done, and the program prints:
+
+```output
+['wake', 'shower', 'coffee', 'dress', 'leave']
+```
+code:
+```python
+morning = {"wake": ["shower", "coffee"], "shower": ["dress"], "coffee": ["leave"],
+           "dress": ["leave"], "leave": []}
+
+needs = {v: [] for v in morning}
+for u in morning:
+    for v in morning[u]:
+        needs[v].append(u)
+
+done = []
+while len(done) < len(morning):
+    for v in morning:
+        if ?? and all(u in done for u in ??):
+            done.append(v)
+            break
+print(done)
+```
+answer: v not in done | needs[v]
+wrong[True | needs[v]]: wake stays free after it's done, so it's chosen again in every round: ['wake', 'wake', 'wake', 'wake', 'wake'].
+wrong[v not in done | morning[v]]: That waits for the jobs that come **after** v. leave, which nothing comes after, is done first, and the order comes out backwards.
+hint: A job that's done already mustn't be picked again.
+hint: The jobs v waits for are its prerequisites, `needs[v]`.
+right: `v not in done` skips finished jobs, and `needs[v]` holds what v waits for, so `all(...)` is True exactly when v is ready.
+wrong: Test `v not in done`, and check that every u in `needs[v]` is in `done`.
+
+=== task: mcq medium
+title: How slow is the simple method?
+prompt: The simple method from the lesson does V rounds, and each round searches through the jobs and their prerequisite lists for a free one. On a graph with V jobs and E edges, about how much work can it take in the worst case?
+* O(V × (V + E)) :: Right. Each of the V rounds may look at every job and every prerequisite.
+- O(V + E) :: That's Kahn's algorithm, which keeps track of the free jobs instead of searching for one each round.
+- O(V) :: Finding a free job alone may mean scanning many jobs, each round.
+- O(2ⁿ) :: Nothing here tries every possible order; it builds one order directly.
+hint: How many rounds are there?
+hint: How much can one round's search cost?
+right: V rounds of up to O(V + E) work each: O(V × (V + E)). Kahn's algorithm, in the next lesson, cuts it to O(V + E) by counting unfinished prerequisites and queuing jobs as they become free.
+wrong: There's one round per job, and each round may scan all the jobs and their prerequisites again, so the total is V times O(V + E).
+
+=== task: predict medium
+title: One more edge
+prompt: Each copy of the graph gets one extra edge. What does it print?
+code:
+```python
+def simple_order(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = []
+    while len(done) < len(graph):
+        free = None
+        for v in graph:
+            if v not in done and all(u in done for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            return None
+        done.append(free)
+    return done
+
+first = {"a": ["b"], "b": ["c"], "c": ["d"], "d": []}
+second = {"a": ["b"], "b": ["c"], "c": [], "d": ["a"]}
+print(simple_order(first), simple_order(second))
+```
+wrong[['a', 'b', 'c', 'd'] ['a', 'b', 'c', 'd']]: In `second`, d comes before a, and a waits for d: d must be done first.
+wrong[['a', 'b', 'c', 'd'] None]: `second` has no cycle: d → a → b → c is a chain. Only a cycle gives None.
+wrong[None ['d', 'a', 'b', 'c']]: `first` is the chain a → b → c → d: no cycle.
+hint: Draw both graphs. Does either one have an arrow going back to an earlier job?
+hint: In `second`, which job waits for nothing?
+right: `['a', 'b', 'c', 'd'] ['d', 'a', 'b', 'c']`. Both are chains, so each has exactly one order: one starting at a, one starting at d.
+wrong: `first` is a → b → c → d. `second` is d → a → b → c: d is the only job waiting for nothing, so it comes first.
+
+=== task: multi medium
+title: A job for topological sort?
+prompt: Choose **every** task that a topological sort solves.
+* Deciding the order to compile source files, where each file must come after the files it imports :: Right. Imports are dependencies, and compiling after them is a topological order.
+* Planning a degree, where some courses have other courses as prerequisites :: Right. Courses are jobs and prerequisites are edges.
+* Installing software packages after the packages they depend on :: Right. Package managers order installs this way, and report cycles as errors.
+- Finding the fewest flights between two cities :: That's a shortest path with every flight counting the same: BFS.
+- Splitting a friendship network into separate groups :: That's connected pieces: DFS or BFS from each unvisited person.
+- Sorting exam scores from highest to lowest :: Ordinary sorting compares values; there are no dependencies between the scores.
+hint: Is there a "must come before" relation between the things being ordered?
+hint: A topological sort orders things; it doesn't measure distances or split groups.
+right: Builds, degree plans and package installs are all jobs with prerequisites, which is exactly what a topological sort orders. Shortest paths, groups and ordinary sorting are other problems.
+wrong: Look for jobs where some must come before others. Distances need BFS, groups need a search from each piece, and sorting numbers needs a comparison sort.
+
+=== task: parsons medium
+title: In rounds
+prompt: If jobs can run at the same time, each round can do **every** job that's free. Arrange the lines so that `rounds` returns a list of rounds, each a list of the jobs done in it, or None if there's a cycle. The program prints:
+
+```output
+[['buy', 'boil', 'table'], ['chop'], ['cook'], ['serve']]
+```
+
+Not every line is needed.
+lines:
+```python
+def rounds(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = set()
+    result = []
+    while len(done) < len(graph):
+        ready = [v for v in graph if v not in done and all(u in done for u in needs[v])]
+        if not ready:
+            return None
+        result.append(ready)
+        done.update(ready)
+    return result
+```
+distractors:
+```python
+        result.append(done)
+        done.add(ready)
+```
+after:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+print(rounds(dinner))
+```
+hint: Each round collects all the free jobs first, and only then marks them as done.
+hint: `done.update(ready)` adds every job in the list to the set.
+right: Jobs found free in the same round don't depend on each other, so they can run together. The number of rounds is the length of the longest chain of dependencies, here buy, chop, cook, serve.
+wrong: Build the prerequisites. Then, until everything is done: collect the free jobs; return None if there are none; record them as a round and add them to `done`.
+
+=== task: order medium
+title: The simple method, step by step
+prompt: Put the steps of the simple method in order.
+items:
+- Turn the edges round to list each job's prerequisites.
+- Start with no jobs done.
+- Look through the jobs for one that isn't done and whose prerequisites are all done.
+- If there isn't one, stop and report a cycle.
+- Otherwise do it, and look again until every job is done.
+hint: The prerequisites are needed before any job can be checked.
+hint: A cycle is noticed when a search finds nothing free.
+right: Build the prerequisites, start with nothing done, then repeatedly find a free job and do it, stopping with "cycle" if a search finds none.
+wrong: First the prerequisite lists, then an empty `done`. Each round searches for a free job; finding none means a cycle, and finding one means it's done and the search repeats.
+
+=== task: code hard
+title: Only one order?
+prompt: Write `is_unique(graph)` that returns True if the graph has exactly one topological order, and False if it has several or none (a cycle). Do the jobs round by round as in the simple method, but in each round collect **all** the free jobs: the order is unique exactly when every round has exactly one free job.
+starter:
+```python
+def is_unique(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = set()
+    # your code here
+    return True
+```
+solution:
+```python
+def is_unique(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    done = set()
+    while len(done) < len(graph):
+        ready = [v for v in graph if v not in done and all(u in done for u in needs[v])]
+        if len(ready) != 1:
+            return False
+        done.add(ready[0])
+    return True
+```
+tests:
+- is_unique({"paint": ["dry"], "measure": ["cut", "paint"], "cut": ["sand"], "sand": ["paint"], "dry": ["hang"], "hang": []})
+- is_unique({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- is_unique({"a": ["b"], "b": []})
+- is_unique({"a": [], "b": []})
+- is_unique({"a": ["b"], "b": ["a"]})
+- is_unique({"x": []})
+fail[1]: The chain measure, cut, sand, paint, dry, hang runs through every job: True.
+fail[2]: buy, boil and table are free together at the start: False.
+fail[3]: A two-job chain: True.
+fail[4]: Two jobs that don't depend on each other can go either way: False.
+fail[5]: A cycle has no order at all: False.
+fail[6]: One job: True.
+hint: If a round has two free jobs, either could go first, so there are at least two orders.
+hint: If a round has no free job, there's a cycle: no order.
+right: Two free jobs at once can always be swapped, so uniqueness needs exactly one free job every round. That happens exactly when one chain of edges runs through every job.
+wrong: Repeat until all jobs are done: list the free jobs; if there isn't exactly one, return False; otherwise mark it done. Return True at the end.
+
+=== task: code hard
+title: The longest chain
+prompt: Write `longest_chain(graph)` that returns the number of jobs on the longest chain of dependencies, like buy → chop → cook → serve (4 jobs) in the dinner graph. Work through the jobs in a topological order: a job's chain length is 1 more than the longest chain among its prerequisites, or 1 if it has none. Return 0 for an empty graph. The graph has no cycles.
+starter:
+```python
+def longest_chain(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    # your code here
+    return 0
+```
+solution:
+```python
+def longest_chain(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    order = []
+    while len(order) < len(graph):
+        for v in graph:
+            if v not in order and all(u in order for u in needs[v]):
+                order.append(v)
+                break
+    chain = {}
+    for v in order:
+        longest = 0
+        for u in needs[v]:
+            longest = max(longest, chain[u])
+        chain[v] = longest + 1
+    return max(chain.values()) if chain else 0
+```
+tests:
+- longest_chain({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- longest_chain({"a": [], "b": []})
+- longest_chain({"a": ["b"], "b": ["c"], "c": []})
+- longest_chain({})
+- longest_chain({"a": ["b", "c"], "b": ["d"], "c": ["e"], "e": ["d"], "d": []})
+fail[1]: buy, chop, cook, serve: 4.
+fail[2]: No edges: each job is a chain of 1.
+fail[3]: A straight chain of 3.
+fail[4]: No jobs: 0.
+fail[5]: a → c → e → d is longer than a → b → d: 4.
+hint: In a topological order, every prerequisite's chain length is known before the job's own.
+hint: `chain[v] = 1 + max(chain[u] for u in needs[v])`, or 1 when v has no prerequisites.
+right: Processing jobs in topological order guarantees each prerequisite is finished first, so each chain length is built from finished ones. The longest chain is also the number of rounds needed when jobs can run in parallel.
+wrong: Find a topological order. Go through it, setting each job's chain to 1 plus the largest chain among its prerequisites. Return the largest chain, or 0.
+
+=== task: code hard
+title: Every possible order
+prompt: Write `all_orders(graph)` that returns every topological order, as lists, in the order a backtracking search finds them when it tries jobs in the dictionary's order. Use a helper `extend(graph, needs, done, found)`: if every job is done, record a copy of `done`; otherwise, for each free job, add it, extend, and remove it again. A graph with a cycle gives `[]`.
+starter:
+```python
+def extend(graph, needs, done, found):
+    # your code here
+    pass
+
+def all_orders(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    found = []
+    extend(graph, needs, [], found)
+    return found
+```
+solution:
+```python
+def extend(graph, needs, done, found):
+    if len(done) == len(graph):
+        found.append(done[:])
+        return
+    for v in graph:
+        if v not in done and all(u in done for u in needs[v]):
+            done.append(v)
+            extend(graph, needs, done, found)
+            done.pop()
+
+def all_orders(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    found = []
+    extend(graph, needs, [], found)
+    return found
+```
+tests:
+- all_orders({"a": ["c"], "b": ["c"], "c": []})
+- all_orders({"a": ["b", "c"], "b": ["d"], "c": ["d"], "d": []})
+- all_orders({"a": ["b"], "b": ["a"]})
+- all_orders({"x": []})
+- (lambda: len(all_orders({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})))()
+fail[1]: a and b in either order, then c: [['a', 'b', 'c'], ['b', 'a', 'c']].
+fail[2]: A first, D last, B and C either way: [['a', 'b', 'c', 'd'], ['a', 'c', 'b', 'd']].
+fail[3]: A cycle: no free job ever, so no orders: [].
+fail[4]: [['x']].
+fail[5]: The dinner graph has 15 orders.
+hint: The choices are the free jobs; the search tries each one in turn.
+hint: Record `done[:]`, a copy, because `done` keeps changing.
+right: Each level of the search picks one free job for the next position and undoes it afterwards, so every way of making choices that respects the edges is reached exactly once: backtracking over topological orders.
+wrong: If all jobs are placed, record a copy. Otherwise loop over the jobs; for each free one, append it, recurse, then pop it.
+
+=== task: code hard
+title: A tiny spreadsheet
+prompt: Each cell of a tiny spreadsheet holds either a number or a list of cell names, meaning "the sum of those cells". Write `spreadsheet(cells)` that returns a dictionary of every cell's value, or None if the references go round in a cycle. Build the graph with an edge from each referenced cell to the cell that uses it, find an order with the simple method, then work out the values in that order. `isinstance(x, list)` tells you whether a cell holds a list.
+starter:
+```python
+def spreadsheet(cells):
+    graph = {name: [] for name in cells}
+    # your code here
+    return {}
+```
+solution:
+```python
+def spreadsheet(cells):
+    graph = {name: [] for name in cells}
+    for name in cells:
+        if isinstance(cells[name], list):
+            for ref in cells[name]:
+                graph[ref].append(name)
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    order = []
+    while len(order) < len(graph):
+        free = None
+        for v in graph:
+            if v not in order and all(u in order for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            return None
+        order.append(free)
+    value = {}
+    for name in order:
+        if isinstance(cells[name], list):
+            total = 0
+            for ref in cells[name]:
+                total += value[ref]
+            value[name] = total
+        else:
+            value[name] = cells[name]
+    return value
+```
+tests:
+- spreadsheet({"A1": 5, "B1": ["A1", "A1"], "C1": ["A1", "B1"]})
+- spreadsheet({"X": ["Y"], "Y": ["X"]})
+- spreadsheet({"Z": 7})
+- spreadsheet({"T": ["A", "B"], "A": 2, "B": ["A"]})
+fail[1]: B1 = 5 + 5 = 10, and C1 = 5 + 10 = 15: {'A1': 5, 'B1': 10, 'C1': 15}.
+fail[2]: X and Y refer to each other: None.
+fail[3]: One plain number: {'Z': 7}.
+fail[4]: T is listed first but needs A and B, so it must be worked out last: A = 2, B = 2, T = 4.
+error[KeyError]: A value was used before it was worked out. Compute the cells in a topological order of their references.
+hint: For each cell with a list, add an edge from every cell it refers to, to it.
+hint: Find a topological order (None if there's a cycle), then go through it: a number is its own value, a list adds up values already worked out.
+right: Ordering the cells topologically guarantees every reference has its value before the cell that uses it, which is how real spreadsheets recalculate, and why they report circular references.
+wrong: Build edges from referenced cells to the cells using them, find an order with the simple method, and evaluate the cells in that order, returning None on a cycle.
+
+=== task: predict hard
+title: Before or after the visit?
+prompt: This DFS records each vertex twice: in `pre` when its visit starts, and in `post` when its visit finishes. What does it print?
+code:
+```python
+dag = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
+
+def is_valid(graph, order):
+    pos = {v: i for i, v in enumerate(order)}
+    return all(pos[u] < pos[v] for u in graph for v in graph[u])
+
+def visit(v, seen, pre, post):
+    seen.add(v)
+    pre.append(v)
+    for w in dag[v]:
+        if w not in seen:
+            visit(w, seen, pre, post)
+    post.append(v)
+
+pre, post = [], []
+visit("A", set(), pre, post)
+print(pre, post[::-1])
+print(is_valid(dag, pre), is_valid(dag, post[::-1]))
+```
+wrong[['A', 'B', 'D', 'C'] ['A', 'B', 'D', 'C']\nFalse False]: `post` is the finishing order: D finishes first, then B, then C, then A. Reversed, that's A, C, B, D.
+wrong[['A', 'B', 'D', 'C'] ['A', 'C', 'B', 'D']\nTrue True]: In the visiting order, D (reached through B) comes before C, but the edge C → D needs C first.
+wrong[['A', 'B', 'C', 'D'] ['A', 'C', 'B', 'D']\nTrue True]: DFS goes deep from B to D before it gets back to C, so the visiting order is A, B, D, C.
+hint: Visiting order: A, then B, then D (through B), then C. Finishing order: D first, since it leads nowhere.
+hint: Check the edge C → D in each order.
+right: `['A', 'B', 'D', 'C'] ['A', 'C', 'B', 'D']`, then `False True`. The order DFS reaches vertices in isn't topological, but the reverse of the order they finish in is: a vertex finishes only after everything it leads to. That's the idea behind the DFS-based sort, two lessons on.
+wrong: Visits start A, B, D, C, and finish D, B, C, A. Reversed, the finishing order is A, C, B, D, which keeps every edge forward; the visiting order breaks C → D.
+
+=== task: predict hard
+title: Missing jobs
+prompt: This checker skips any edge whose jobs aren't both in the order. What does it print?
+code:
+```python
+def looks_valid(graph, order):
+    pos = {v: i for i, v in enumerate(order)}
+    for u in graph:
+        for v in graph[u]:
+            if u in pos and v in pos and pos[u] >= pos[v]:
+                return False
+    return True
+
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+print(looks_valid(dinner, ["buy", "chop", "cook"]), looks_valid(dinner, ["serve"]),
+      looks_valid(dinner, ["chop", "buy"]))
+```
+wrong[False False False]: Edges with a job missing from the order are skipped, so the first two orders have nothing that can fail.
+wrong[True True True]: In the third order, both jobs of the edge buy → chop are present, and chop comes first.
+wrong[False True False]: buy, chop and cook appear in the right order, and the skipped edges can't fail. The checker never notices the missing jobs.
+hint: Which edges are actually compared in each call?
+hint: Does the checker ever check that every job is in the order?
+right: `True True False`. Skipping edges with missing jobs lets incomplete orders through: a single job passes. A real check must also confirm that the order contains every job exactly once.
+wrong: First order: only buy → chop and chop → cook are checked, and both are fine. Second: no edge has both jobs present. Third: buy → chop is checked and broken.
+
+=== task: cells hard
+title: How many orders?
+prompt: How many different topological orders does each graph have?
+code:
+```python
+chain = {"a": ["b"], "b": ["c"], "c": []}
+vee = {"a": ["c"], "b": ["c"], "c": []}
+diamond = {"a": ["b", "c"], "b": ["d"], "c": ["d"], "d": []}
+two_chains = {"a": ["b"], "b": [], "c": ["d"], "d": []}
+three_alone = {"a": [], "b": [], "c": []}
+```
+labels: chain | vee | diamond | two_chains | three_alone
+answer: 1 | 2 | 2 | 6 | 6
+wrong[1 | 2 | 2 | 4 | 6]: The two chains can interleave: choose which 2 of the 4 positions hold a and b, keeping each chain in order. That's 6 ways.
+wrong[1 | 2 | 4 | 6 | 6]: In the diamond, a must be first and d last; only b and c can swap: 2.
+wrong[1 | 1 | 2 | 6 | 6]: In the vee, a and b both come before c, but not before each other: 2.
+wrong[1 | 2 | 2 | 6 | 3]: Three independent jobs can come in any of 3 × 2 × 1 = 6 orders.
+hint: Jobs that must come in a fixed order have no choice; independent jobs multiply the possibilities.
+hint: Two chains of 2: pick the positions of one chain's jobs among the 4 places.
+right: 1, 2, 2, 6 and 6. The more freedom the edges leave, the more orders there are: none in a chain, all 3! for three unrelated jobs.
+wrong: chain: forced. vee: a and b swap. diamond: b and c swap. two_chains: C(4, 2) = 6 interleavings. three_alone: 3! = 6.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to `simple_order` from the lesson. Choose **every** change that can make it return something that isn't a topological order, or the wrong answer for a cycle.
+code:
+```python
+def simple_order(graph):
+    needs = needs_of(graph)
+    done = []
+    while len(done) < len(graph):
+        free = None
+        for v in graph:
+            if v not in done and all(u in done for u in needs[v]):
+                free = v
+                break
+        if free is None:
+            return None
+        done.append(free)
+    return done
+```
+* Checking `graph[v]` instead of `needs[v]` :: Right. That waits for the jobs that come after v, so jobs are done before their prerequisites.
+* Leaving out `v not in done` :: Right. A finished job is still "free", so it can be chosen again and again, filling the list with repeats.
+* Returning `done` instead of None when no job is free :: Right. For a graph with a cycle it returns a partial list as if it were a full order.
+- Leaving out the `break`, so `free` ends up as the last free job in the scan :: The last free job is still free, so the order is still valid, only a different one.
+- Scanning `sorted(graph)` instead of `graph` :: That picks the alphabetically first free job: a different valid order.
+- Keeping `done` as both a list and a set, checking the set and appending to the list :: That only makes `v not in done` faster.
+hint: Which changes let a job be done before its prerequisites, or more than once?
+hint: Which changes only choose a different free job?
+right: Waiting on the wrong lists, forgetting what's done, and hiding cycles all break it. Choosing a different free job, or speeding up the check, still gives a valid order.
+wrong: A job may be done only when it isn't done yet and its own prerequisites are done, and a round with nothing free must report a cycle. Which free job is picked doesn't matter.
+
+=== task: fill hard
+title: Building from the back
+prompt: An order can also be built from the end: a job that nothing left over waits for, one whose later jobs are all placed, can go at the front of what's been placed so far. Fill in the blanks so that the program prints:
+
+```output
+['table', 'boil', 'buy', 'chop', 'cook', 'serve']
+```
+code:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+
+def backwards_order(graph):
+    order = []
+    while len(order) < len(graph):
+        last = None
+        for v in graph:
+            if v not in order and all(w in order for w in ??):
+                last = v
+                break
+        if last is None:
+            return None
+        order.insert(??, last)
+    return order
+
+print(backwards_order(dinner))
+```
+answer: graph[v] | 0
+wrong[graph[v] | len(order)]: Inserting at the end makes the order run backwards, with serve first and the jobs nothing waits for at the end.
+wrong[needs[v] | 0]: There's no `needs` here; this version only uses the jobs that come after v, which the graph lists directly. Python raises a NameError.
+hint: A job can be placed once everything that comes after it is placed.
+hint: The job placed now must come before everything placed so far.
+right: `graph[v]` holds the jobs that must come after v; when they're all placed, v can go in front of them. Each new job goes at position 0, so the finished list runs from first to last.
+wrong: Check `all(w in order for w in graph[v])`, and put the job found at the front with `order.insert(0, last)`.
+
+=== task: parsons hard
+title: Finding the cycle
+prompt: When the simple method gets stuck, every stuck job waits for at least one other stuck job. So walking from a stuck job to a stuck prerequisite, again and again, must eventually come back to a job already on the walk, and the part of the walk from there is a cycle. Arrange the lines so that `find_cycle` returns it, and the program prints:
+
+```output
+['a', 'c', 'b']
+```
+
+Not every line is needed.
+lines:
+```python
+def find_cycle(needs, stuck):
+    path = []
+    v = stuck[0]
+    while v not in path:
+        path.append(v)
+        for u in needs[v]:
+            if u in stuck:
+                v = u
+                break
+    return path[path.index(v):]
+```
+distractors:
+```python
+            if u not in stuck:
+    return path
+```
+after:
+```python
+needs = {"e": ["a"], "a": ["c", "d"], "b": ["a"], "c": ["b"], "d": []}
+stuck = ["e", "a", "b", "c"]
+print(find_cycle(needs, stuck))
+```
+hint: Step to a prerequisite that's also stuck: one always exists.
+hint: The walk may start outside the cycle, like e here, so return only the part from the first repeated job.
+right: The walk can't go on forever without repeating a job, and the first repeat closes a loop: a waits for c, c waits for b, b waits for a. Slicing from that job's first position drops the lead-in, e.
+wrong: Walk from the first stuck job, always moving to a stuck prerequisite, until a job repeats. Return the path from that job's first appearance.
