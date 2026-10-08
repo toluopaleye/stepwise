@@ -1,0 +1,1421 @@
+=== lesson
+id: algo-bfs-grid
+title: BFS on grids
+summary: A maze, a map or a game board drawn as a grid is a graph: each open cell is a vertex, joined to the cells next to it. BFS on a grid finds the fewest moves from one cell to another. You'll work out a cell's neighbours from offsets, check the edges of the grid before reading a cell, build a map of distances, rebuild a route, spread from several cells at once, and change the rules for moving.
+
+=== learn
+### A grid is a graph
+Here's a small maze. `S` is the start, `E` is the exit, `#` is a wall and `.` is an open cell:
+```text
+S . . #
+# # . #
+. . . .
+# . # E
+```
+It's a graph in disguise. Each cell that isn't a wall is a vertex, and two open cells are joined by an edge when they're side by side: one directly above, below, left or right of the other. Getting from S to E in the fewest moves is a shortest-path problem, which is BFS's job.
+
+In Python, a grid is often a list of strings, one per row. `grid[r][c]` is the cell in row r and column c, both counting from 0 at the top left. The row comes first, then the column:
+```python
+maze = ["S..#",
+        "##.#",
+        "....",
+        "#.#E"]
+
+print(maze[0][0], maze[1][2], maze[3][3])
+print(len(maze), len(maze[0]))
+```
+```output
+S . E
+4 4
+```
+A cell is named by the tuple (r, c). `len(maze)` is the number of rows, and `len(maze[0])` is the number of columns. A list of lists works the same way, and its cells can be changed.
+
+### The four neighbours
+Moving up takes 1 off the row, and moving left takes 1 off the column:
+```text
+             (r - 1, c)
+(r, c - 1)     (r, c)     (r, c + 1)
+             (r + 1, c)
+```
+So each move is an **offset** to add to (r, c): (-1, 0) is up, (1, 0) is down, (0, -1) is left and (0, 1) is right. A neighbour (nr, nc) counts only if it passes two checks: it's inside the grid, and it isn't a wall.
+```python
+DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+def neighbours(grid, r, c):
+    rows, cols = len(grid), len(grid[0])
+    result = []
+    for dr, dc in DIRS:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#":
+            result.append((nr, nc))
+    return result
+
+print(neighbours(maze, 0, 0))
+print(neighbours(maze, 2, 2))
+```
+```output
+[(0, 1)]
+[(1, 2), (2, 1), (2, 3)]
+```
+The corner cell (0, 0) has nothing above it or to its left, and a wall below it, so only (0, 1) is left. The four cells can also be listed directly, as in `for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:`. Animation 1 checks a cell's neighbours one at a time.
+
+### Edges before walls
+The order of the checks matters. `and` stops at the first part that's False, so with the bounds checked first, a cell outside the grid is never looked up.
+
+Leaving out a bounds check goes wrong in two different ways. Past the bottom or right edge, `grid[nr]` or `grid[nr][nc]` raises an IndexError. Past the top or left edge, the index is -1, and Python doesn't complain at all: `grid[-1]` is the **last** row. A search without the `0 <=` checks quietly wraps round to the other side of the grid:
+```python
+print(maze[-1], maze[0][-1])
+```
+```output
+#.#E #
+```
+
+### Fewest moves
+BFS on a grid is the BFS from the previous lesson, with cells as the vertices. A dictionary keyed by (r, c) tuples records how many moves each cell is from the start:
+```python
+from collections import deque
+
+def fewest_moves(grid, start, goal):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for nr, nc in neighbours(grid, r, c):
+            if (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+
+print(fewest_moves(maze, (0, 0), (3, 3)))
+print(fewest_moves(maze, (0, 0), (0, 0)))
+```
+```output
+6
+0
+```
+`r, c = queue.popleft()` unpacks the cell's tuple into its row and column. The search returns the distance as soon as the goal leaves the queue, and -1 if the queue runs out without reaching it.
+
+To find where S and E are, scan the grid row by row:
+```python
+def find(grid, ch):
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == ch:
+                return (r, c)
+    return None
+
+print(find(maze, "S"), find(maze, "E"))
+```
+```output
+(0, 0) (3, 3)
+```
+
+### A map of distances
+Without a goal, BFS keeps going until the queue is empty, and every reachable cell gets a distance. A grid of distances, a list of lists with the same shape as the maze, shows them all at once. -1 marks a cell that hasn't been reached, so the grid also does the job of `seen`:
+```python
+def distance_map(grid, start):
+    rows, cols = len(grid), len(grid[0])
+    dist = [[-1] * cols for _ in range(rows)]
+    r, c = start
+    dist[r][c] = 0
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        for nr, nc in neighbours(grid, r, c):
+            if dist[nr][nc] == -1:
+                dist[nr][nc] = dist[r][c] + 1
+                queue.append((nr, nc))
+    return dist
+
+for row in distance_map(maze, (0, 0)):
+    print(row)
+```
+```output
+[0, 1, 2, -1]
+[-1, -1, 3, -1]
+[6, 5, 4, 5]
+[-1, 6, -1, 6]
+```
+The walls stay at -1, and so would any open cell that can't be reached. The distances spread out from the start in rings, like ripples on a pond. Animation 2 fills in a map like this one.
+
+Build the rows with `[[-1] * cols for _ in range(rows)]`, which makes a new list for each row. `[[-1] * cols] * rows` looks the same, but it puts **one** row list into the grid `rows` times, so writing a distance into one row writes it into every row.
+
+### Rebuilding the route
+The route itself comes from parent links, as in the previous lesson, with cells as the keys: when a cell is found, record the cell it was found from, then walk back from the goal.
+```python
+def route(grid, start, goal):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            break
+        for nr, nc in neighbours(grid, r, c):
+            if (nr, nc) not in parent:
+                parent[(nr, nc)] = (r, c)
+                queue.append((nr, nc))
+    if goal not in parent:
+        return None
+    path = []
+    cell = goal
+    while cell is not None:
+        path.append(cell)
+        cell = parent[cell]
+    return path[::-1]
+
+print(route(maze, (0, 0), (3, 3)))
+```
+```output
+[(0, 0), (0, 1), (0, 2), (1, 2), (2, 2), (2, 3), (3, 3)]
+```
+Example 1 does the same in a bigger maze and draws the route on it.
+
+### Several starts at once
+Some questions start from many cells together: how far each cell is from the nearest exit, or how many minutes a fire takes to spread from several places. Put **every** starting cell in the queue at distance 0 before the loop begins. The rings then grow from all of them at the same time, and each cell is first reached from whichever start is nearest:
+```python
+def nearest_map(grid, starts):
+    rows, cols = len(grid), len(grid[0])
+    dist = [[-1] * cols for _ in range(rows)]
+    queue = deque()
+    for r, c in starts:
+        dist[r][c] = 0
+        queue.append((r, c))
+    while queue:
+        r, c = queue.popleft()
+        for nr, nc in neighbours(grid, r, c):
+            if dist[nr][nc] == -1:
+                dist[nr][nc] = dist[r][c] + 1
+                queue.append((nr, nc))
+    return dist
+
+hall = ["....",
+        "....",
+        "...."]
+for row in nearest_map(hall, [(0, 0), (2, 3)]):
+    print(row)
+```
+```output
+[0, 1, 2, 2]
+[1, 2, 2, 1]
+[2, 2, 1, 0]
+```
+One search does the work of a separate search from each start, and it's still one pass over the grid.
+
+### Other ways to move
+The offsets are the rules for moving, and BFS doesn't mind what they are. Adding the four diagonals, (-1, -1), (-1, 1), (1, -1) and (1, 1), lets a move reach any of the 8 surrounding cells, like a king in chess. A knight moves 2 squares one way and 1 square the other, so its 8 offsets are (±1, ±2) and (±2, ±1). Only the list of offsets changes; the search stays the same. Example 2 counts a knight's moves.
+
+### How much work?
+Every cell enters the queue at most once, and each one checks at most 4 neighbours, so BFS on a grid with R rows and C columns is O(R × C): it's proportional to the number of cells. The distances take O(R × C) space as well. A map 1,000 cells wide and 1,000 tall has a million cells, and BFS crosses it in a few million steps, where trying every route would never finish.
+
+=== keypoints
+- A grid is a graph: each open cell (r, c) is a vertex, joined to the cells directly above, below, left and right of it.
+- `grid[r][c]` is row r, column c, from 0 at the top left. Neighbours come from offsets: `nr, nc = r + dr, c + dc`.
+- Check `0 <= nr < rows and 0 <= nc < cols` before reading `grid[nr][nc]`: an index of -1 wraps round to the other side instead of failing.
+- Record distances in a dictionary keyed by (r, c), or in a grid built with `[[-1] * cols for _ in range(rows)]`, where -1 means not reached yet.
+- To spread from several cells at once, put them all in the queue at distance 0 before the loop.
+- Diagonal or knight moves only change the list of offsets. BFS on a grid is O(rows × cols).
+
+=== example: The way out
+intro: BFS with parent links finds the shortest way through a maze. Walking back from the exit marks each cell of the route with `*`, and printing the rows draws the route on the maze.
+```python
+from collections import deque
+
+maze = ["S..#....",
+        ".#.#.##.",
+        ".#...#..",
+        ".####.#.",
+        "......#E"]
+rows, cols = len(maze), len(maze[0])
+start, goal = (0, 0), (4, 7)
+
+parent = {start: None}
+queue = deque([start])
+while queue:
+    r, c = queue.popleft()
+    if (r, c) == goal:
+        break
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < rows and 0 <= nc < cols and maze[nr][nc] != "#":
+            if (nr, nc) not in parent:
+                parent[(nr, nc)] = (r, c)
+                queue.append((nr, nc))
+
+drawing = [list(row) for row in maze]
+cell = parent[goal]
+while cell != start:
+    r, c = cell
+    drawing[r][c] = "*"
+    cell = parent[cell]
+for row in drawing:
+    print("".join(row))
+```
+1: `deque` makes the queue.
+3-7: The maze: S at the top left, E at the bottom right.
+8-9: 5 rows and 8 columns, and the cells to go from and to.
+11-12: The start has no parent; the search begins there.
+13-16: Take the next cell, and stop once the exit leaves the queue.
+17-22: Each of the four neighbours must be on the grid and open, and not found already. A new one remembers the cell it was found from.
+24: Strings can't be changed, so copy each row into a list of characters.
+25-29: Walk back from the cell before the exit to the start, writing `*` into each cell on the way.
+30-31: `"".join(row)` turns each row back into a string. The route takes 15 moves; the way down the left side leads to a dead end.
+
+=== example: Knight moves
+intro: A knight on a chessboard moves 2 squares one way and 1 square the other. BFS with the knight's 8 offsets finds the fewest moves between two squares, on a board of any size.
+```python
+from collections import deque
+
+MOVES = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]
+
+def knight_moves(start, goal, size):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for dr, dc in MOVES:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < size and 0 <= nc < size and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+
+print(knight_moves((0, 0), (7, 7), 8))
+print(knight_moves((0, 0), (0, 1), 8))
+print(knight_moves((0, 0), (1, 1), 3))
+```
+3: The knight's 8 moves, as offsets.
+5-17: BFS with a dictionary of distances. There are no walls, only the edges of the board to stay inside.
+19: From one corner to the opposite corner takes 6 moves.
+20: The square next to the start takes 3 moves: a knight can't step sideways.
+21: On a 3 × 3 board, no knight move lands on the centre, so it can never be reached.
+
+=== animation: Checking the four neighbours
+view: grid grid row=nr col=nc
+vars r c dr dc nr nc found
+intro: The neighbours of the cell in row 1, column 0. The highlighted cell is the neighbour being checked; nothing is highlighted when it's off the grid.
+```python
+grid = [[".", ".", "#"], [".", "#", "."], [".", ".", "."]]
+rows, cols = len(grid), len(grid[0])
+r, c = 1, 0
+found = []
+for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < rows and 0 <= nc < cols:
+        if grid[nr][nc] != "#":
+            found.append((nr, nc))
+print(found)
+```
+1: The grid as a list of lists. "#" is a wall.
+2: 3 rows and 3 columns.
+3: The cell whose neighbours we want: row 1, column 0.
+4: The open neighbours will be collected here.
+5: Take the next offset: up, down, left, then right. When all four are done, the loop ends.
+6: Move by ({dr}, {dc}) from ({r}, {c}): the neighbour is ({r + dr}, {c + dc}).
+7: {'Is (' + str(nr) + ', ' + str(nc) + ') on the grid? ' + ('Yes.' if 0 <= nr < rows and 0 <= nc < cols else 'No. Without this check, grid[' + str(nr) + '][' + str(nc) + '] would quietly read the last cell of the row.' if nc < 0 else 'No.')}
+8: {'Is (' + str(nr) + ', ' + str(nc) + ') open? ' + ('Yes.' if grid[nr][nc] != '#' else 'No, it is a wall.')}
+9: ({nr}, {nc}) is a neighbour.
+10: The open neighbours of (1, 0): {found}.
+
+=== animation: The distance map fills in
+view: grid grid row=nr col=nc
+grid dist row=nr col=nc
+queue queue
+vars r c nr nc
+intro: BFS from the top left corner of a 2 × 3 grid, with a wall at (1, 0). The map of distances starts at -1 everywhere, and each cell's distance is written in when it's first found. The highlighted cell, in both the maze and the map, is the neighbour being checked.
+```python
+from collections import deque
+
+grid = [[".", ".", "."], ["#", ".", "."]]
+dist = [[-1, -1, -1], [-1, -1, -1]]
+dist[0][0] = 0
+queue = deque([(0, 0)])
+while queue:
+    r, c = queue.popleft()
+    for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+        if 0 <= nr < 2 and 0 <= nc < 3 and grid[nr][nc] != "#" and dist[nr][nc] == -1:
+            dist[nr][nc] = dist[r][c] + 1
+            queue.append((nr, nc))
+```
+1: deque makes the queue.
+3: The maze: (1, 0) is a wall.
+4: The distance map: -1 everywhere means nothing has been reached yet.
+5: The start, (0, 0), is 0 moves from itself.
+6: The queue starts with the start cell.
+7: {'Cells are waiting: keep going.' if queue else 'The queue is empty: every reachable cell has its distance.'}
+8: Take the cell at the front: {queue[0]}.
+9: Look at the next of ({r}, {c})'s four neighbouring cells: up, down, left, then right. When all four are done, go back to the queue.
+10: {'(' + str(nr) + ', ' + str(nc) + ') is off the grid.' if not (0 <= nr < 2 and 0 <= nc < 3) else '(' + str(nr) + ', ' + str(nc) + ') is a wall.' if grid[nr][nc] == '#' else '(' + str(nr) + ', ' + str(nc) + ') already has distance ' + str(dist[nr][nc]) + '.' if dist[nr][nc] != -1 else '(' + str(nr) + ', ' + str(nc) + ') is new.'}
+11: It's one move further than ({r}, {c}): distance {dist[r][c] + 1}.
+12: ({nr}, {nc}) joins the back of the queue.
+
+=== task: predict easy
+title: Row first
+code:
+```python
+grid = ["abcde",
+        "fghij",
+        "klmno"]
+
+print(grid[1][2], grid[2][0], grid[0][1])
+print(len(grid), len(grid[0]))
+```
+wrong[l c f\n3 5]: That reads the column first. `grid[1][2]` takes row 1, which is `"fghij"`, then its character at position 2: `h`.
+wrong[h k b\n5 3]: `len(grid)` counts the strings in the list, which are the rows: 3. `len(grid[0])` is the length of one row: 5 columns.
+wrong[g l c\n3 5]: Both indexes count from 0: row 1 is the second row, and position 2 is its third character, `h`.
+hint: `grid[1]` is a whole row: the string `"fghij"`.
+hint: `len(grid)` counts rows, and `len(grid[0])` counts the characters in the first row.
+right: `h k b`, then `3 5`. The first index picks the row and the second picks the character in it, both counting from 0. There are 3 rows of 5 columns.
+wrong: `grid[1][2]` is row 1 (`"fghij"`), position 2: `h`. `grid[2][0]` is the first character of `"klmno"`: `k`. `grid[0][1]` is `b`. The grid has 3 rows and 5 columns.
+
+=== task: mcq easy
+title: Which way is up?
+prompt: Cells are named (r, c), with row 0 at the top. Which offset, added to (r, c), gives the cell directly above it?
+* (-1, 0) :: Right. The row above has a number one smaller, and the column stays the same.
+- (1, 0) :: Row numbers grow downwards, from 0 at the top, so adding 1 to the row moves down.
+- (0, -1) :: That changes the column, so it moves left within the same row.
+- (0, 1) :: That moves right within the same row.
+hint: Which row is above row 3: row 2 or row 4?
+hint: The first number of an offset changes the row; the second changes the column.
+right: Up is (-1, 0): one row nearer the top, in the same column. Down is (1, 0), left is (0, -1) and right is (0, 1).
+wrong: Rows are counted from the top, so the row above has a smaller number: up is (-1, 0).
+
+=== task: cells easy
+title: Moves from S
+prompt: Moves go up, down, left or right, never into a wall (#). Fill in the fewest moves from S to each cell, where (r, c) is row r, column c, counting from 0 at the top left.
+
+```text
+S . . .
+. # # .
+. . # .
+# . . .
+```
+labels: (0, 3) | (2, 1) | (3, 2) | (2, 3) | (3, 3)
+answer: 3 | 3 | 5 | 5 | 6
+wrong[3 | 9 | 7 | 5 | 6]: That goes round one way only. (2, 1) is only 3 moves away down the left side: (1, 0), (2, 0), (2, 1). From there, (3, 2) is 2 more.
+wrong[4 | 4 | 6 | 6 | 7]: That counts the cells on each route, including S. Moves count the steps between cells, so the cells next to S are 1 move away.
+wrong[3 | 3 | 7 | 5 | 6]: (3, 2) is closer from the left side: (2, 1) is 3 moves from S, then (3, 1) and (3, 2) make 5.
+hint: Count the moves round each side: along the top and down the right, or down the left and along the bottom.
+hint: (3, 3) can be reached both ways. Do the two routes have the same length?
+right: 3, 3, 5, 5 and 6. Each cell takes the shorter way round the walls, and (3, 3), in the far corner, is 6 moves away either way.
+wrong: Along the top: (0, 3) is 3, then (1, 3) is 4 and (2, 3) is 5. Down the left: (2, 1) is 3, then (3, 1) is 4 and (3, 2) is 5. Both routes reach (3, 3) in 6.
+
+=== task: code easy
+title: Open neighbours
+prompt: Write `neighbours(grid, r, c)` that returns a list of the open cells next to (r, c), as (row, column) tuples, in the order up, down, left, right. A cell counts only if it's inside the grid and isn't a wall (`"#"`). The grid is a list of strings. For example, in `["..", ".#"]` the neighbours of (0, 0) are `[(1, 0), (0, 1)]`.
+starter:
+```python
+def neighbours(grid, r, c):
+    result = []
+    # your code here
+    return result
+```
+solution:
+```python
+def neighbours(grid, r, c):
+    result = []
+    rows, cols = len(grid), len(grid[0])
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#":
+            result.append((nr, nc))
+    return result
+```
+tests:
+- neighbours(["...", "...", "..."], 1, 1)
+- neighbours(["...", "...", "..."], 0, 0)
+- neighbours([".#.", "...", "#.."], 1, 1)
+- neighbours(["..", ".."], 0, 1)
+- neighbours(["....."], 0, 2)
+- neighbours(["."], 0, 0)
+- neighbours(["...", "...", "..."], 2, 2)
+fail[1]: The middle cell has all four: [(0, 1), (2, 1), (1, 0), (1, 2)], in the order up, down, left, right.
+fail[2]: The top left corner has nothing above it or to its left: [(1, 0), (0, 1)]. Check `0 <= nr` and `0 <= nc`, or -1 wraps round to the far side.
+fail[3]: (0, 1) above is a wall, so it's left out: [(2, 1), (1, 0), (1, 2)].
+fail[4]: The top right corner: down and left only, [(1, 1), (0, 0)].
+fail[5]: A single row: only left and right, [(0, 1), (0, 3)].
+fail[6]: A grid of one cell has no neighbours: [].
+fail[7]: The bottom right corner: up and left only, [(1, 2), (2, 1)]. Check `nr < rows` and `nc < cols`, or the lookup raises an IndexError.
+error[IndexError]: A neighbour past the bottom or right edge was looked up. Check `0 <= nr < rows and 0 <= nc < cols` before reading `grid[nr][nc]`.
+hint: Loop over the offsets `[(-1, 0), (1, 0), (0, -1), (0, 1)]`, and add each one to (r, c).
+hint: Keep (nr, nc) only if `0 <= nr < rows`, `0 <= nc < cols` and `grid[nr][nc] != "#"`, checked in that order.
+right: The offsets give the four candidates in order, the bounds checks throw out those off the grid before they're read, and the wall check throws out the rest that can't be entered.
+wrong: For each offset (dr, dc), work out (r + dr, c + dc). Keep it if both coordinates are inside the grid and the cell isn't `"#"`.
+
+=== task: fill easy
+title: Where is S?
+prompt: Fill in the blanks so that `find` scans the grid row by row and returns the position of the first cell holding `ch`, or None, and the program prints:
+
+```output
+(1, 2) (2, 4) None
+```
+code:
+```python
+maze = ["#.#..",
+        "..S.#",
+        "#...E"]
+
+def find(grid, ch):
+    for r in range(??):
+        for c in range(??):
+            if grid[r][c] == ch:
+                return (r, c)
+    return None
+
+print(find(maze, "S"), find(maze, "E"), find(maze, "X"))
+```
+answer: len(grid) | len(grid[0])
+wrong[len(grid[0]) | len(grid)]: The outer loop goes over rows, so it needs the number of rows, `len(grid)`. With 5, `grid[3]` doesn't exist, and the search for E raises an IndexError.
+wrong[len(grid) | len(grid)]: The inner loop must cover all 5 columns. With only 3, E in column 4 is never checked, so it isn't found.
+wrong[len(grid) - 1 | len(grid[0])]: `range` already stops before its end, so `len(grid) - 1` skips the last row, where E is.
+hint: r counts rows, and c counts columns.
+hint: `len(grid)` is the number of rows; `len(grid[0])` is the number of columns.
+right: `range(len(grid))` covers every row and `range(len(grid[0]))` every column, so each cell is checked once, row by row.
+wrong: Loop r over `range(len(grid))` and c over `range(len(grid[0]))`, so every row and every column is covered.
+
+=== task: multi easy
+title: Grids as graphs
+prompt: Choose **every** true statement about running BFS on a grid with moves up, down, left and right.
+* Each open cell is a vertex, and two open cells side by side are joined by an edge :: Right. A move between neighbouring cells is an edge.
+* A wall cell never goes into the queue :: Right. The wall check rejects it before it can be added.
+* A cell's neighbours are worked out when the cell is explored, not stored in advance :: Right. Adding the four offsets to (r, c) gives them whenever they're needed.
+- Two cells that touch only at a corner are neighbours :: Only cells side by side are neighbours with these moves. Diagonal moves need four more offsets.
+- Before the search, the grid must be turned into a dictionary of neighbour lists :: The neighbours can be worked out from (r, c) at any time, so no neighbour lists are needed.
+- In a maze with loops, BFS can return a route that's longer than necessary :: BFS reaches each cell first along a shortest route, loops or not.
+hint: Which cells are side by side with (r, c)?
+hint: Does the search need anything more than the grid itself?
+right: The grid is the graph: open cells are vertices, and neighbours are found from offsets as the search goes. BFS's first route to each cell is a shortest one.
+wrong: Cells side by side are joined, walls are never queued, and the neighbours come from the offsets during the search. Corners touching isn't enough, and loops don't stop BFS finding shortest routes.
+
+=== task: parsons easy
+title: Fewest moves
+prompt: Arrange the lines so that `fewest_moves` returns the fewest moves from `start` to `goal`, or -1 if the goal can't be reached, and the program prints:
+
+```output
+3 -1
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def fewest_moves(grid, start, goal):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+```
+distractors:
+```python
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) in dist:
+                dist[(r, c)] = dist[(nr, nc)] + 1
+```
+after:
+```python
+maze = ["..#",
+        "#..",
+        "#.#"]
+print(fewest_moves(maze, (0, 0), (2, 1)), fewest_moves(maze, (0, 0), (1, 0)))
+```
+hint: `r, c = queue.popleft()` takes the next cell and splits it into its row and column.
+hint: A new cell is one move further than the cell it was found from: `dist[(nr, nc)] = dist[(r, c)] + 1`.
+right: Cells leave the queue in order of distance, so the goal's distance is final when it's taken out. If the queue empties first, the goal can't be reached.
+wrong: Start with the start at distance 0 in the queue. Take cells from the front, return the goal's distance when it appears, and give each open, unvisited neighbour a distance one bigger. After the loop, return -1.
+
+=== task: order easy
+title: Out of the queue
+prompt: BFS runs from (0, 0) on this grid, trying each cell's neighbours in the order up, down, left, right:
+
+```text
+. . .
+. # .
+. . .
+```
+
+Put the other cells in the order they're taken out of the queue.
+items:
+- `(1, 0)`
+- `(0, 1)`
+- `(2, 0)`
+- `(0, 2)`
+- `(2, 1)`
+- `(1, 2)`
+- `(2, 2)`
+hint: From (0, 0), "down" comes before "right", so (1, 0) joins the queue before (0, 1).
+hint: (2, 0) is found from (1, 0), and (0, 2) from (0, 1). Which of those was explored first?
+right: (1, 0), (0, 1), (2, 0), (0, 2), (2, 1), (1, 2) and (2, 2). Each ring is taken out in the order it was found, and within a ring, down beats right.
+wrong: (0, 0) adds (1, 0) then (0, 1). (1, 0) adds (2, 0); (0, 1) adds (0, 2). (2, 0) adds (2, 1); (0, 2) adds (1, 2). (2, 1) is explored before (1, 2), so it's the one that adds (2, 2).
+
+=== task: predict easy
+title: Off the edge
+prompt: This version forgets the `0 <=` checks. It returns the letters of the cells it accepts. What does it print?
+code:
+```python
+grid = ["ab",
+        "cd",
+        "ef"]
+
+def neighbours(grid, r, c):
+    rows, cols = len(grid), len(grid[0])
+    result = []
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr, nc = r + dr, c + dc
+        if nr < rows and nc < cols:
+            result.append(grid[nr][nc])
+    return result
+
+print(neighbours(grid, 0, 0))
+```
+wrong[['c', 'b']]: That's what the full check gives. Here -1 passes both tests, since -1 is less than 3 and less than 2, and Python reads index -1 as the last item.
+wrong[['c', 'b', 'b']]: Up is (-1, 0) as well, and `grid[-1]` is the last row, `"ef"`, so up gives `e`.
+wrong[['e', 'c', 'f', 'b']]: Left is (0, -1): row 0, and the last character of `"ab"`, which is `b`.
+hint: Index -1 means the last item: `grid[-1]` is the last row.
+hint: Work out (nr, nc) for up, down, left and right, then read the letter at each.
+right: `['e', 'c', 'b', 'b']`. Up wraps round to the last row, giving e, and left wraps round to the end of the row, giving b. Python doesn't raise an error for -1, so the mistake is silent.
+wrong: Up is (-1, 0): `grid[-1][0]` is e. Down is (1, 0): c. Left is (0, -1): `grid[0][-1]` is b. Right is (0, 1): b. None of them is rejected.
+
+=== task: mcq easy
+title: How much work?
+prompt: A map has 300 rows and 200 columns, and BFS starts in one corner. At most, how many times can it take a cell out of the queue?
+* 60,000 :: Right. There are 300 × 200 = 60,000 cells, and each enters the queue at most once.
+- 240,000 :: That's the number of neighbour checks: up to 4 for each cell. Each cell still leaves the queue only once.
+- 500 :: That's rows plus columns, about the length of one route along the edges. BFS may have to explore every cell before reaching the goal.
+- 3,600,000,000 :: That's 60,000 × 60,000, as if every cell were compared with every other. BFS handles each cell once.
+hint: How many cells does the map have?
+hint: Can a cell join the queue twice?
+right: Each of the 300 × 200 cells joins the queue at most once, because it's marked when it's added. That's why BFS on a grid is O(rows × cols).
+wrong: The map has 60,000 cells. Marking each cell as it's added means it enters, and leaves, the queue at most once.
+
+=== task: code medium
+title: Nearest treasure
+prompt: Some cells of a grid hold treasure, `"T"`. Write `nearest_treasure(grid, start)` that returns the fewest moves from `start` to any treasure, moving up, down, left or right and never into a wall (`"#"`). Return -1 if no treasure can be reached. Stop as soon as a treasure cell leaves the queue: cells leave in order of distance, so the first treasure out is a nearest one.
+starter:
+```python
+from collections import deque
+
+def nearest_treasure(grid, start):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    # your code here
+    return -1
+```
+solution:
+```python
+from collections import deque
+
+def nearest_treasure(grid, start):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if grid[r][c] == "T":
+            return dist[(r, c)]
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+```
+tests:
+- nearest_treasure(["..T", "...", "T.."], (0, 0))
+- nearest_treasure([".#T", ".#.", "..."], (0, 0))
+- nearest_treasure(["T....", "####.", "....T"], (2, 0))
+- nearest_treasure(["...", "..."], (1, 1))
+- nearest_treasure(["T#.", "##.", "..."], (2, 2))
+- nearest_treasure(["..", ".T"], (1, 1))
+fail[1]: Both treasures are 2 moves away: 2.
+fail[2]: The wall forces the long way round: down, along the bottom and up the right side, 6 moves.
+fail[3]: The treasure in the top left is far away round the wall. The one at the end of the bottom row is 4 moves away: the nearest, not the first in the grid.
+fail[4]: No treasure at all: -1.
+fail[5]: The only treasure is walled in: -1.
+fail[6]: Starting on a treasure: 0 moves.
+hint: The loop is ordinary BFS. The only change is the stopping test: is the cell taken out a treasure?
+hint: Check the cell as it leaves the queue, so a start that's already on a treasure gives 0.
+right: BFS takes cells out in order of distance, so the first treasure it takes out is at least as near as any other. One search answers "nearest of many".
+wrong: Run BFS from the start with distances. When a cell holding `"T"` leaves the queue, return its distance; if the queue runs out, return -1.
+
+=== task: code medium
+title: Rotting oranges
+prompt: In a crate, `"R"` is a rotten orange, `"F"` a fresh one and `"."` an empty space. Every minute, each fresh orange directly above, below, left or right of a rotten one goes rotten. Rot spreads only from orange to orange; an empty space stops it. Write `minutes_to_rot(grid)` that returns the minutes until no fresh orange is left: 0 if there are none to begin with, and -1 if some never rot. Start a BFS from **every** rotten orange at once, at minute 0.
+starter:
+```python
+from collections import deque
+
+def minutes_to_rot(grid):
+    rows, cols = len(grid), len(grid[0])
+    dist = {}
+    queue = deque()
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+def minutes_to_rot(grid):
+    rows, cols = len(grid), len(grid[0])
+    dist = {}
+    queue = deque()
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == "R":
+                dist[(r, c)] = 0
+                queue.append((r, c))
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == "F" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    most = 0
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == "F":
+                if (r, c) not in dist:
+                    return -1
+                most = max(most, dist[(r, c)])
+    return most
+```
+tests:
+- minutes_to_rot(["RFF", "FF.", ".FF"])
+- minutes_to_rot(["RFFFR"])
+- minutes_to_rot(["RFF", ".FF", "F.F"])
+- minutes_to_rot([".R"])
+- minutes_to_rot(["F"])
+- minutes_to_rot(["R.F", "..F"])
+fail[1]: The rot works its way round from the top left corner: the last orange, bottom right, goes after 4 minutes.
+fail[2]: Rot spreads from both ends at once: the middle orange goes after 2 minutes, not 3.
+fail[3]: The orange in the bottom left corner has only empty spaces next to it, so it never rots: -1.
+fail[4]: No fresh oranges at all: 0 minutes.
+fail[5]: A fresh orange and nothing rotten: it never rots, -1.
+fail[6]: Rot can't cross the empty spaces, so the two fresh oranges never rot: -1.
+hint: Put every rotten orange in `dist` at 0, and in the queue, before the loop.
+hint: Only fresh oranges can be reached: check `grid[nr][nc] == "F"`.
+hint: Afterwards, every fresh orange needs a time. Return -1 if one has none; otherwise the biggest time.
+right: With all the rotten oranges in the queue at minute 0, the rot spreads from all of them together, so each orange's time is from its nearest rotten one. The answer is the latest of those times.
+wrong: Queue every rotten orange at time 0, run BFS through fresh oranges only, then check every fresh orange: if one was never reached return -1, otherwise return the largest time.
+
+=== task: predict medium
+title: Copies of a row
+code:
+```python
+rows, cols = 2, 3
+a = [[-1] * cols for _ in range(rows)]
+b = [[-1] * cols] * rows
+
+a[0][1] = 5
+b[0][1] = 5
+print(a)
+print(b)
+```
+wrong[[[-1, 5, -1], [-1, -1, -1]]\n[[-1, 5, -1], [-1, -1, -1]]]: `b` looks the same as `a`, but `[row] * rows` repeats one list: both rows of b are the same list, so the 5 shows up in both.
+wrong[[[-1, 5, -1], [-1, 5, -1]]\n[[-1, 5, -1], [-1, 5, -1]]]: The comprehension makes a new list for each row of a, so only row 0 of a changes.
+wrong[[[-1, 5, -1], [-1, -1, -1]]\n[[5, 5, 5], [-1, -1, -1]]]: `b[0][1] = 5` changes one position, index 1. What's shared is the row list itself, between rows 0 and 1.
+hint: `for _ in range(rows)` runs `[-1] * cols` again for every row.
+hint: `[row] * rows` makes a list holding the same row object several times.
+right: `a` gets one new list per row, so only a's row 0 changes. `b` holds one row list twice, so writing through `b[0]` also changes what `b[1]` shows.
+wrong: `[[-1] * cols for _ in range(rows)]` builds separate rows. `[[-1] * cols] * rows` builds one row and repeats a reference to it, so `b[0]` and `b[1]` are the same list, and both show the 5.
+
+=== task: cells medium
+title: Counting the graph
+prompt: A grid with 3 rows and 4 columns has no walls. Moves go up, down, left and right. Fill in the counts for its graph.
+labels: vertices | edges | neighbours of a corner cell | neighbours of a middle cell
+answer: 12 | 17 | 2 | 4
+wrong[12 | 34 | 2 | 4]: 34 counts each edge twice, once from each of its two cells. Each row has 3 edges between its 4 cells (9 in all), and each column has 2 (8 in all): 17.
+wrong[12 | 48 | 2 | 4]: 12 × 4 assumes every cell has 4 neighbours and counts each edge from both ends. Count edges row by row and column by column instead.
+wrong[12 | 17 | 3 | 4]: A corner cell has nothing on two of its sides, so it has only 2 neighbours. A cell on the edge, but not in a corner, has 3.
+hint: Each cell is a vertex. An edge joins two cells side by side: count them along each row, then down each column.
+hint: A row of 4 cells has 3 gaps between them.
+right: 12, 17, 2 and 4. Every vertex has at most 4 edges, so a grid has fewer than 2 edges per cell, which is why BFS on a grid is O(rows × cols).
+wrong: 3 × 4 = 12 cells. Each row has 3 edges and there are 3 rows (9); each column has 2 edges and there are 4 columns (8): 17. A corner touches 2 cells and a middle cell 4.
+
+=== task: fill medium
+title: The route on a grid
+prompt: Fill in the blanks so that `route` returns the cells of a shortest route from start to goal, in order, and the program prints:
+
+```output
+[(0, 0), (1, 0), (2, 0), (2, 1), (2, 2)]
+```
+code:
+```python
+from collections import deque
+
+maze = ["...",
+        ".#.",
+        "..."]
+
+def route(grid, start, goal):
+    rows, cols = len(grid), len(grid[0])
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            break
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in parent:
+                parent[(nr, nc)] = ??
+                queue.append((nr, nc))
+    path = []
+    cell = goal
+    while cell is not None:
+        path.append(cell)
+        cell = parent[cell]
+    return ??
+
+print(route(maze, (0, 0), (2, 2)))
+```
+answer: (r, c) | path[::-1]
+wrong[(r, c) | path]: The walk starts at the goal, so the path comes out backwards: from (2, 2) to (0, 0). Reverse it.
+wrong[start | path[::-1]]: Every cell's parent would be the start, so the walk back jumps straight from the goal to the start: [(0, 0), (2, 2)]. Each parent must be the cell that found it.
+hint: A cell's parent is the cell being explored when it's found.
+hint: The walk back runs from the goal to the start.
+right: `parent[(nr, nc)] = (r, c)` links each cell to the one it was found from, and reversing the walk back gives the route from start to goal.
+wrong: Record `(r, c)` as the parent of each new cell, walk back from the goal, and return `path[::-1]`.
+
+=== task: mcq medium
+title: Safe checks
+prompt: (nr, nc) might be anywhere, including off the grid. Which condition never raises an error and never reads a cell from the wrong side of the grid?
+* `0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#"` :: Right. `and` stops at the first False, so a cell off the grid is rejected before it's read.
+- `grid[nr][nc] != "#" and 0 <= nr < rows and 0 <= nc < cols` :: The cell is read first: past the bottom or right edge that raises an IndexError, and at -1 it quietly reads the other side.
+- `0 <= nr < rows and grid[nr][nc] != "#" and 0 <= nc < cols` :: The column is checked too late: nc = cols raises an IndexError, and nc = -1 reads the last cell of the row.
+- `nr < rows and nc < cols and grid[nr][nc] != "#"` :: Without `0 <=`, -1 passes both tests, and `grid[-1]` is the last row.
+hint: `and` checks its parts left to right and stops at the first False.
+hint: What happens when nr is -1? And when nc equals cols?
+right: Both bounds for both coordinates come before the cell is read, so only cells on the grid are ever looked up.
+wrong: Put `0 <= nr < rows and 0 <= nc < cols` first. Then `grid[nr][nc]` is only read when (nr, nc) is on the grid.
+
+=== task: predict medium
+title: Which way first?
+prompt: Both calls find a shortest route from (0, 0) to (1, 1) on an open grid, trying the directions in different orders. What does it print?
+code:
+```python
+from collections import deque
+
+def route(grid, start, goal, dirs):
+    rows, cols = len(grid), len(grid[0])
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in dirs:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in parent:
+                parent[(nr, nc)] = (r, c)
+                queue.append((nr, nc))
+    path = []
+    cell = goal
+    while cell is not None:
+        path.append(cell)
+        cell = parent[cell]
+    return path[::-1]
+
+grid = ["...",
+        "...",
+        "..."]
+print(route(grid, (0, 0), (1, 1), [(-1, 0), (1, 0), (0, -1), (0, 1)]))
+print(route(grid, (0, 0), (1, 1), [(0, 1), (1, 0), (0, -1), (-1, 0)]))
+```
+wrong[[(0, 0), (1, 0), (1, 1)]\n[(0, 0), (1, 0), (1, 1)]]: In the second call "right" comes first, so (0, 1) joins the queue before (1, 0), and it's (0, 1) that finds (1, 1).
+wrong[[(0, 0), (0, 1), (1, 1)]\n[(0, 0), (1, 0), (1, 1)]]: That's the other way round. In the first call "down" comes before "right", so (1, 0) is explored first and finds (1, 1).
+wrong[[(0, 0), (1, 1)]\n[(0, 0), (1, 1)]]: (1, 1) is diagonal to (0, 0), so it takes two moves: through (1, 0) or through (0, 1).
+hint: Both routes through (1, 0) and through (0, 1) take 2 moves. Which one is found depends on which neighbour of (0, 0) is explored first.
+hint: The first neighbour to find (1, 1) becomes its parent.
+right: `[(0, 0), (1, 0), (1, 1)]`, then `[(0, 0), (0, 1), (1, 1)]`. Both are shortest. The direction order decides which neighbour of the start is explored first, and so which one becomes (1, 1)'s parent.
+wrong: First call: down comes before right, so (1, 0) is explored first and finds (1, 1). Second call: right comes first, so (0, 1) finds it. Each route is then read back through the parents.
+
+=== task: multi medium
+title: Grid problems
+prompt: Choose **every** problem that BFS on a grid solves directly.
+* The fewest moves for a robot from its dock to a charger, in a warehouse with shelves in the way :: Right. Shelves are walls, and every move costs the same.
+* How many minutes a spill takes to cover every tile, spreading one tile a minute from several leaks :: Right. Start from every leak at once; the answer is the largest distance.
+* The fewest moves for a knight between two squares of a chessboard :: Right. The knight's 8 offsets are the moves; the search is the same.
+- The cheapest route across a map where swamp cells cost 5 and grass cells cost 1 :: Moves with different costs need Dijkstra's algorithm. BFS counts moves, not costs.
+- The longest route through a maze that never visits a cell twice :: BFS finds shortest routes. Longest routes are a much harder problem.
+- Whether a word can be spelled in a grid of letters, moving between neighbouring letters without using a letter twice :: That depends on the path taken, not only on where you are, so it's a backtracking search.
+hint: Does every move cost the same, and is the question about the fewest moves or what can be reached?
+hint: Does the answer depend on which cells were used before, not only on the current cell?
+right: Robots, spills and knights all ask for the fewest equal moves, from one start or several. Different costs, longest routes and paths that can't reuse cells need other methods.
+wrong: BFS fits when every move costs the same and the question is how few moves, or how far from the nearest start. Costs need Dijkstra's algorithm, and "never reuse a cell" needs backtracking.
+
+=== task: parsons medium
+title: Downhill to the exit
+prompt: `dist` is a map of distances from a BFS that started at the exit, with -1 for walls. A cell at distance d always has a neighbour at distance d − 1: the cell it was found from. So stepping downhill, one less each time, follows a shortest route to the exit. Arrange the lines so that `next_step` returns that neighbour, and the program prints:
+
+```output
+[(0, 0), (0, 1), (1, 1), (1, 2), (2, 2)]
+```
+
+Not every line is needed.
+lines:
+```python
+def next_step(dist, r, c):
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < len(dist) and 0 <= nc < len(dist[0]) and dist[nr][nc] == dist[r][c] - 1:
+            return (nr, nc)
+    return None
+```
+distractors:
+```python
+        if 0 <= nr < len(dist) and 0 <= nc < len(dist[0]) and dist[nr][nc] < dist[r][c]:
+        if 0 <= nr < len(dist) and 0 <= nc < len(dist[0]) and dist[nr][nc] == dist[r][c] + 1:
+```
+after:
+```python
+dist = [[4, 3, -1],
+        [-1, 2, 1],
+        [-1, -1, 0]]
+cell = (0, 0)
+path = [cell]
+while dist[cell[0]][cell[1]] > 0:
+    cell = next_step(dist, cell[0], cell[1])
+    path.append(cell)
+print(path)
+```
+hint: The neighbour to step to has a distance exactly one less.
+hint: Walls are -1, which is less than any distance. "Less than" alone would step into a wall.
+right: Each step goes to a neighbour exactly one nearer the exit, so the walk takes as many steps as the cell's distance: a shortest route, with no parents needed.
+wrong: Try the four neighbours; return the first one on the grid whose distance is `dist[r][c] - 1`. A distance map from the exit is enough to steer from any cell.
+
+=== task: order medium
+title: Solving a maze
+prompt: Put these steps of finding the fewest moves from S to E in a maze in order.
+items:
+- Scan the grid to find the cells holding S and E.
+- Put S in the queue, at distance 0.
+- Take the cell at the front of the queue.
+- Give each open neighbour that has no distance yet a distance one bigger, and add it at the back.
+- When E is taken out of the queue, its distance is the answer.
+hint: The search can't begin until it knows where S is.
+hint: The answer is only ready once E leaves the queue.
+right: Find the start and exit, seed the queue with S, then repeat: take the front cell and add its new neighbours, until E comes out with its distance.
+wrong: First locate S and E. Start the queue with S at distance 0. Each round takes the front cell and queues its unvisited open neighbours one further away. E's distance, when it leaves the queue, is the answer.
+
+=== task: code hard
+title: Smashing through walls
+prompt: A robot starts in the top left cell and must reach the bottom right cell, moving up, down, left or right. It can smash through at most k walls (`"#"`) on the way, and smashing into a wall cell moves the robot into it. Write `moves_with_breaks(grid, k)` that returns the fewest moves, or -1 if it can't get there. The two corners are always open. The same cell can be reached having smashed different numbers of walls, and those are different situations, so search over states (r, c, smashed), keeping a distance for each state.
+starter:
+```python
+from collections import deque
+
+def moves_with_breaks(grid, k):
+    rows, cols = len(grid), len(grid[0])
+    start = (0, 0, 0)
+    dist = {start: 0}
+    queue = deque([start])
+    # your code here
+    return -1
+```
+solution:
+```python
+from collections import deque
+
+def moves_with_breaks(grid, k):
+    rows, cols = len(grid), len(grid[0])
+    start = (0, 0, 0)
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c, used = queue.popleft()
+        if (r, c) == (rows - 1, cols - 1):
+            return dist[(r, c, used)]
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                nused = used
+                if grid[nr][nc] == "#":
+                    nused += 1
+                if nused <= k and (nr, nc, nused) not in dist:
+                    dist[(nr, nc, nused)] = dist[(r, c, used)] + 1
+                    queue.append((nr, nc, nused))
+    return -1
+```
+tests:
+- moves_with_breaks(["...", "##.", "...", ".##", "..."], 0)
+- moves_with_breaks(["...", "##.", "...", ".##", "..."], 1)
+- moves_with_breaks([".##", "###", "##."], 1)
+- moves_with_breaks([".##", "###", "##."], 3)
+- moves_with_breaks(["."], 0)
+- moves_with_breaks(["..", "##", "##", "#."], 2)
+fail[1]: With no smashing, the robot winds through the gaps: 10 moves.
+fail[2]: One smash makes a straight route possible: 6 moves.
+fail[3]: Every route needs 3 smashes, and only 1 is allowed: -1.
+fail[4]: With 3 smashes, it can go straight through: 4 moves.
+fail[5]: The start is the goal: 0.
+fail[6]: Marking a cell as seen the first time it's reached isn't enough. Down the left, (1, 1) is reached having smashed 2 walls; going right first reaches it with 1 smashed, and only that state can smash on to the goal: 4 moves.
+hint: A state is (r, c, walls smashed so far). Moving into a wall adds 1 to the count; a count above k isn't allowed.
+hint: Keep `dist` keyed by the whole state, so a cell reached with fewer smashes is still explored.
+hint: The first time any state at the goal cell leaves the queue, its distance is the fewest moves.
+right: Searching states instead of cells keeps every "how many walls left" situation apart. BFS still takes states out in order of moves, so the first one at the goal is the best.
+wrong: BFS over (r, c, smashed). From each state try the four moves; entering a wall adds 1 to smashed. Skip a move that would go over k or reach a state that already has a distance. Return the distance of the first state at the goal.
+
+=== task: code hard
+title: Everyone's way out
+prompt: Write `moves_to_exit(maze, starts)` that returns a list giving, for each cell in `starts`, the fewest moves from it to the exit `"E"`, or -1 if it can't reach the exit. Moves go up, down, left and right, never into a wall (`"#"`). Don't search from every start: moves can be made in either direction, so run **one** BFS from the exit and look each start up in its distances. The speed check uses a single row of n cells, with the exit at the end and every cell as a start.
+starter:
+```python
+from collections import deque
+
+def moves_to_exit(maze, starts):
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+def moves_to_exit(maze, starts):
+    rows, cols = len(maze), len(maze[0])
+    exit_cell = None
+    for r in range(rows):
+        for c in range(cols):
+            if maze[r][c] == "E":
+                exit_cell = (r, c)
+    dist = {exit_cell: 0}
+    queue = deque([exit_cell])
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and maze[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return [dist.get(cell, -1) for cell in starts]
+```
+tests:
+- moves_to_exit(["...#", ".#.E", "....", "#..#"], [(0, 0), (2, 0), (0, 2), (3, 1), (1, 3)])
+- moves_to_exit(["E.#.", "..#."], [(0, 3), (1, 1), (0, 0)])
+- moves_to_exit(["E.."], [])
+- moves_to_exit(["..E"], [(0, 0), (0, 0)])
+fail[1]: [4, 4, 2, 4, 0]: (0, 2) is 2 moves from the exit, and the exit itself is 0.
+fail[2]: (0, 3) is cut off by the wall: -1. The others are 2 and 0.
+fail[3]: No starts, so an empty list.
+fail[4]: The same start can appear twice; each gets its own answer: [2, 2].
+speed: setup=maze = ["." * (n - 1) + "E"]; starts = [(0, c) for c in range(n)] | call=moves_to_exit(maze, starts) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def moves_to_exit(maze, starts):
+    rows, cols = len(maze), len(maze[0])
+    answers = []
+    for start in starts:
+        dist = {start: 0}
+        queue = deque([start])
+        found = -1
+        while queue:
+            r, c = queue.popleft()
+            if maze[r][c] == "E":
+                found = dist[(r, c)]
+                break
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < rows and 0 <= nc < cols and maze[nr][nc] != "#" and (nr, nc) not in dist:
+                    dist[(nr, nc)] = dist[(r, c)] + 1
+                    queue.append((nr, nc))
+        answers.append(found)
+    return answers
+```
+hint: Find the exit, then run BFS from it, recording every reachable cell's distance.
+hint: The distance from the exit to a cell equals the distance from that cell to the exit, since every move can be reversed.
+hint: `dist.get(cell, -1)` gives -1 for a start the search never reached.
+right: One search from the exit measures every cell's distance to it at once, so answering each start is a lookup. That's O(rows × cols + number of starts), instead of a whole search per start.
+wrong: Locate E, run a single BFS from it over open cells, and answer each start with its distance from that search, or -1.
+
+=== task: code hard
+title: How many shortest routes?
+prompt: Write `count_routes(grid)` that returns how many different shortest routes there are from the top left cell to the bottom right cell, moving up, down, left and right and never into a wall (`"#"`). Return 0 if the bottom right can't be reached. Don't list the routes: alongside each cell's distance keep `ways`, its number of shortest routes. A newly found cell gets the ways of the cell that found it, and a cell that's already one move further than the current cell adds the current cell's ways. The corners are open. The speed check uses an open square grid with about n cells, where the number of routes grows enormously.
+starter:
+```python
+from collections import deque
+
+def count_routes(grid):
+    rows, cols = len(grid), len(grid[0])
+    dist = {(0, 0): 0}
+    ways = {(0, 0): 1}
+    queue = deque([(0, 0)])
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+def count_routes(grid):
+    rows, cols = len(grid), len(grid[0])
+    dist = {(0, 0): 0}
+    ways = {(0, 0): 1}
+    queue = deque([(0, 0)])
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#":
+                if (nr, nc) not in dist:
+                    dist[(nr, nc)] = dist[(r, c)] + 1
+                    ways[(nr, nc)] = ways[(r, c)]
+                    queue.append((nr, nc))
+                elif dist[(nr, nc)] == dist[(r, c)] + 1:
+                    ways[(nr, nc)] += ways[(r, c)]
+    return ways.get((rows - 1, cols - 1), 0)
+```
+tests:
+- count_routes(["..", ".."])
+- count_routes(["...", "...", "..."])
+- count_routes(["...", ".#.", "..."])
+- count_routes([".#", "#."])
+- count_routes(["."])
+- count_routes(["..#", "#..", "#.."])
+- count_routes(["...#", ".#..", "...."])
+fail[1]: Right then down, or down then right: 2.
+fail[2]: 2 rights and 2 downs in any order: 6.
+fail[3]: The middle wall leaves the routes along the top and along the left: 2.
+fail[4]: The bottom right can't be reached: 0.
+fail[5]: One cell: the empty route, 1.
+fail[6]: Every route passes (1, 1), then goes right then down, or down then right: 2.
+fail[7]: 3 different routes of 5 moves. Only cells exactly one move further gain routes from the current cell.
+speed: setup=side = int(n ** 0.5); grid = ["." * side] * side | call=count_routes(grid) | target=O(n)
+slow:
+```python
+def count_routes(grid):
+    rows, cols = len(grid), len(grid[0])
+    best = [None]
+    count = [0]
+    seen = set()
+
+    def walk(r, c, steps):
+        if best[0] is not None and steps > best[0]:
+            return
+        if (r, c) == (rows - 1, cols - 1):
+            if best[0] is None or steps < best[0]:
+                best[0] = steps
+                count[0] = 0
+            count[0] += 1
+            return
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in seen:
+                seen.add((nr, nc))
+                walk(nr, nc, steps + 1)
+                seen.remove((nr, nc))
+
+    seen.add((0, 0))
+    walk(0, 0, 0)
+    return count[0]
+```
+hint: When a cell is found for the first time, it has as many shortest routes as the cell that found it.
+hint: When a neighbour already has a distance exactly one more than the current cell, the current cell's routes are more ways to reach it: add them.
+hint: Every cell one move nearer leaves the queue before the cell it leads to, so a cell's count is complete before it's passed on.
+right: Every shortest route to a cell arrives from a cell one move nearer, so its count is the total of theirs. BFS finishes each ring before the next, so the counts are complete in time, and nothing is listed: O(rows × cols).
+wrong: Keep `dist` and `ways`. A new cell copies the current cell's ways; a cell that's already one move further adds them. Return the bottom right's ways, or 0.
+
+=== task: code hard
+title: Two switches
+prompt: In a maze, S is the start, E the exit, and A and B are two switches. Write `tour(grid)` that returns the fewest moves to walk from S, step on both switches in either order, and reach E, moving up, down, left and right and never into a wall (`"#"`). Return -1 if it can't be done. Write a helper `dist_from(grid, start)` that returns a dictionary of distances from `start` to every reachable cell, and use it from S, A and B: the best tour is S → A → B → E or S → B → A → E, whichever is shorter.
+starter:
+```python
+from collections import deque
+
+def dist_from(grid, start):
+    # your code here
+    return {}
+
+def tour(grid):
+    # your code here
+    return -1
+```
+solution:
+```python
+from collections import deque
+
+def dist_from(grid, start):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return dist
+
+def tour(grid):
+    where = {}
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            where[grid[r][c]] = (r, c)
+    s, a, b, e = where["S"], where["A"], where["B"], where["E"]
+    from_s = dist_from(grid, s)
+    if a not in from_s or b not in from_s or e not in from_s:
+        return -1
+    from_a = dist_from(grid, a)
+    from_b = dist_from(grid, b)
+    a_first = from_s[a] + from_a[b] + from_b[e]
+    b_first = from_s[b] + from_b[a] + from_a[e]
+    return min(a_first, b_first)
+```
+tests:
+- dist_from(["..", "#."], (0, 0))
+- tour(["A..S", ".##.", "B..E"])
+- tour(["B..S", ".##.", "A..E"])
+- tour(["SAB.", "...E"])
+- tour(["S.#B", "A.#.", "..#E"])
+- tour(["S#A", "##.", "B.E"])
+fail[1]: (0, 1) is 1 move away, and (1, 1) is 2. The wall (1, 0) isn't reached: {(0, 0): 0, (0, 1): 1, (1, 1): 2}.
+fail[2]: A first: 3 + 2 + 3 = 8 moves. B first would take 5 + 2 + 5 = 12.
+fail[3]: This time B first is better: 3 + 2 + 3 = 8. Both orders must be tried.
+fail[4]: S, A, B along the top, then down and right to E: 4 moves.
+fail[5]: The wall column cuts B and E off from S: -1.
+fail[6]: S is walled in: -1.
+hint: In `dist_from`, run BFS from `start` and return the whole `dist` dictionary.
+hint: A shortest tour is made of shortest walks between its stops: S to the first switch, to the second, to E.
+hint: Because moves can be reversed, the distance from A to B is the same as from B to A. If A, B or E can't be reached from S, return -1.
+right: Three searches give every distance the tour needs, and the two orders cover every way to visit both switches. That's a handful of searches, not a search over every possible tour.
+wrong: Run `dist_from` from S, A and B. If any of A, B, E is missing from S's distances, return -1. Otherwise compare S→A→B→E with S→B→A→E and return the smaller total.
+
+=== task: predict hard
+title: Cutting corners
+code:
+```python
+from collections import deque
+
+FOUR = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+EIGHT = FOUR + [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+def moves(grid, start, goal, dirs):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for dr, dc in dirs:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+
+walls = [".#.",
+         "#.#",
+         ".#."]
+room = ["....",
+        "....",
+        "....",
+        "...."]
+print(moves(walls, (0, 0), (2, 2), FOUR), moves(walls, (0, 0), (2, 2), EIGHT))
+print(moves(room, (0, 0), (3, 2), FOUR), moves(room, (0, 0), (3, 2), EIGHT))
+```
+wrong[-1 -1\n5 3]: Diagonal moves slip between walls that only touch at their corners: (0, 0) to (1, 1) to (2, 2) is 2 moves.
+wrong[-1 2\n5 5]: Diagonal moves change the row and the column together: 2 diagonals reach (2, 2), and one more step down reaches (3, 2). That's 3.
+wrong[4 2\n5 3]: With four directions, the open cells are all cut off from each other by walls: no route at all, -1.
+hint: With four directions, which cells can (0, 0) move to in the first grid?
+hint: With diagonals, each move can change both the row and the column by 1.
+right: `-1 2`, then `5 3`. Four-way moves can't get past walls that touch at the corners, but diagonal moves can slip between them. In an open room, a diagonal covers a row and a column at once.
+wrong: In `walls`, (0, 0)'s side neighbours are both walls, so four-way moves give -1, while two diagonals reach (2, 2). In `room`, four-way needs 3 + 2 = 5 moves; with diagonals it's the larger of 3 and 2: 3.
+
+=== task: predict hard
+title: Who gets there first?
+prompt: Two starts spread through a grid together, and each cell is claimed by whichever start's search reaches it first. What does it print?
+code:
+```python
+from collections import deque
+
+def owners(grid, starts):
+    rows, cols = len(grid), len(grid[0])
+    owner = [list(row) for row in grid]
+    queue = deque()
+    for name, (r, c) in starts:
+        owner[r][c] = name
+        queue.append((r, c))
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and owner[nr][nc] == ".":
+                owner[nr][nc] = owner[r][c]
+                queue.append((nr, nc))
+    return ["".join(row) for row in owner]
+
+grid = ["....",
+        "...."]
+print(*owners(grid, [("A", (0, 0)), ("B", (1, 3))]))
+print(*owners(grid, [("B", (1, 3)), ("A", (0, 0))]))
+```
+wrong[AABB ABBB\nAABB ABBB]: (0, 2) and (1, 1) are 2 moves from both starts. In the first call A is queued first, so A's ring of distance 2 is found before B's, and A claims both.
+wrong[AAAB AABB\nAAAB AABB]: In the second call B is queued first, so B's rings are found first at each distance, and B claims the two tied cells.
+wrong[AABB AABB\nAABB AABB]: (1, 1) is 2 moves from A, down and right, and 2 moves from B, left twice. It's a tie, claimed by the start that's queued first.
+hint: Which cells are the same number of moves from both starts?
+hint: At each distance, the start that was queued first finds its cells first.
+right: `AAAB AABB`, then `AABB ABBB`. Each cell goes to its nearest start; a tie goes to whichever start's search reaches it first, which is the one queued first.
+wrong: (0, 2) and (1, 1) are 2 moves from each start. Cells at the same distance join the queue in the order of their starts, so in the first call A claims both ties, and in the second B does.
+
+=== task: cells hard
+title: A knight on a small board
+prompt: On a 4 × 4 board, a knight starts in the corner (0, 0) and moves 2 squares one way and 1 square the other, staying on the board. Fill in the fewest moves it needs to reach each square.
+labels: (1, 2) | (0, 1) | (1, 1) | (3, 3) | (0, 3)
+answer: 1 | 3 | 4 | 2 | 5
+wrong[1 | 3 | 2 | 2 | 5]: (1, 1) is diagonal to the corner, but no knight move goes 1 and 1. On this small board, every route to it takes 4 moves.
+wrong[1 | 3 | 4 | 2 | 3]: On an 8 × 8 board (0, 3) takes 3 moves, but those routes pass through column 4, which isn't on this board. Here it takes 5.
+wrong[1 | 1 | 4 | 2 | 5]: (0, 1) is next to the corner, but a knight can't step sideways: it takes 3 moves.
+hint: From (0, 0) the only moves on the board go to (1, 2) and (2, 1). Those are at 1.
+hint: Work out the rings: everything one knight move from (1, 2) or (2, 1) that isn't already in a ring is at 2. Carry on the same way.
+right: 1, 3, 4, 2 and 5. Squares close together on the board can be far apart for a knight, and a small board takes away the shortcuts.
+wrong: Ring 1 is (1, 2) and (2, 1). Ring 2 includes (3, 3). Ring 3 includes (0, 1). Ring 4 is (1, 1) and (2, 2), and ring 5 is (0, 3) and (3, 0).
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to this `fewest_moves`. Choose **every** change that can give a wrong answer or an error.
+code:
+```python
+def fewest_moves(grid, start, goal):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+```
+* `rows, cols = len(grid[0]), len(grid)` :: Right. On a grid that isn't square, the bounds are wrong: cells past the real edge are read, raising an IndexError, or real cells are rejected.
+* Leaving out `grid[nr][nc] != "#"` :: Right. The search walks through walls, so it can find routes that don't exist.
+* Also checking `(nr, nc) == goal` as each cell is added, and returning `dist[(r, c)]` there :: Right. That's the distance of the cell that found the goal, one move short.
+- Also checking `(nr, nc) == goal` as each cell is added, and returning `dist[(r, c)] + 1` there :: The goal's distance is fixed when it's found, so returning it then is correct, and a little faster.
+- Trying the directions in the order right, left, down, up :: The order can change which shortest route is found, but not its length.
+- Keeping the distances in a list of lists, with -1 for "not reached", instead of a dictionary :: That's the same record in another form, as in the lesson's distance map.
+hint: Which changes break the bounds, the walls or the distances?
+hint: Which changes only alter the order of work or the way distances are stored?
+right: Swapped bounds, a missing wall check and an off-by-one return all give wrong answers. Stopping when the goal is found (with + 1), another direction order or another way of storing distances all give the same answers.
+wrong: The bounds must use rows for r and columns for c, walls must be rejected, and the goal is one move further than the cell that finds it. The direction order and the kind of record don't change the distances.
+
+=== task: fill hard
+title: Beat the fire
+prompt: A fire starts at F and spreads one cell a minute. It can't burn walls (#) or cross the pond (~). `fire[r][c]` is the minute the fire reaches (r, c), or -1 if it never does. You start at S at minute 0, move one cell a minute, can wade through the pond, and may only step into a cell **before** the fire gets there. Fill in the blanks so that `escape` returns the fewest minutes to reach E safely, and the program prints:
+
+```output
+7
+```
+code:
+```python
+from collections import deque
+
+grid = [".E~.F",
+        ".#...",
+        "...~S",
+        "....~"]
+fire = [[8, 9, -1, 1, 0],
+        [7, -1, 3, 2, 1],
+        [6, 5, 4, -1, 2],
+        [7, 6, 5, 6, -1]]
+
+def escape(grid, fire, start, goal):
+    rows, cols = len(grid), len(grid[0])
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return dist[(r, c)]
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != "#" and (nr, nc) not in dist:
+                t = dist[(r, c)] + 1
+                if fire[nr][nc] == ?? or t ?? fire[nr][nc]:
+                    dist[(nr, nc)] = t
+                    queue.append((nr, nc))
+    return -1
+
+print(escape(grid, fire, (2, 4), (0, 1)))
+```
+answer: -1 | <
+wrong[0 | <]: The pond cells have fire time -1, so they'd be refused: neither -1 == 0 nor t < -1 is true. The only safe way out of S is through the pond, so nothing can be reached: -1.
+wrong[-1 | <=]: That lets you step into a cell in the same minute the fire arrives. Then (1, 2), reached at minute 3 as the fire gets there, opens a 5-minute route through the pond.
+wrong[None | <]: The fire map uses -1, not None, for cells the fire never reaches. With None the pond is refused, and there's no way out: -1.
+hint: A cell the fire never reaches is always safe.
+hint: Arriving in the same minute as the fire isn't safe: you must be strictly earlier.
+right: `fire[nr][nc] == -1` lets you through cells the fire never reaches, like the pond, and `t < fire[nr][nc]` only lets you into a cell before it burns. The safe route goes the long way round, past (2, 1) and (1, 0): 7 minutes.
+wrong: A cell is safe if the fire never reaches it (`== -1`) or you get there first (`t < fire[nr][nc]`). The quick route through (1, 2) meets the fire at minute 3, so the answer is the longer route: 7.
+
+=== task: parsons hard
+title: Sliding on ice
+prompt: On ice, a puck keeps sliding in the direction it was pushed until the next cell is a wall (#) or off the grid, and only then stops. One push is one move. Arrange the lines so that `stops` returns the cells where the puck can come to rest after one push from (r, c), in the order up, down, left, right, leaving out directions where it can't move at all. The program prints:
+
+```output
+[(2, 0), (0, 2)]
+3 4
+```
+
+Not every line is needed.
+lines:
+```python
+def stops(grid, r, c):
+    result = []
+    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nr, nc = r, c
+        while 0 <= nr + dr < len(grid) and 0 <= nc + dc < len(grid[0]) and grid[nr + dr][nc + dc] != "#":
+            nr, nc = nr + dr, nc + dc
+        if (nr, nc) != (r, c):
+            result.append((nr, nc))
+    return result
+```
+distractors:
+```python
+        nr, nc = r + dr, c + dc
+        while 0 <= nr < len(grid) and 0 <= nc < len(grid[0]) and grid[nr][nc] != "#":
+```
+after:
+```python
+from collections import deque
+
+def fewest_pushes(grid, start, goal):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        cell = queue.popleft()
+        if cell == goal:
+            return dist[cell]
+        for nxt in stops(grid, cell[0], cell[1]):
+            if nxt not in dist:
+                dist[nxt] = dist[cell] + 1
+                queue.append(nxt)
+    return -1
+
+ice = ["...#",
+       ".#..",
+       "....",
+       "#..."]
+print(stops(ice, 0, 0))
+print(fewest_pushes(ice, (0, 0), (3, 3)), fewest_pushes(ice, (0, 0), (1, 2)))
+```
+hint: The puck starts at (r, c) and moves only while the **next** cell is on the grid and open.
+hint: If it couldn't move at all in a direction, that push isn't a move.
+right: Each push slides until the next cell is blocked, so the neighbours of a cell are where the slides end. BFS over those stops counts pushes: (1, 2) is 3 steps from the start but takes 4 pushes, because the puck can only stop there after sliding left from (1, 3).
+wrong: For each direction, start at (r, c) and keep stepping while the next cell is on the grid and not a wall. If the puck moved, record where it stopped.
