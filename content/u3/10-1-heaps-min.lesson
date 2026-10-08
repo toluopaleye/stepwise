@@ -1,0 +1,1224 @@
+=== lesson
+id: ds-heaps-min
+title: Min-heaps
+summary: A min-heap keeps its smallest item at the root. You'll write push (sift up) and pop (sift down) yourself and trace them step by step, count the swaps to see why both are O(log n), check that `heapq` does exactly the same, build a heap from a whole list in O(n) with heapify, and use min-heaps to find the k smallest items and to merge sorted lists.
+
+=== learn
+### Push: sifting up
+In a **min-heap**, every parent is ≤ each of its children, so the smallest item sits at index 0. Push adds the new item at the end of the list, the next free place on the bottom level, and then **sifts it up**: while its parent is bigger, the two swap.
+```python
+def sift_up(h, i):
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] <= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+def push(h, x):
+    h.append(x)
+    sift_up(h, len(h) - 1)
+
+h = []
+for x in [5, 3, 8, 1, 4, 2]:
+    push(h, x)
+    print(x, h)
+```
+```output
+5 [5]
+3 [3, 5]
+8 [3, 5, 8]
+1 [1, 3, 8, 5]
+4 [1, 3, 8, 5, 4]
+2 [1, 3, 2, 5, 4, 8]
+```
+Here's the push of 1 into `[3, 5, 8]`, step by step:
+
+| list | 1 is at | parent | compare |
+| --- | --- | --- | --- |
+| [3, 5, 8, 1] | index 3 | index 1, holding 5 | 5 > 1: swap |
+| [3, 1, 8, 5] | index 1 | index 0, holding 3 | 3 > 1: swap |
+| [1, 3, 8, 5] | index 0 | none | `i > 0` is False: stop |
+
+4 lands below 3, which is no bigger, so `break` stops it at once: everything above it is already in order. 2 lands below 8, swaps once, and stops below 1.
+
+### Pop: sifting down
+Pop saves `h[0]`, the smallest item, to return it. Then the last item comes off the end of the list and goes into the root's place, so the tree stays complete, and it **sifts down**: while its smaller child is smaller than it, the two swap.
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        sift_down(h, 0)
+    return top
+
+while h:
+    print(pop(h), h)
+```
+```output
+1 [2, 3, 8, 5, 4]
+2 [3, 4, 8, 5]
+3 [4, 5, 8]
+4 [5, 8]
+5 [8]
+8 []
+```
+`sift_down` keeps going while index i has a left child, `2 * i + 1 < len(h)`. `c` starts at the left child and moves to the right child if there is one and it's smaller, so `c` ends up at the **smaller** child. If the item is no bigger than that, it's in place. Otherwise they swap, and the item carries on from `c`. A leaf has no left child, so the loop ends there.
+
+The smaller child is the one that moves up, because it becomes the parent of the other child and mustn't be bigger than it. When the last item is popped, `h.pop()` empties the list, and `if h:` skips the sift. Animation 1 pops step by step.
+
+### Popping in order
+Look at the values that came out in the last step: 1, 2, 3, 4, 5, 8. Every pop returns the smallest item left, so popping a heap until it's empty gives its items in **sorted order**.
+
+Here's the first of those pops, from `[1, 3, 2, 5, 4, 8]`, step by step:
+
+| list | 8 is at | smaller child | compare |
+| --- | --- | --- | --- |
+| [8, 3, 2, 5, 4] | index 0 | index 2, holding 2 | 8 > 2: swap |
+| [2, 3, 8, 5, 4] | index 2 | none: index 5 is past the end | stop |
+
+Pushing n items and then popping them all is a sorting method called **heap sort**: n pushes and n pops, each O(log n), so O(n log n) in total.
+
+### Counting the swaps
+Each swap moves an item one level, so the number of swaps in a push or pop is at most the heap's height. The worst push is a new smallest item, which climbs all the way to the root. Pushing n, n − 1, down to 1 makes every push the worst case:
+```python
+def push_swaps(h, x):
+    h.append(x)
+    i = len(h) - 1
+    swaps = 0
+    while i > 0 and h[(i - 1) // 2] > h[i]:
+        p = (i - 1) // 2
+        h[i], h[p] = h[p], h[i]
+        i = p
+        swaps += 1
+    return swaps
+
+for n in [15, 127, 511]:
+    h = []
+    most = 0
+    total = 0
+    for x in range(n, 0, -1):
+        s = push_swaps(h, x)
+        most = max(most, s)
+        total += s
+    print(n, most, total)
+```
+```output
+15 3 34
+127 6 642
+511 8 3586
+```
+| n | most swaps in one push | swaps for all n pushes |
+| --- | --- | --- |
+| 15 | 3 | 34 |
+| 127 | 6 | 642 |
+| 511 | 8 | 3,586 |
+
+The most swaps in one push is the height of the heap, about log2 n: 3, 6 and 8 here, and only 19 for a million items. So push and pop are **O(log n)**, and n pushes cost O(n log n) in total.
+
+### heapq does the same
+`heapq.heappush` and `heapq.heappop` carry out these same steps on a plain list. (Inside, `heappop` arranges the sift down a little differently, but with all-different values it ends with exactly the same list.)
+```python
+import heapq
+
+mine = []
+theirs = []
+for x in [5, 3, 8, 1, 4, 2]:
+    push(mine, x)
+    heapq.heappush(theirs, x)
+print(mine == theirs, mine)
+print(pop(mine), heapq.heappop(theirs), mine == theirs, mine)
+```
+```output
+True [1, 3, 2, 5, 4, 8]
+1 1 True [2, 3, 8, 5, 4]
+```
+In real programs, use `heapq`: it's written in C and runs much faster. Writing push and pop yourself is how you learn what it does, and what each call costs.
+
+### Heapify: a heap from a whole list
+To turn a whole list into a heap, you could push its items one at a time, O(n log n). **Heapify** does it in place, faster. It sifts down every item that has children, starting from the last one and working back to the root. The items in the second half of the list are leaves, and a single item is already a heap, so the last item with children is at index `n // 2 - 1`:
+```python
+def heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        sift_down(h, start)
+
+nums = [9, 4, 7, 1, 8, 2, 6]
+heapify(nums)
+print(nums, nums == sorted(nums))
+```
+```output
+[1, 4, 2, 9, 8, 7, 6] False
+```
+| start | item | what happens | list afterwards |
+| --- | --- | --- | --- |
+| 2 | 7 | smaller child 2 is smaller: swap | [9, 4, 2, 1, 8, 7, 6] |
+| 1 | 4 | smaller child 1 is smaller: swap | [9, 1, 2, 4, 8, 7, 6] |
+| 0 | 9 | swaps with 1, then with 4 | [1, 4, 2, 9, 8, 7, 6] |
+
+Going backwards matters: when `start` is reached, both of its subtrees are already heaps, so sifting its item down makes its whole subtree a heap. When `start` reaches 0, the whole list is a heap, though not a sorted list. `heapq.heapify` does the same. Animation 2 runs it.
+
+### Why heapify is O(n)
+Heapify sifts down from every item with children, and a sift down can take up to log2 n swaps. That sounds like O(n log n), but most items are near the bottom, where there's little room to sink:
+
+| part of the list | how far down it can sink |
+| --- | --- |
+| half the items: the leaves | 0 levels |
+| a quarter: one level above the leaves | 1 level |
+| an eighth | 2 levels |
+| a sixteenth | 3 levels |
+
+Adding those up, n/4 × 1 + n/8 × 2 + n/16 × 3 + ... comes to less than n swaps. Counting them on the worst input, a list in descending order:
+
+| n | swaps, pushing one at a time | swaps, heapify |
+| --- | --- | --- |
+| 15 | 34 | 11 |
+| 127 | 642 | 120 |
+| 511 | 3,586 | 502 |
+
+Heapify never needs more swaps than there are items: **O(n)**.
+
+### The k smallest items
+To get the k smallest items of a list, you could sort it all, O(n log n). With a heap, heapify a copy and pop k times: O(n + k log n), much less when k is small. `heapq.nsmallest(k, items)` does it for you:
+```python
+prices = [420, 199, 385, 250, 175, 610, 230, 199]
+h = list(prices)
+heapq.heapify(h)
+cheapest = []
+for i in range(3):
+    cheapest.append(heapq.heappop(h))
+print(cheapest)
+print(heapq.nsmallest(3, prices))
+print(sorted(prices)[:3])
+```
+```output
+[175, 199, 199]
+[175, 199, 199]
+[175, 199, 199]
+```
+All three agree. `list(prices)` makes a copy, so heapify rearranges the copy and `prices` keeps its order. The two 199s both count: a heap is happy to hold equal values.
+
+### Merging sorted lists
+Several sorted lists can be merged into one sorted list with a heap that holds the **front item of each list**. The smallest of those is the smallest item left anywhere, so pop it into the output, then push the next item from the same list. Each heap item is a tuple `(value, which list, position in that list)`:
+```python
+def merge_sorted(lists):
+    h = []
+    for li in range(len(lists)):
+        if lists[li]:
+            heapq.heappush(h, (lists[li][0], li, 0))
+    out = []
+    while h:
+        val, li, pos = heapq.heappop(h)
+        out.append(val)
+        if pos + 1 < len(lists[li]):
+            heapq.heappush(h, (lists[li][pos + 1], li, pos + 1))
+    return out
+
+print(merge_sorted([[1, 4, 9], [2, 3, 10, 12], [5], []]))
+```
+```output
+[1, 2, 3, 4, 5, 9, 10, 12]
+```
+At the start, the heap holds 1, 2 and 5 (the empty list adds nothing). Popping 1 brings in 4, from the same list; popping 2 brings in 3. The heap never holds more than k items for k lists, so with N items in total, merging is **O(N log k)**. The list number also settles ties: when two values are equal, the tuples compare by list number next.
+
+=== keypoints
+- Push appends, then sifts up: swap with the parent while the parent is bigger. Pop saves `h[0]`, moves the last item to the root, then sifts down: swap with the smaller child while that child is smaller.
+- Each swap moves one level, and a heap of n items has about log2 n levels, so push and pop are O(log n). Peek, `h[0]`, is O(1).
+- Popping until the heap is empty gives the items in sorted order: heap sort, O(n log n).
+- `heapq.heappush` and `heapq.heappop` do the same steps on a plain list.
+- Heapify sifts down every item that has children, from index `n // 2 - 1` back to 0. Most items are near the bottom and sink only a little, so it's O(n), less than n pushes' O(n log n).
+- The k smallest: heapify a copy and pop k times, O(n + k log n), or `heapq.nsmallest(k, items)`.
+- To merge k sorted lists, keep each list's front item in a heap as (value, list number, position); pop the smallest and push the next item from its list: O(N log k).
+
+=== example: The three closest stores
+intro: Each store's distance from home is worked out in city blocks (steps along streets, across plus up or down). A heap of (distance, name) pairs hands out the closest stores first.
+```python
+import heapq
+
+stores = {"Corner Shop": (2, 3), "Big Store": (9, 1), "Fresh Foods": (1, 7), "Quick Stop": (4, 4), "Market Hall": (6, 8)}
+here = (3, 2)
+h = []
+for name in stores:
+    x, y = stores[name]
+    distance = abs(x - here[0]) + abs(y - here[1])
+    h.append((distance, name))
+heapq.heapify(h)
+for i in range(3):
+    distance, name = heapq.heappop(h)
+    print(name, distance, "blocks away")
+```
+3-4: Each store's position on a street grid, and home's position.
+5-9: A city-block distance is how far across plus how far up or down. Each store becomes a (distance, name) pair.
+10: Heapify all the pairs at once: O(n).
+11-13: Pop 3 times: the 3 closest stores, nearest first. Big Store and Fresh Foods are both 7 blocks away, so the tuples compare by name, and "Big Store" comes first in alphabetical order.
+
+=== example: Merging sorted logs
+intro: Three servers each keep a log sorted by time. One heap holds the next entry from each log, so the merged timeline comes out in order.
+```python
+import heapq
+
+logs = {
+    "web": [(1, "start"), (4, "request"), (9, "request")],
+    "db": [(2, "start"), (3, "query"), (8, "backup")],
+    "mail": [(5, "start"), (6, "send")],
+}
+names = ["web", "db", "mail"]
+h = []
+for k in range(len(names)):
+    first_time = logs[names[k]][0][0]
+    heapq.heappush(h, (first_time, k, 0))
+while h:
+    time, k, pos = heapq.heappop(h)
+    entries = logs[names[k]]
+    print(time, names[k], entries[pos][1])
+    if pos + 1 < len(entries):
+        heapq.heappush(h, (entries[pos + 1][0], k, pos + 1))
+```
+3-7: Each log is a list of (time, message) pairs, already in time order.
+8: A number for each server, so a heap item can say which log it came from.
+10-12: Start with the first entry of each log: the times 1, 2 and 5.
+13-16: Pop the earliest entry from any log and print it.
+17-18: Then push the next entry from the same log, if there is one. The heap never holds more than 3 items.
+
+=== animation: Pop: sifting down
+view: heap h ptr=i,c
+vars top last i c
+intro: Popping from a min-heap of 7 items. The root, 1, is saved; the last item, 6, moves into its place and sinks: each time, `c` finds the smaller child, and the two swap while that child is smaller.
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        sift_down(h, 0)
+    return top
+
+h = [1, 4, 2, 7, 5, 3, 6]
+print(pop(h))
+print(h)
+```
+1: Defines sift_down. Nothing runs yet.
+2: Does index {i} have a left child? Its index would be {2 * i + 1}, and the list has {len(h)} items: {2 * i + 1 < len(h)}.
+3: Start with the left child, at index {2 * i + 1}.
+4: {'Is there a right child, at index ' + str(c + 1) + ', smaller than ' + str(h[c]) + '? ' + str(c + 1 < len(h) and h[c + 1] < h[c]) + '.' if c + 1 < len(h) else 'There is no right child: index ' + str(c + 1) + ' is past the end.'}
+5: The right child, {h[c + 1]}, is smaller: use it.
+6: Is {h[i]} already no bigger than its smaller child, {h[c]}? {h[i] <= h[c]}.
+7: {h[i]} is in place: stop.
+8: Swap {h[i]} with its smaller child, {h[c]}.
+9: {h[c]} has moved down to index {c}.
+11: Defines pop. Nothing runs yet.
+12: Save the smallest item, {h[0]}, to return it.
+13: Take the last item, {h[-1]}, off the end of the list.
+14: Is anything left in the list? {len(h) > 0}.
+15: Put {last} in the root's place.
+16: Sift {last} down from the root.
+17: Return {top}.
+19: A min-heap of 7 items.
+20: Pop: 1 comes out.
+21: The heap that's left, with 6 sunk to a leaf.
+
+=== animation: Heapify, bottom up
+view: heap h ptr=start,i,c
+vars start i c
+intro: Heapify on `[9, 4, 7, 1, 8, 2, 6]`. It sifts down from each item that has children, starting at index 2 and working back to the root. Each time, both subtrees below `start` are already heaps.
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        sift_down(h, start)
+
+h = [9, 4, 7, 1, 8, 2, 6]
+heapify(h)
+print(h)
+```
+1: Defines sift_down. Nothing runs yet.
+2: Does index {i} have a left child? {2 * i + 1 < len(h)}.
+3: Start with the left child, at index {2 * i + 1}.
+4: {'Is the right child smaller than the left? ' + str(c + 1 < len(h) and h[c + 1] < h[c]) + '.' if c + 1 < len(h) else 'There is no right child.'}
+5: The right child, {h[c + 1]}, is smaller: use it.
+6: Is {h[i]} already no bigger than its smaller child, {h[c]}? {h[i] <= h[c]}.
+7: {h[i]} is in place: stop.
+8: Swap {h[i]} with its smaller child, {h[c]}.
+9: {h[c]} has moved down to index {c}.
+11: Defines heapify. Nothing runs yet.
+12: Go through the items that have children, from index {len(h) // 2 - 1} back to index 0.
+13: Sift down the item at index {start}, {h[start]}. Both subtrees below it are heaps already.
+15: Not a heap: 9 is at the root.
+16: Heapify works backwards from index 2.
+17: A min-heap, built with 4 swaps.
+
+=== task: predict easy
+title: Four pushes
+code:
+```python
+import heapq
+
+h = []
+for x in [6, 2, 9, 4]:
+    heapq.heappush(h, x)
+print(h)
+```
+wrong[[2, 4, 6, 9]]: A heap isn't kept sorted. 4 climbs past 6 and stops below 2, and 9 stays where it landed.
+wrong[[6, 2, 9, 4]]: Each push sifts the new item up, so the list doesn't stay in arrival order: 2 climbs above 6 straight away.
+wrong[[2, 6, 9, 4]]: 4 lands at index 3, below 6. 6 is bigger, so they swap.
+hint: Push one item at a time: append it, then swap it with its parent while the parent is bigger.
+hint: After three pushes the list is `[2, 6, 9]`. Where does 4 land, and who is its parent?
+right: `[2, 4, 9, 6]`: 2 climbs above 6, 9 stays below 2, and 4 swaps with its parent 6 and stops below 2.
+wrong: 6 alone; 2 swaps above 6: `[2, 6]`; 9 stays: `[2, 6, 9]`; 4 lands at index 3 below 6, swaps with it, and stops below 2: `[2, 4, 9, 6]`.
+
+=== task: mcq easy
+title: Why the last item?
+prompt: When pop removes the root, why does it move the **last** item of the list into the root's place?
+* So the tree stays complete, with no gap :: Right. Taking the last item away empties the last place on the bottom level, so the tree keeps its shape, and sifting down then fixes the order.
+- Because the last item is the largest :: In a min-heap the last item is a leaf, but not necessarily the largest one.
+- Because the last item is the second smallest :: The second smallest is at index 1 or 2, not at the end.
+- So that the list ends up sorted :: A heap is never fully sorted; it only keeps the smallest item at the root.
+hint: What would happen to the shape of the tree if the root were deleted and nothing took its place?
+hint: Which place can be emptied without leaving a gap in a complete tree?
+right: Only the last place can be emptied without making a hole, so the last item moves to the root, and sifting down restores the rule.
+wrong: A heap must stay a complete tree. Removing the last item leaves no gap, so it fills the root's place, and then it sifts down to where it belongs.
+
+=== task: cells easy
+title: Where heapify starts
+prompt: Heapify starts sifting down from the last item that has children, at index `n // 2 - 1` for a list of n items. Which index does it start at for each list size?
+labels: 7 items | 8 items | 10 items | 3 items
+answer: 2 | 3 | 4 | 0
+wrong[3 | 4 | 5 | 1]: That's n // 2. The last item with children is one place earlier: n // 2 − 1.
+wrong[6 | 7 | 9 | 2]: That's the last item, n − 1, which is a leaf: it has no children to sift down to.
+hint: Work out n // 2, then take 1 away.
+hint: For 10 items, index 4 has a left child at index 9, the last item.
+right: 2, 3, 4 and 0: each is the last index whose left child, 2i + 1, is still inside the list.
+wrong: Compute n // 2 − 1: 7 // 2 − 1 = 2, 8 // 2 − 1 = 3, 10 // 2 − 1 = 4 and 3 // 2 − 1 = 0.
+
+=== task: code easy
+title: Heap sort
+prompt: Write `heap_sort(nums)` that returns a new list with the items of `nums` in increasing order. Copy the list, turn the copy into a heap with `heapq.heapify`, then pop until it's empty. Don't use `sorted` or `.sort`.
+starter:
+```python
+import heapq
+
+def heap_sort(nums):
+    # your code here
+    return list(nums)
+```
+solution:
+```python
+import heapq
+
+def heap_sort(nums):
+    h = list(nums)
+    heapq.heapify(h)
+    out = []
+    while h:
+        out.append(heapq.heappop(h))
+    return out
+```
+tests:
+- heap_sort([5, 2, 9, 1])
+- heap_sort([])
+- heap_sort([3, 3, 1])
+- heap_sort([-2, 7, 0])
+- heap_sort([4])
+forbid[sorted(]: Sort with the heap: don't use `sorted`.
+forbid[.sort(]: Sort with the heap: don't use `.sort`.
+fail[1]: Each pop returns the smallest item left: [1, 2, 5, 9].
+fail[3]: Equal items come out one after the other: [1, 3, 3].
+fail[4]: Negative numbers too: [-2, 0, 7].
+hint: `h = list(nums)` makes a copy, and `heapq.heapify(h)` turns it into a heap in O(n).
+hint: While `h` isn't empty, append `heapq.heappop(h)` to the result.
+right: Heapify is O(n), and each of the n pops is O(log n), so heap sort is O(n log n).
+wrong: Copy the list, heapify the copy, then pop everything into a new list: the pops come out smallest first.
+
+=== task: fill easy
+title: Filling the root's place
+prompt: Fill in the blanks in `pop`, so that the program prints:
+
+```output
+1 2 [3, 4, 5, 6]
+```
+code:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def pop(h):
+    top = h[0]
+    last = h.??()
+    if h:
+        h[??] = last
+        sift_down(h, 0)
+    return top
+
+h = [1, 3, 2, 6, 4, 5]
+a = pop(h)
+b = pop(h)
+print(a, b, h)
+```
+answer: pop | 0
+wrong[pop | 1]: Putting the last item at index 1 leaves the old root, 1, at index 0, so the next pop returns 1 again.
+wrong[copy | 0]: `copy()` returns a copy of the whole list and removes nothing. Putting that list at index 0 makes `sift_down` compare a list with a number: TypeError.
+hint: The last item has to come off the end of the list.
+hint: Where is the gap that the removed root left?
+right: `h.pop()` takes the last item off the end, and `h[0] = last` puts it where the root was, ready to sift down.
+wrong: Take the last item off with `h.pop()`, then put it at index 0, the root's empty place, and sift it down from there.
+
+=== task: multi easy
+title: True of heapify
+prompt: Choose **every** statement that is true of heapify.
+* It takes O(n) time :: Right. Most items are near the bottom and sink only a little.
+* It starts from the last item that has children and works back to the root :: Right. Then both subtrees below each item are already heaps.
+* The leaves need no work :: Right. A single item is already a heap.
+- It leaves the list sorted :: It leaves a heap: only the smallest item is sure to be in its sorted place.
+- It works from the root down to the leaves :: Going down from the root, the subtrees below wouldn't be heaps yet.
+- It costs O(n log n), like pushing the items one at a time :: It's faster: less than n swaps in total.
+hint: What's true of the subtrees below an item when heapify reaches it?
+hint: How far can the items near the bottom sink?
+right: Heapify sifts down from the last parent back to the root, skipping the leaves, and takes O(n). The result is a heap, not a sorted list.
+wrong: Heapify works backwards from index n // 2 − 1, so each item's subtrees are heaps already when it sifts down. Leaves are skipped, the total is O(n), and the list ends up a heap but not sorted.
+
+=== task: parsons easy
+title: Sift up
+prompt: Arrange the lines so that `push` appends the item and sifts it up, and the program prints:
+
+```output
+[1, 3, 2, 5, 4, 8]
+```
+
+Not every line is needed.
+lines:
+```python
+def sift_up(h, i):
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] <= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+def push(h, x):
+    h.append(x)
+    sift_up(h, len(h) - 1)
+
+h = []
+for x in [5, 3, 8, 1, 4, 2]:
+    push(h, x)
+print(h)
+```
+distractors:
+```python
+        p = i // 2
+        if h[p] >= h[i]:
+```
+hint: The parent of index i is at (i − 1) // 2.
+hint: Stop as soon as the parent is no bigger than the item.
+right: Each new item climbs while its parent is bigger and stops under a parent that's no bigger: `[1, 3, 2, 5, 4, 8]`.
+wrong: `sift_up` loops while i > 0: find the parent p = (i − 1) // 2, break if `h[p] <= h[i]`, otherwise swap and set `i = p`. `push` appends, then sifts up from the last index.
+
+=== task: order easy
+title: Heapify, step by step
+prompt: Put the steps of heapify on `[5, 4, 3, 2, 1]` in order.
+items:
+- Sift down from index 1: 4 swaps with its smaller child, 1
+- Sift down from index 0: 5 swaps with its smaller child, 1
+- 5, now at index 1, swaps with its smaller child, 2
+- 5 reaches a leaf and stops: the list is [1, 2, 3, 5, 4]
+hint: With 5 items, the last item with children is at index 5 // 2 − 1 = 1.
+hint: Heapify works backwards, from index 1 to index 0.
+right: Index 1 first (4 swaps with 1), then index 0: 5 swaps with 1 and then with 2. Two sift downs, three swaps.
+wrong: Heapify starts at index 1: 4 sinks below 1. Then index 0: 5 swaps with 1, then keeps sinking and swaps with 2, until it reaches a leaf.
+
+=== task: predict easy
+title: The smallest few
+code:
+```python
+import heapq
+
+print(heapq.nsmallest(3, [7, 2, 9, 2, 5]))
+print(heapq.nsmallest(2, ["pear", "fig", "kiwi"]))
+```
+wrong[[2, 5, 7]\n['fig', 'kiwi']]: Equal values both count: there are two 2s, and both are among the 3 smallest.
+wrong[[2, 2, 5]\n['pear', 'fig']]: `nsmallest` doesn't keep the original order: it returns the smallest items, smallest first.
+wrong[[2, 2, 5]\n['fig', 'pear']]: Strings compare in alphabetical order: "kiwi" comes before "pear".
+hint: `nsmallest(k, items)` returns the k smallest items, in increasing order.
+hint: For strings, smallest means first in alphabetical order.
+right: `[2, 2, 5]` and `['fig', 'kiwi']`: the smallest items, smallest first, counting equal values separately.
+wrong: The 3 smallest of 7, 2, 9, 2, 5 are 2, 2 and 5. The 2 smallest strings are the first two in alphabetical order: fig, then kiwi.
+
+=== task: mcq easy
+title: Popping everything
+prompt: A program pops every item from a min-heap, one at a time, and writes them down in the order they come out. What does the list of popped items look like?
+* The items in increasing order :: Right. Each pop returns the smallest item that's left.
+- The items in the order they were pushed :: A heap isn't first in, first out.
+- The heap's list, as it was before the popping :: The list isn't sorted, but the pops come out in sorted order.
+- The items in decreasing order :: That's what a max-heap would give.
+hint: What does each pop return?
+hint: What's left after the smallest item is gone?
+right: Increasing order: each pop takes the smallest of what's left. That's heap sort.
+wrong: Every pop removes the smallest remaining item, so the popped items come out smallest first: sorted order.
+
+=== task: code medium
+title: Write sift_down
+prompt: Write `sift_down(h, i)` that moves the item at index i down a min-heap list until it's no bigger than its children: while it has a child, find the smaller child, and swap with it if that child is smaller. `pop` uses your function, and `pops(h, k)` pops k times and returns the popped items and what's left, for the tests.
+starter:
+```python
+def sift_down(h, i):
+    # your code here
+    return
+
+def pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        sift_down(h, 0)
+    return top
+
+def pops(h, k):
+    out = []
+    for j in range(k):
+        out.append(pop(h))
+    return out, h
+```
+solution:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        sift_down(h, 0)
+    return top
+
+def pops(h, k):
+    out = []
+    for j in range(k):
+        out.append(pop(h))
+    return out, h
+```
+tests:
+- pops([1, 3, 2, 5, 4, 8], 1)
+- pops([1, 3, 2, 5, 4, 8], 6)
+- pops([7], 1)
+- pops([1, 4, 2, 7, 5, 3, 6], 1)
+- pops([2, 4, 3, 7, 5, 6, 8], 2)
+fail[1]: 8 goes to the root and swaps with its smaller child, 2: ([1], [2, 3, 8, 5, 4]).
+fail[2]: Every pop must return the smallest item left: [1, 2, 3, 4, 5, 8].
+fail[4]: 6 swaps with 2, then with its only child, 3.
+fail[5]: Two pops: 2, then 3.
+error[IndexError]: Check that a child's index is less than `len(h)` before reading it.
+hint: Loop while index i has a left child: `2 * i + 1 < len(h)`.
+hint: Let c be the left child, and move it to the right child if that exists and is smaller.
+hint: If `h[i] <= h[c]`, stop; otherwise swap `h[i]` and `h[c]` and set `i = c`.
+right: The item sinks one level per swap, always towards the smaller child, and stops when neither child is smaller or it reaches a leaf. O(log n).
+wrong: While i has a child: pick the smaller child c; if the item is no bigger than it, stop; otherwise swap them and continue from c.
+
+=== task: code medium
+title: Write heapify
+prompt: Write `heapify(h)` that turns the list `h` into a min-heap in place, using the `sift_down` provided: sift down every item that has children, from the last one, at index `len(h) // 2 - 1`, back to index 0. Don't use `heapq`. `heapified` copies a list, heapifies the copy and returns it, for the tests.
+starter:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heapify(h):
+    # your code here
+    return
+
+def heapified(nums):
+    h = list(nums)
+    heapify(h)
+    return h
+```
+solution:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        sift_down(h, start)
+
+def heapified(nums):
+    h = list(nums)
+    heapify(h)
+    return h
+```
+tests:
+- heapified([9, 4, 7, 1, 8, 2, 6])
+- heapified([5, 4, 3, 2, 1])
+- heapified([6, 5, 4, 3, 2, 1])
+- heapified([])
+- heapified([1, 2, 3])
+- heapified([8, 6, 7, 2, 5, 1, 3, 4])
+forbid[heapq]: Write heapify yourself, with `sift_down`.
+fail[1]: Index 2, then 1, then 0: [1, 4, 2, 9, 8, 7, 6].
+fail[2]: Heapify works backwards from index 1. Pushing the items one at a time would give a different heap, [1, 2, 4, 5, 3].
+fail[3]: Start at index 2 and work back to 0: [1, 2, 4, 3, 5, 6].
+fail[6]: 8 items: start at index 3 and work back to 0.
+hint: The last item with children is at `len(h) // 2 - 1`.
+hint: Loop backwards with `range(len(h) // 2 - 1, -1, -1)`: the stop, −1, is left out, so the last index is 0.
+hint: Call `sift_down(h, start)` for each index.
+right: Each item is sifted down after both subtrees below it are heaps, so when index 0 is done, the whole list is a heap. O(n).
+wrong: Loop `start` from `len(h) // 2 - 1` down to 0 and call `sift_down(h, start)` each time. Going forwards, or pushing one by one, gives a different arrangement.
+
+=== task: predict medium
+title: Heapify by hand
+code:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        sift_down(h, start)
+
+h = [8, 6, 7, 2, 5, 1, 3, 4]
+heapify(h)
+print(h)
+```
+wrong[[1, 2, 3, 4, 5, 6, 7, 8]]: Heapify makes a heap, not a sorted list. 8 sinks to index 6, and 6 ends at index 7.
+wrong[[1, 2, 3, 6, 5, 7, 8, 4]]: When 6 swaps down to index 3, its child at index 7 holds 4, which is smaller, so it swaps again.
+wrong[[1, 2, 7, 4, 5, 8, 3, 6]]: Index 2 is sifted first: 7 swaps with its smaller child, 1, before the root is touched.
+hint: 8 items: start at index 3, then 2, 1 and 0.
+hint: Index 3 (2) is fine; index 2 (7) swaps with 1; index 1 (6) swaps with 2, then with 4.
+right: `[1, 2, 3, 4, 5, 7, 8, 6]`: index 2 brings 1 up, index 1 sinks 6 two levels, and the root, 8, sinks past 1 and 3.
+wrong: Index 3: 2 is above 4, fine. Index 2: 7 swaps with 1. Index 1: 6 swaps with 2, then with 4. Index 0: 8 swaps with 1, then with 3.
+
+=== task: cells medium
+title: Two pops
+prompt: The list `[1, 3, 2, 6, 4, 5]` is a min-heap. After two pops, what is at each index?
+labels: 0 | 1 | 2 | 3
+answer: 3 | 4 | 5 | 6
+wrong[4 | 3 | 5 | 6]: After the second pop, 4 sits at the root but is bigger than its child 3, so it has to sift down.
+wrong[2 | 3 | 5 | 6]: Two pops remove the two smallest items, 1 and 2, so 2 can't still be in the heap.
+hint: First pop: 5 moves to the root and swaps with its smaller child, 2.
+hint: Second pop: 4 moves to the root and swaps with its smaller child, 3.
+right: After the first pop, `[2, 3, 5, 6, 4]`; after the second, `[3, 4, 5, 6]`.
+wrong: Pop 1: the last item, 5, goes to the root and swaps with 2: `[2, 3, 5, 6, 4]`. Pop 2: the last item, 4, goes to the root and swaps with 3, then stops above 6: `[3, 4, 5, 6]`.
+
+=== task: fill medium
+title: The next item from the same list
+prompt: Fill in the blanks so that `merge_sorted` pushes the next item from the list it has popped from, and the program prints:
+
+```output
+[1, 2, 3, 4, 5, 9, 10, 12]
+```
+code:
+```python
+import heapq
+
+def merge_sorted(lists):
+    h = []
+    for li in range(len(lists)):
+        if lists[li]:
+            heapq.heappush(h, (lists[li][0], li, 0))
+    out = []
+    while h:
+        val, li, pos = heapq.heappop(h)
+        out.append(val)
+        if pos + 1 < ??:
+            heapq.heappush(h, (lists[li][pos + 1], li, ??))
+    return out
+
+print(merge_sorted([[1, 4, 9], [2, 3, 10, 12], [5], []]))
+```
+answer: len(lists[li]) | pos + 1
+wrong[len(lists) | pos + 1]: That compares with the number of lists, 4, instead of the length of list `li`. When 5 is popped, the walk runs past the end of `[5]`: IndexError.
+wrong[len(lists[li]) - 1 | pos + 1]: That stops one item early, so the last item of each list is never pushed: 9 and 12 go missing.
+hint: Is there another item after position `pos` in the list it came from?
+hint: The new tuple must remember the new item's position.
+right: `pos + 1 < len(lists[li])` checks that list `li` has another item, and the pushed tuple records its position, `pos + 1`, so the following push moves on again.
+wrong: Compare `pos + 1` with the length of the same list, `len(lists[li])`, and push `(lists[li][pos + 1], li, pos + 1)`.
+
+=== task: mcq medium
+title: Why start halfway?
+prompt: Heapify starts sifting down at index `n // 2 - 1` instead of at the last index, n − 1. Why?
+* Every item after that index is a leaf, and a single item is already a heap :: Right. Index n // 2 has its left child at n + 1 or beyond, past the end of the list.
+- The items after that index are already sorted :: They're not sorted; they're leaves, and leaves have no children to compare with.
+- To save memory :: Heapify works in place either way. Skipping the leaves saves time, not memory.
+- The first half of the list holds the biggest items :: Nothing about the values is known before heapify runs.
+hint: Where are the children of index n // 2?
+hint: What does sift_down do at an item with no children?
+right: Every index from n // 2 on has no children, so sifting down from there would do nothing. Heapify starts at the last item that has a child.
+wrong: An item at index i has its left child at 2i + 1. From index n // 2 on, that's past the end, so those items are leaves, which are already heaps on their own.
+
+=== task: predict medium
+title: The three smallest
+code:
+```python
+import heapq
+
+h = [12, 3, 9, 7, 1, 15, 4]
+heapq.heapify(h)
+small = []
+for i in range(3):
+    small.append(heapq.heappop(h))
+print(small, h[0], len(h))
+```
+wrong[[1, 3, 4] 1 7]: The pops remove items, so 4 are left, and the root is now the smallest of those: 7.
+wrong[[12, 3, 9] 7 4]: After heapify, each pop gives the smallest item left, not the next item in the original list.
+wrong[[1, 3, 4] 9 4]: The smallest of 12, 9, 7 and 15 is 7, and it's at the root.
+hint: The pops give the 3 smallest items, smallest first.
+hint: Which 4 items are left, and which of them is smallest?
+right: `[1, 3, 4] 7 4`: three pops take the three smallest, leaving 12, 9, 7 and 15, with 7 at the root.
+wrong: Heapify, then pop three times: 1, 3, 4. The 4 items left are 7, 9, 12 and 15, and the smallest, 7, is at index 0.
+
+=== task: multi medium
+title: What things cost
+prompt: Choose **every** cost that is correct for a heap of n items.
+* Heapify a list of n items: O(n) :: Right. Less than n swaps in total.
+* The k smallest of n items, by heapify and k pops: O(n + k log n) :: Right. O(n) to heapify, then O(log n) per pop.
+* Merging k sorted lists with N items in total: O(N log k) :: Right. Each item is pushed and popped once, in a heap of at most k items.
+* Heap sort of n items: O(n log n) :: Right. n pops, each O(log n).
+- n pushes, one at a time: O(n) :: Each push can take O(log n) swaps: O(n log n) in total. That's why heapify exists.
+- Peeking at the smallest item: O(log n) :: It's always at index 0: O(1).
+hint: Which jobs walk one path per item, and which do almost nothing per item?
+hint: Peeking doesn't change the heap at all.
+right: Heapify O(n), k smallest O(n + k log n), merging O(N log k) and heap sort O(n log n). Pushing items one at a time costs O(n log n), and a peek is O(1).
+wrong: Each push or pop costs O(log n), so n pushes cost O(n log n). Heapify is O(n), and peeking at `h[0]` is O(1).
+
+=== task: parsons medium
+title: The k smallest
+prompt: Arrange the lines so that `k_smallest` returns the k smallest items of a list without changing it, and the program prints:
+
+```output
+[1, 2, 4] [7, 2, 9, 4, 1, 8]
+```
+
+Not every line is needed.
+lines:
+```python
+import heapq
+
+def k_smallest(nums, k):
+    h = list(nums)
+    heapq.heapify(h)
+    out = []
+    for i in range(k):
+        out.append(heapq.heappop(h))
+    return out
+
+nums = [7, 2, 9, 4, 1, 8]
+print(k_smallest(nums, 3), nums)
+```
+distractors:
+```python
+    heapq.heapify(nums)
+        out.append(h.pop())
+```
+hint: Work on a copy, so `nums` keeps its order.
+hint: Heapify the copy, then pop from it k times.
+right: Copy, heapify (O(n)) and pop k times (O(k log n)). `nums` itself is never touched, so it prints in its original order.
+wrong: Make `h = list(nums)`, heapify `h`, then append `heapq.heappop(h)` to `out` k times. `h.pop()` would take the last item of the list, not the smallest.
+
+=== task: order medium
+title: Merging, step by step
+prompt: `merge_sorted` merges `[1, 6]`, `[2, 3]` and `[5]`. Put the values in its heap in order, from the start of the merge to the end.
+items:
+- 1, 2 and 5: the front item of each list
+- 2, 5 and 6: 1 popped, 6 pushed from its list
+- 3, 5 and 6: 2 popped, 3 pushed from its list
+- 5 and 6: 3 popped, and its list is used up
+- 6: 5 popped
+- empty: 6 popped
+hint: The heap starts with the first item of each list.
+hint: Each pop is followed by a push from the same list, if that list has another item.
+right: The heap always holds the next item of each list that isn't used up, so its smallest item is always the next one for the output: 1, 2, 3, 5, 6.
+wrong: Start with 1, 2 and 5. Popping 1 brings in 6; popping 2 brings in 3; popping 3, 5 and 6 brings in nothing, because those lists are used up.
+
+=== task: code hard
+title: Merge sorted lists
+prompt: Write `merge_all(lists)` that merges a list of sorted lists into one sorted list. Use a heap of `(value, list number, position)` tuples holding the front item of each list: pop the smallest, add its value to the output, and push the next item from the same list. Some lists may be empty. Don't use `sorted` or `.sort`.
+starter:
+```python
+import heapq
+
+def merge_all(lists):
+    # your code here
+    return []
+```
+solution:
+```python
+import heapq
+
+def merge_all(lists):
+    h = []
+    for li in range(len(lists)):
+        if lists[li]:
+            heapq.heappush(h, (lists[li][0], li, 0))
+    out = []
+    while h:
+        val, li, pos = heapq.heappop(h)
+        out.append(val)
+        if pos + 1 < len(lists[li]):
+            heapq.heappush(h, (lists[li][pos + 1], li, pos + 1))
+    return out
+```
+tests:
+- merge_all([[1, 4, 9], [2, 3, 10, 12], [5], []])
+- merge_all([])
+- merge_all([[], []])
+- merge_all([[1, 1, 2], [1, 3]])
+- merge_all([[5, 6, 7]])
+- merge_all([[-3, 0], [-5, 10], [2]])
+forbid[sorted(]: Merge with the heap: don't use `sorted`.
+forbid[.sort(]: Merge with the heap: don't use `.sort`.
+fail[1]: [1, 2, 3, 4, 5, 9, 10, 12]: every item, in order.
+fail[3]: Empty lists add nothing: [].
+fail[4]: Equal values are all kept: [1, 1, 1, 2, 3].
+fail[6]: Negative numbers too: [-5, -3, 0, 2, 10].
+error[IndexError]: Skip empty lists at the start, and only push a next item when `pos + 1 < len(lists[li])`.
+hint: Push `(lists[li][0], li, 0)` for every list that isn't empty.
+hint: While the heap isn't empty, pop `(val, li, pos)` and append `val`.
+hint: If `pos + 1 < len(lists[li])`, push `(lists[li][pos + 1], li, pos + 1)`.
+right: The heap holds at most one item per list, so each of the N items costs O(log k) to push and pop: O(N log k).
+wrong: Start the heap with each list's first item. Repeatedly pop the smallest, output it, and push the next item from its list, until the heap is empty.
+
+=== task: code hard
+title: Sorting a nearly sorted list
+prompt: In a nearly sorted list, every item is at most k places away from where it belongs in sorted order. Write `sort_almost(nums, k)` that returns the items in sorted order using a min-heap that never holds more than k + 1 items: push each item, and whenever the heap holds more than k items, pop the smallest into the output. At the end, pop everything that's left. Don't use `sorted` or `.sort`.
+starter:
+```python
+import heapq
+
+def sort_almost(nums, k):
+    # your code here
+    return list(nums)
+```
+solution:
+```python
+import heapq
+
+def sort_almost(nums, k):
+    h = []
+    out = []
+    for x in nums:
+        heapq.heappush(h, x)
+        if len(h) > k:
+            out.append(heapq.heappop(h))
+    while h:
+        out.append(heapq.heappop(h))
+    return out
+```
+tests:
+- sort_almost([2, 1, 4, 3, 6, 5], 1)
+- sort_almost([3, 1, 2, 6, 4, 5], 2)
+- sort_almost([10, 9, 8, 7, 4, 70, 60, 50], 4)
+- sort_almost([], 2)
+- sort_almost([1, 2, 3], 0)
+forbid[sorted(]: Sort with the small heap: don't use `sorted`.
+forbid[.sort(]: Sort with the small heap: don't use `.sort`.
+fail[1]: Each item is at most 1 place away: [1, 2, 3, 4, 5, 6].
+fail[2]: At most 2 places away: [1, 2, 3, 4, 5, 6].
+fail[3]: [4, 7, 8, 9, 10, 50, 60, 70].
+error[IndexError]: Only pop while the heap has items in it.
+hint: The smallest item not yet output is among the next k + 1 items, so a heap of k + 1 items always holds it.
+hint: Push each item; when `len(h) > k`, pop the smallest into `out`.
+hint: After the loop, pop the rest of the heap into `out`.
+right: The heap never holds more than k + 1 items, so each push and pop costs O(log k): O(n log k) in total, much less than sorting from scratch when k is small.
+wrong: Keep a min-heap of the last k + 1 items: push each new item, and once there are more than k, pop the smallest, which must be the next one in sorted order. Empty the heap at the end.
+
+=== task: code hard
+title: Joining ropes
+prompt: Joining two ropes of lengths a and b costs a + b, and gives one rope of length a + b. Write `join_cost(lengths)` that returns the smallest total cost of joining all the ropes into one. The cheapest way is to always join the two shortest ropes: keep the lengths in a min-heap, pop the two smallest, add their sum to the cost, and push the joined rope back. Zero or one rope costs 0.
+starter:
+```python
+import heapq
+
+def join_cost(lengths):
+    # your code here
+    return 0
+```
+solution:
+```python
+import heapq
+
+def join_cost(lengths):
+    h = list(lengths)
+    heapq.heapify(h)
+    cost = 0
+    while len(h) > 1:
+        a = heapq.heappop(h)
+        b = heapq.heappop(h)
+        cost += a + b
+        heapq.heappush(h, a + b)
+    return cost
+```
+tests:
+- join_cost([4, 3, 2, 6])
+- join_cost([5])
+- join_cost([1, 1, 1, 1])
+- join_cost([8, 4, 6, 12])
+- join_cost([])
+fail[1]: 2 + 3 = 5, then 4 + 5 = 9, then 6 + 9 = 15: 29 in total.
+fail[3]: 1 + 1, 1 + 1, then 2 + 2: 8.
+fail[4]: 4 + 6 = 10, 8 + 10 = 18, 12 + 18 = 30: 58.
+error[IndexError]: Stop when only one rope is left: loop `while len(h) > 1`.
+hint: Heapify a copy of the lengths.
+hint: While more than one rope is left, pop the two shortest, add `a + b` to the cost, and push `a + b` back.
+hint: Return the total cost when one rope is left.
+right: The shortest ropes get included in the most joins, so joining them first keeps the total low. Each join is a few heap operations: O(n log n) for n ropes.
+wrong: Keep the ropes in a min-heap. Repeatedly pop the two shortest, pay their sum, and push the joined rope back, until one rope is left.
+
+=== task: code hard
+title: How many rooms?
+prompt: Each meeting is a pair `(start, end)`, and a room is free again for any meeting that starts at or after the time the last one in it ended. Write `min_rooms(meetings)` that returns the fewest rooms needed. Go through the meetings sorted by start time, keeping a min-heap of the end times of the meetings still going on: before placing a meeting, pop every end time that's ≤ its start (those rooms are free again), then push its own end time. The answer is the most end times the heap ever holds.
+starter:
+```python
+import heapq
+
+def min_rooms(meetings):
+    # your code here
+    return 1
+```
+solution:
+```python
+import heapq
+
+def min_rooms(meetings):
+    ends = []
+    most = 0
+    for start, end in sorted(meetings):
+        while ends and ends[0] <= start:
+            heapq.heappop(ends)
+        heapq.heappush(ends, end)
+        most = max(most, len(ends))
+    return most
+```
+tests:
+- min_rooms([(9, 10), (9, 12), (11, 13)])
+- min_rooms([(1, 2), (2, 3), (3, 4)])
+- min_rooms([(1, 5), (2, 6), (3, 7), (4, 8)])
+- min_rooms([])
+- min_rooms([(10, 11), (1, 20), (12, 13)])
+fail[1]: The two 9 o'clock meetings overlap. At 11 the first one has ended, so its room is free: 2 rooms.
+fail[3]: All four meetings are going on at 4 o'clock: 4 rooms.
+fail[4]: No meetings, no rooms: 0.
+fail[5]: The meeting from 1 to 20 needs a room the whole time; the other two can share a second one.
+hint: Sort the meetings by start time with `sorted(meetings)`.
+hint: The smallest end time in the heap, `ends[0]`, is the room that frees up first. Pop while it's ≤ the next start.
+hint: Push the new meeting's end time, and keep the largest `len(ends)` you see.
+right: The heap holds exactly the meetings in progress, and its smallest end time says whether any room is free yet. O(n log n) for the sort and the heap operations.
+wrong: Sort by start. For each meeting, pop the end times that are ≤ its start, push its end time, and track the most items the heap ever holds.
+
+=== task: predict hard
+title: Pushes and pops mixed
+code:
+```python
+import heapq
+
+h = []
+for x in [5, 1, 4]:
+    heapq.heappush(h, x)
+print(heapq.heappop(h))
+heapq.heappush(h, 2)
+heapq.heappush(h, 0)
+print(heapq.heappop(h), heapq.heappop(h), h)
+```
+wrong[1\n2 4 [5, 0]]: 0 was pushed after the first pop, so it's in the heap: as the smallest item, it comes out next.
+wrong[5\n4 2 [1, 0]]: `heappop` returns the smallest item, not the last one pushed.
+wrong[1\n0 2 [5, 4]]: After 0 and 2 are popped, 4 and 5 are left, and 4, the smaller, is the root: `[4, 5]`.
+hint: After the first pop, the heap holds 4 and 5. Then 2 and 0 join.
+hint: The next two pops give the two smallest of 0, 2, 4 and 5.
+right: 1 first, then 0 and 2, leaving `[4, 5]`: a pop always takes the smallest item in the heap at that moment.
+wrong: Pushes 5, 1, 4; pop gives 1. Pushes 2 and 0; pops give 0, then 2. Left: 4 and 5, with 4 at the root.
+
+=== task: predict hard
+title: Counting heapify's swaps
+code:
+```python
+def heapify_swaps(h):
+    total = 0
+    for start in range(len(h) // 2 - 1, -1, -1):
+        i = start
+        while 2 * i + 1 < len(h):
+            c = 2 * i + 1
+            if c + 1 < len(h) and h[c + 1] < h[c]:
+                c += 1
+            if h[i] <= h[c]:
+                break
+            h[i], h[c] = h[c], h[i]
+            i = c
+            total += 1
+    return total
+
+print(heapify_swaps([6, 5, 4, 3, 2, 1]), heapify_swaps([1, 2, 3, 4, 5, 6]), heapify_swaps([3, 1, 2]), heapify_swaps([2, 2, 2, 2]))
+```
+wrong[5 0 1 0]: 4 at index 2 swaps once, 5 at index 1 swaps once, and 6 at the root sinks two levels: 4 swaps.
+wrong[4 0 1 3]: Equal values never swap: `h[i] <= h[c]` is True, so each sift stops at once.
+wrong[4 5 1 0]: A sorted list is already a heap, so no item is bigger than its children: 0 swaps.
+hint: In `[6, 5, 4, 3, 2, 1]`, heapify starts at index 2: 4 has the child 1.
+hint: A list that's already a heap needs no swaps at all.
+right: `4 0 1 0`: the descending list needs 4 swaps, the sorted list and the equal values none, and `[3, 1, 2]` one: 3 swaps with 1.
+wrong: `[6, 5, 4, 3, 2, 1]`: index 2 (4 below 1) swaps once, index 1 (5 below 2) once, and index 0 (6) sinks twice: 4. The sorted list and the list of 2s are already heaps: 0. `[3, 1, 2]`: one swap.
+
+=== task: cells hard
+title: Heapify, then look
+prompt: After heapify runs on `[10, 7, 3, 8, 1, 5]`, what is at each index?
+labels: 0 | 1 | 2 | 3 | 4 | 5
+answer: 1 | 7 | 3 | 8 | 10 | 5
+wrong[1 | 3 | 5 | 7 | 8 | 10]: Heapify makes a heap, not a sorted list: each item only moves along its own path.
+wrong[1 | 10 | 3 | 8 | 7 | 5]: 10 keeps sinking: at index 1, its smaller child is 7, so they swap.
+wrong[1 | 7 | 5 | 8 | 10 | 3]: At index 2, 3 is already smaller than its child 5, so it stays.
+hint: 6 items: heapify starts at index 2, then 1, then 0.
+hint: Index 2 stays; index 1 (7) swaps with 1; the root (10) swaps with 1, then with 7.
+right: `[1, 7, 3, 8, 10, 5]`: 3 stays put, 7 swaps with 1, and 10 sinks past 1 and 7.
+wrong: Index 2: 3 is above 5, fine. Index 1: 7 swaps with its smaller child, 1. Index 0: 10 swaps with 1, then with its smaller child 7, ending at index 4.
+
+=== task: multi hard
+title: No swaps needed
+prompt: Choose **every** list on which heapify makes no swaps at all.
+* `[1, 2, 3, 4, 5, 6]` :: Right. A sorted list is already a min-heap: every parent sits earlier, so it's never bigger.
+* `[1, 5, 2, 6, 7, 3, 4]` :: Right. Every parent is already ≤ its children.
+* `[4, 4, 4, 4]` :: Right. Equal values never swap.
+* `[7]` :: Right. A single item has no children, so heapify does nothing.
+- `[2, 1, 3]` :: The root, 2, is bigger than its child 1, so they swap.
+- `[1, 3, 2, 0]` :: 0 is at index 3, below 3: it has to move up, so 3 sinks and they swap.
+hint: Heapify swaps only when some parent is bigger than one of its children.
+hint: Check each parent against its children.
+right: Heapify makes no swaps exactly when the list is already a heap: sorted lists, lists of equal values, single items, and any list that already follows the rule.
+wrong: A swap happens only where a parent is bigger than a child. `[2, 1, 3]` and `[1, 3, 2, 0]` each have one; the others follow the rule already.
+
+=== task: fill hard
+title: Counting down to the root
+prompt: Fill in the blanks so that heapify visits every item with children, from the last one back to the root, and the program prints:
+
+```output
+[1, 2, 3, 5, 4]
+```
+code:
+```python
+def sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heapify(h):
+    for start in range(len(h) // 2 - 1, ??, ??):
+        sift_down(h, start)
+
+h = [5, 4, 3, 2, 1]
+heapify(h)
+print(h)
+```
+answer: -1 | -1
+wrong[0 | -1]: The stop is left out, so a stop of 0 never reaches the root, and 5 stays at the top: `[5, 1, 3, 2, 4]`.
+wrong[-1 | 1]: Counting up from 1 to −1 gives an empty range, so nothing is sifted and the list is unchanged.
+hint: The range has to count down, one at a time.
+hint: `range` leaves out its stop, so to include index 0, the stop must be one less.
+right: `range(len(h) // 2 - 1, -1, -1)` counts down by 1 and stops before −1, so the last index it gives is 0, the root.
+wrong: Count down with a step of −1, and stop at −1 so that 0 is included: `range(start, -1, -1)`.
+
+=== task: parsons hard
+title: Heap sort in place
+prompt: Heap sort can work inside the list itself. Heapify the whole list, then repeat: swap the root (the smallest item) with the last item of the heap part, make the heap part one shorter, and sift the new root down inside the shorter heap. With a min-heap, the smallest items collect at the end, so the list ends up in **decreasing** order. `sift_down` takes the heap's size as `n`. Arrange the lines so that the program prints:
+
+```output
+[9, 7, 4, 3, 1]
+```
+
+Not every line is needed.
+lines:
+```python
+def sift_down(h, i, n):
+    while 2 * i + 1 < n:
+        c = 2 * i + 1
+        if c + 1 < n and h[c + 1] < h[c]:
+            c += 1
+        if h[i] <= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def heap_sort_desc(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        sift_down(h, start, len(h))
+    for end in range(len(h) - 1, 0, -1):
+        h[0], h[end] = h[end], h[0]
+        sift_down(h, 0, end)
+
+nums = [4, 9, 1, 7, 3]
+heap_sort_desc(nums)
+print(nums)
+```
+distractors:
+```python
+        sift_down(h, 0, len(h))
+        sift_down(h, end, 0)
+```
+hint: First heapify the whole list: sift down from `len(h) // 2 - 1` back to 0, with n = `len(h)`.
+hint: Then, for `end` from the last index down to 1: swap `h[0]` with `h[end]`, and sift down from 0 inside a heap of size `end`.
+right: Each round moves the smallest remaining item to the end of the heap part and shrinks the heap past it. No extra list is needed: O(n log n) time and O(1) extra space.
+wrong: Heapify with n = `len(h)`. Then for each `end` from the last index down to 1, swap the root into `h[end]` and sift down from 0 with n = `end`, so the finished items at the back are left alone.
