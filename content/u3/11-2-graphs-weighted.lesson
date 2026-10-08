@@ -1,0 +1,1089 @@
+=== lesson
+id: ds-graphs-weighted
+title: Weighted graphs
+summary: In a weighted graph every edge carries a number: a distance, a price, a travel time. You'll store edges as (neighbour, weight) pairs, build weighted graphs from lists of triples, look up an edge's weight, add up the total weight of a path, find the cheapest edge out of a vertex, and see why the path with the fewest edges isn't always the cheapest.
+
+=== learn
+### Edges with numbers
+In a **weighted graph**, every edge has a number called its **weight**: the length of a road, the price of a ticket, the minutes a train takes. Without weights, every edge counts the same; with them, some connections cost more than others. This lesson uses this undirected weighted graph, where the numbers are the weights:
+```text
+  A ---7--- B
+  |       / |
+  2     3   1
+  |   /     |
+  | /       |
+  C ---6--- D ---5--- E
+```
+| edge | weight |
+| --- | --- |
+| A–B | 7 |
+| A–C | 2 |
+| B–C | 3 |
+| B–D | 1 |
+| C–D | 6 |
+| D–E | 5 |
+
+Weights can model many things: kilometres on a road map, euros on a flight map, milliseconds on a computer network. Directed graphs can be weighted too: a one-way flight from A to B can cost more than the flight back.
+
+### Storing (neighbour, weight) pairs
+The adjacency list stays a dictionary of lists, but each item is now a pair, `(neighbour, weight)`. In an undirected graph, each edge appears in both vertices' lists with the same weight:
+```python
+graph = {
+    "A": [("B", 7), ("C", 2)],
+    "B": [("A", 7), ("C", 3), ("D", 1)],
+    "C": [("A", 2), ("B", 3), ("D", 6)],
+    "D": [("B", 1), ("C", 6), ("E", 5)],
+    "E": [("D", 5)],
+}
+for nbr, w in graph["B"]:
+    print("B -", nbr, "costs", w)
+print(len(graph["B"]), graph["E"])
+```
+```output
+B - A costs 7
+B - C costs 3
+B - D costs 1
+3 [('D', 5)]
+```
+`for nbr, w in graph["B"]` unpacks each pair into the neighbour and the weight. The degree is still the length of the list: B has 3 edges. Animation 1 and Animation 2 both use this graph.
+
+### Building from weighted edges
+Weighted edges usually come as triples `(u, v, weight)`. Building the graph works as before, appending a pair instead of a plain vertex. For an undirected graph, append to both lists; for a directed one, append to u's list only:
+```python
+def build(edges, directed):
+    g = {}
+    for u, v, w in edges:
+        if u not in g:
+            g[u] = []
+        if v not in g:
+            g[v] = []
+        g[u].append((v, w))
+        if not directed:
+            g[v].append((u, w))
+    return g
+
+edges = [("A", "B", 7), ("A", "C", 2), ("B", "C", 3), ("B", "D", 1), ("C", "D", 6), ("D", "E", 5)]
+print(build(edges, False) == graph)
+flights = build([("LIM", "BOG", 180), ("BOG", "LIM", 150), ("BOG", "MEX", 240)], True)
+print(flights)
+```
+```output
+True
+{'LIM': [('BOG', 180)], 'BOG': [('LIM', 150), ('MEX', 240)], 'MEX': []}
+```
+The flights are one-way, and LIM → BOG costs 180 while BOG → LIM costs 150: two separate directed edges with their own weights.
+
+### Looking up a weight
+To find the weight of the edge from u to v, look through u's pairs for v. If v isn't there, there's no edge, and the function returns None:
+```python
+def weight(graph, u, v):
+    for nbr, w in graph[u]:
+        if nbr == v:
+            return w
+    return None
+
+print(weight(graph, "B", "D"), weight(graph, "D", "B"), weight(graph, "A", "E"))
+```
+```output
+1 1 None
+```
+In this undirected graph the edge B–D has the same weight from either end. A and E aren't joined, so the answer is None, which is different from a weight of 0. The scan looks at u's pairs one by one: O(degree of u).
+
+### The total weight of a path
+The **weight of a path** is the sum of the weights of its edges. If some step of the route isn't an edge, the route isn't a path at all:
+```python
+def path_weight(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        w = weight(graph, route[i], route[i + 1])
+        if w is None:
+            return None
+        total += w
+    return total
+
+for route in [["A", "B", "D", "E"], ["A", "C", "D", "E"], ["A", "C", "B", "D", "E"], ["A", "D", "E"]]:
+    print(route, path_weight(graph, route))
+```
+```output
+['A', 'B', 'D', 'E'] 13
+['A', 'C', 'D', 'E'] 13
+['A', 'C', 'B', 'D', 'E'] 11
+['A', 'D', 'E'] None
+```
+| route | edges | weights | total |
+| --- | --- | --- | --- |
+| A, B, D, E | 3 | 7 + 1 + 5 | 13 |
+| A, C, D, E | 3 | 2 + 6 + 5 | 13 |
+| A, C, B, D, E | 4 | 2 + 3 + 1 + 5 | 11 |
+
+The cheapest way from A to E uses 4 edges, more than the other two routes. In a weighted graph, **cheapest** and **fewest edges** are different questions. Animation 1 adds up the cheapest route.
+
+### The cheapest edge out
+The cheapest edge leaving a vertex is the pair with the smallest weight. A loop keeps the best pair so far; `min` with a `key` does the same in one line:
+```python
+def cheapest_edge(graph, v):
+    best = None
+    for nbr, w in graph[v]:
+        if best is None or w < best[1]:
+            best = (nbr, w)
+    return best
+
+for v in graph:
+    print(v, cheapest_edge(graph, v))
+print(min(graph["C"], key=lambda pair: pair[1]))
+```
+```output
+A ('C', 2)
+B ('D', 1)
+C ('A', 2)
+D ('B', 1)
+E ('D', 5)
+('A', 2)
+```
+`best[1]` is the weight of the best pair so far. `w < best[1]` keeps the first pair found when weights tie. The scan is O(degree). `key=lambda pair: pair[1]` tells `min` to compare the pairs by their weights. Animation 2 finds the cheapest edge out of every vertex.
+
+### Taking the cheapest edge isn't enough
+It's tempting to find a cheap route by always taking the cheapest edge out of where you are. That **greedy** walk can go wrong, because a cheap first step can lead to an expensive one:
+```python
+roads = {"S": [("A", 1), ("B", 4)], "A": [("T", 10)], "B": [("T", 2)], "T": []}
+v = "S"
+route = ["S"]
+total = 0
+while v != "T":
+    nbr, w = cheapest_edge(roads, v)
+    route.append(nbr)
+    total += w
+    v = nbr
+print("greedy:", route, total)
+print("other:", ["S", "B", "T"], path_weight(roads, ["S", "B", "T"]))
+```
+```output
+greedy: ['S', 'A', 'T'] 11
+other: ['S', 'B', 'T'] 6
+```
+From S, the cheapest edge goes to A (1), but from A the only way on costs 10. Going through B costs 4 first, but only 2 after that. Finding the cheapest path means comparing whole routes, not single steps. **Dijkstra's algorithm**, in Unit 4, does that efficiently using a heap.
+
+### Faster look-ups: a dictionary of dictionaries
+If a program asks for weights often, store each vertex's edges in a dictionary instead of a list of pairs: `table[u][v]` is then the weight, found in O(1):
+```python
+table = {}
+for v in graph:
+    table[v] = {}
+    for nbr, w in graph[v]:
+        table[v][nbr] = w
+print(table["B"])
+print(table["B"]["D"], table["B"].get("E"))
+```
+```output
+{'A': 7, 'C': 3, 'D': 1}
+1 None
+```
+`table["B"].get("E")` gives None because there's no edge B–E, instead of raising a KeyError.
+
+| job | list of (neighbour, weight) pairs | dict of dicts |
+| --- | --- | --- |
+| weight of u–v | O(degree of u): scan the pairs | O(1): `table[u][v]` |
+| all of u's edges | O(degree of u) | O(degree of u) |
+| total weight of a path of k edges | O(k × degree) | O(k) |
+| cheapest edge out of u | O(degree of u) | O(degree of u) |
+
+=== keypoints
+- In a weighted graph each edge has a number, its weight: a distance, a price or a time.
+- Store weighted edges as `(neighbour, weight)` pairs in each vertex's list. An undirected edge goes in both lists with the same weight; a directed one only in u's list.
+- Build from `(u, v, weight)` triples, appending `(v, w)` to u's list (and `(u, w)` to v's list if undirected).
+- The weight of u–v is found by scanning u's pairs, O(degree); None means there's no edge. A dict of dicts, `table[u][v]`, finds it in O(1).
+- A path's weight is the sum of its edges' weights. The cheapest path can have more edges than another path.
+- The cheapest edge out of v is the pair with the smallest weight: a loop, or `min(graph[v], key=lambda pair: pair[1])`. Always taking the cheapest edge doesn't always give the cheapest path.
+
+=== example: Journey times on a train map
+intro: Stations joined by train lines, weighted by minutes. The program checks three planned journeys: two add up to a total time, and one turns out to need a line that doesn't exist.
+```python
+lines = [("Ash", "Bell", 12), ("Bell", "Cove", 8), ("Ash", "Dale", 20), ("Dale", "Cove", 5), ("Cove", "Eden", 15)]
+trains = {}
+for u, v, mins in lines:
+    if u not in trains:
+        trains[u] = []
+    if v not in trains:
+        trains[v] = []
+    trains[u].append((v, mins))
+    trains[v].append((u, mins))
+
+def journey(stops):
+    total = 0
+    for i in range(len(stops) - 1):
+        found = None
+        for nbr, mins in trains[stops[i]]:
+            if nbr == stops[i + 1]:
+                found = mins
+        if found is None:
+            return "no direct line from " + stops[i] + " to " + stops[i + 1]
+        total += found
+    return str(total) + " minutes"
+
+for plan in [["Ash", "Bell", "Cove", "Eden"], ["Ash", "Dale", "Cove", "Eden"], ["Ash", "Cove", "Eden"]]:
+    print(" -> ".join(plan), ":", journey(plan))
+```
+1: Each train line is a triple: two stations and the minutes between them.
+2-9: Lines run both ways, so each one goes into both stations' lists.
+11-21: Add up the minutes of each leg, looking up the line between consecutive stops.
+18-19: A leg with no line stops the check and says which one is missing.
+23-24: Via Bell takes 12 + 8 + 15 = 35 minutes; via Dale takes 20 + 5 + 15 = 40; and there's no direct line from Ash to Cove.
+
+=== example: Cheapest flight out
+intro: One-way flights with prices, stored as a directed weighted graph. For each airport the program finds the cheapest flight out, then prices a three-leg trip.
+```python
+prices = {
+    "LIM": [("BOG", 180), ("SCL", 140), ("MEX", 320)],
+    "BOG": [("LIM", 150), ("MEX", 240)],
+    "SCL": [("LIM", 160)],
+    "MEX": [("BOG", 210)],
+}
+for airport in prices:
+    best = min(prices[airport], key=lambda pair: pair[1])
+    print(airport, "cheapest:", best[0], best[1])
+
+trip = ["SCL", "LIM", "BOG", "MEX"]
+cost = 0
+for i in range(len(trip) - 1):
+    for nbr, p in prices[trip[i]]:
+        if nbr == trip[i + 1]:
+            cost += p
+print("trip costs", cost)
+```
+1-6: Each list holds the flights leaving that airport, with their prices. LIM → BOG and BOG → LIM have different prices: they're two different edges.
+7-9: `min` with `key` picks the pair with the lowest price from each list.
+11-17: The trip's cost is the sum of the three legs: 160 + 180 + 240 = 580.
+13-16: Each leg looks for the next airport among the flights leaving the current one.
+
+=== animation: Adding up a path
+view: graph graph pos=A:60,40;B:220,40;C:60,170;D:220,170;E:360,170 current=u
+vars i u v total
+intro: The total weight of the route A, C, B, D, E. For each step, the program scans u's pairs for v and adds that edge's weight. Weights are written on the edges.
+```python
+graph = {
+    "A": [("B", 7), ("C", 2)],
+    "B": [("A", 7), ("C", 3), ("D", 1)],
+    "C": [("A", 2), ("B", 3), ("D", 6)],
+    "D": [("B", 1), ("C", 6), ("E", 5)],
+    "E": [("D", 5)],
+}
+route = ["A", "C", "B", "D", "E"]
+total = 0
+for i in range(len(route) - 1):
+    u = route[i]
+    v = route[i + 1]
+    for nbr, w in graph[u]:
+        if nbr == v:
+            total += w
+print(total)
+```
+1: The lesson's weighted graph: each list holds (neighbour, weight) pairs.
+2: A's edges: to B, weight 7, and to C, weight 2.
+3: B's edges: A 7, C 3 and D 1.
+4: C's edges: A 2, B 3 and D 6.
+5: D's edges: B 1, C 6 and E 5.
+6: E's only edge goes to D, weight 5.
+8: The route has 5 vertices, so 4 steps.
+9: The total starts at 0.
+10: Take the next step of the route.
+11: Step {i + 1} starts at {route[i]}.
+12: It goes to {route[i + 1]}.
+13: Scan {u}'s pairs, looking for {v}.
+14: Is this pair's neighbour, {nbr}, the one we want, {v}? {nbr == v}.
+15: The edge {u}–{v} weighs {w}: the total goes from {total} to {total + w}.
+16: 2 + 3 + 1 + 5 = 11: the cheapest way from A to E.
+
+=== animation: The cheapest edge out
+view: graph graph pos=A:60,40;B:220,40;C:60,170;D:220,170;E:360,170 current=v
+vars v best nbr w
+intro: For every vertex, the loop keeps the cheapest pair seen so far in `best`. A pair replaces it only when its weight is strictly smaller.
+```python
+graph = {
+    "A": [("B", 7), ("C", 2)],
+    "B": [("A", 7), ("C", 3), ("D", 1)],
+    "C": [("A", 2), ("B", 3), ("D", 6)],
+    "D": [("B", 1), ("C", 6), ("E", 5)],
+    "E": [("D", 5)],
+}
+for v in graph:
+    best = None
+    for nbr, w in graph[v]:
+        if best is None or w < best[1]:
+            best = (nbr, w)
+    print(v, best)
+```
+1: The lesson's weighted graph.
+2: A's edges: to B, weight 7, and to C, weight 2.
+3: B's edges: A 7, C 3 and D 1.
+4: C's edges: A 2, B 3 and D 6.
+5: D's edges: B 1, C 6 and E 5.
+6: E's only edge goes to D, weight 5.
+8: Go through the vertices.
+9: No edge has been seen yet for {v}.
+10: Look at {v}'s next pair.
+11: {'Nothing kept yet, so ' + nbr + ' is the best so far.' if best is None else 'Is ' + str(w) + ' less than the best weight so far, ' + str(best[1]) + '? ' + str(w < best[1]) + '.'}
+12: Keep ({nbr}, {w}) as the cheapest edge out of {v} so far.
+13: The cheapest edge out of {v}: {best}.
+
+=== task: predict easy
+title: Unpacking pairs
+code:
+```python
+g = {"X": [("Y", 4), ("Z", 9)], "Y": [("X", 4)], "Z": [("X", 9)]}
+for nbr, w in g["X"]:
+    print(nbr, w)
+print(len(g["Y"]), g["Z"][0][1])
+```
+wrong[('Y', 4)\n('Z', 9)\n1 9]: `for nbr, w in ...` unpacks each pair into two variables, so `print(nbr, w)` prints them side by side: `Y 4`.
+wrong[Y 4\nZ 9\n2 9]: Y has a single edge, to X: its list has one pair.
+wrong[Y 4\nZ 9\n1 X]: `g["Z"][0]` is the pair `("X", 9)`, and index 1 of that pair is the weight, 9.
+hint: Each item in a list is a (neighbour, weight) pair.
+hint: `g["Z"][0][1]` takes Z's first pair, then the second thing in it.
+right: X's two edges print as neighbour and weight; Y has 1 edge; Z's first pair is ("X", 9), whose weight is 9.
+wrong: The loop unpacks ("Y", 4) and ("Z", 9). `len(g["Y"])` is 1, and `g["Z"][0][1]` is the weight in Z's first pair: 9.
+
+=== task: mcq easy
+title: What is a weight?
+prompt: In a weighted graph of roads between towns, what is an edge's weight?
+* A number attached to the edge, such as the road's length :: Right. Each edge carries its own number: a distance, a price or a time.
+- The number of edges at a town :: That's a town's degree.
+- How many towns the road passes through :: An edge joins exactly two towns.
+- The total length of a whole route :: That's the weight of a path: the sum of its edges' weights.
+hint: Weights belong to edges, not to vertices.
+hint: On a road map, what number would you write on a road?
+right: A weight is a number on one edge, like the length of one road. A route's total is the sum of those numbers.
+wrong: In a weighted graph each edge carries a number, its weight. Degrees belong to vertices, and path totals add up several weights.
+
+=== task: cells easy
+title: Reading the weights
+prompt: Use this weighted graph to fill in each box.
+
+```text
+  A ---7--- B
+  |       / |
+  2     3   1
+  |   /     |
+  | /       |
+  C ---6--- D ---5--- E
+```
+labels: weight of A–B | weight of B–D | weight of C–D | total of A, C, B
+answer: 7 | 1 | 6 | 5
+wrong[7 | 1 | 6 | 3]: A, C, B has two edges: A–C (2) and C–B (3). Its total is 2 + 3 = 5.
+wrong[7 | 3 | 6 | 5]: 3 is the weight of the diagonal edge B–C. B–D is the edge on the right, with weight 1.
+wrong[2 | 1 | 6 | 5]: The edge between A and B is the top one, with weight 7. 2 is A–C, on the left.
+hint: Each number sits on the edge it belongs to.
+hint: A path's total adds the weights of its edges.
+right: 7, 1 and 6 are read off the edges, and A, C, B costs 2 + 3 = 5.
+wrong: A–B is 7, B–D is 1 and C–D is 6. The path A, C, B uses A–C (2) and C–B (3): 5 in total.
+
+=== task: code easy
+title: Total weight of all edges
+prompt: Write `total_weight(graph)` that returns the sum of the weights of all the edges in an undirected weighted graph, stored as lists of `(neighbour, weight)` pairs. Each edge appears in two lists, so it must be counted only once.
+starter:
+```python
+def total_weight(graph):
+    # your code here
+    return 0
+```
+solution:
+```python
+def total_weight(graph):
+    t = 0
+    for v in graph:
+        for nbr, w in graph[v]:
+            t += w
+    return t // 2
+```
+tests:
+- total_weight({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]})
+- total_weight({})
+- total_weight({"X": [("Y", 4), ("Z", 9)], "Y": [("X", 4)], "Z": [("X", 9)]})
+- total_weight({"a": [("b", 10)], "b": [("a", 10)]})
+fail[1]: 7 + 2 + 3 + 1 + 6 + 5 = 24. Adding up every list gives 48, which counts each edge twice.
+fail[3]: The edges X–Y (4) and X–Z (9): 13.
+fail[4]: One edge of weight 10, counted twice in the lists: 10.
+hint: Add up the weight of every pair in every list.
+hint: Each undirected edge appears in both of its vertices' lists, so halve the sum.
+right: Every edge is seen twice, once from each end, so half the total of all the pairs is the total of the edges. O(V + E).
+wrong: Add every `w` from every list, then divide by 2 with `//`, because each edge appears twice.
+
+=== task: fill easy
+title: Pairs both ways
+prompt: Fill in the blanks so that each weighted edge goes into both lists, and the program prints:
+
+```output
+{'a': [('b', 3)], 'b': [('a', 3), ('c', 8)], 'c': [('b', 8)]}
+```
+code:
+```python
+edges = [("a", "b", 3), ("b", "c", 8)]
+g = {}
+for u, v, w in edges:
+    if u not in g:
+        g[u] = []
+    if v not in g:
+        g[v] = []
+    g[u].append((??, w))
+    g[v].append((??, w))
+print(g)
+```
+answer: v | u
+wrong[u | v]: Each vertex would list itself as its own neighbour: a's list would be `[('a', 3)]`.
+wrong[v | v]: b would list itself: the pair added to v's list must name u.
+hint: In u's list, the pair names the vertex at the other end: v.
+hint: In v's list, the other end is u.
+right: `(v, w)` goes into u's list and `(u, w)` into v's list: the same weight, seen from each end.
+wrong: An undirected weighted edge puts `(v, w)` in u's list and `(u, w)` in v's list.
+
+=== task: multi easy
+title: True of weighted graphs
+prompt: Choose **every** statement that is true of weighted graphs.
+* Each edge carries its own number :: Right. That number is the edge's weight.
+* An undirected weighted edge appears in both lists with the same weight :: Right. It's the same road, seen from each end.
+* A directed graph can be weighted :: Right. One-way flights each have their own price.
+- A vertex's degree is the sum of its edges' weights :: The degree is still the number of edges: the length of the list.
+- The cheapest path between two vertices always has the fewest edges :: A route with more, lighter edges can be cheaper.
+- A weight of 0 means there's no edge :: A missing edge is shown by its absence (None in a look-up), not by a weight.
+hint: Weights belong to edges, and degrees still count edges.
+hint: Remember the route A, C, B, D, E.
+right: Weights are per edge, undirected edges carry the same weight both ways, and directed graphs can be weighted. Degrees still count edges, cheap routes can be long, and "no edge" isn't a weight.
+wrong: Each edge has a weight; an undirected edge has it in both lists; directed edges can have weights too. A degree counts edges, the cheapest path may use more edges, and a missing edge isn't the same as weight 0.
+
+=== task: parsons easy
+title: Look up a weight
+prompt: Arrange the lines so that `weight` returns the weight of the edge from u to v, or None if there isn't one, and the program prints:
+
+```output
+1 None
+```
+
+Not every line is needed.
+lines:
+```python
+def weight(graph, u, v):
+    for nbr, w in graph[u]:
+        if nbr == v:
+            return w
+    return None
+
+g = {"B": [("A", 7), ("D", 1)], "A": [("B", 7)], "D": [("B", 1)]}
+print(weight(g, "B", "D"), weight(g, "A", "D"))
+```
+distractors:
+```python
+            return nbr
+        return None
+```
+hint: Scan u's pairs, comparing each neighbour with v.
+hint: Only after checking every pair can you say there's no edge.
+right: The scan returns the weight as soon as it finds v. `return None` sits after the loop, so it runs only when no pair matched.
+wrong: Loop over u's (neighbour, weight) pairs and return the weight when the neighbour is v. After the loop, return None.
+
+=== task: order easy
+title: Cheapest route first
+prompt: Put these routes from A to E in order, from the cheapest to the most expensive.
+
+```text
+  A ---7--- B
+  |       / |
+  2     3   1
+  |   /     |
+  | /       |
+  C ---6--- D ---5--- E
+```
+items:
+- A, C, B, D, E
+- A, B, D, E
+- A, B, C, D, E
+hint: Add up each route's edge weights.
+hint: A, B, C, D, E uses 7 + 3 + 6 + 5.
+right: 11, then 13, then 21: the cheapest route has the most edges.
+wrong: A, C, B, D, E: 2 + 3 + 1 + 5 = 11. A, B, D, E: 7 + 1 + 5 = 13. A, B, C, D, E: 7 + 3 + 6 + 5 = 21.
+
+=== task: predict easy
+title: Comparing by weight
+code:
+```python
+edges = [("P", 8), ("Q", 3), ("R", 3)]
+print(min(edges, key=lambda pair: pair[1]))
+print(min(edges))
+```
+wrong[('Q', 3)\n('Q', 3)]: Without a key, `min` compares the tuples themselves, starting with their first items: "P" is the smallest name.
+wrong[('R', 3)\n('P', 8)]: When two weights tie, `min` keeps the first one it found: ('Q', 3).
+wrong[3\n('P', 8)]: The key only decides which pair is smallest; `min` still returns the whole pair.
+hint: With `key=lambda pair: pair[1]`, pairs are compared by their weights.
+hint: Without a key, tuples are compared item by item, starting with the names.
+right: `('Q', 3)` is the lightest pair (the first of the two 3s), but plain `min` compares names first and returns `('P', 8)`.
+wrong: With the key, the weights 8, 3, 3 are compared, and the first 3 wins: ('Q', 3). Without it, the names P, Q, R are compared: ('P', 8).
+
+=== task: mcq easy
+title: No such edge
+prompt: In the lesson's graph, A and E aren't joined. What does `weight(graph, "A", "E")` return?
+* None :: Right. The scan finds no pair for E in A's list, so the line after the loop returns None.
+- 0 :: 0 would be a real weight; the function returns None to say there's no edge at all.
+- The weight of the cheapest path from A to E :: `weight` only looks at single edges.
+- A KeyError :: Both A and E are keys of the graph; E isn't in A's list.
+hint: Which line runs when the loop finishes without finding E?
+hint: How is "no edge" different from "an edge of weight 0"?
+right: None: it means there's no edge, which a weight of 0 couldn't express.
+wrong: The scan through A's pairs never meets E, so the function reaches `return None`.
+
+=== task: code medium
+title: Build a weighted graph
+prompt: Write `build_weighted(edges, directed)` that turns a list of `(u, v, weight)` triples into lists of `(neighbour, weight)` pairs. Every vertex that appears gets a key. Each triple adds `(v, weight)` to u's list, and, when `directed` is False, also `(u, weight)` to v's list. Keep the order of the triples.
+starter:
+```python
+def build_weighted(edges, directed):
+    g = {}
+    # your code here
+    return g
+```
+solution:
+```python
+def build_weighted(edges, directed):
+    g = {}
+    for u, v, w in edges:
+        if u not in g:
+            g[u] = []
+        if v not in g:
+            g[v] = []
+        g[u].append((v, w))
+        if not directed:
+            g[v].append((u, w))
+    return g
+```
+tests:
+- build_weighted([("a", "b", 3)], False)
+- build_weighted([("a", "b", 3)], True)
+- build_weighted([], False)
+- build_weighted([("x", "y", 1), ("y", "z", 2), ("x", "z", 5)], False)
+fail[1]: Undirected: a has ('b', 3) and b has ('a', 3).
+fail[2]: Directed: only a's list gets a pair; b still needs an empty list.
+fail[4]: z's list is [('y', 2), ('x', 5)], in the order the triples were given.
+error[KeyError]: Give both ends of each triple a list before appending.
+hint: Unpack each triple with `for u, v, w in edges:`.
+hint: Append `(v, w)` to u's list.
+hint: If the graph isn't directed, also append `(u, w)` to v's list.
+right: One or two appends per edge: O(E). The `directed` flag decides whether the weight is stored at both ends.
+wrong: Make sure u and v both have lists, append `(v, w)` to u's list, and add `(u, w)` to v's list only for an undirected graph.
+
+=== task: code medium
+title: Weight of a route
+prompt: Write `path_weight(graph, route)` that returns the total weight of the edges along `route`, a list of vertices, or None if some step isn't an edge. A route of one vertex weighs 0.
+starter:
+```python
+def path_weight(graph, route):
+    # your code here
+    return 0
+```
+solution:
+```python
+def path_weight(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        found = None
+        for nbr, w in graph[route[i]]:
+            if nbr == route[i + 1]:
+                found = w
+        if found is None:
+            return None
+        total += found
+    return total
+```
+tests:
+- path_weight({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, ["A", "C", "B", "D", "E"])
+- path_weight({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, ["A", "D"])
+- path_weight({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, ["E"])
+- path_weight({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, ["B", "A", "C"])
+fail[1]: 2 + 3 + 1 + 5 = 11.
+fail[2]: A and D aren't joined: None.
+fail[4]: B–A (7) and A–C (2): 9.
+hint: For each step, look through the pairs of `route[i]` for `route[i + 1]`.
+hint: If a step has no edge, return None straight away.
+hint: Otherwise add its weight to the total.
+right: Each step scans one list: O(k × degree) for k steps. A missing edge makes the whole route invalid.
+wrong: Walk along the route; for each step, find the weight of the edge, return None if it's missing, and add it up otherwise.
+
+=== task: predict medium
+title: Three routes
+code:
+```python
+def weight(graph, u, v):
+    for nbr, w in graph[u]:
+        if nbr == v:
+            return w
+    return None
+
+def path_weight(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        w = weight(graph, route[i], route[i + 1])
+        if w is None:
+            return None
+        total += w
+    return total
+
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}
+print(path_weight(g, ["E", "D", "B"]), path_weight(g, ["C", "A", "B"]), path_weight(g, ["B", "E"]), path_weight(g, ["D"]))
+```
+wrong[6 9 0 0]: B and E aren't joined, so that route returns None, not 0.
+wrong[6 9 None None]: A route of one vertex has no steps: the loop never runs, and the total is 0.
+wrong[11 9 None 0]: E, D, B uses D–E (5) and D–B (1): 6.
+hint: Add up the weights along each route.
+hint: A single vertex has no edges to add.
+right: `6 9 None 0`: 5 + 1, 2 + 7, a missing edge, and an empty route.
+wrong: E–D is 5 and D–B is 1: 6. C–A is 2 and A–B is 7: 9. B–E doesn't exist: None. ["D"] has no steps: 0.
+
+=== task: cells medium
+title: Cheapest edge out
+prompt: For each vertex of the lesson's graph, which neighbour does its cheapest edge lead to?
+
+```text
+  A ---7--- B
+  |       / |
+  2     3   1
+  |   /     |
+  | /       |
+  C ---6--- D ---5--- E
+```
+labels: A | B | C | D | E
+answer: C | D | A | B | D
+wrong[C | D | B | B | D]: C's edges weigh 2 (to A), 3 (to B) and 6 (to D): the cheapest goes to A.
+wrong[B | A | D | C | D]: That picks the most expensive edges. The cheapest edge has the smallest weight.
+wrong[C | D | A | E | D]: D's edges weigh 1 (to B), 6 (to C) and 5 (to E): B is the cheapest.
+hint: For each vertex, compare the weights of the edges that touch it.
+hint: B's edges weigh 7, 3 and 1.
+right: A → C (2), B → D (1), C → A (2), D → B (1), E → D (5). E has only one edge, so it's the cheapest.
+wrong: Look at each vertex's edges and pick the smallest weight: A 2 to C, B 1 to D, C 2 to A, D 1 to B, E 5 to D.
+
+=== task: fill medium
+title: Keeping the cheapest
+prompt: Fill in the blanks so that the loop keeps the cheapest edge out of each vertex, and the program prints:
+
+```output
+A ('C', 2)
+B ('D', 1)
+```
+code:
+```python
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)]}
+for v in g:
+    best = None
+    for nbr, w in g[v]:
+        if best is None or w ?? best[1]:
+            best = (??, w)
+    print(v, best)
+```
+answer: < | nbr
+wrong[> | nbr]: That keeps the most expensive edge: A ('B', 7) and B ('A', 7).
+wrong[< | v]: The pair must name the neighbour the edge leads to, not the vertex it leaves.
+hint: A pair replaces the best so far when its weight is smaller.
+hint: The kept pair is (neighbour, weight).
+right: `w < best[1]` replaces the kept pair only when this edge is lighter, and `(nbr, w)` records where it leads and what it costs.
+wrong: Compare with `<`, so only a lighter edge replaces the best, and store `(nbr, w)`.
+
+=== task: mcq medium
+title: Fewest edges or cheapest?
+prompt: On the lesson's graph, the route A, B, D, E has 3 edges and weighs 13, and the route A, C, B, D, E has 4 edges and weighs 11. Which is the **cheapest** path from A to E?
+* A, C, B, D, E :: Right. Cheapest means the smallest total weight, however many edges that takes.
+- A, B, D, E :: It has the fewest edges, but its total, 13, is higher.
+- Both: they're equally good :: Their totals are 11 and 13, so they aren't equal.
+- Neither, because the cheapest path must use the cheapest edge out of A first :: A, C, B, D, E does start with A's cheapest edge, but in general the cheapest path doesn't have to.
+hint: Compare the totals, not the number of edges.
+hint: Which number is smaller, 11 or 13?
+right: A, C, B, D, E: 11 beats 13. In a weighted graph, the cheapest path and the path with the fewest edges can be different.
+wrong: The cheapest path has the smallest total weight: 11 for A, C, B, D, E against 13 for A, B, D, E, even though it uses one more edge.
+
+=== task: predict medium
+title: Prices each way
+code:
+```python
+def weight(graph, u, v):
+    for nbr, w in graph[u]:
+        if nbr == v:
+            return w
+    return None
+
+prices = {"LIM": [("BOG", 180), ("SCL", 140)], "BOG": [("LIM", 150)], "SCL": [("LIM", 160)]}
+print(weight(prices, "LIM", "BOG"), weight(prices, "BOG", "LIM"), weight(prices, "SCL", "BOG"))
+```
+wrong[180 180 None]: The flight back is a different directed edge with its own price: BOG → LIM costs 150.
+wrong[180 150 0]: There's no flight from SCL to BOG at all, so the look-up returns None.
+wrong[180 150 320]: `weight` only looks at single edges; it doesn't add up a route through LIM.
+hint: Each list holds the flights leaving that airport.
+hint: Is BOG in SCL's list?
+right: `180 150 None`: the two directions have different prices, and SCL has no direct flight to BOG.
+wrong: LIM's list has BOG at 180; BOG's list has LIM at 150; SCL's list has only LIM, so SCL → BOG gives None.
+
+=== task: multi medium
+title: Pairs or a table?
+prompt: A weighted graph can be stored as lists of (neighbour, weight) pairs or as a dict of dicts, `table[u][v] = weight`. Choose **every** statement that is true.
+* The dict of dicts finds the weight of u–v in O(1) :: Right. It's two dictionary look-ups.
+* With pairs, finding the weight of u–v scans u's list: O(degree) :: Right. The pair for v could be anywhere in the list.
+* `table[u].get(v)` gives None when there's no edge u–v :: Right. `get` returns None instead of raising a KeyError.
+* Listing all of u's edges takes O(degree) either way :: Right. Both have to go through every edge of u.
+- The dict of dicts can't store a directed graph :: It can: only `table[u][v]` is set for an edge u → v.
+- The dict of dicts needs O(V²) space, like a matrix :: It stores only the edges that exist: O(V + E).
+hint: What does a dictionary look-up cost?
+hint: Does a dict of dicts store anything for edges that don't exist?
+right: A table answers "what does u–v weigh?" in O(1) and still takes only O(V + E) space; pairs need a scan. Both list u's edges in O(degree), and both work for directed graphs.
+wrong: Dictionary look-ups are O(1), so `table[u][v]` beats scanning pairs. Both store only real edges, so both use O(V + E) space and handle directed edges.
+
+=== task: parsons medium
+title: Add up a route
+prompt: Arrange the lines so that `path_weight` adds up the weights along a route and returns None if a step is missing, and the program prints:
+
+```output
+11 None
+```
+
+Not every line is needed.
+lines:
+```python
+def weight(graph, u, v):
+    for nbr, w in graph[u]:
+        if nbr == v:
+            return w
+    return None
+
+def path_weight(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        w = weight(graph, route[i], route[i + 1])
+        if w is None:
+            return None
+        total += w
+    return total
+
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}
+print(path_weight(g, ["A", "C", "B", "D", "E"]), path_weight(g, ["A", "D"]))
+```
+distractors:
+```python
+    for i in range(len(route)):
+        total = w
+```
+hint: A route of k vertices has k − 1 steps.
+hint: Return None as soon as a step's weight is None; otherwise add it.
+right: The loop looks at each step once, `weight` finds its edge, and a missing edge ends the check with None.
+wrong: Start `total` at 0. For each step i, look up the weight from `route[i]` to `route[i + 1]`, return None if there's no edge, and add it otherwise.
+
+=== task: order medium
+title: A greedy walk
+prompt: A greedy walk always takes the cheapest edge out of where it is. Put its steps in order on this one-way road map, going from S to T.
+
+```python
+roads = {"S": [("A", 1), ("B", 4)], "A": [("T", 10)], "B": [("T", 2)], "T": []}
+```
+items:
+- At S, compare the edges to A (1) and to B (4)
+- Take the cheaper edge, to A
+- At A, the only edge goes to T (10)
+- Arrive at T with a total of 11
+hint: The walk only ever looks at the edges out of where it is now.
+hint: From S, the edge to A is cheaper.
+right: S → A → T costs 11. The walk never looks ahead, so it misses S → B → T, which costs 6.
+wrong: At S, the cheapest edge leads to A (1). From A, the only edge goes to T (10). That's 11 in total, although going through B would have cost 6.
+
+=== task: code hard
+title: The best of several routes
+prompt: Write `cheapest_route(graph, routes)` that returns `(route, total)` for the route with the smallest total weight among `routes`, skipping any route that isn't a path in the graph. If two routes tie, keep the first. If no route is valid, return None.
+starter:
+```python
+def cheapest_route(graph, routes):
+    # your code here
+    return None
+```
+solution:
+```python
+def path_weight(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        found = None
+        for nbr, w in graph[route[i]]:
+            if nbr == route[i + 1]:
+                found = w
+        if found is None:
+            return None
+        total += found
+    return total
+
+def cheapest_route(graph, routes):
+    best = None
+    for r in routes:
+        w = path_weight(graph, r)
+        if w is not None and (best is None or w < best[1]):
+            best = (r, w)
+    return best
+```
+tests:
+- cheapest_route({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, [["A", "B", "D", "E"], ["A", "C", "B", "D", "E"], ["A", "D", "E"]])
+- cheapest_route({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, [["A", "E"]])
+- cheapest_route({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, [["A", "B", "D", "E"], ["A", "C", "D", "E"]])
+- cheapest_route({"x": [("y", 4)], "y": [("x", 4)]}, [])
+fail[1]: A, C, B, D, E weighs 11, less than 13; A, D, E isn't a path.
+fail[2]: A and E aren't joined, so no route is valid: None.
+fail[3]: Both weigh 13: keep the first, A, B, D, E.
+hint: Write a helper that returns a route's total weight, or None if a step is missing.
+hint: Go through the routes, skipping those whose weight is None.
+hint: Keep `(route, total)` when its total is strictly smaller than the best so far.
+right: Each route is checked once, invalid ones are skipped, and `<` keeps the first of equal totals.
+wrong: Work out each route's weight; ignore the ones that aren't paths; keep the cheapest, replacing it only for a strictly smaller total.
+
+=== task: code hard
+title: A table of weights
+prompt: Write `to_table(graph)` that turns lists of `(neighbour, weight)` pairs into a dictionary of dictionaries, so that `table[u][v]` is the weight of the edge from u to v. Every vertex gets an inner dictionary, even one with no edges.
+starter:
+```python
+def to_table(graph):
+    # your code here
+    return {}
+```
+solution:
+```python
+def to_table(graph):
+    t = {}
+    for v in graph:
+        t[v] = {}
+        for nbr, w in graph[v]:
+            t[v][nbr] = w
+    return t
+```
+tests:
+- to_table({"X": [("Y", 4), ("Z", 9)], "Y": [("X", 4)], "Z": [("X", 9)]})
+- to_table({})
+- to_table({"a": []})
+- to_table({"A": [("B", 7), ("C", 2)], "B": [("A", 7)], "C": [("A", 2)]})["A"]
+fail[1]: X's inner dictionary maps Y to 4 and Z to 9.
+fail[3]: A vertex with no edges gets an empty inner dictionary: {'a': {}}.
+fail[4]: A's inner dictionary: {'B': 7, 'C': 2}.
+error[KeyError]: Create `t[v] = {}` before filling it in.
+hint: For each vertex v, start an empty dictionary `t[v]`.
+hint: For each pair `(nbr, w)` in v's list, set `t[v][nbr] = w`.
+right: Each edge is copied once, O(V + E), and afterwards every weight is one O(1) look-up away.
+wrong: Give every vertex an empty inner dictionary, then store each pair's weight under its neighbour's name.
+
+=== task: code hard
+title: Light roads only
+prompt: A truck can only use roads that weigh at most `limit` tonnes. Write `reachable_under(graph, start, limit)` that returns a sorted list of every town the truck can reach from `start`, using only edges with weight ≤ `limit`. Search as in `reachable`, but skip heavier edges.
+starter:
+```python
+def reachable_under(graph, start, limit):
+    # your code here
+    return [start]
+```
+solution:
+```python
+def reachable_under(graph, start, limit):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for nbr, w in graph[v]:
+            if w <= limit and nbr not in seen:
+                seen.add(nbr)
+                waiting.append(nbr)
+    return sorted(seen)
+```
+tests:
+- reachable_under({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, "A", 3)
+- reachable_under({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, "A", 5)
+- reachable_under({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, "E", 4)
+- reachable_under({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}, "C", 100)
+fail[1]: A–C (2), C–B (3) and B–D (1) are light enough; D–E (5) isn't.
+fail[2]: With a limit of 5, D–E is allowed too: everything is reachable.
+fail[3]: E's only road weighs 5, more than 4, so the truck can't leave E.
+hint: Use a `seen` set and a `waiting` list, starting with `start`.
+hint: When looking at a pair `(nbr, w)`, only follow it if `w <= limit` and `nbr` hasn't been seen.
+hint: Return `sorted(seen)`.
+right: Skipping heavy edges is the same as searching a graph that doesn't have them. Each edge is looked at once from each end: O(V + E).
+wrong: Run the usual reachability search, but ignore any edge whose weight is over the limit. Return the towns found, sorted.
+
+=== task: code hard
+title: The lightest edge
+prompt: Write `lightest_edge(graph)` that returns the lightest edge of an undirected weighted graph as a tuple `(u, v, weight)` with u < v. If several edges are equally light, return the one that comes first when the tuples are sorted. If the graph has no edges, return None. Each edge appears in two lists: count it once by only looking at it when u < v.
+starter:
+```python
+def lightest_edge(graph):
+    # your code here
+    return None
+```
+solution:
+```python
+def lightest_edge(graph):
+    best = None
+    for u in graph:
+        for v, w in graph[u]:
+            if u < v:
+                edge = (w, u, v)
+                if best is None or edge < best:
+                    best = edge
+    if best is None:
+        return None
+    return (best[1], best[2], best[0])
+```
+tests:
+- lightest_edge({"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]})
+- lightest_edge({"X": [("Y", 4), ("Z", 9)], "Y": [("X", 4)], "Z": [("X", 9)]})
+- lightest_edge({"a": [], "b": []})
+- lightest_edge({"p": [("q", 2), ("r", 2)], "q": [("p", 2)], "r": [("p", 2)]})
+fail[1]: B–D weighs 1, the lightest: ('B', 'D', 1).
+fail[3]: No edges at all: None.
+fail[4]: p–q and p–r both weigh 2; ('p', 'q', 2) comes first.
+hint: Look at each pair `(v, w)` in u's list only when `u < v`.
+hint: Comparing tuples `(w, u, v)` orders by weight first, then by the names, which settles ties.
+hint: Turn the best `(w, u, v)` round into `(u, v, w)` at the end.
+right: Putting the weight first in the compared tuple makes the lightest edge win, and the names break ties. Every edge is looked at twice and counted once: O(V + E).
+wrong: Go through every pair, skipping the copy where u > v. Keep the smallest `(w, u, v)` and return it as `(u, v, w)`, or None if there were no edges.
+
+=== task: predict hard
+title: When greedy fails
+code:
+```python
+def greedy(graph, start, goal):
+    route = [start]
+    total = 0
+    v = start
+    while v != goal:
+        best = None
+        for nbr, w in graph[v]:
+            if nbr not in route and (best is None or w < best[1]):
+                best = (nbr, w)
+        if best is None:
+            return None
+        route.append(best[0])
+        total += best[1]
+        v = best[0]
+    return route, total
+
+dead_end = {"S": [("A", 1), ("B", 5)], "A": [("S", 1)], "B": [("S", 5), ("T", 1)], "T": [("B", 1)]}
+roads = {"S": [("A", 1), ("B", 4)], "A": [("T", 10)], "B": [("T", 2)], "T": []}
+print(greedy(dead_end, "S", "T"))
+print(greedy(roads, "S", "T"))
+```
+wrong[(['S', 'B', 'T'], 6)\n(['S', 'B', 'T'], 6)]: The greedy walk takes the cheapest edge out of where it is: from S, that's always A (weight 1).
+wrong[(['S', 'A', 'S', 'B', 'T'], 8)\n(['S', 'A', 'T'], 11)]: `nbr not in route` stops the walk going back to S, so at A there's nothing left to take: None.
+wrong[None\nNone]: On `roads`, A has an edge to T, so the walk does arrive: S, A, T, costing 11.
+hint: From S, both graphs offer A at weight 1.
+hint: In `dead_end`, A's only edge goes back to S, which is already on the route.
+right: The first walk gets stuck at A and returns None, although S, B, T exists. The second arrives, but pays 11 instead of 6. Taking the cheapest step can lead to dead ends and to expensive routes.
+wrong: Both walks start S → A. In `dead_end`, A leads only back to S, so `best` stays None. In `roads`, A → T costs 10, for 11 in total.
+
+=== task: predict hard
+title: Reading a table
+code:
+```python
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}
+t = {}
+for v in g:
+    t[v] = {}
+    for nbr, w in g[v]:
+        t[v][nbr] = w
+print(t["C"], t["C"].get("E"), t["D"]["E"] + t["E"]["D"], len(t["B"]))
+```
+wrong[{'A': 2, 'B': 3, 'D': 6} 0 10 3]: `get` returns None when the key is missing; there's no edge C–E.
+wrong[{'A': 2, 'B': 3, 'D': 6} None 5 3]: `t["D"]["E"]` and `t["E"]["D"]` are both 5: the same edge seen from each end. 5 + 5 = 10.
+wrong[[('A', 2), ('B', 3), ('D', 6)] None 10 3]: `t["C"]` is a dictionary from neighbour to weight, not the list of pairs.
+hint: Each inner dictionary maps a neighbour to the edge's weight.
+hint: `len` of a dictionary counts its keys.
+right: C's table, None for the missing edge C–E, 5 + 5 for D–E seen from both ends, and B has 3 neighbours.
+wrong: `t["C"]` is `{'A': 2, 'B': 3, 'D': 6}`. There's no C–E edge, so `get` gives None. D–E weighs 5 from both ends: 10. B's table has 3 keys.
+
+=== task: cells hard
+title: Route totals
+prompt: Using the lesson's graph, write the total weight of each route, or `none` if it isn't a path.
+
+```text
+  A ---7--- B
+  |       / |
+  2     3   1
+  |   /     |
+  | /       |
+  C ---6--- D ---5--- E
+```
+labels: E, D, C, A | B, C, D, B | A, B, E | C, B, A, C
+answer: 13 | 10 | none | 12
+wrong[13 | 10 | 12 | 12]: B and E aren't joined, so A, B, E isn't a path.
+wrong[13 | 4 | none | 12]: B, C, D, B has three edges: B–C (3), C–D (6) and D–B (1). That's 10.
+wrong[11 | 10 | none | 12]: E, D, C, A uses D–C (6), not D–B: 5 + 6 + 2 = 13.
+hint: Add up the edge weights step by step.
+hint: Check that every step is an edge before adding.
+right: 5 + 6 + 2 = 13; 3 + 6 + 1 = 10; B–E is missing; 3 + 7 + 2 = 12. The second and fourth routes end where they start: they're cycles.
+wrong: E, D, C, A: 5 + 6 + 2 = 13. B, C, D, B: 3 + 6 + 1 = 10. A, B, E: no edge B–E. C, B, A, C: 3 + 7 + 2 = 12.
+
+=== task: multi hard
+title: About cheapest paths
+prompt: Choose **every** statement about cheapest paths in weighted graphs that is true.
+* The cheapest path can use more edges than another path :: Right. A, C, B, D, E has 4 edges and beats the 3-edge routes.
+* Always taking the cheapest edge out of where you are can miss the cheapest path :: Right. A cheap first step can lead to an expensive one.
+* If every edge weighs 1, the cheapest path is a path with the fewest edges :: Right. Then a path's total is its number of edges.
+- The cheapest path always starts with the cheapest edge out of the start :: In `roads`, the cheapest path S, B, T starts with the dearer edge, 4 instead of 1.
+- Adding the same amount to every edge's weight never changes which path is cheapest :: Paths with more edges gain more: add 10 to every edge, and A, B, D, E (3 edges, 43) beats A, C, B, D, E (4 edges, 51).
+- A path's weight is the weight of its heaviest edge :: It's the sum of all its edges' weights.
+hint: Remember the routes from A to E, and the S, A, B, T example.
+hint: What happens to a 4-edge route and a 3-edge route if every edge gets 10 heavier?
+right: Cheapest paths can be longer, greedy steps can miss them, and with equal weights they become shortest paths. Adding a constant to every edge penalises routes with more edges, so the winner can change.
+wrong: A path's weight is the sum of its edges. That's why the cheapest route can have more edges, why the first cheap step can mislead, and why adding the same amount to every edge favours routes with fewer edges.
+
+=== task: fill hard
+title: Skipping heavy roads
+prompt: Fill in the blanks so that the search follows only edges that weigh at most `limit`, and the program prints:
+
+```output
+['A', 'B', 'C', 'D']
+```
+code:
+```python
+def reachable_under(graph, start, limit):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for nbr, w in graph[v]:
+            if w <= ?? and nbr not in ??:
+                seen.add(nbr)
+                waiting.append(nbr)
+    return sorted(seen)
+
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}
+print(reachable_under(g, "A", 3))
+```
+answer: limit | seen
+wrong[w | seen]: `w <= w` is always True, so every edge is followed, heavy or not: E is reached too.
+wrong[1 | seen]: A fixed 1 ignores the truck's limit. From A, no road is that light, so the truck never leaves A.
+hint: Compare the edge's weight with the truck's limit.
+hint: Which collection remembers every town found so far?
+right: `w <= limit` skips heavy roads, and `nbr not in seen` stops a town from being added twice.
+wrong: Follow an edge only if its weight is at most `limit` and its town isn't already in `seen`.
+
+=== task: parsons hard
+title: Two steps, cheapest
+prompt: Arrange the lines so that `cheapest_two_step` finds the cheapest way from a to b using exactly two edges, a → x → b, and returns `(x, total)`, or None if there's no such route. Ties keep the first x found. The program prints:
+
+```output
+('D', 7) None
+```
+
+Not every line is needed.
+lines:
+```python
+def cheapest_two_step(graph, a, b):
+    best = None
+    for x, w1 in graph[a]:
+        for y, w2 in graph[x]:
+            if y == b and (best is None or w1 + w2 < best[1]):
+                best = (x, w1 + w2)
+    return best
+
+g = {"A": [("B", 7), ("C", 2)], "B": [("A", 7), ("C", 3), ("D", 1)], "C": [("A", 2), ("B", 3), ("D", 6)], "D": [("B", 1), ("C", 6), ("E", 5)], "E": [("D", 5)]}
+print(cheapest_two_step(g, "C", "B"), cheapest_two_step(g, "A", "E"))
+```
+distractors:
+```python
+                best = (y, w1 + w2)
+            if y == a and (best is None or w1 + w2 < best[1]):
+```
+hint: The first loop picks the middle vertex x and the first edge's weight; the second looks at x's edges.
+hint: A two-step route counts only if the second edge ends at b; its cost is `w1 + w2`.
+right: From C to B: via A costs 2 + 7 = 9 and via D costs 6 + 1 = 7, so ('D', 7). No two-edge route joins A to E. The direct edge C–B doesn't count: it's one step.
+wrong: Loop over a's pairs (x, w1), then over x's pairs (y, w2). When y is b, the route costs w1 + w2; keep the cheapest as (x, total).
