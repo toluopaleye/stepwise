@@ -1,0 +1,970 @@
+=== lesson
+id: ds-graphs-repr
+title: Adjacency lists vs matrices
+summary: The same graph can be stored as an edge list, an adjacency list or an adjacency matrix, and the choice decides what's fast. You'll number the vertices, build a matrix and a list from an edge list, convert between them, and compare them where it matters: checking for an edge (O(1) against O(degree)), listing neighbours (O(V) against O(degree)) and memory (O(V²) against O(V + E)).
+
+=== learn
+### Three ways to store a graph
+This lesson uses the graph from the Graphs lesson again: 5 vertices and 6 edges.
+```text
+  A ------- B
+  |       / |
+  |     /   |
+  |   /     |
+  | /       |
+  C ------- D ------- E
+```
+It can be written down in three ways:
+
+| storage | what it holds | for this graph |
+| --- | --- | --- |
+| edge list | one pair per edge | 6 pairs |
+| adjacency list | for each vertex, a list of its neighbours | 5 lists holding 12 names in total |
+| adjacency matrix | a V × V table of 0s and 1s | 25 boxes, 12 of them 1 |
+
+All three hold exactly the same information. What differs is how much memory each one takes and which questions each one answers quickly. An edge list is how graphs often arrive (from a file, say), so the first job is usually to turn it into one of the other two.
+
+### Numbering the vertices
+A matrix's rows and columns are numbered 0 to V − 1, so each vertex needs a number. Keep a list of the names, so that a number gives a name, and a dictionary going the other way:
+```python
+edges = [("A", "B"), ("A", "C"), ("B", "C"), ("B", "D"), ("C", "D"), ("D", "E")]
+names = ["A", "B", "C", "D", "E"]
+index = {}
+for i in range(len(names)):
+    index[names[i]] = i
+print(index, names[3], index["D"])
+```
+```output
+{'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4} D 3
+```
+`names[3]` turns row 3 back into the name D, and `index["D"]` turns D into its row number, 3. Both directions take O(1).
+
+### From an edge list to a matrix
+Start with a V × V table of 0s, built with a comprehension so that every row is its own list. Then each edge (u, v) sets a 1 in row u, column v, and, for an undirected graph, also in row v, column u:
+```python
+n = len(names)
+matrix = [[0] * n for i in range(n)]
+for u, v in edges:
+    i = index[u]
+    j = index[v]
+    matrix[i][j] = 1
+    matrix[j][i] = 1
+for i in range(n):
+    print(names[i], matrix[i])
+```
+```output
+A [0, 1, 1, 0, 0]
+B [1, 0, 1, 1, 0]
+C [1, 1, 0, 1, 0]
+D [0, 1, 1, 0, 1]
+E [0, 0, 0, 1, 0]
+```
+Setting up the zeros takes O(V²), and each edge then takes O(1). Because every edge sets two boxes, the matrix is **symmetric**: row i, column j always equals row j, column i. A directed graph would set only `matrix[i][j]`. Animation 1 fills in this matrix edge by edge.
+> `[[0] * n] * n` would make n copies of the **same** row, so setting one box would change the whole column. Always build the rows with a comprehension.
+
+### Converting between lists and matrices
+To turn a matrix into an adjacency list, scan each row and collect the columns holding 1. To go the other way, set a 1 for each neighbour in each list:
+```python
+adj = {}
+for name in names:
+    adj[name] = []
+for u, v in edges:
+    adj[u].append(v)
+    adj[v].append(u)
+
+def matrix_to_list(matrix, names):
+    result = {}
+    for i in range(len(names)):
+        result[names[i]] = []
+        for j in range(len(names)):
+            if matrix[i][j] == 1:
+                result[names[i]].append(names[j])
+    return result
+
+def list_to_matrix(adj, names):
+    index = {}
+    for i in range(len(names)):
+        index[names[i]] = i
+    m = [[0] * len(names) for i in range(len(names))]
+    for u in adj:
+        for v in adj[u]:
+            m[index[u]][index[v]] = 1
+    return m
+
+print(matrix_to_list(matrix, names) == adj, list_to_matrix(adj, names) == matrix)
+print(matrix_to_list(matrix, names)["B"])
+```
+```output
+True True
+['A', 'C', 'D']
+```
+Both directions give back exactly what was built from the edge list. Matrix to list looks at every box: O(V²). List to matrix sets up the zeros, O(V²), then visits each list entry once. Animation 2 converts a matrix row by row.
+
+### Is u–v an edge?
+This is where a matrix shines. With a matrix, the answer is one box: `matrix[index[u]][index[v]]`, O(1). With an adjacency list, you scan u's list until you find v or reach the end: O(degree of u):
+```python
+def edge_in_list(adj, u, v):
+    steps = 0
+    for w in adj[u]:
+        steps += 1
+        if w == v:
+            return True, steps
+    return False, steps
+
+print(edge_in_list(adj, "D", "E"), edge_in_list(adj, "D", "A"))
+print(matrix[index["D"]][index["E"]] == 1, matrix[index["D"]][index["A"]] == 1)
+```
+```output
+(True, 3) (False, 3)
+True False
+```
+D's list is B, C, E, so finding E takes 3 steps, and finding that A isn't there also takes 3: the whole list has to be checked. The matrix answers both with a single look-up. For a vertex with 1,000 neighbours, that's up to 1,000 steps against 1.
+
+### Listing a vertex's neighbours
+Many graph algorithms go through every vertex and look at all of its neighbours. Here the adjacency list wins. Its list holds exactly the neighbours: O(degree). A matrix row holds a box for **every** vertex, so finding the 1s means scanning the whole row: O(V), however few neighbours there are. Over the whole graph:
+```python
+list_steps = 0
+for u in names:
+    list_steps += len(adj[u])
+matrix_steps = 0
+for i in range(len(names)):
+    for j in range(len(names)):
+        matrix_steps += 1
+print(list_steps, matrix_steps)
+```
+```output
+12 25
+```
+| visiting every neighbour of every vertex | adjacency list | adjacency matrix |
+| --- | --- | --- |
+| cost | O(V + E): each list entry once | O(V²): every box |
+| this graph | 12 entries | 25 boxes |
+| 1,000 vertices, 2,000 edges | about 5,000 | 1,000,000 |
+
+That's why searches like breadth-first and depth-first search, in Unit 4, are O(V + E) with adjacency lists but O(V²) with a matrix.
+
+### Memory: O(V + E) against O(V²)
+An adjacency list stores one list per vertex plus one entry per edge end: V + 2E items for an undirected graph. A matrix always stores V² boxes, whether the edges are there or not. Most real graphs are **sparse**: each vertex has only a few edges, so E is far below V². Think of a road network where each junction has about 4 roads, so E is about 2V:
+
+| V | E | list entries, V + 2E | matrix boxes, V² |
+| --- | --- | --- | --- |
+| 100 | 200 | 500 | 10,000 |
+| 1,000 | 2,000 | 5,000 | 1,000,000 |
+| 1,000,000 | 2,000,000 | 5,000,000 | 1,000,000,000,000 |
+
+A million junctions would need a million million boxes, almost all 0. A **dense** graph, where most pairs are joined, is different: then E is close to V² anyway, and the matrix wastes little.
+
+### Weighted matrices
+For a weighted graph, each box holds the weight instead of a 1. A box with no edge needs a value that can't be a weight: None works well:
+```python
+roads = [("A", "B", 7), ("A", "C", 2), ("B", "C", 3), ("B", "D", 1), ("C", "D", 6), ("D", "E", 5)]
+wm = [[None] * n for i in range(n)]
+for u, v, w in roads:
+    wm[index[u]][index[v]] = w
+    wm[index[v]][index[u]] = w
+print(wm[index["B"]])
+print(wm[index["A"]][index["E"]], wm[index["E"]][index["D"]])
+```
+```output
+[7, None, 3, 1, None]
+None 5
+```
+B's row shows its edges to A (7), C (3) and D (1). Using 0 for "no edge" would be a mistake whenever a weight could really be 0, like a free road.
+
+### Which to choose?
+| situation | best choice | why |
+| --- | --- | --- |
+| sparse graph: roads, social networks, the web | adjacency list | O(V + E) memory and fast neighbour lists |
+| algorithms that visit every vertex's neighbours | adjacency list | O(V + E) instead of O(V²) |
+| small or dense graph, many "is u–v an edge?" questions | adjacency matrix | O(1) look-ups, and little wasted space |
+| reading and writing graphs, sorting edges by weight | edge list | it's a plain list of the edges |
+
+| job | edge list | adjacency list | adjacency matrix |
+| --- | --- | --- | --- |
+| memory | O(E) | O(V + E) | O(V²) |
+| is u–v an edge? | O(E) | O(degree of u) | O(1) |
+| list u's neighbours | O(E) | O(degree of u) | O(V) |
+| add an edge | O(1) | O(1) | O(1) |
+
+When in doubt, use an adjacency list: most graphs are sparse, and most algorithms need neighbours.
+
+=== keypoints
+- An edge list, an adjacency list and an adjacency matrix hold the same graph. A matrix needs the vertices numbered: a `names` list and an `index` dictionary.
+- Build a matrix with `[[0] * n for i in range(n)]`, then set `matrix[i][j] = 1` (and `matrix[j][i]` for undirected edges). `[[0] * n] * n` shares one row, which is a bug.
+- Matrix to list: scan every row for 1s, O(V²). List to matrix: zeros, then a 1 for every list entry.
+- Is u–v an edge? Matrix O(1); adjacency list O(degree of u), by scanning u's list.
+- Listing neighbours: adjacency list O(degree); matrix O(V) per vertex, so visiting all neighbours is O(V + E) against O(V²).
+- Memory: lists O(V + E), matrix O(V²). Sparse graphs (most real ones) suit lists; small or dense graphs with many edge checks suit a matrix.
+- Weighted matrices store the weight in each box and None where there's no edge.
+
+=== example: Who knows whom?
+intro: A small team where most people know each other: a dense graph, where a matrix wastes little space and answers "does X know Y?" with one look-up.
+```python
+team = ["Ada", "Ben", "Cy", "Dee", "Eve"]
+knows = [
+    [0, 1, 1, 1, 0],
+    [1, 0, 1, 0, 1],
+    [1, 1, 0, 1, 1],
+    [1, 0, 1, 0, 0],
+    [0, 1, 1, 0, 0],
+]
+for i in range(len(team)):
+    print(team[i], "knows", sum(knows[i]))
+
+strangers = []
+for i in range(len(team)):
+    for j in range(i + 1, len(team)):
+        if knows[i][j] == 0:
+            strangers.append((team[i], team[j]))
+print(strangers)
+```
+1-8: Row i, column j is 1 if team[i] knows team[j]. Knowing someone goes both ways, so the matrix is symmetric.
+9-10: A row's sum is that person's degree: how many people they know.
+12-16: Each pair is checked once: j starts at i + 1, so (Ada, Eve) is checked but not (Eve, Ada).
+17: Three pairs haven't met yet: introductions needed.
+
+=== example: Checking every pair
+intro: Asking "is u–v an edge?" for every pair of vertices, once with the adjacency list and once with the matrix, and counting the steps each one takes.
+```python
+names = ["A", "B", "C", "D", "E"]
+adj = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}
+matrix = [[0, 1, 1, 0, 0], [1, 0, 1, 1, 0], [1, 1, 0, 1, 0], [0, 1, 1, 0, 1], [0, 0, 0, 1, 0]]
+list_steps = 0
+matrix_steps = 0
+found = 0
+for i in range(len(names)):
+    for j in range(len(names)):
+        for w in adj[names[i]]:
+            list_steps += 1
+            if w == names[j]:
+                found += 1
+                break
+        matrix_steps += 1
+print("list:", list_steps, "steps; matrix:", matrix_steps, "steps; edge ends found:", found)
+```
+1-3: The same graph, stored both ways.
+7-8: Every pair of vertices: 5 × 5 = 25 questions.
+9-13: The list way scans u's list until it finds v, and `break` stops the scan. When v isn't a neighbour, the whole list is scanned.
+14: The matrix way is a single look-up per question, whatever the answer.
+15: 50 steps against 25, even on 5 vertices. With bigger degrees the gap grows: each list check costs up to the degree, each matrix check 1.
+
+=== animation: Edge list to matrix
+view: grid matrix row=i col=j rows=A,B,C,D cols=A,B,C,D
+vars u v i j
+intro: Each edge sets two boxes in the matrix: row u, column v and row v, column u. Watch the matrix become symmetric as the edges go in.
+```python
+edges = [("A", "B"), ("A", "C"), ("B", "C"), ("C", "D")]
+index = {"A": 0, "B": 1, "C": 2, "D": 3}
+matrix = [[0] * 4 for k in range(4)]
+for u, v in edges:
+    i = index[u]
+    j = index[v]
+    matrix[i][j] = 1
+    matrix[j][i] = 1
+print(matrix)
+```
+1: Four undirected edges between four vertices.
+2: Each vertex's row and column number.
+3: A 4 × 4 matrix of zeros, each row its own list.
+4: Take the next edge.
+5: {u} is row and column {index[u]}.
+6: {v} is row and column {index[v]}.
+7: Set row {i} ({u}), column {j} ({v}) to 1.
+8: And row {j} ({v}), column {i} ({u}): the edge goes both ways.
+9: 4 edges, 8 ones: the matrix is symmetric.
+
+=== animation: Matrix to adjacency list
+view: grid matrix row=i col=j rows=A,B,C,D cols=A,B,C,D
+dict adj
+intro: Converting a matrix into an adjacency list: every row is scanned from left to right, and each 1 adds that column's vertex to the row's list. Every box is looked at, even the zeros.
+```python
+names = ["A", "B", "C", "D"]
+matrix = [[0, 1, 1, 0], [1, 0, 1, 0], [1, 1, 0, 1], [0, 0, 1, 0]]
+adj = {}
+for i in range(4):
+    adj[names[i]] = []
+    for j in range(4):
+        if matrix[i][j] == 1:
+            adj[names[i]].append(names[j])
+print(adj)
+```
+1: The vertex names, in row order.
+2: The matrix from Animation 1.
+3: The adjacency list starts empty.
+4: Take the next row.
+5: {names[i]} gets an empty list.
+6: Scan along {names[i]}'s row.
+7: Is there a 1 in row {names[i]}, column {names[j]}? {matrix[i][j] == 1}.
+8: Yes: {names[j]} is a neighbour of {names[i]}.
+9: 16 boxes checked to find 8 list entries.
+
+=== task: predict easy
+title: Names and numbers
+code:
+```python
+names = ["P", "Q", "R", "S"]
+index = {}
+for i in range(len(names)):
+    index[names[i]] = i
+print(index["R"], names[1], names[index["S"]])
+```
+wrong[3 Q S]: Numbering starts at 0: P is 0, Q is 1, R is 2.
+wrong[2 P S]: `names[1]` is the second name, Q.
+wrong[2 Q 3]: `names[index["S"]]` turns S into 3 and back into a name: S.
+hint: `index` maps each name to its position in `names`.
+hint: `names[k]` goes the other way, from a number to a name.
+right: `2 Q S`: R is row 2, row 1 is Q, and going from S to its number and back gives S again.
+wrong: `index["R"]` is 2. `names[1]` is Q. `index["S"]` is 3, and `names[3]` is S.
+
+=== task: mcq easy
+title: The fastest edge check
+prompt: Which way of storing a graph answers "is there an edge between u and v?" in O(1)?
+* An adjacency matrix :: Right. The answer is in one box, `matrix[i][j]`.
+- An adjacency list :: It has to scan u's list: O(degree of u).
+- An edge list :: It may have to scan every pair: O(E).
+- All three take O(1) :: Only the matrix has a box for each pair of vertices.
+hint: Which storage has a fixed place for every possible edge?
+hint: How many items might each one have to look at?
+right: The matrix: every pair of vertices has its own box, so checking it is one look-up.
+wrong: A matrix keeps one box per pair, so the check is O(1). Lists must be scanned: an adjacency list scans u's neighbours, and an edge list scans all the edges.
+
+=== task: cells easy
+title: Reading a matrix
+prompt: This is the adjacency matrix of an undirected graph, with rows and columns in the order A, B, C, D:
+
+```python
+matrix = [
+    [0, 1, 1, 1],
+    [1, 0, 0, 1],
+    [1, 0, 0, 0],
+    [1, 1, 0, 0],
+]
+```
+labels: A–B edge? (1 or 0) | B–C edge? (1 or 0) | degree of A | degree of C
+answer: 1 | 0 | 3 | 1
+wrong[1 | 1 | 3 | 1]: Row B, column C (row 1, column 2) holds 0: there's no edge B–C.
+wrong[1 | 0 | 4 | 1]: A's row is 0, 1, 1, 1: three 1s, so degree 3. The 0 is A's own column.
+wrong[1 | 0 | 3 | 3]: C's row is 1, 0, 0, 0: only one edge, to A.
+hint: Row i, column j says whether vertices i and j are joined.
+hint: A vertex's degree is the number of 1s in its row.
+right: A–B is 1, B–C is 0, A's row has three 1s and C's row has one.
+wrong: Look up row A, column B (1) and row B, column C (0). Count the 1s in row A (3) and row C (1).
+
+=== task: code easy
+title: Edges from a matrix
+prompt: Write `count_edges(matrix)` that returns the number of edges of an undirected graph from its adjacency matrix of 0s and 1s. Every edge sets two boxes, so count the 1s and halve the total.
+starter:
+```python
+def count_edges(matrix):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_edges(matrix):
+    total = 0
+    for row in matrix:
+        total += sum(row)
+    return total // 2
+```
+tests:
+- count_edges([[0, 1, 1, 1], [1, 0, 0, 1], [1, 0, 0, 0], [1, 1, 0, 0]])
+- count_edges([[0]])
+- count_edges([[0, 1], [1, 0]])
+- count_edges([])
+fail[1]: 8 ones, each edge counted twice: 4 edges.
+fail[3]: One edge sets two boxes: 1 edge.
+hint: Add up every row with `sum`.
+hint: Each undirected edge shows up as two 1s.
+right: The matrix is symmetric, so every edge appears as two 1s; halving the total counts each edge once. It looks at all V² boxes: O(V²).
+wrong: Sum all the rows, then use `// 2`, because every edge sets both `matrix[i][j]` and `matrix[j][i]`.
+
+=== task: fill easy
+title: Both boxes
+prompt: Fill in the blanks so that each undirected edge sets both of its boxes, and the program prints:
+
+```output
+[[0, 1, 0], [1, 0, 1], [0, 1, 0]]
+```
+code:
+```python
+index = {"A": 0, "B": 1, "C": 2}
+matrix = [[0] * 3 for k in range(3)]
+for u, v in [("A", "B"), ("B", "C")]:
+    i = index[u]
+    j = index[v]
+    matrix[i][j] = 1
+    matrix[??][??] = 1
+print(matrix)
+```
+answer: j | i
+wrong[i | j]: That sets the same box twice, so the matrix only gets row u, column v: it isn't symmetric.
+wrong[i | i]: That puts 1s on the diagonal, joining each vertex to itself.
+hint: The edge must also be stored from v's point of view.
+hint: Row v, column u.
+right: `matrix[j][i] = 1` stores the edge in v's row as well, so the matrix comes out symmetric.
+wrong: An undirected edge sets row i, column j and row j, column i.
+
+=== task: multi easy
+title: True of adjacency matrices
+prompt: Choose **every** statement that is true of adjacency matrices.
+* The matrix of an undirected graph is symmetric :: Right. Row i, column j always equals row j, column i.
+* A row's sum is that vertex's degree, for an unweighted undirected graph :: Right. Each 1 in the row is one edge.
+* It always has V² boxes :: Right. One for every pair of vertices, edge or not.
+- It's smaller than an adjacency list for a sparse graph :: For sparse graphs it's much bigger: V² boxes against V + 2E entries.
+- Listing a vertex's neighbours takes O(degree) :: You have to scan the whole row: O(V).
+- `[[0] * n] * n` is a safe way to build one :: That makes n copies of the same row: changing one box changes the whole column.
+hint: What's stored for pairs that aren't edges?
+hint: How would you find the 1s in a row?
+right: Symmetric for undirected graphs, row sums are degrees, and always V² boxes. That makes them big for sparse graphs and slow for listing neighbours.
+wrong: A matrix stores every pair, so it's always V² boxes and listing neighbours scans a whole row. For undirected graphs it's symmetric and row sums give degrees. Build its rows with a comprehension.
+
+=== task: parsons easy
+title: Neighbours from a row
+prompt: Arrange the lines so that the program lists B's neighbours by scanning B's row of the matrix, and prints:
+
+```output
+['A', 'D']
+```
+
+Not every line is needed.
+lines:
+```python
+names = ["A", "B", "C", "D"]
+matrix = [[0, 1, 1, 1], [1, 0, 0, 1], [1, 0, 0, 0], [1, 1, 0, 0]]
+i = names.index("B")
+nbrs = []
+for j in range(len(names)):
+    if matrix[i][j] == 1:
+        nbrs.append(names[j])
+print(nbrs)
+```
+distractors:
+```python
+    if matrix[j][j] == 1:
+        nbrs.append(j)
+```
+hint: B's row number comes from its place in `names`.
+hint: Each column j holding a 1 in that row is a neighbour: add its name.
+right: Scanning the whole row, 4 boxes, finds the two 1s: A and D. Listing neighbours from a matrix always costs O(V).
+wrong: Find B's row with `names.index("B")`, then go along the row and add `names[j]` for every column holding 1.
+
+=== task: order easy
+title: List to matrix
+prompt: Put the steps for turning an adjacency list into an adjacency matrix in order.
+items:
+- Number the vertices with a list of names and an index dictionary
+- Make a V × V matrix of zeros, each row its own list
+- Go through each vertex u and each neighbour v in u's list
+- Set the box in row u, column v to 1
+hint: The boxes can't be set before the vertices have numbers.
+hint: The matrix must exist before any box is set.
+right: Numbers first, then an empty matrix, then a 1 for every list entry. The zeros cost O(V²), and the entries O(E).
+wrong: Number the vertices, build the zero matrix with a comprehension, then visit every list entry and set its box.
+
+=== task: predict easy
+title: One shared row
+code:
+```python
+m = [[0] * 3] * 3
+m[0][1] = 1
+print(m)
+```
+wrong[[[0, 1, 0], [0, 0, 0], [0, 0, 0]]]: `[[0] * 3] * 3` makes three references to the **same** row, so changing it shows in every row.
+wrong[[[0, 0, 0], [1, 0, 0], [0, 0, 0]]]: `m[0][1]` is row 0, column 1.
+wrong[[[1, 1, 1], [0, 0, 0], [0, 0, 0]]]: Only one box of the shared row is set: column 1.
+hint: How many separate row lists does `[[0] * 3] * 3` create?
+hint: All three "rows" are the same list.
+right: `[[0, 1, 0], [0, 1, 0], [0, 1, 0]]`: the three rows are one list, so setting row 0, column 1 sets column 1 everywhere. Build the rows with `[[0] * 3 for k in range(3)]`.
+wrong: `* 3` copies the reference to one row three times. Changing that row changes all three, so every row shows the 1.
+
+=== task: mcq easy
+title: A million junctions
+prompt: A road network has 1,000,000 junctions and about 2,000,000 roads. Which storage fits it best?
+* An adjacency list :: Right. About 1,000,000 + 4,000,000 entries, O(V + E).
+- An adjacency matrix :: That's 1,000,000² = 10¹² boxes, almost all of them 0.
+- An adjacency matrix, because it checks edges in O(1) :: The fast look-ups can't make up for a million million boxes.
+- A list of the junctions only :: Without the roads, nothing is known about the connections.
+hint: How many boxes would a matrix need?
+hint: How many of them would be 1?
+right: An adjacency list: a sparse graph like this needs millions of entries as lists but a million million boxes as a matrix.
+wrong: The matrix needs V² boxes, 10¹² here, while the lists need about V + 2E, 5,000,000. Sparse graphs belong in adjacency lists.
+
+=== task: code medium
+title: Edge list to matrix
+prompt: Write `edges_to_matrix(edges, names)` that returns the adjacency matrix of an undirected graph: row i and column i belong to `names[i]`, and each edge `(u, v)` sets both of its boxes to 1.
+starter:
+```python
+def edges_to_matrix(edges, names):
+    # your code here
+    return []
+```
+solution:
+```python
+def edges_to_matrix(edges, names):
+    index = {}
+    for i in range(len(names)):
+        index[names[i]] = i
+    n = len(names)
+    m = [[0] * n for i in range(n)]
+    for u, v in edges:
+        m[index[u]][index[v]] = 1
+        m[index[v]][index[u]] = 1
+    return m
+```
+tests:
+- edges_to_matrix([("x", "y")], ["x", "y"])
+- edges_to_matrix([], ["a"])
+- edges_to_matrix([("A", "B"), ("B", "C")], ["C", "B", "A"])
+- edges_to_matrix([("A", "B"), ("A", "C"), ("A", "D")], ["A", "B", "C", "D"])
+fail[1]: One edge, two boxes: [[0, 1], [1, 0]].
+fail[2]: One vertex and no edges: [[0]].
+fail[3]: The rows follow `names`: C is row 0, B row 1, A row 2.
+fail[4]: A's row is [0, 1, 1, 1], and each of the others has a single 1, in column A.
+error[KeyError]: Look up each name's row number in a dictionary built from `names`.
+hint: Build `index` from `names`.
+hint: Make the zero matrix with `[[0] * n for i in range(n)]`.
+hint: For each edge, set both `m[index[u]][index[v]]` and `m[index[v]][index[u]]` to 1.
+right: O(V²) for the zeros, then O(1) per edge. The two assignments make the matrix symmetric.
+wrong: Number the vertices, build an n × n zero matrix, then set both boxes of every edge.
+
+=== task: code medium
+title: Matrix to adjacency list
+prompt: Write `matrix_to_list(matrix, names)` that returns an adjacency list: for each vertex, in the order of `names`, the list of names whose column holds a 1 in its row, from left to right.
+starter:
+```python
+def matrix_to_list(matrix, names):
+    # your code here
+    return {}
+```
+solution:
+```python
+def matrix_to_list(matrix, names):
+    result = {}
+    for i in range(len(names)):
+        result[names[i]] = []
+        for j in range(len(names)):
+            if matrix[i][j] == 1:
+                result[names[i]].append(names[j])
+    return result
+```
+tests:
+- matrix_to_list([[0, 1], [1, 0]], ["x", "y"])
+- matrix_to_list([[0, 1, 0], [0, 0, 1], [0, 0, 0]], ["a", "b", "c"])
+- matrix_to_list([], [])
+- matrix_to_list([[0, 1, 1, 1], [1, 0, 0, 1], [1, 0, 0, 0], [1, 1, 0, 0]], ["A", "B", "C", "D"])
+fail[1]: {'x': ['y'], 'y': ['x']}.
+fail[2]: A directed matrix: a → b and b → c, and c has an empty list.
+fail[4]: A's row has 1s in columns B, C and D.
+error[IndexError]: Loop over the indexes 0 to `len(names) - 1` for both rows and columns.
+hint: Give every vertex an empty list first.
+hint: For each row i and column j, a 1 means `names[j]` is a neighbour of `names[i]`.
+right: Every box is looked at once: O(V²), even when there are few edges.
+wrong: For each row, start an empty list and scan the row, appending the name of each column that holds a 1.
+
+=== task: predict medium
+title: Scanning a list
+code:
+```python
+def edge_in_list(adj, u, v):
+    steps = 0
+    for w in adj[u]:
+        steps += 1
+        if w == v:
+            return True, steps
+    return False, steps
+
+adj = {"A": ["B", "C", "D", "E"], "B": ["A"], "C": ["A"], "D": ["A"], "E": ["A"]}
+print(edge_in_list(adj, "A", "B"), edge_in_list(adj, "A", "E"), edge_in_list(adj, "B", "C"), edge_in_list(adj, "A", "A"))
+```
+wrong[(True, 1) (True, 1) (False, 1) (False, 4)]: E is last in A's list, so finding it takes 4 steps.
+wrong[(True, 1) (True, 4) (False, 0) (False, 4)]: B's list has one item, A, which is checked before giving up: 1 step.
+wrong[(True, 1) (True, 4) (False, 1) (True, 1)]: A isn't in its own list, so the whole list is scanned and the answer is False.
+hint: The count goes up once for every neighbour checked.
+hint: A missing neighbour means checking the whole list.
+right: `(True, 1) (True, 4) (False, 1) (False, 4)`: found at once, found last, and two full scans that find nothing. A matrix would answer each in one step.
+wrong: A–B is found at the first item. A–E at the fourth. B's list (A) doesn't hold C: 1 step. A's list doesn't hold A: all 4 items checked.
+
+=== task: cells medium
+title: Counting the memory
+prompt: How many items does each storage need? For an undirected graph, an adjacency list holds V + 2E items (one list per vertex, and each edge in two lists), and a matrix holds V² boxes. Write the numbers without commas.
+labels: list, V = 50, E = 100 | matrix, V = 50 | list, V = 2000, E = 3000 | matrix, V = 2000
+answer: 250 | 2500 | 8000 | 4000000
+wrong[150 | 2500 | 5000 | 4000000]: Each undirected edge appears in two lists: V + 2E, not V + E.
+wrong[250 | 100 | 8000 | 4000]: The matrix has V × V boxes, not 2V.
+wrong[250 | 2500 | 8000 | 6000]: V² for V = 2000 is 2000 × 2000 = 4000000; it doesn't depend on E.
+hint: 50 + 2 × 100, and 2000 + 2 × 3000.
+hint: 50 × 50, and 2000 × 2000.
+right: 250 against 2500, then 8000 against 4000000: as V grows, the matrix grows with V² while the lists grow with the edges.
+wrong: Lists: 50 + 200 = 250 and 2000 + 6000 = 8000. Matrices: 50² = 2500 and 2000² = 4000000.
+
+=== task: fill medium
+title: Scanning the rows
+prompt: Fill in the blanks so that `matrix_to_list` turns each row's 1s into names, and the program prints:
+
+```output
+{'a': ['b'], 'b': ['c'], 'c': []}
+```
+code:
+```python
+def matrix_to_list(matrix, names):
+    result = {}
+    for i in range(len(names)):
+        result[names[i]] = []
+        for j in range(len(names)):
+            if matrix[i][j] == ??:
+                result[names[i]].append(names[??])
+    return result
+
+print(matrix_to_list([[0, 1, 0], [0, 0, 1], [0, 0, 0]], ["a", "b", "c"]))
+```
+answer: 1 | j
+wrong[0 | j]: That lists the vertices each one is **not** joined to, and itself.
+wrong[1 | i]: The neighbour is the column's vertex, `names[j]`. `names[i]` would add the vertex itself.
+hint: A box holding 1 means there's an edge.
+hint: The neighbour is the vertex of the column, not of the row.
+right: A 1 in row i, column j means an edge from `names[i]` to `names[j]`, so `names[j]` goes into the list.
+wrong: Check for 1, and append the column's name, `names[j]`.
+
+=== task: mcq medium
+title: A dense little graph
+prompt: A board game has 20 squares, and almost every pair of squares is joined. The game asks "are these two squares joined?" thousands of times a second. Which storage fits best?
+* An adjacency matrix :: Right. 400 boxes is tiny, most of them are 1s anyway, and each question is one look-up.
+- An adjacency list :: It works, but every question scans a list of up to 19 neighbours, and it saves almost no space on a dense graph.
+- An edge list :: Each question could scan about 190 edges.
+- None of them can store a graph this dense :: All three can; they differ in speed and space.
+hint: How many boxes would a matrix need for 20 squares?
+hint: Which storage answers "joined?" in one step?
+right: A matrix: for a small, dense graph its V² boxes cost little, and its O(1) look-ups win.
+wrong: With only 20 vertices, a matrix needs 400 boxes, and nearly all of them are 1s. It answers each question in O(1), while the lists have to be scanned.
+
+=== task: predict medium
+title: A directed matrix
+code:
+```python
+idx = {"A": 0, "B": 1, "C": 2}
+dm = [[0] * 3 for k in range(3)]
+for u, v in [("A", "B"), ("B", "C"), ("C", "B")]:
+    dm[idx[u]][idx[v]] = 1
+for row in dm:
+    print(row)
+print(dm[0][1] == dm[1][0])
+```
+wrong[[0, 1, 0]\n[1, 0, 1]\n[0, 1, 0]\nTrue]: These are directed edges: only row u, column v is set, so A → B doesn't set row B, column A.
+wrong[[0, 1, 0]\n[0, 0, 1]\n[0, 0, 0]\nFalse]: C → B is an edge too: row C, column B is 1.
+wrong[[0, 1, 0]\n[0, 0, 1]\n[0, 1, 0]\nTrue]: Row A, column B is 1, but row B, column A is 0, so they aren't equal.
+hint: Each edge sets one box: row u, column v.
+hint: B → C and C → B are both there, but A → B has no partner.
+right: The matrix isn't symmetric: A → B is set but B → A isn't. B and C point at each other, so their two boxes match.
+wrong: Row A: 1 in column B. Row B: 1 in column C. Row C: 1 in column B. `dm[0][1]` is 1 and `dm[1][0]` is 0.
+
+=== task: multi medium
+title: What things cost
+prompt: Choose **every** cost that is correct for a graph with V vertices and E edges.
+* Checking for an edge u–v with a matrix: O(1) :: Right. One box.
+* Listing u's neighbours with an adjacency list: O(degree of u) :: Right. The list holds exactly the neighbours.
+* Visiting every neighbour of every vertex with a matrix: O(V²) :: Right. Every box of every row.
+* Memory for an adjacency list: O(V + E) :: Right. One list per vertex plus the edge entries.
+- Listing u's neighbours with a matrix: O(degree of u) :: The whole row must be scanned: O(V).
+- Memory for a matrix: O(V + E) :: It's always O(V²).
+hint: A matrix row has a box for every vertex.
+hint: An adjacency list stores only the edges that exist.
+right: Matrices give O(1) edge checks but O(V) neighbour lists and O(V²) memory; adjacency lists give O(degree) neighbour lists and O(V + E) memory.
+wrong: A matrix spends a box on every pair: O(V²) memory and O(V) to scan a row, but O(1) to check one pair. Adjacency lists hold only real edges.
+
+=== task: parsons medium
+title: Matrix to list
+prompt: Arrange the lines so that `matrix_to_list` builds an adjacency list from a matrix, and the program prints:
+
+```output
+{'x': ['y', 'z'], 'y': ['x'], 'z': ['x']}
+```
+
+Not every line is needed.
+lines:
+```python
+def matrix_to_list(matrix, names):
+    result = {}
+    for i in range(len(names)):
+        result[names[i]] = []
+        for j in range(len(names)):
+            if matrix[i][j] == 1:
+                result[names[i]].append(names[j])
+    return result
+
+print(matrix_to_list([[0, 1, 1], [1, 0, 0], [1, 0, 0]], ["x", "y", "z"]))
+```
+distractors:
+```python
+            if matrix[j][i] == 0:
+                result[names[j]].append(names[i])
+```
+hint: Every vertex gets a list before its row is scanned.
+hint: A 1 in row i, column j adds `names[j]` to `names[i]`'s list.
+right: Each row becomes one list, scanned from left to right: every box is checked, O(V²).
+wrong: For each row index i, start `result[names[i]]` as an empty list, then scan the columns j and append `names[j]` whenever `matrix[i][j] == 1`.
+
+=== task: order medium
+title: Smallest to largest
+prompt: A sparse undirected graph has V = 1,000 vertices and E = 2,000 edges. Put the three storages in order of how many items they hold, smallest first.
+items:
+- Edge list: 2,000 pairs
+- Adjacency list: 1,000 lists holding 4,000 names
+- Adjacency matrix: 1,000,000 boxes
+hint: An edge list holds one pair per edge.
+hint: A matrix holds V² boxes.
+right: E, then V + 2E, then V²: for a sparse graph the matrix is hundreds of times bigger than either list.
+wrong: The edge list has E = 2,000 items; the adjacency list V + 2E = 5,000; the matrix V² = 1,000,000.
+
+=== task: code hard
+title: Matrix to edge list
+prompt: Write `matrix_to_edges(matrix, names)` that returns the edges of an undirected graph as a sorted list of `(names[i], names[j])` pairs with i < j, so each edge appears once. Only look at the boxes above the diagonal: column j from i + 1 on.
+starter:
+```python
+def matrix_to_edges(matrix, names):
+    # your code here
+    return []
+```
+solution:
+```python
+def matrix_to_edges(matrix, names):
+    out = []
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            if matrix[i][j] == 1:
+                out.append((names[i], names[j]))
+    return sorted(out)
+```
+tests:
+- matrix_to_edges([[0, 1, 1], [1, 0, 0], [1, 0, 0]], ["A", "B", "C"])
+- matrix_to_edges([[0]], ["x"])
+- matrix_to_edges([[0, 1, 0], [1, 0, 1], [0, 1, 0]], ["c", "b", "a"])
+- matrix_to_edges([[0, 1, 1, 1], [1, 0, 0, 1], [1, 0, 0, 0], [1, 1, 0, 0]], ["A", "B", "C", "D"])
+fail[1]: A–B and A–C, each once: [('A', 'B'), ('A', 'C')].
+fail[3]: The pairs are (names[i], names[j]) with i < j: ('c', 'b') and ('b', 'a'), sorted.
+fail[4]: Four edges: A–B, A–C, A–D and B–D.
+hint: Let j start at `i + 1`, so each pair of vertices is looked at once.
+hint: A 1 in row i, column j is the edge `(names[i], names[j])`.
+hint: Return the list sorted.
+right: The upper half of a symmetric matrix holds every edge exactly once, so starting j at i + 1 avoids duplicates. Still O(V²) boxes to look at.
+wrong: Scan only the boxes with j > i, collect `(names[i], names[j])` for each 1, and sort the result.
+
+=== task: code hard
+title: Is it undirected?
+prompt: The matrix of an undirected graph is symmetric. Write `is_symmetric(matrix)` that returns True if `matrix[i][j] == matrix[j][i]` for every i and j, and False otherwise. The matrix may hold weights, not only 0s and 1s.
+starter:
+```python
+def is_symmetric(matrix):
+    # your code here
+    return True
+```
+solution:
+```python
+def is_symmetric(matrix):
+    for i in range(len(matrix)):
+        for j in range(len(matrix)):
+            if matrix[i][j] != matrix[j][i]:
+                return False
+    return True
+```
+tests:
+- is_symmetric([[0, 1], [1, 0]])
+- is_symmetric([[0, 1], [0, 0]])
+- is_symmetric([])
+- is_symmetric([[0, 2, 0], [2, 0, 5], [0, 5, 0]])
+- is_symmetric([[0, 1, 1], [1, 0, 0], [0, 0, 0]])
+fail[2]: Row 0, column 1 is 1 but row 1, column 0 is 0: a one-way edge.
+fail[5]: Row 0, column 2 is 1, but row 2, column 0 is 0.
+hint: Compare `matrix[i][j]` with `matrix[j][i]` for every pair of indexes.
+hint: Return False at the first mismatch.
+right: One mismatch is enough to show a one-way edge. Checking every box is O(V²); checking only j > i would halve the work.
+wrong: Loop over every i and j, and return False as soon as `matrix[i][j] != matrix[j][i]`. Return True after the loops.
+
+=== task: code hard
+title: A weighted matrix
+prompt: Write `weighted_matrix(edges, names, directed)` that builds a matrix of weights from `(u, v, weight)` triples: the box in row u, column v holds the weight, and boxes with no edge hold None. When `directed` is False, also fill in row v, column u.
+starter:
+```python
+def weighted_matrix(edges, names, directed):
+    # your code here
+    return []
+```
+solution:
+```python
+def weighted_matrix(edges, names, directed):
+    index = {}
+    for i in range(len(names)):
+        index[names[i]] = i
+    n = len(names)
+    m = [[None] * n for i in range(n)]
+    for u, v, w in edges:
+        m[index[u]][index[v]] = w
+        if not directed:
+            m[index[v]][index[u]] = w
+    return m
+```
+tests:
+- weighted_matrix([("a", "b", 4)], ["a", "b"], False)
+- weighted_matrix([("a", "b", 4)], ["a", "b"], True)
+- weighted_matrix([("x", "y", 0), ("y", "z", 2)], ["x", "y", "z"], False)
+- weighted_matrix([], ["p"], True)
+fail[1]: Undirected: both boxes hold 4, and the diagonal holds None.
+fail[2]: Directed: only row a, column b holds 4.
+fail[3]: The road x–y weighs 0, which is a real weight, different from None.
+hint: Start with `[[None] * n for i in range(n)]`.
+hint: Put each weight at row `index[u]`, column `index[v]`.
+hint: If the graph isn't directed, also at row `index[v]`, column `index[u]`.
+right: None marks "no edge", so a weight of 0 can still be stored. Building it is O(V²) for the matrix plus O(1) per edge.
+wrong: Number the vertices, fill an n × n matrix with None, then write each edge's weight into its box, and into the mirrored box for an undirected graph.
+
+=== task: code hard
+title: Common acquaintances
+prompt: Write `common(matrix, names, a, b)` that returns the list of people, in the order of `names`, who are joined to both a and b in the adjacency matrix. Use `names.index` to find their rows, then compare the two rows column by column.
+starter:
+```python
+def common(matrix, names, a, b):
+    # your code here
+    return []
+```
+solution:
+```python
+def common(matrix, names, a, b):
+    i = names.index(a)
+    j = names.index(b)
+    out = []
+    for k in range(len(names)):
+        if matrix[i][k] == 1 and matrix[j][k] == 1:
+            out.append(names[k])
+    return out
+```
+tests:
+- common([[0, 1, 1, 1, 0], [1, 0, 1, 0, 1], [1, 1, 0, 1, 1], [1, 0, 1, 0, 0], [0, 1, 1, 0, 0]], ["Ada", "Ben", "Cy", "Dee", "Eve"], "Ada", "Eve")
+- common([[0, 1, 1, 1, 0], [1, 0, 1, 0, 1], [1, 1, 0, 1, 1], [1, 0, 1, 0, 0], [0, 1, 1, 0, 0]], ["Ada", "Ben", "Cy", "Dee", "Eve"], "Ben", "Dee")
+- common([[0, 1, 1, 1, 0], [1, 0, 1, 0, 1], [1, 1, 0, 1, 1], [1, 0, 1, 0, 0], [0, 1, 1, 0, 0]], ["Ada", "Ben", "Cy", "Dee", "Eve"], "Cy", "Dee")
+- common([[0, 0], [0, 0]], ["x", "y"], "x", "y")
+fail[1]: Ada knows Ben, Cy and Dee; Eve knows Ben and Cy. Both: ['Ben', 'Cy'].
+fail[2]: Ben knows Ada, Cy and Eve; Dee knows Ada and Cy. Both: ['Ada', 'Cy'].
+fail[3]: Cy and Dee both know Ada only: ['Ada'].
+hint: `i = names.index(a)` and `j = names.index(b)` give the two rows.
+hint: A column k with a 1 in both rows is someone they both know.
+right: Two rows compared side by side, one box each per column: O(V). With adjacency lists you'd compare two lists instead.
+wrong: Find the two rows, then go through every column k and keep `names[k]` when both rows have a 1 there.
+
+=== task: predict hard
+title: None isn't zero
+code:
+```python
+wm = [[None, 3, 0], [3, None, None], [0, None, None]]
+print(wm[0][1], wm[0][2], wm[1][2])
+print(wm[0][2] is None, wm[1][2] is None)
+```
+wrong[3 None None\nTrue True]: `wm[0][2]` holds 0: a real edge with weight 0, not a missing one.
+wrong[3 0 0\nFalse False]: `wm[1][2]` holds None: there's no edge between vertices 1 and 2.
+wrong[3 0 None\nTrue True]: 0 is a number, so `0 is None` is False.
+hint: Read each box: row 0 is [None, 3, 0].
+hint: Only None means "no edge"; 0 is a weight.
+right: `3 0 None` and `False True`: the edge 0–2 exists with weight 0, while 1–2 doesn't exist at all. That's why None marks missing edges.
+wrong: Row 0, column 1 is 3; row 0, column 2 is 0; row 1, column 2 is None. Only the last one is None.
+
+=== task: predict hard
+title: A star graph
+code:
+```python
+hub = {"H": ["a", "b", "c", "d"], "a": ["H"], "b": ["H"], "c": ["H"], "d": ["H"]}
+list_steps = 0
+for v in hub:
+    list_steps += len(hub[v])
+matrix_steps = len(hub) * len(hub)
+print(list_steps, matrix_steps)
+```
+wrong[4 25]: Every edge appears in two lists: H's list and the leaf's. The lists hold 8 names.
+wrong[8 10]: A matrix row has a box for every vertex: 5 rows of 5 boxes, 25.
+wrong[5 25]: The steps count list entries, not vertices: 4 in H's list and 1 in each of the other four.
+hint: Add up the lengths of all five lists.
+hint: The matrix for 5 vertices has 5 × 5 boxes.
+right: `8 25`: visiting every neighbour costs 2E = 8 with lists but V² = 25 with a matrix. The gap grows quickly as V grows.
+wrong: H has 4 neighbours and each leaf has 1: 4 + 1 + 1 + 1 + 1 = 8. The matrix has 5 × 5 = 25 boxes to scan.
+
+=== task: cells hard
+title: Directed rows
+prompt: The directed edges A → C, B → A, B → C and C → B go into a matrix with rows and columns in the order A, B, C. What is each row?
+labels: row A | row B | row C
+answer: [0, 0, 1] | [1, 0, 1] | [0, 1, 0]
+wrong[[0, 1, 1] | [1, 0, 1] | [1, 1, 0]]: That stores every edge both ways. A directed edge u → v sets only row u, column v.
+wrong[[0, 1, 0] | [0, 0, 1] | [1, 1, 0]]: That's the columns: row u lists the edges leaving u.
+wrong[[0, 0, 1] | [1, 0, 0] | [0, 1, 0]]: B has two edges leaving it: B → A and B → C.
+hint: Row u, column v is 1 for an edge u → v.
+hint: A has one edge out, B has two, C has one.
+right: A → C, B → A and B → C, and C → B: each row marks where its vertex's edges go.
+wrong: Row A: a 1 in column C. Row B: 1s in columns A and C. Row C: a 1 in column B.
+
+=== task: multi hard
+title: Pick the storage
+prompt: Choose **every** pairing of situation and storage that is a good fit.
+* A social network with 2 billion users: adjacency lists :: Right. Each user has a few hundred friends at most: very sparse.
+* A 30-city map where every pair of cities has a flight: an adjacency matrix :: Right. 900 boxes, nearly all used, with O(1) look-ups.
+* Reading a graph from a file of "u v" lines: an edge list :: Right. That's how the data arrives, before converting it.
+* Breadth-first search over a big sparse graph: adjacency lists :: Right. O(V + E) instead of O(V²).
+- A web crawl with a billion pages: an adjacency matrix :: That's 10¹⁸ boxes, almost all 0.
+- Answering "who are u's neighbours?" in a sparse graph: an adjacency matrix :: The matrix has to scan a whole row: O(V) instead of O(degree).
+hint: Is the graph sparse or dense?
+hint: Which questions does the program ask most?
+right: Sparse graphs and neighbour-heavy algorithms suit adjacency lists; small dense graphs suit a matrix; edge lists suit input and output.
+wrong: Use a matrix only when V² boxes are affordable and mostly used, and edge checks dominate. Huge sparse graphs need adjacency lists, and edge lists are the natural format for reading graphs in.
+
+=== task: fill hard
+title: Missing means None
+prompt: Fill in the blanks so that the weighted matrix marks missing edges with None and the program counts the real edges, printing:
+
+```output
+[[None, 0, 7], [0, None, None], [7, None, None]] 2
+```
+code:
+```python
+index = {"x": 0, "y": 1, "z": 2}
+m = [[??] * 3 for k in range(3)]
+for u, v, w in [("x", "y", 0), ("x", "z", 7)]:
+    m[index[u]][index[v]] = w
+    m[index[v]][index[u]] = w
+count = 0
+for i in range(3):
+    for j in range(i + 1, 3):
+        if m[i][j] is not ??:
+            count += 1
+print(m, count)
+```
+answer: None | None
+wrong[0 | None]: With 0 in the empty boxes, nothing is None any more, so every pair counts as an edge: 3. And the free road x–y can't be told apart from no road at all.
+hint: The matrix needs a value that can't be a weight.
+hint: Count the boxes that hold something other than that value.
+right: None can't be confused with a weight, so the edge x–y of weight 0 is still counted: 2 edges.
+wrong: Start every box as None, and count the boxes above the diagonal that aren't None.
+
+=== task: parsons hard
+title: Reversing with a matrix
+prompt: In a directed graph's matrix, reversing every edge means swapping rows and columns: the new matrix has `t[j][i] = m[i][j]`. This is called the **transpose**. Arrange the lines so that the program prints the reversed graph's matrix:
+
+```output
+[[0, 0, 1], [1, 0, 1], [0, 1, 0]]
+```
+
+Not every line is needed.
+lines:
+```python
+m = [[0, 1, 0], [0, 0, 1], [1, 1, 0]]
+n = len(m)
+t = [[0] * n for k in range(n)]
+for i in range(n):
+    for j in range(n):
+        t[j][i] = m[i][j]
+print(t)
+```
+distractors:
+```python
+t = m
+        t[i][j] = m[i][j]
+```
+hint: Make a fresh n × n matrix for the result.
+hint: The box in row i, column j of `m` goes to row j, column i of `t`.
+right: Every edge i → j becomes j → i: the transpose of the matrix is the matrix of the reversed graph. It takes O(V²).
+wrong: Build a new zero matrix, then copy each `m[i][j]` into `t[j][i]`.
