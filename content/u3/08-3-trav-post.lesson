@@ -1,0 +1,1271 @@
+=== lesson
+id: ds-trav-post
+title: Postorder traversal
+summary: Postorder visits a node after both of its subtrees, so every node's children are dealt with before the node itself. That's the order for any job that works from the bottom up: computing subtree sizes and heights, evaluating an expression tree, and deleting a tree. You'll write postorder recursively and without recursion, and see how it produces the postfix expressions that a stack can evaluate.
+
+=== learn
+### Left, right, node
+**Postorder** visits each node **after** its subtrees: its whole left subtree, then its whole right subtree, then the node itself. This lesson uses this tree:
+```text
+        A
+      /   \
+     B     C
+    / \   /
+   D   E F
+        \
+         G
+```
+Its postorder is D G E B F C A. Each node is visited only once everything below it has been visited, so:
+
+- The root comes **last**.
+- Every node comes after all of its descendants.
+- The first node is a leaf: go left from the root whenever there's a left child, otherwise right, until you reach a node with no children. Here that's D.
+
+### Recursive postorder
+The node's value goes after both subtrees' lists:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", Node("D"), Node("E", None, Node("G"))), Node("C", Node("F")))
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+
+print(postorder(root))
+print(postorder(root.left), postorder(root.right), root.val)
+```
+```output
+['D', 'G', 'E', 'B', 'F', 'C', 'A']
+['D', 'G', 'E', 'B'] ['F', 'C'] A
+```
+The list splits into blocks the other way round from preorder: the left subtree's block, then the right subtree's block, then the root at the very end. Each block ends with its own subtree's root: B ends the first block, C the second.
+
+### Children first: answers from the bottom up
+Many questions about a node can only be answered once its children have been answered. A subtree's size is 1 plus the sizes of its two subtrees, so each node has to wait for both children: that's postorder. This version records every node's subtree size in a dictionary as it goes:
+```python
+def fill_sizes(node, sizes):
+    if node is None:
+        return 0
+    size = 1 + fill_sizes(node.left, sizes) + fill_sizes(node.right, sizes)
+    sizes[node.val] = size
+    return size
+
+sizes = {}
+fill_sizes(root, sizes)
+print(sizes)
+```
+```output
+{'D': 1, 'G': 1, 'E': 2, 'B': 4, 'F': 1, 'C': 2, 'A': 7}
+```
+The dictionary fills up in postorder, D G E B F C A, because each node's size is stored only after both of its children's calls have returned. The `count` and `height` functions from the Trees lesson work the same way: they're postorder traversals in disguise. Animation 2 fills in sizes from the leaves up.
+
+### Evaluating an expression tree
+In an **expression tree**, each leaf holds a number and each internal node holds an operator that works on the values of its two subtrees. (2 + 3) × (7 − 4) looks like this:
+```text
+        *
+      /   \
+     +     -
+    / \   / \
+   2   3 7   4
+```
+An operator can only be worked out once both of its parts are known, so evaluation is postorder: left value, right value, then the operator.
+```python
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    if node.val == "-":
+        return a - b
+    if node.val == "*":
+        return a * b
+    return a / b
+
+expr = Node("*", Node("+", Node(2), Node(3)), Node("-", Node(7), Node(4)))
+print(evaluate(expr), evaluate(expr.left), evaluate(expr.right))
+```
+```output
+15 5 3
+```
+A leaf returns its number. The + node gets 2 and 3 and returns 5, the − node gets 7 and 4 and returns 3, and the root multiplies them: 15. Notice `a - b`, not `b - a`: the left subtree is the first part. Animation 1 evaluates a smaller tree call by call.
+
+### Postorder is postfix
+Written out in postorder, an expression tree becomes a **postfix** expression, the bracket-free notation that the Stacks lesson evaluated with a stack:
+```python
+def postfix(node, out):
+    if node is None:
+        return
+    postfix(node.left, out)
+    postfix(node.right, out)
+    out.append(str(node.val))
+
+def eval_postfix(tokens):
+    stack = []
+    for t in tokens:
+        if t in "+-*/":
+            b = stack.pop()
+            a = stack.pop()
+            if t == "+":
+                stack.append(a + b)
+            elif t == "-":
+                stack.append(a - b)
+            elif t == "*":
+                stack.append(a * b)
+            else:
+                stack.append(a / b)
+        else:
+            stack.append(int(t))
+    return stack.pop()
+
+tokens = []
+postfix(expr, tokens)
+print(" ".join(tokens), eval_postfix(tokens))
+```
+```output
+2 3 + 7 4 - * 15
+```
+Both ways give 15, because they do the same work in the same order. The stack in `eval_postfix` holds the values that the recursive `evaluate` keeps in its waiting calls.
+
+### Deleting a tree
+In languages where a program frees memory itself, deleting a tree has to happen in postorder. If a parent were deleted first, its links to its children would go with it, and the children could never be reached again. Python frees memory automatically, but this function shows the order, cutting each node's links only after its subtrees are done:
+```python
+def delete(node):
+    if node is None:
+        return
+    delete(node.left)
+    delete(node.right)
+    print("delete", node.val)
+    node.left = None
+    node.right = None
+
+delete(Node("A", Node("B", Node("D")), Node("C")))
+```
+```output
+delete D
+delete B
+delete C
+delete A
+```
+D goes before its parent B, B and C go before their parent A, and nothing is ever cut off while it still has a subtree hanging below it.
+
+### Postorder without recursion
+The stack walk from the Preorder lesson visits node, left, right. Push the children the other way round, left first, and it visits node, right, left. That order is postorder backwards, so reversing the list at the end gives postorder:
+```python
+def postorder_stack(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.left is not None:
+            stack.append(node.left)
+        if node.right is not None:
+            stack.append(node.right)
+    out.reverse()
+    return out
+
+print(postorder_stack(root))
+```
+```output
+['D', 'G', 'E', 'B', 'F', 'C', 'A']
+```
+Before the reverse, the list is A C F B E G D: each node before its subtrees, with the right subtree first. Read backwards, each node comes after its subtrees, with the left subtree first: exactly postorder. Each node is pushed and popped once, and reversing is O(n), so the whole thing is O(n).
+
+### When to choose postorder
+Choose postorder whenever a node's answer depends on its children's answers:
+
+| job | what each node needs from its children |
+| --- | --- |
+| subtree sizes, heights, totals | their sizes, heights or totals |
+| evaluating an expression | the values of its two parts |
+| deleting or freeing a tree | for them to be gone already |
+| checking a tree is balanced | their heights |
+
+Like the other depth-first orders, it takes O(n) time and keeps O(h) calls waiting. If a job needs the parent first, like copying or printing an outline, that's preorder instead.
+
+=== keypoints
+- Postorder visits the left subtree, then the right subtree, then the node. The root is last, and every node comes after all of its descendants.
+- The postorder list is the left subtree's block, then the right subtree's block, then the root; each block ends with its own root.
+- Postorder fits bottom-up jobs, where a node needs its children's answers first: sizes, heights, totals, evaluating expression trees and deleting trees.
+- To evaluate an expression tree, a leaf returns its number and an operator node combines its left value `a` and right value `b` as `a op b`.
+- An expression tree written out in postorder is a postfix expression, which a stack evaluates in one pass.
+- Without recursion: a stack walk pushing the left child first visits node, right, left; reversing that list gives postorder. O(n) time.
+
+=== example: A calculator tree
+intro: Two expression trees, each printed with brackets and evaluated. Printing is done from the outside in; evaluating is done from the leaves up.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    if node.val == "-":
+        return a - b
+    if node.val == "*":
+        return a * b
+    return a / b
+
+def to_text(node):
+    if node.left is None and node.right is None:
+        return str(node.val)
+    return "(" + to_text(node.left) + " " + node.val + " " + to_text(node.right) + ")"
+
+e1 = Node("-", Node(10), Node("*", Node(2), Node(3)))
+e2 = Node("/", Node("+", Node(1), Node(5)), Node("-", Node(9), Node(6)))
+for e in [e1, e2]:
+    print(to_text(e), "=", evaluate(e))
+```
+7-9: A leaf is a number: its value is the number itself.
+10-11: Postorder: the values of both subtrees are worked out first.
+12-18: Then the node's operator combines them, left value first.
+20-23: `to_text` writes every operator between its two parts with brackets around each pair, so the tree's shape decides what's worked out first.
+25: 10 − (2 × 3): the × is deeper in the tree, so it's done first.
+26: (1 + 5) / (9 − 6).
+27-28: 10 − 6 = 4, and 6 / 3 = 2.0 (`/` always gives a float).
+
+=== example: Folder sizes from the bottom up
+intro: Like the `du` command on Linux and macOS, this prints every folder's total size. Each folder is printed after everything inside it, because its total isn't known until then.
+```python
+class Item:
+    def __init__(self, name, size=0, children=None):
+        self.name = name
+        self.size = size
+        if children is None:
+            children = []
+        self.children = children
+
+def du(item, path):
+    here = path + "/" + item.name
+    total = item.size
+    for child in item.children:
+        total += du(child, here)
+    if item.children:
+        print(total, here)
+    return total
+
+home = Item("home", 0, [
+    Item("photos", 0, [Item("beach.jpg", 300), Item("cat.jpg", 200)]),
+    Item("docs", 0, [Item("cv.pdf", 50), Item("notes", 0, [Item("list.txt", 2)])]),
+])
+du(home, "")
+```
+1-7: A file or folder: a name, its own size, and a list of children (empty for a file).
+9-16: The path is passed down, so each item knows where it is; the total comes back up.
+12-13: First add up everything inside (the children's totals).
+14-15: Only then print the folder's line: postorder. Files have no children and aren't printed.
+18-21: home holds photos and docs; docs holds a file and the folder notes.
+22: photos (500) is printed after both of its photos, notes (2) before docs (52), and home (552) last of all.
+
+=== animation: Evaluating an expression
+view: tree expr ptr=node
+callstack
+intro: `evaluate` on (2 + 3) * 4. Watch each operator wait for both of its parts before it can work out its own value.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    return a * b
+
+expr = Node("*", Node("+", Node(2), Node(3)), Node(4))
+print(evaluate(expr))
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines evaluate. Nothing runs yet.
+8: Evaluate the node {node.val}. Is it a leaf? {node.left is None and node.right is None}.
+9: A leaf is a number: its value is {node.val}.
+10: {node.val} needs both of its parts. First, the left one.
+11: The left part of {node.val} is {a}. Now the right one.
+12: Both parts are known: {a} and {b}. Is the operator +? {node.val == '+'}.
+13: {a} + {b} = {a + b}.
+14: {a} * {b} = {a * b}.
+16: * at the root; its left part is + with 2 and 3 below it, and its right part is 4.
+17: Evaluate from the root. The answer, 20, is printed when every call has come back.
+
+=== animation: Sizes from the bottom up
+view: tree root ptr=node title=values
+tree root val=size ptr=node title=subtree_sizes
+callstack
+intro: `fill` stores each node's subtree size in the node. The second picture shows the sizes, all 0 at first: watch them fill in from the leaves upwards, each node only after both of its children.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+        self.size = 0
+
+def fill(node):
+    if node is None:
+        return 0
+    left = fill(node.left)
+    right = fill(node.right)
+    node.size = 1 + left + right
+    return node.size
+
+root = Node("A", Node("B", Node("D")), Node("C"))
+fill(root)
+```
+1: The node class, with room for a subtree size, 0 to start with.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+6: Its size isn't known yet.
+8: Defines fill. Nothing runs yet.
+9: {'Fill in ' + node.val + "'s subtree." if node is not None else 'An empty subtree.'}
+10: An empty subtree has size 0.
+11: First, the size of {node.val}'s left subtree.
+12: The left subtree of {node.val} has size {left}. Now the right subtree.
+13: Both children are done: {node.val}'s size is 1 + {left} + {right} = {1 + left + right}.
+14: Hand {node.val}'s size back to its parent.
+16: A at the root; B and C below it; D below B.
+17: Start at the root. A's size is the last one filled in.
+
+=== task: predict easy
+title: Postorder as a list
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+
+t = Node(7, Node(3, None, Node(5)), Node(9, Node(8)))
+print(postorder(t))
+```
+wrong[[7, 3, 5, 9, 8]]: That's preorder. Postorder visits the root last.
+wrong[[3, 5, 7, 8, 9]]: That's inorder. Postorder visits 3 after its child 5.
+wrong[[5, 3, 9, 8, 7]]: 9's subtree comes out as 8, 9: the child 8 before its parent 9.
+hint: The node's value goes after both of its subtrees.
+hint: 3's subtree gives 5, 3; 9's subtree gives 8, 9.
+right: `[5, 3, 8, 9, 7]`: each node after everything below it, so the root, 7, comes last.
+wrong: 3's subtree in postorder is 5, 3. 9's subtree is 8, 9. Then the root: 5, 3, 8, 9, 7.
+
+=== task: mcq easy
+title: Always last
+prompt: Which value always comes last in the postorder list of a non-empty tree?
+* The root's value :: Right. Every node comes after all of its descendants, and the root is above everything.
+- The rightmost leaf's value :: That's last in preorder, not postorder.
+- The largest value :: Postorder doesn't look at the values.
+- The root's right child's value :: That comes second to last, when the root has a right child.
+hint: "Post" means the node comes after its subtrees.
+hint: Which node is above every other node?
+right: The root: it waits for both of its subtrees, which hold every other node.
+wrong: In postorder each node comes after its whole subtree. The root's subtree is the whole tree, so the root is last.
+
+=== task: cells easy
+title: Postorder by position
+prompt: In what order does postorder visit the nodes of this tree?
+
+```text
+        P
+      /   \
+     Q     R
+    / \     \
+   S   T     U
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th
+answer: S | T | Q | U | R | P
+wrong[P | Q | S | T | R | U]: That's preorder. Postorder ends with the root.
+wrong[S | Q | T | P | R | U]: That's inorder. Postorder visits Q after both of its children.
+hint: Q's subtree first, finishing with Q itself.
+hint: Then R's subtree, finishing with R, and P last.
+right: S, T, Q, U, R, P: children before parents, left before right.
+wrong: Q's subtree: S, T, then Q. R's subtree: U, then R. Then the root P.
+
+=== task: code easy
+title: Write postorder
+prompt: Write `postorder(node)` that returns a list of a binary tree's values in postorder: the left subtree, then the right subtree, then the node. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+```
+tests:
+- postorder(None)
+- postorder(Node(1))
+- postorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))))
+- postorder(Node("x", Node("y"), Node("z")))
+fail[2]: A single node: [1].
+fail[3]: 2's subtree (3, 4, 2), then 5's subtree (6, 5), then the root: [3, 4, 2, 6, 5, 1].
+fail[4]: Both children before their parent: ['y', 'z', 'x'].
+error[AttributeError]: Return [] for None before using `node.left`.
+hint: For None, return an empty list.
+hint: Otherwise return `postorder(node.left) + postorder(node.right) + [node.val]`.
+right: The node's value goes after both subtrees' lists. O(n).
+wrong: Return [] for an empty tree; otherwise join the left subtree's postorder, the right subtree's postorder, and the node's value, in that order.
+
+=== task: fill easy
+title: Which part comes first?
+prompt: Fill in the blanks so that a − node subtracts its right part from its left part, and the program prints:
+
+```output
+6 -5
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    return ?? - ??
+
+print(evaluate(Node("-", Node(10), Node(4))), evaluate(Node("-", Node(2), Node("+", Node(3), Node(4)))))
+```
+answer: a | b
+wrong[b | a]: That works out right minus left: 4 − 10 = −6, and 7 − 2 = 5.
+hint: `a` is the value of the left subtree, `b` of the right.
+hint: In 10 − 4, which number is on the left?
+right: Left minus right: 10 − 4 = 6, and 2 − (3 + 4) = −5. The left subtree is always the first part.
+wrong: The left part comes first, so a − node returns `a - b`.
+
+=== task: multi easy
+title: True of postorder
+prompt: Choose **every** statement that is true of the postorder list of any non-empty binary tree.
+* The root comes last :: Right. It waits for both of its subtrees.
+* Every node comes after all of its descendants :: Right. Children before parents, all the way down.
+* The first node is a leaf :: Right. If it had a child, the child would come before it.
+* Each subtree's block ends with that subtree's root :: Right. A subtree's root is visited after the rest of it.
+- The first node is always the leftmost node :: If the leftmost node has a right child, that child's subtree comes first.
+- The second-to-last node is always the root's left child :: It's the right child whenever the root has one.
+hint: What must happen before a node can be visited?
+hint: Picture a root whose leftmost node has a right child.
+right: Root last, parents after children, a leaf first, and each block closed by its own root.
+wrong: Postorder visits each node after its whole subtree. So the root is last, every block ends with its root, and the first node has no children. The leftmost node can come later, and the root's right child comes right before the root when it exists.
+
+=== task: parsons easy
+title: Recursive postorder
+prompt: Arrange the lines so that `postorder` returns the values in postorder, and the program prints:
+
+```output
+[4, 5, 2, 6, 3, 1]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+
+print(postorder(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))))
+```
+distractors:
+```python
+    return [node.val] + postorder(node.left) + postorder(node.right)
+        return [node.val]
+```
+hint: An empty subtree adds nothing.
+hint: The node's value goes after both subtrees.
+right: 2's block (4, 5, 2), then 3's block (6, 3), then the root: each node after its subtrees.
+wrong: Return [] at None, and otherwise the left subtree's list, then the right subtree's list, then the node's value.
+
+=== task: order easy
+title: Postorder by hand
+prompt: Put the nodes of this tree in the order a postorder traversal visits them.
+
+```text
+        P
+      /   \
+     Q     R
+    / \     \
+   S   T     U
+```
+items:
+- S
+- T
+- Q
+- U
+- R
+- P
+hint: The root comes last.
+hint: Each node comes right after its own subtree.
+right: S, T, Q, U, R, P: left subtree, right subtree, node, at every node.
+wrong: Q's subtree: S, T, then Q. R's subtree: U, then R. Then P.
+
+=== task: predict easy
+title: Evaluate a tree
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    if node.val == "-":
+        return a - b
+    return a * b
+
+print(evaluate(Node("*", Node(4), Node("-", Node(9), Node(5)))))
+```
+wrong[31]: The tree's shape decides what's done first: 9 − 5 is a subtree, so it's worked out before the multiplication: 4 × (9 − 5).
+wrong[-16]: The − node computes left minus right: 9 − 5 = 4, not 5 − 9.
+wrong[20]: The * node multiplies 4 by the value of its right subtree, 4, not by 5.
+hint: The right part of * is the subtree 9 − 5.
+hint: Work out the subtree first, then the root.
+right: `16`: 9 − 5 = 4 first, then 4 × 4 = 16. The deeper operator is always worked out first.
+wrong: The − node gives 9 − 5 = 4. Then the root multiplies its left part, 4, by that: 16.
+
+=== task: mcq easy
+title: Freeing a tree
+prompt: A program must free every node of a tree, and once a node is freed, its links to its children are gone. In which order should it free the nodes?
+* Postorder: children before parents :: Right. Each node is freed only after everything below it.
+- Preorder: parents before children :: Freeing a parent first loses the links to its children.
+- Inorder :: A node would be freed before its right subtree, losing the link to it.
+- Level order :: That frees the root first.
+hint: What would happen if a parent were freed before its children?
+hint: Which order leaves every node until its subtrees are done?
+right: Postorder: a node is freed only once its subtrees have been freed, so no link is needed after its node is gone.
+wrong: The links to the children are lost when the parent goes, so the children must go first. Postorder visits each node after both of its subtrees.
+
+=== task: code medium
+title: Evaluate an expression tree
+prompt: Write `evaluate(node)` for an expression tree: a leaf holds a number, and every other node holds `"+"`, `"-"` or `"*"` and has two children. Return the value of the expression: work out the left and right parts first, then combine them, left part first.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    if node.val == "-":
+        return a - b
+    return a * b
+```
+tests:
+- evaluate(Node(5))
+- evaluate(Node("+", Node(2), Node(3)))
+- evaluate(Node("-", Node(2), Node(9)))
+- evaluate(Node("*", Node("+", Node(2), Node(3)), Node("-", Node(7), Node(4))))
+- evaluate(Node("-", Node("-", Node(10), Node(3)), Node(2)))
+fail[1]: A leaf is a number: its value is the number itself.
+fail[3]: Left minus right: 2 − 9 = −7.
+fail[4]: (2 + 3) × (7 − 4) = 15: work out both parts before multiplying.
+fail[5]: (10 − 3) − 2 = 5. The deeper − is worked out first.
+error[TypeError]: A leaf has no children to evaluate: return its number before looking at `node.left`.
+hint: A node with no children is a number: return `node.val`.
+hint: Otherwise evaluate the left part into `a` and the right part into `b`.
+hint: Then return `a + b`, `a - b` or `a * b`, depending on `node.val`.
+right: The parts are worked out before the operator: postorder. Each node is evaluated once, so it's O(n).
+wrong: Return the number at a leaf. At an operator, evaluate both subtrees first, then combine them with the operator, left value first.
+
+=== task: code medium
+title: Sizes in postorder
+prompt: Write `sizes(root)` that returns a list of `(value, subtree size)` pairs, one for every node, in postorder. A node's subtree size is the number of nodes in its subtree, itself included. Use a helper that returns each subtree's size and records the pair once both children are done.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def sizes(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def fill(node, out):
+    if node is None:
+        return 0
+    size = 1 + fill(node.left, out) + fill(node.right, out)
+    out.append((node.val, size))
+    return size
+
+def sizes(root):
+    out = []
+    fill(root, out)
+    return out
+```
+tests:
+- sizes(Node("A", Node("B", Node("D"), Node("E", None, Node("G"))), Node("C", Node("F"))))
+- sizes(None)
+- sizes(Node(1, Node(2)))
+- sizes(Node(1, None, Node(2, None, Node(3))))
+fail[1]: D (1), G (1), E (2), B (4), F (1), C (2), A (7): each pair is recorded after its children's pairs.
+fail[2]: An empty tree: [].
+fail[3]: 2 is recorded first, with size 1; then 1, with size 2.
+fail[4]: In a line, the bottom node comes first: (3, 1), (2, 2), (1, 3).
+error[AttributeError]: Return 0 for None before using `node.left`.
+hint: Write `fill(node, out)` that returns 0 for None.
+hint: Work out `size = 1 + fill(node.left, out) + fill(node.right, out)`.
+hint: Only then append `(node.val, size)` and return `size`.
+right: A size needs both children's sizes, so it's recorded after them: the pairs come out in postorder automatically. O(n).
+wrong: For each node, get the sizes of its two subtrees first, then record (value, 1 + left + right) and return that size to the parent.
+
+=== task: predict medium
+title: Postfix from a tree
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postfix(node, out):
+    if node is None:
+        return
+    postfix(node.left, out)
+    postfix(node.right, out)
+    out.append(str(node.val))
+
+expr = Node("-", Node("*", Node(2), Node(5)), Node("+", Node(1), Node(3)))
+tokens = []
+postfix(expr, tokens)
+print(" ".join(tokens))
+```
+wrong[- * 2 5 + 1 3]: That's preorder (prefix notation). Postorder puts each operator after its parts.
+wrong[2 * 5 - 1 + 3]: That's inorder, without the brackets.
+wrong[2 5 * - 1 3 +]: The − needs both of its parts first, so it comes after `1 3 +`, at the very end.
+hint: The tree is (2 × 5) − (1 + 3).
+hint: Each operator comes right after its two parts.
+right: `2 5 * 1 3 + -`: the postfix form, which a stack can evaluate: 10 − 4 = 6.
+wrong: Left part in postorder: 2 5 *. Right part: 1 3 +. Then the root: −.
+
+=== task: cells medium
+title: Subtree sizes
+prompt: What is the size of the subtree that starts at each of these nodes (the node itself included)?
+
+```text
+        A
+      /   \
+     B     C
+    / \   /
+   D   E F
+        \
+         G
+```
+labels: A | B | C | E | G
+answer: 7 | 4 | 2 | 2 | 1
+wrong[6 | 3 | 1 | 1 | 0]: The size includes the node itself: a leaf like G has size 1.
+wrong[7 | 3 | 2 | 2 | 1]: B's subtree is B, D, E and G: 4 nodes.
+hint: A leaf's subtree holds only the leaf itself: size 1.
+hint: Each node's size is 1 + the sizes of its two subtrees.
+right: 7, 4, 2, 2, 1, worked out from the leaves up: G = 1, E = 1 + 1 = 2, B = 1 + 1 + 2 = 4.
+wrong: G: 1. E: 1 + G = 2. B: 1 + D (1) + E (2) = 4. C: 1 + F (1) = 2. A: 1 + 4 + 2 = 7.
+
+=== task: fill medium
+title: Push left first
+prompt: Fill in the blanks so that the stack walk visits node, right, left, which reversed is postorder, and the program prints:
+
+```output
+[4, 5, 2, 6, 3, 1]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+stack = [root]
+while stack:
+    node = stack.pop()
+    out.append(node.val)
+    if node.?? is not None:
+        stack.append(node.??)
+    if node.?? is not None:
+        stack.append(node.??)
+out.reverse()
+print(out)
+```
+answer: left | left | right | right
+wrong[right | right | left | left]: Pushing right first makes the walk preorder (node, left, right), and preorder reversed isn't postorder: [6, 3, 5, 4, 2, 1].
+hint: The child pushed last comes off the stack first.
+hint: For node, right, left, the right child must come off first, so it's pushed last.
+right: Left pushed first, right pushed last: the walk goes node, right, left, and reversing that gives left, right, node.
+wrong: To visit the right subtree before the left one, push the left child first and the right child last.
+
+=== task: mcq medium
+title: Why reversing works
+prompt: A stack walk that pushes the left child before the right one visits the nodes in the order node, right, left. Why does reversing that list give postorder?
+* Reversing node, right, left gives left, right, node, and that holds inside every subtree too :: Right. Each block reverses into its mirror at every level.
+- Because the stack walk already gives postorder :: Before the reverse, the root is first, not last.
+- Because reversing a preorder list always gives postorder :: Preorder reversed gives right, left, node, which isn't postorder.
+- It doesn't: the reversed list is inorder :: Inorder puts the root in the middle; the reversed list ends with the root.
+hint: Write node, right, left backwards.
+hint: Does the same thing happen inside each subtree's block?
+right: Reading node, right, left backwards gives left, right, node, at every level of the tree, which is the definition of postorder.
+wrong: The walk's list is node, right-block, left-block; reversed, it's left-block (reversed), right-block (reversed), node. Each reversed block is itself in postorder.
+
+=== task: predict medium
+title: Delete order
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def delete(node):
+    if node is None:
+        return
+    delete(node.left)
+    delete(node.right)
+    print("delete", node.val)
+    node.left = None
+    node.right = None
+
+delete(Node(1, Node(2, None, Node(4)), Node(3)))
+```
+wrong[delete 1\ndelete 2\ndelete 4\ndelete 3]: That's preorder: deleting 1 first would lose the links to 2 and 3.
+wrong[delete 2\ndelete 4\ndelete 3\ndelete 1]: 4 is 2's child, so it's deleted before 2.
+wrong[delete 4\ndelete 3\ndelete 2\ndelete 1]: 2's whole subtree is finished, including 2 itself, before 3's.
+hint: Each node is deleted after its subtrees.
+hint: 2's subtree is 2 with 4 on its right.
+right: `delete 4`, `delete 2`, `delete 3`, `delete 1`: no node is deleted while anything still hangs below it.
+wrong: 1's left subtree: 4, then 2. Its right subtree: 3. Then 1 itself.
+
+=== task: multi medium
+title: Expression trees
+prompt: Choose **every** true statement about the expression trees in this lesson.
+* Every leaf holds a number :: Right. Numbers are where the evaluation starts.
+* Every operator node has exactly two children :: Right. Each operator works on two parts.
+* The value of the whole expression is the value of the root :: Right. The root's operator is the last one worked out.
+* Evaluating one is a postorder traversal :: Right. Both parts are worked out before their operator.
+- Numbers can sit at internal nodes :: Internal nodes hold operators; a number has nothing below it.
+- It can be evaluated in preorder, operator first :: The operator can't be worked out before its parts are known.
+hint: What's at the bottom of the tree, and what's above?
+hint: When can an operator be worked out?
+right: Numbers at the leaves, operators with two parts, the answer at the root, and a postorder walk to get it.
+wrong: Leaves are numbers and internal nodes are operators with two children. Each operator waits for its parts, so evaluation is postorder, ending at the root.
+
+=== task: parsons medium
+title: The evaluator
+prompt: Arrange the lines so that `evaluate` works out an expression tree, and the program prints:
+
+```output
+20
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    return a * b
+
+print(evaluate(Node("*", Node("+", Node(2), Node(3)), Node(4))))
+```
+distractors:
+```python
+    a = evaluate(node.right)
+        return a + node.val
+```
+hint: A leaf returns its number.
+hint: Both parts, left into `a` and right into `b`, are worked out before the operator.
+right: 2 + 3 = 5 first, then 5 × 4 = 20: each operator after its two parts.
+wrong: Return the number at a leaf. Otherwise evaluate the left part into `a` and the right part into `b`, then add or multiply them.
+
+=== task: order medium
+title: Evaluating an operator
+prompt: Put the steps for evaluating an operator node in an expression tree in order.
+items:
+- Evaluate the left subtree
+- Evaluate the right subtree
+- Combine the two values with the node's operator, left value first
+- Hand the result back to the node above
+hint: The operator needs both values.
+hint: The result is used by the node's parent.
+right: Left, right, then the operator: postorder. The parent gets a finished value.
+wrong: Work out the left part, then the right part, then apply the operator to them (left first), and return the answer to the parent.
+
+=== task: code hard
+title: Postorder without recursion
+prompt: Write `postorder_stack(root)` that returns a tree's values in postorder **without recursion**. Use a stack walk that pushes the left child before the right child, so it visits node, right, left, then reverse the list. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder_stack(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder_stack(root):
+    out = []
+    if root is None:
+        return out
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.left is not None:
+            stack.append(node.left)
+        if node.right is not None:
+            stack.append(node.right)
+    out.reverse()
+    return out
+```
+tests:
+- postorder_stack(None)
+- postorder_stack(Node(1))
+- postorder_stack(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+- postorder_stack(Node(1, Node(2, Node(3))))
+- postorder_stack(Node("x", Node("y"), Node("z")))
+require[pop(]: Use a stack: take each node off it with `pop()`.
+fail[1]: An empty tree: []. Don't put None on the stack.
+fail[3]: The walk gives 1, 3, 6, 2, 5, 4; reversed, that's 4, 5, 2, 6, 3, 1.
+fail[4]: A line of left children: the bottom one comes first.
+error[AttributeError]: Only push children that exist.
+hint: Start the stack with the root (unless the tree is empty), and pop nodes until it's empty, appending each value.
+hint: Push the left child first, then the right child, so the right child comes off first.
+hint: When the loop ends, reverse the list.
+right: Node, right, left read backwards is left, right, node at every level: postorder, in O(n) with no recursion.
+wrong: Walk with a stack, recording each popped node and pushing its left and then its right child. The list is node, right, left; reverse it.
+
+=== task: code hard
+title: A tree from postfix
+prompt: Write `from_postfix(tokens)` that builds an expression tree from a postfix expression, given as a list of strings. Use a stack of subtrees: a number becomes a leaf, pushed on the stack; an operator pops its right part, then its left part, and pushes a new node joining them. At the end, the one subtree left is the whole tree. `to_text` writes a tree with brackets for the tests.
+
+For example, `to_text(from_postfix("2 3 + 4 *".split()))` returns `'((2 + 3) * 4)'`.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def to_text(node):
+    if node.left is None and node.right is None:
+        return str(node.val)
+    return "(" + to_text(node.left) + " " + node.val + " " + to_text(node.right) + ")"
+
+def from_postfix(tokens):
+    stack = []
+    # your code here
+    return stack[0]
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def to_text(node):
+    if node.left is None and node.right is None:
+        return str(node.val)
+    return "(" + to_text(node.left) + " " + node.val + " " + to_text(node.right) + ")"
+
+def from_postfix(tokens):
+    stack = []
+    for t in tokens:
+        if t in ["+", "-", "*", "/"]:
+            right = stack.pop()
+            left = stack.pop()
+            stack.append(Node(t, left, right))
+        else:
+            stack.append(Node(int(t)))
+    return stack[0]
+```
+tests:
+- to_text(from_postfix("2 3 + 4 *".split()))
+- to_text(from_postfix(["5"]))
+- to_text(from_postfix("10 2 3 * -".split()))
+- to_text(from_postfix("1 2 + 3 4 - *".split()))
+fail[1]: + joins 2 and 3; then * joins that subtree with 4.
+fail[2]: A single number is a one-node tree.
+fail[3]: The first subtree popped is the **right** part: 10 − (2 × 3).
+fail[4]: Two subtrees, (1 + 2) and (3 − 4), are joined by the *.
+error[IndexError]: Pop exactly two subtrees for each operator, and only after their numbers have been pushed.
+hint: For a number, push `Node(int(t))`.
+hint: For an operator, pop the right part first, then the left part (the left was pushed earlier).
+hint: Push `Node(t, left, right)`. When the tokens run out, the stack holds the whole tree.
+right: It's the stack evaluator from the Stacks lesson with subtrees instead of numbers: each operator builds a node out of the two most recent subtrees. One pass, O(n).
+wrong: Go through the tokens. Numbers become leaves on the stack. Each operator pops the right and then the left subtree and pushes a node joining them. The last subtree standing is the tree.
+
+=== task: code hard
+title: The longest path
+prompt: The **diameter** of a binary tree is the number of edges on the longest path between any two nodes. That path doesn't have to pass through the root. Write `diameter(root)` in one postorder pass, with a helper that returns a pair for each subtree: its height (−1 for an empty tree) and the longest path found inside it so far. The longest path that goes through a node has `left height + right height + 2` edges.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def diameter(root):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def info(node):
+    if node is None:
+        return (-1, 0)
+    lh, lbest = info(node.left)
+    rh, rbest = info(node.right)
+    through = lh + rh + 2
+    return (1 + max(lh, rh), max(lbest, rbest, through))
+
+def diameter(root):
+    return info(root)[1]
+```
+tests:
+- diameter(None)
+- diameter(Node(1))
+- diameter(Node(1, Node(2), Node(3)))
+- diameter(Node(1, Node(2, Node(4), Node(5)), Node(3)))
+- diameter(Node(1, Node(2, Node(3, Node(4)), Node(5, None, Node(6, None, Node(7))))))
+fail[2]: A single node has no edges: 0.
+fail[3]: 2 → 1 → 3: 2 edges.
+fail[4]: 4 → 2 → 1 → 3 (or 5 → 2 → 1 → 3): 3 edges.
+fail[5]: The longest path, 4 → 3 → 2 → 5 → 6 → 7, has 5 edges and doesn't touch the root.
+hint: For None, return `(-1, 0)`.
+hint: Get `(lh, lbest)` and `(rh, rbest)` from the children. The path through this node has `lh + rh + 2` edges.
+hint: Return `(1 + max(lh, rh), max(lbest, rbest, through))`, and have `diameter` take the second item for the root.
+right: Each node needs its children's heights to know the longest path through itself: postorder again, one pass, O(n).
+wrong: Let a helper return each subtree's height and best path. A node's best is the largest of its children's bests and the path through it, lh + rh + 2.
+
+=== task: code hard
+title: The heaviest subtree
+prompt: Write `max_subtree_sum(root)` that returns the largest sum of values of any subtree (a node together with everything below it) in a non-empty tree. Values can be negative. Do it in one postorder pass, with a helper that returns a pair for each subtree: its total, and the largest subtree total found inside it.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def max_subtree_sum(root):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def info(node):
+    if node is None:
+        return (0, None)
+    ls, lbest = info(node.left)
+    rs, rbest = info(node.right)
+    total = ls + rs + node.val
+    best = total
+    if lbest is not None and lbest > best:
+        best = lbest
+    if rbest is not None and rbest > best:
+        best = rbest
+    return (total, best)
+
+def max_subtree_sum(root):
+    return info(root)[1]
+```
+tests:
+- max_subtree_sum(Node(1, Node(-5), Node(3)))
+- max_subtree_sum(Node(5))
+- max_subtree_sum(Node(-2, Node(4, Node(-1), Node(5)), Node(-10)))
+- max_subtree_sum(Node(-3, Node(-7)))
+- max_subtree_sum(Node(2, Node(3), Node(4)))
+fail[1]: The subtree sums are −5, 3 and 1 − 5 + 3 = −1: the best is 3.
+fail[3]: 4's subtree adds up to 4 − 1 + 5 = 8, more than the whole tree (−4).
+fail[4]: All sums are negative: −7 and −10. The best is −7, not 0.
+fail[5]: The whole tree: 2 + 3 + 4 = 9.
+hint: For None, return a total of 0 and no best (None).
+hint: A node's total is its value plus both subtrees' totals.
+hint: Its best is the largest of its own total and the bests reported by its children (skipping None). Return `(total, best)`.
+right: Each subtree's total is built from its children's totals, so one postorder pass finds every subtree's sum and keeps the largest: O(n).
+wrong: Let a helper return each subtree's total and its best. A node's total is val + left total + right total, and its best is the biggest of that total and the children's bests.
+
+=== task: predict hard
+title: Divide and subtract
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def evaluate(node):
+    if node.left is None and node.right is None:
+        return node.val
+    a = evaluate(node.left)
+    b = evaluate(node.right)
+    if node.val == "+":
+        return a + b
+    if node.val == "-":
+        return a - b
+    if node.val == "*":
+        return a * b
+    return a / b
+
+e = Node("/", Node("-", Node(20), Node(8)), Node("+", Node(1), Node(3)))
+print(evaluate(e))
+```
+wrong[3]: `/` always gives a float in Python: 12 / 4 is 3.0.
+wrong[-3.0]: The − node works out left minus right: 20 − 8 = 12, not 8 − 20.
+wrong[0.3333333333333333]: The / node divides its left part, 12, by its right part, 4.
+hint: Work out (20 − 8) and (1 + 3) first.
+hint: Then divide the left result by the right one.
+right: `3.0`: (20 − 8) / (1 + 3) = 12 / 4, and `/` gives a float.
+wrong: The − subtree gives 12 and the + subtree gives 4. The root divides left by right: 12 / 4 = 3.0.
+
+=== task: predict hard
+title: Before and after the reverse
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def walk(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.left is not None:
+            stack.append(node.left)
+        if node.right is not None:
+            stack.append(node.right)
+    print(out)
+    out.reverse()
+    print(out)
+
+walk(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+```
+wrong[[1, 2, 4, 5, 3, 6]\n[6, 3, 5, 4, 2, 1]]: The right child is pushed last, so it comes off first: the walk goes 1, 3, ... before 2.
+wrong[[1, 3, 6, 2, 4, 5]\n[5, 4, 2, 6, 3, 1]]: 2 pushes 4 and then 5, so 5 comes off first.
+wrong[[1, 3, 6, 2, 5, 4]\n[1, 3, 6, 2, 5, 4]]: `reverse()` changes the list in place, so the second print shows it backwards.
+hint: Each node pushes its left child, then its right child, which ends up on top.
+hint: The first list is node, right, left.
+right: `[1, 3, 6, 2, 5, 4]` then `[4, 5, 2, 6, 3, 1]`: node, right, left, and reversed, postorder.
+wrong: Pop 1 (push 2, 3), pop 3 (push 6), pop 6, pop 2 (push 4, 5), pop 5, pop 4: [1, 3, 6, 2, 5, 4]. Reversed: [4, 5, 2, 6, 3, 1].
+
+=== task: cells hard
+title: Values from the bottom up
+prompt: Evaluating this expression tree works from the leaves up. What value does each operator node work out?
+
+```text
+          -
+        /   \
+       *     +
+      / \   / \
+     6   7 2   *
+              / \
+             3   4
+```
+labels: the lower * (3 and 4) | the + | the upper * (6 and 7) | the root −
+answer: 12 | 14 | 42 | 28
+wrong[12 | 14 | 42 | -28]: The root works out left minus right: 42 − 14 = 28.
+wrong[7 | 9 | 42 | 33]: The lower * multiplies 3 by 4: 12. Then + gives 2 + 12 = 14.
+hint: Start with the deepest operator, 3 × 4.
+hint: Each operator uses the values of its two children.
+right: 12, 14, 42 and 28: every operator is worked out only after both of its parts, so the root is last.
+wrong: 3 × 4 = 12. 2 + 12 = 14. 6 × 7 = 42. Root: 42 − 14 = 28.
+
+=== task: mcq hard
+title: Reading two orders
+prompt: A tree's postorder is D E B F C A and its inorder is D B E A F C. Which node is the root, and which nodes are in its left subtree?
+* The root is A, and the left subtree holds D, B and E :: Right. Postorder ends with the root, and in inorder the root splits left from right.
+- The root is D, and the left subtree is empty :: D is first in both lists, but the root is last in postorder.
+- The root is A, and the left subtree holds D and E :: In inorder, everything before A (D, B and E) is in the left subtree.
+- The root is C, and the left subtree holds F :: C is last in inorder, but the root is last in postorder.
+hint: Which list tells you the root?
+hint: In inorder, what comes before the root?
+right: Postorder names the root last (A), and inorder splits the rest: D B E on the left, F C on the right. The same works again inside each part.
+wrong: The last value in postorder, A, is the root. In inorder, the values before A, D, B and E, form its left subtree.
+
+=== task: multi hard
+title: Jobs for postorder
+prompt: Choose **every** job that needs postorder.
+* Working out the total size of every folder :: Right. A folder's total needs its contents' totals.
+* Evaluating an expression tree :: Right. An operator needs its parts' values.
+* Freeing a tree node by node :: Right. A node goes only after everything below it.
+* Checking whether a tree is balanced :: Right. A node needs its children's heights first.
+- Printing a folder outline, each folder before its contents :: That's preorder.
+- Listing a search tree's values in sorted order :: That's inorder.
+hint: Does the job need the children's answers before the parent's?
+hint: Two of the jobs need the parent first, or the values in order.
+right: Totals, evaluation, freeing and balance checks all need the children done first: postorder.
+wrong: Postorder fits jobs where a node depends on its children: sizes, values, freeing and heights. An outline needs parents first (preorder), and sorted order needs inorder.
+
+=== task: parsons hard
+title: Record every size
+prompt: Arrange the lines so that `fill_sizes` records each node's subtree size in a dictionary, children first, and the program prints:
+
+```output
+{'D': 1, 'B': 2, 'C': 1, 'A': 4}
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def fill_sizes(node, sizes):
+    if node is None:
+        return 0
+    size = 1 + fill_sizes(node.left, sizes) + fill_sizes(node.right, sizes)
+    sizes[node.val] = size
+    return size
+
+sizes = {}
+fill_sizes(Node("A", Node("B", Node("D")), Node("C")), sizes)
+print(sizes)
+```
+distractors:
+```python
+    sizes[node.val] = 1
+    size = fill_sizes(node.left, sizes) + fill_sizes(node.right, sizes)
+```
+hint: An empty subtree has size 0.
+hint: A node's size is 1 plus its two subtrees' sizes, and it's recorded after they're known.
+right: D (1) goes in first, then B (2), C (1), and A (4) last: the dictionary fills in postorder.
+wrong: Return 0 for None. Otherwise add 1 to the sizes of both subtrees, store that size under the node's value, and return it.
