@@ -62,6 +62,11 @@
     if (typeof v === 'string') return v;
     return vrepr(v);
   }
+  // an item in a stack or queue: objects (like tree nodes) show briefly, e.g. Node(3)
+  function itemLabel(v, idx) {
+    if (v && typeof v === 'object' && (v.$o !== undefined || v.$r !== undefined)) return briefRepr(v, idx);
+    return label(v);
+  }
 
   // find a variable in the frame: innermost function frame first, then globals
   function lookup(frame, name) {
@@ -245,7 +250,8 @@
     if (!r.found) return `<div class="emptyv">${esc(name || '?')} doesn't exist yet</div>`;
     const items = seq(r.v) || [];
     if (!items.length) return '<div class="emptyv">empty stack</div>';
-    return '<div class="stackv">' + items.map((x, i) => `<div class="it ${i === items.length - 1 ? 'ontop' : ''}">${esc(label(x))}</div>`).join('') + '<div class="lab">top ↓</div></div>';
+    const idx = objIndex(frame);
+    return '<div class="stackv">' + items.map((x, i) => `<div class="it ${i === items.length - 1 ? 'ontop' : ''}">${esc(itemLabel(x, idx))}</div>`).join('') + '<div class="lab">top ↓</div></div>';
   }
 
   function viewQueue(spec, frame) {
@@ -254,7 +260,8 @@
     if (!r.found) return `<div class="emptyv">${esc(name || '?')} doesn't exist yet</div>`;
     const items = seq(r.v) || [];
     if (!items.length) return '<div class="emptyv">empty queue</div>';
-    return '<div class="queuev"><span class="end">front →</span>' + items.map((x) => `<div class="it">${esc(label(x))}</div>`).join('') + '<span class="end">← back</span></div>';
+    const idx = objIndex(frame);
+    return '<div class="queuev"><span class="end">front →</span>' + items.map((x) => `<div class="it">${esc(itemLabel(x, idx))}</div>`).join('') + '<span class="end">← back</span></div>';
   }
 
   function viewDict(spec, frame) {

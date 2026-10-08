@@ -1,0 +1,1315 @@
+=== lesson
+id: ds-traversals
+title: Tree traversals
+summary: A traversal visits every node of a tree exactly once. A list has one natural order, but a tree has several. You'll meet the four standard orders, preorder, inorder, postorder and level order, see them side by side on the same tree, learn why depth-first walks use a stack and breadth-first walks use a queue, and choose the right order for a job.
+
+=== learn
+### Visiting every node
+A **traversal** is a walk that **visits** every node of a tree exactly once. Visiting a node means doing something with it: printing it, adding it to a list, adding its value to a total.
+
+For a list there's one natural order, front to back. A tree branches, so at every node the walk has to choose: the node itself, its left subtree, or its right subtree first? Different choices give different orders. This lesson uses this tree, the same one for every order:
+```text
+        F
+      /   \
+     B     G
+    / \     \
+   A   D     I
+      / \   /
+     C   E H
+```
+There are two families of traversal. A **depth-first** traversal goes as deep as it can down one branch before it comes back to try the next one. A **breadth-first** traversal visits the tree level by level: the root, then everything 1 edge down, then everything 2 edges down.
+
+### Three places to visit
+Every depth-first traversal has the same skeleton: deal with the left subtree, deal with the right subtree. The only question is **when** to visit the node itself: before both subtrees (**preorder**), between them (**inorder**), or after both (**postorder**):
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("F",
+            Node("B", Node("A"), Node("D", Node("C"), Node("E"))),
+            Node("G", None, Node("I", Node("H"))))
+
+def preorder(node, out):
+    if node is None:
+        return
+    out.append(node.val)
+    preorder(node.left, out)
+    preorder(node.right, out)
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def postorder(node, out):
+    if node is None:
+        return
+    postorder(node.left, out)
+    postorder(node.right, out)
+    out.append(node.val)
+
+for walk in [preorder, inorder, postorder]:
+    out = []
+    walk(root, out)
+    print(" ".join(out))
+```
+```output
+F B A D C E G I H
+A B C D E F G H I
+A C E D B H I G F
+```
+The three functions differ only in where the line `out.append(node.val)` sits. The walk around the tree is the same every time; what changes is the moment each node is written down. (The loop works because a function is a value too: `walk` takes each of the three functions in turn.) Animation 1 records all three orders in one walk.
+
+### Reading the orders off a picture
+You can read any depth-first order straight off the drawing. Trace a line around the outside of the tree, starting to the left of the root and keeping the tree on your right, like walking along a wall. The line passes each node three times:
+
+| order | write a node down when the line passes it... | here |
+| --- | --- | --- |
+| preorder | on its left side, on the way down | F B A D C E G I H |
+| inorder | underneath it, between its two subtrees | A B C D E F G H I |
+| postorder | on its right side, on the way back up | A C E D B H I G F |
+
+Some patterns help to check an answer:
+- Preorder always starts with the root; postorder always ends with it.
+- In inorder, the root sits between its whole left subtree and its whole right subtree: A to E, then F, then G to I.
+- Here inorder comes out in alphabetical order. That's because this tree keeps smaller letters on the left and bigger ones on the right, the rule of a binary search tree, which comes later in this unit.
+
+### Level order with a queue
+**Level order** visits the root, then every node 1 edge down, from left to right, then every node 2 edges down, one level after another down to the deepest. It needs a queue: take the node at the front, visit it, and add its children to the back:
+```python
+from collections import deque
+
+def level_order(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        out.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return out
+
+print(" ".join(level_order(root)))
+```
+```output
+F B G A D I C E H
+```
+The queue is first in, first out, so every node on one level is taken out before any node on the next level. When F is visited, B and G join the queue; when B is visited, A and D join behind G. G comes out before A and D, so the whole of level 1 is visited before level 2. Animation 2 runs this loop on a smaller tree.
+
+### A stack instead of a queue
+Swap the queue for a stack, and the same loop becomes a depth-first walk. A stack is last in, first out, so the most recently added node comes out next and the walk keeps going deeper:
+```python
+def with_stack(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.right is not None:
+            stack.append(node.right)
+        if node.left is not None:
+            stack.append(node.left)
+    return out
+
+print(" ".join(with_stack(root)))
+```
+```output
+F B A D C E G I H
+```
+That's preorder. The right child is pushed **first** so that the left child, pushed last, comes off the top first. The recursive functions use a stack too: Python's call stack, which holds one waiting call for each level of the current path. Depth-first means stack; breadth-first means queue.
+
+### The four orders side by side
+| order | rule | on this tree |
+| --- | --- | --- |
+| preorder | node, then left subtree, then right subtree | F B A D C E G I H |
+| inorder | left subtree, then node, then right subtree | A B C D E F G H I |
+| postorder | left subtree, then right subtree, then node | A C E D B H I G F |
+| level order | level by level, left to right | F B G A D I C E H |
+
+Each order visits all 9 nodes, once each. Preorder and level order both start with the root, but they part ways at once: preorder dives into B's subtree (A, D, ...), while level order finishes level 1 (B, G) first. Inorder and postorder both start at the leftmost leaf, A.
+
+### What traversals cost
+Every traversal visits each of the n nodes once, so they are all **O(n)** in time. Their memory use differs. A depth-first walk only keeps one path's worth of work waiting at a time: O(h), where h is the height. A breadth-first walk keeps up to a whole level waiting in its queue, and the widest level of a balanced tree holds about half the nodes. Example 1 measures the most nodes ever waiting:
+
+| perfect tree | nodes | most waiting on a stack | most waiting in a queue |
+| --- | --- | --- | --- |
+| height 3 | 15 | 4 | 8 |
+| height 6 | 127 | 7 | 64 |
+| height 9 | 1,023 | 10 | 512 |
+
+For a bushy tree, depth-first uses far less memory. For a tall, thin tree it's the other way round: recursion goes as deep as the tree is tall, while each level of a thin tree holds only a node or two.
+
+### Choosing an order for a job
+Pick the order that visits nodes when the job needs them:
+
+| job | order | why |
+| --- | --- | --- |
+| copy a tree, print an outline of folders | preorder | a parent must be made or printed before its children |
+| list the values of a search tree in sorted order | inorder | smaller values on the left come out first |
+| delete a tree, total up sizes, work out an expression | postorder | a parent needs its children dealt with first |
+| process nodes nearest the root first, print a tree by levels | level order | it finishes each level before the next |
+
+The next four lessons take each order in turn, with its uses and with versions that don't use recursion.
+
+=== keypoints
+- A traversal visits every node exactly once: O(n) time. Depth-first traversals go down one branch before the next; breadth-first (level order) goes level by level.
+- Preorder: node, left, right. Inorder: left, node, right. Postorder: left, right, node. The recursive functions differ only in where the visit line sits.
+- Preorder starts with the root and postorder ends with it. Inorder puts the root between its left and right subtrees.
+- Level order uses a queue: take a node from the front, visit it, add its children to the back. The same loop with a stack (push right, then left) gives preorder.
+- Depth-first walks keep O(h) nodes waiting (one path); level order keeps up to a whole level waiting, about n/2 for a perfect tree.
+- Preorder copies and prints outlines (parents first); inorder lists a search tree in sorted order; postorder deletes, totals and evaluates (children first); level order processes the nearest nodes first.
+
+=== example: How much is waiting?
+intro: The same loop runs with a stack and with a queue, and counts the most nodes that are ever waiting. Bushy trees and thin trees give very different answers.
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def max_waiting(root, use_queue):
+    waiting = deque([root])
+    most = 1
+    while waiting:
+        if use_queue:
+            node = waiting.popleft()
+        else:
+            node = waiting.pop()
+        for child in [node.left, node.right]:
+            if child is not None:
+                waiting.append(child)
+        most = max(most, len(waiting))
+    return most
+
+def perfect(h, val):
+    if h < 0:
+        return None
+    return Node(val, perfect(h - 1, 2 * val), perfect(h - 1, 2 * val + 1))
+
+def line(n):
+    root = None
+    for v in range(n, 0, -1):
+        root = Node(v, None, root)
+    return root
+
+for h in [3, 6, 9]:
+    t = perfect(h, 1)
+    print("perfect", 2 ** (h + 1) - 1, max_waiting(t, False), max_waiting(t, True))
+print("line", 100, max_waiting(line(100), False), max_waiting(line(100), True))
+```
+1: A deque can act as a stack (`pop` from the back) or as a queue (`popleft` from the front).
+9-21: One loop for both: take a node, add its children, and keep the largest number waiting. With `use_queue` False it's a depth-first walk; with True, breadth-first. The order the children go in doesn't change the counts.
+23-26: A perfect tree of height h, built recursively; the values don't matter here.
+28-32: A line of n nodes, each with only a right child.
+34-36: The stack never holds more than h + 1 nodes, but the queue ends up holding the whole last level: 8, 64 and 512 nodes.
+37: In a line every level holds one node, so both hold only 1 node at a time.
+
+=== example: Three orders of an expression
+intro: The expression (2 + 3) * 4 as a tree: each operator is a node, and the numbers it works on are its children. One walk writes down all three depth-first orders.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def walk(node, pre, ino, post):
+    if node is None:
+        return
+    pre.append(node.val)
+    walk(node.left, pre, ino, post)
+    ino.append(node.val)
+    walk(node.right, pre, ino, post)
+    post.append(node.val)
+
+expr = Node("*", Node("+", Node("2"), Node("3")), Node("4"))
+pre, ino, post = [], [], []
+walk(expr, pre, ino, post)
+print(" ".join(pre))
+print(" ".join(ino))
+print(" ".join(post))
+```
+7-14: Each node is written to `pre` on the way down, to `ino` between its subtrees, and to `post` on the way back up.
+16: * is the root; its left child is + with 2 and 3 below it, and its right child is 4.
+17-18: Three empty lists, filled in by one walk.
+19: Preorder puts each operator before what it works on: `* + 2 3 4`, which is called prefix notation.
+20: Inorder puts each operator between its two parts, the usual way of writing. But the brackets are lost: `2 + 3 * 4` normally means something else.
+21: Postorder puts each operator after its parts: `2 3 + 4 *`, postfix notation. Some calculators work this way, and the Postorder lesson evaluates it.
+
+=== animation: Three orders in one walk
+view: tree root ptr=node visited=pre
+vars pre ino post
+intro: One recursive walk on a tree of 4 nodes writes each node into three lists: `pre` before its left subtree, `ino` between its subtrees, and `post` after them. Watch each list grow at a different moment. Green nodes are already in `pre`.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def walk(node):
+    if node is None:
+        return
+    pre.append(node.val)
+    walk(node.left)
+    ino.append(node.val)
+    walk(node.right)
+    post.append(node.val)
+
+root = Node("B", Node("A"), Node("D", Node("C")))
+pre, ino, post = [], [], []
+walk(root)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines walk. Nothing runs yet.
+8: {'Arrived at ' + node.val + '.' if node is not None else 'An empty subtree: nothing to visit.'}
+9: Go back to the node above.
+10: Before anything else, write {node.val} into pre.
+11: Now walk {node.val}'s left subtree.
+12: The left subtree of {node.val} is done: write {node.val} into ino.
+13: Now walk {node.val}'s right subtree.
+14: Both subtrees of {node.val} are done: write {node.val} into post.
+16: B at the root, A on its left, and D on its right with C below it.
+17: Three empty lists.
+18: Start at the root. At the end: pre is B A D C, ino is A B C D, post is A C D B.
+
+=== animation: Level order with a queue
+view: tree root ptr=node visited=out
+queue queue
+vars out
+intro: Level order on a tree of 6 nodes. The queue holds the nodes waiting to be visited. Watch each level's nodes come out of the front before the next level's nodes, which joined at the back.
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+queue = deque([root])
+while queue:
+    node = queue.popleft()
+    out.append(node.val)
+    if node.left is not None:
+        queue.append(node.left)
+    if node.right is not None:
+        queue.append(node.right)
+print(out)
+```
+1: Python's deque, a queue with fast removal from the front.
+3: The binary tree node class.
+5: A new node {val}.
+6: Its left child: {left.val if left is not None else 'None'}.
+7: Its right child: {right.val if right is not None else 'None'}.
+9: 1 at the root; 2 and 3 on level 1; 4, 5 and 6 on level 2.
+10: The visited values will go into out.
+11: The queue starts with only the root.
+12: Is anything still waiting? {len(queue) > 0}.
+13: Take the node at the front of the queue: {queue[0].val}.
+14: Visit {node.val}: add it to out.
+15: Does {node.val} have a left child? {node.left is not None}.
+16: Add {node.left.val} to the back of the queue.
+17: Does {node.val} have a right child? {node.right is not None}.
+18: Add {node.right.val} to the back of the queue.
+19: Level by level: [1, 2, 3, 4, 5, 6].
+
+=== task: predict easy
+title: Preorder
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node, out):
+    if node is None:
+        return
+    out.append(node.val)
+    preorder(node.left, out)
+    preorder(node.right, out)
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+preorder(root, out)
+print(out)
+```
+wrong[[1, 2, 3, 4, 5, 6]]: That's level order. Preorder finishes 2's whole subtree, 4 and 5, before it moves on to 3.
+wrong[[4, 2, 5, 1, 3, 6]]: That's inorder. Preorder writes each node down **before** its subtrees, so it starts with the root, 1.
+wrong[[4, 5, 2, 6, 3, 1]]: That's postorder, which writes each node down after its subtrees.
+hint: The node is appended before either recursive call.
+hint: After 1, the whole left subtree (2, 4, 5) comes before the right subtree (3, 6).
+right: `[1, 2, 4, 5, 3, 6]`: node first, then everything on its left, then everything on its right.
+wrong: Visit 1, then walk 2's subtree (2, 4, 5), then 3's subtree (3, 6): [1, 2, 4, 5, 3, 6].
+
+=== task: mcq easy
+title: Node first
+prompt: Which depth-first order visits each node **before** its left and right subtrees?
+* Preorder :: Right. Node, then left subtree, then right subtree.
+- Inorder :: Inorder visits the node between its subtrees: left, node, right.
+- Postorder :: Postorder visits the node after both subtrees: left, right, node.
+- None of them :: Preorder does exactly this.
+hint: "Pre" means before.
+hint: Where does the visit line sit in each function?
+right: Preorder: the visit comes before both recursive calls, so every parent is visited before its children.
+wrong: The prefix tells you where the node goes: pre (before), in (between), post (after) its two subtrees.
+
+=== task: cells easy
+title: Level by level
+prompt: In what order does a level-order traversal visit the nodes of this tree?
+
+```text
+        M
+      /   \
+     D     R
+      \   / \
+       G P   W
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th
+answer: M | D | R | G | P | W
+wrong[M | D | G | R | P | W]: That's preorder. Level order finishes level 1, D and R, before it goes down to G.
+wrong[D | G | M | P | R | W]: That's inorder. Level order starts at the root.
+hint: First the root, then the nodes 1 edge down from left to right, then the nodes 2 edges down.
+hint: Level 2 is G, P and W, from left to right.
+right: M; then D, R; then G, P, W: one level at a time, left to right.
+wrong: Level 0 is M. Level 1 is D then R. Level 2 is G, P and W, read from left to right.
+
+=== task: code easy
+title: Postorder as a list
+prompt: Write `postorder(node)` that returns a list of the values of a binary tree in postorder: left subtree, then right subtree, then the node. An empty tree gives an empty list.
+
+For example, for 1 with children 2 and 3, it returns `[2, 3, 1]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+```
+tests:
+- postorder(None)
+- postorder(Node(1))
+- postorder(Node(1, Node(2), Node(3)))
+- postorder(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+- postorder(Node(1, Node(2, Node(3))))
+fail[2]: A single node: [1].
+fail[3]: Both subtrees come before the node: [2, 3, 1].
+fail[4]: 2's whole subtree (4, 5, 2), then 3's (6, 3), then the root: [4, 5, 2, 6, 3, 1].
+fail[5]: In a line of left children, the bottom node comes first: [3, 2, 1].
+error[AttributeError]: Return an empty list for None before using `node.left`.
+hint: None gives `[]`.
+hint: Join three lists: `postorder(node.left) + postorder(node.right) + [node.val]`.
+right: The node's value goes last, after both subtrees' lists: the parent always comes after its children.
+wrong: Return [] for an empty tree. Otherwise, join the left subtree's list, the right subtree's list and a list holding the node's value, in that order.
+
+=== task: fill easy
+title: Take from the front
+prompt: Fill in the blank so that the loop visits the tree level by level, and the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+queue = deque([root])
+while queue:
+    node = queue.??()
+    out.append(node.val)
+    if node.left is not None:
+        queue.append(node.left)
+    if node.right is not None:
+        queue.append(node.right)
+print(out)
+```
+answer: popleft
+wrong[pop]: `pop` takes from the back, the node added most recently, so the deque acts as a stack: [1, 3, 6, 2, 5, 4].
+hint: A queue is first in, first out.
+hint: Which end of the deque holds the node that has waited longest?
+right: `popleft` takes the oldest node from the front, so each level is finished before the next one starts.
+wrong: Level order needs a queue: take from the front with `popleft`, add children at the back with `append`.
+
+=== task: multi easy
+title: Depth-first orders
+prompt: Choose **every** traversal that is depth-first.
+* Preorder :: Right. It goes down one branch before the next.
+* Inorder :: Right. It finishes the left subtree before the right one.
+* Postorder :: Right. Another depth-first order.
+- Level order :: It goes level by level: breadth-first.
+- Any traversal that visits the root first :: Level order visits the root first too, and it's breadth-first.
+hint: Depth-first goes all the way down one branch before trying another.
+hint: Which traversal uses a queue?
+right: Preorder, inorder and postorder are the depth-first orders; they differ only in when each node is visited. Level order is breadth-first.
+wrong: The three recursive orders are depth-first. Level order visits by levels, which is breadth-first, and starting at the root doesn't make an order depth-first.
+
+=== task: parsons easy
+title: Inorder
+prompt: Arrange the lines so that `inorder` writes each node down between its left and right subtrees, and the program prints:
+
+```output
+[4, 2, 5, 1, 3, 6]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+inorder(root, out)
+print(out)
+```
+distractors:
+```python
+    if node is not None:
+    inorder(node.left, [])
+```
+hint: Stop at an empty subtree.
+hint: Left subtree, then the node, then the right subtree, all into the same list.
+right: Each node lands between its left and right subtrees: 4 2 5 is the left side, then 1, then 3 6.
+wrong: Return at None. Otherwise walk the left subtree into `out`, append the node's value, then walk the right subtree into `out`.
+
+=== task: order easy
+title: Preorder by hand
+prompt: Put the nodes of this tree in the order a **preorder** traversal visits them.
+
+```text
+        M
+      /   \
+     D     R
+      \   / \
+       G P   W
+```
+items:
+- M
+- D
+- G
+- R
+- P
+- W
+hint: Preorder starts with the root.
+hint: D's whole subtree (D, G) comes before R's.
+right: M, D, G, R, P, W: each node, then its left subtree, then its right subtree.
+wrong: Visit M. Then D's subtree: D, then its right child G. Then R's subtree: R, P, W.
+
+=== task: predict easy
+title: Level order
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("M", Node("D", None, Node("G")), Node("R", Node("P"), Node("W")))
+out = []
+queue = deque([root])
+while queue:
+    node = queue.popleft()
+    out.append(node.val)
+    if node.left is not None:
+        queue.append(node.left)
+    if node.right is not None:
+        queue.append(node.right)
+print(" ".join(out))
+```
+wrong[M D G R P W]: That's preorder. The queue holds R before G, so R is visited first.
+wrong[M R D W P G]: Left children are added before right children, so each level comes out from left to right.
+wrong[M D R P W G]: G is D's child and joins the queue when D is visited, before R's children P and W.
+hint: After M is visited, the queue holds D, R.
+hint: After D is visited, it holds R, G. After R, it holds G, P, W.
+right: `M D R G P W`: level 0, then level 1, then level 2, each from left to right.
+wrong: Visit M (queue: D, R). Visit D (queue: R, G). Visit R (queue: G, P, W). Then G, P and W.
+
+=== task: mcq easy
+title: What level order waits in
+prompt: In a level-order traversal, the nodes waiting to be visited are kept in which kind of structure?
+* A queue: the node that has waited longest is visited next :: Right. First in, first out keeps each level together.
+- A stack: the node added most recently is visited next :: That gives a depth-first walk.
+- A sorted list :: The order comes from the levels, not from the values.
+- A set :: A set has no order, so it couldn't keep the levels in order.
+hint: Level 1 joins before level 2, and must come out first.
+hint: First in, first out.
+right: A queue: each node's children join the back, behind everything already waiting from the level above.
+wrong: The children of level 1 join after level 1 itself, and level 1 must be visited first: first in, first out, a queue.
+
+=== task: code medium
+title: Level order as a list
+prompt: Write `level_order(root)` that returns a list of the values of a binary tree in level order: level by level, each level from left to right. An empty tree gives an empty list. Use a `deque` as the queue.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def level_order(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def level_order(root):
+    out = []
+    if root is None:
+        return out
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        out.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return out
+```
+tests:
+- level_order(None)
+- level_order(Node(1))
+- level_order(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+- level_order(Node(1, Node(2, Node(3, Node(4)))))
+- level_order(Node(5, None, Node(7, Node(6))))
+fail[1]: An empty tree has nothing to visit: []. Don't put None in the queue.
+fail[3]: Level by level: [1], then [2, 3], then [4, 5, 6].
+fail[5]: 5 has only a right child, 7, and 6 is 7's left child.
+error[AttributeError]: Only add children that aren't None, and return [] for an empty tree.
+hint: Start the queue with the root (unless the tree is empty).
+hint: While the queue isn't empty: `popleft` a node, append its value, then add its left and right children if they exist.
+right: The queue makes each level wait behind the one above it: O(n) time, with up to a whole level waiting at once.
+wrong: Put the root in a deque. Repeatedly take the front node, record its value and add its existing children to the back, until the queue is empty.
+
+=== task: code medium
+title: One function, three orders
+prompt: Write `traverse(node, order, out)`, which appends the values of a binary tree to the list `out` in the order named by `order`: `"pre"`, `"in"` or `"post"`. Use one recursive function with the visit in three possible places. `walk` calls it for you.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def traverse(node, order, out):
+    # your code here
+    pass
+
+def walk(node, order):
+    out = []
+    traverse(node, order, out)
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def traverse(node, order, out):
+    if node is None:
+        return
+    if order == "pre":
+        out.append(node.val)
+    traverse(node.left, order, out)
+    if order == "in":
+        out.append(node.val)
+    traverse(node.right, order, out)
+    if order == "post":
+        out.append(node.val)
+
+def walk(node, order):
+    out = []
+    traverse(node, order, out)
+    return out
+```
+tests:
+- walk(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))), "pre")
+- walk(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))), "in")
+- walk(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))), "post")
+- walk(None, "pre")
+- walk(Node(1, Node(2)), "in")
+fail[1]: Preorder: [1, 2, 4, 5, 3, 6].
+fail[2]: Inorder: [4, 2, 5, 1, 3, 6].
+fail[3]: Postorder: [4, 5, 2, 6, 3, 1].
+fail[5]: 2 is 1's left child, so in inorder it comes first: [2, 1].
+error[AttributeError]: Return at None before using `node.left`.
+hint: Return at None. Then the skeleton: walk the left subtree, walk the right subtree, both with the same `order` and `out`.
+hint: Add `if order == "pre": out.append(node.val)` before the left walk.
+hint: Put the same test for `"in"` between the two walks, and for `"post"` after them.
+right: The walk is identical for all three orders; only the moment of the visit changes. That's the whole difference between them.
+wrong: Write the usual recursive walk and append the node's value in one of three places, chosen by `order`: before the left walk, between the walks, or after the right walk.
+
+=== task: predict medium
+title: Three orders, one tree
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node, out):
+    if node is None:
+        return
+    out.append(node.val)
+    preorder(node.left, out)
+    preorder(node.right, out)
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def postorder(node, out):
+    if node is None:
+        return
+    postorder(node.left, out)
+    postorder(node.right, out)
+    out.append(node.val)
+
+t = Node("x", Node("y"), Node("z", Node("w")))
+for walk in [preorder, inorder, postorder]:
+    out = []
+    walk(t, out)
+    print("".join(out))
+```
+wrong[xyzw\nyxzw\nywzx]: In inorder, z's left child w comes before z.
+wrong[xyzw\nyxwz\nwzyx]: Postorder walks the left subtree, y, completely before the right one.
+wrong[xywz\nyxwz\nywzx]: Preorder visits z before its child w.
+hint: x has children y and z; w is z's left child.
+hint: Pre: node first. In: node in the middle. Post: node last.
+right: `xyzw`, `yxwz`, `ywzx`: the same walk, with each node written down before, between or after its subtrees.
+wrong: Preorder: x, y, z, w. Inorder: y, x, then z's subtree in order, w then z. Postorder: y, then w, z, then x.
+
+=== task: cells medium
+title: The third node visited
+prompt: For this tree, which node does each traversal visit **third**?
+
+```text
+        M
+      /   \
+     D     R
+      \   / \
+       G P   W
+```
+labels: preorder | inorder | postorder | level order
+answer: G | M | P | R
+wrong[R | M | P | R]: Preorder goes deep before wide: M, D, then D's child G.
+wrong[G | P | P | R]: Inorder is D, G, M, ...: the root comes right after its whole left subtree.
+hint: Write out each order in full first.
+hint: Pre: M D G R P W. In: D G M P R W. Post: G D P W R M. Level: M D R G P W.
+right: G, M, P and R: the four orders agree only where the tree forces them to.
+wrong: Preorder M D G...: G. Inorder D G M...: M. Postorder G D P...: P. Level order M D R...: R.
+
+=== task: fill medium
+title: Which child goes on the stack first?
+prompt: Fill in the blanks so that the stack-based walk visits the nodes in preorder, and the program prints:
+
+```output
+[1, 2, 4, 5, 3, 6]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+out = []
+stack = [root]
+while stack:
+    node = stack.pop()
+    out.append(node.val)
+    if node.?? is not None:
+        stack.append(node.??)
+    if node.?? is not None:
+        stack.append(node.??)
+print(out)
+```
+answer: right | right | left | left
+wrong[left | left | right | right]: The left child would go on first and the right child on top, so the right side would be visited first: [1, 3, 6, 2, 5, 4].
+hint: The last thing pushed is the first thing popped.
+hint: The left child must come off the stack before the right child.
+right: Push the right child first and the left child last, so the left child is on top and is visited next: preorder.
+wrong: A stack hands back the most recent item first. To visit the left subtree first, push the right child, then the left child.
+
+=== task: mcq medium
+title: Deleting a folder tree
+prompt: A program deletes a folder tree, and a folder can only be deleted once everything inside it has been deleted. Which order should it visit the folders in?
+* Postorder: every folder's contents are dealt with before the folder itself :: Right. Children before parents.
+- Preorder: the top folder first :: The top folder still has things in it at that point.
+- Inorder :: Folders aren't split into a left and a right side, and the parent would come before its right side's contents.
+- Level order :: That visits the top folder before anything inside it.
+hint: When can a folder be deleted?
+hint: Which order visits a node only after all of its subtrees?
+right: Postorder finishes every subtree before its root, so each folder is empty by the time it's visited.
+wrong: A folder can go only when it's empty, so its contents must be visited first: left, right, then the node. That's postorder.
+
+=== task: multi medium
+title: Time and memory
+prompt: Choose **every** true statement about traversals of a binary tree with n nodes.
+* Every traversal is O(n) in time :: Right. Each node is visited exactly once.
+* For a perfect tree, level order can have about n/2 nodes waiting in its queue :: Right. The last level holds about half the nodes.
+* A recursive depth-first walk has one call waiting for each node on the current path :: Right. So it keeps O(h) waiting.
+* On a tall, thin tree, recursion can go about n calls deep :: Right. A line of n nodes has height n − 1.
+- Level order is O(n log n) because of the queue :: Each node joins and leaves the queue once, and both are O(1) with a deque.
+- Inorder is faster than postorder :: They do the same work in a different order.
+hint: How many times is each node visited?
+hint: Compare what waits: one path (depth-first) against one level (breadth-first).
+right: O(n) time for all of them. Memory depends on the shape: O(h) for depth-first, up to a whole level for breadth-first.
+wrong: All traversals visit each node once: O(n). Depth-first keeps one path waiting, which can be n deep for a line; level order keeps a level, up to about n/2 for a perfect tree.
+
+=== task: predict medium
+title: Stack or queue?
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def order(root, use_queue):
+    waiting = deque([root])
+    out = []
+    while waiting:
+        if use_queue:
+            node = waiting.popleft()
+        else:
+            node = waiting.pop()
+        out.append(node.val)
+        for child in [node.right, node.left]:
+            if child is not None:
+                waiting.append(child)
+    return out
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+print(order(root, False))
+print(order(root, True))
+```
+wrong[[1, 2, 4, 5, 3, 6]\n[1, 2, 3, 4, 5, 6]]: The queue gets each node's right child first, so every level comes out from right to left.
+wrong[[1, 3, 6, 2, 5, 4]\n[1, 3, 2, 6, 5, 4]]: On the stack, the left child goes on last, so it's on top and comes off first: preorder.
+wrong[[1, 2, 4, 5, 3, 6]\n[1, 3, 2, 5, 4, 6]]: The queue keeps whole levels together: level 2 comes out as 6, 5, 4, in the order those nodes joined.
+hint: Each node adds its right child, then its left child.
+hint: The stack hands back the left child first; the queue hands back the right child first.
+right: The stack gives preorder, and the queue gives level order read from right to left: the container decides the order, and the order children are added decides left or right.
+wrong: Stack: the left child is pushed last, so it's popped first: 1, 2, 4, 5, 3, 6. Queue: right children join first, so each level comes out right to left: 1, 3, 2, 6, 5, 4.
+
+=== task: parsons medium
+title: Level order with a deque
+prompt: Arrange the lines so that `level_order` visits the tree level by level, and the program prints:
+
+```output
+['M', 'D', 'R', 'G', 'P', 'W']
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def level_order(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        out.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return out
+
+root = Node("M", Node("D", None, Node("G")), Node("R", Node("P"), Node("W")))
+print(level_order(root))
+```
+distractors:
+```python
+        node = queue.pop()
+            queue.appendleft(node.left)
+```
+hint: Take nodes from the front of the queue.
+hint: Add children at the back, left child first.
+right: Front out, back in: each level waits behind the one above it, so the levels come out in order.
+wrong: Start the deque with the root. While it isn't empty, `popleft` a node, record it, and `append` its left and then right child if they exist.
+
+=== task: order medium
+title: Postorder by hand
+prompt: Put the nodes of this tree in the order a **postorder** traversal visits them.
+
+```text
+        1
+      /   \
+     2     3
+    / \     \
+   4   5     6
+```
+items:
+- 4
+- 5
+- 2
+- 6
+- 3
+- 1
+hint: Postorder ends with the root.
+hint: 2's whole subtree (4, 5, then 2) comes before 3's.
+right: 4, 5, 2, 6, 3, 1: each node only after both of its subtrees.
+wrong: Left subtree of 1: 4, 5, then 2. Right subtree: 6, then 3. The root, 1, comes last.
+
+=== task: code hard
+title: All three in one walk
+prompt: Write `three_orders(root)` that returns a tuple of three lists, `(pre, ino, post)`, holding the tree's values in preorder, inorder and postorder. Walk the tree **once**: use a helper that appends each node to all three lists at the right moments.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def three_orders(root):
+    pre, ino, post = [], [], []
+    # your code here
+    return (pre, ino, post)
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def walk(node, pre, ino, post):
+    if node is None:
+        return
+    pre.append(node.val)
+    walk(node.left, pre, ino, post)
+    ino.append(node.val)
+    walk(node.right, pre, ino, post)
+    post.append(node.val)
+
+def three_orders(root):
+    pre, ino, post = [], [], []
+    walk(root, pre, ino, post)
+    return (pre, ino, post)
+```
+tests:
+- three_orders(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+- three_orders(None)
+- three_orders(Node(1, None, Node(2)))
+- three_orders(Node("b", Node("a"), Node("c")))
+fail[1]: Pre [1, 2, 4, 5, 3, 6], in [4, 2, 5, 1, 3, 6], post [4, 5, 2, 6, 3, 1].
+fail[2]: An empty tree gives three empty lists.
+fail[3]: 2 is a right child, so it comes after 1 in preorder and inorder, but before it in postorder.
+error[AttributeError]: Return at None before using `node.left`.
+hint: Write `walk(node, pre, ino, post)` that returns at None.
+hint: Append to `pre` before walking the left subtree, to `ino` between the two walks, and to `post` after the right walk.
+hint: `three_orders` calls `walk(root, pre, ino, post)` once and returns the tuple.
+right: One walk passes each node three times: on the way down, in between, and on the way back up. Each list records one of those moments.
+wrong: Walk once with all three lists. Append the node to `pre` first, then walk left, append to `ino`, walk right, and append to `post`.
+
+=== task: code hard
+title: A path that adds up
+prompt: Write `has_path_sum(root, target)` that returns True if some path from the root down to a **leaf** has values adding up to exactly `target`, and False otherwise (an empty tree has no paths). Use a depth-first walk that passes the amount still needed down to each child.
+
+For example, in the tree 5 → (4 → (11), 8 → (13, 4)), the path 5 → 4 → 11 adds up to 20.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def has_path_sum(node, target):
+    # your code here
+    return False
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def has_path_sum(node, target):
+    if node is None:
+        return False
+    rest = target - node.val
+    if node.left is None and node.right is None:
+        return rest == 0
+    return has_path_sum(node.left, rest) or has_path_sum(node.right, rest)
+```
+tests:
+- has_path_sum(Node(5, Node(4, Node(11)), Node(8, Node(13), Node(4))), 20)
+- has_path_sum(Node(5, Node(4, Node(11)), Node(8, Node(13), Node(4))), 26)
+- has_path_sum(Node(5, Node(4, Node(11)), Node(8, Node(13), Node(4))), 9)
+- has_path_sum(None, 0)
+- has_path_sum(Node(3), 3)
+- has_path_sum(Node(1, Node(2)), 1)
+fail[1]: 5 + 4 + 11 = 20.
+fail[2]: 5 + 8 + 13 = 26.
+fail[3]: 5 + 4 = 9, but 4 isn't a leaf: the path must go on to 11.
+fail[4]: An empty tree has no paths at all.
+fail[6]: The root, 1, has a child, so the only root-to-leaf path is 1 → 2, which adds up to 3.
+error[AttributeError]: Return False for None before using `node.val`.
+hint: Subtract the node's value from the target: that's what the rest of the path must add up to.
+hint: At a leaf, the answer is whether nothing is left: `rest == 0`.
+hint: Otherwise, try the left subtree and the right subtree with `rest`, joined by `or`.
+right: The amount still needed travels down the tree, one subtraction per level, and `or` stops as soon as one path works: O(n) in the worst case.
+wrong: Take the node's value off the target. At a leaf, check whether that leaves exactly 0; elsewhere, ask whether either subtree has a path adding up to what's left.
+
+=== task: code hard
+title: The nearest leaf
+prompt: Write `shallowest_leaf(root)` that returns the value of the leaf closest to the root (the one with the smallest depth). If several leaves share the smallest depth, return the leftmost. The tree is never empty. Use level order: the first leaf it meets is the answer, so it can stop there.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def shallowest_leaf(root):
+    # your code here
+    return root.val
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def shallowest_leaf(root):
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        if node.left is None and node.right is None:
+            return node.val
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+```
+tests:
+- shallowest_leaf(Node(1))
+- shallowest_leaf(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6))))
+- shallowest_leaf(Node(1, Node(2, Node(4)), Node(3)))
+- shallowest_leaf(Node(1, Node(2, Node(3, Node(4))), Node(5, Node(6))))
+fail[2]: All the leaves are at depth 2: 4 is the leftmost of them.
+fail[3]: 3 is a leaf at depth 1, closer than 4 at depth 2.
+fail[4]: 3 isn't a leaf (it has the child 4), so the first leaf on level 2 is 6.
+error[AttributeError]: Only add children that exist.
+hint: Run level order with a deque.
+hint: When the node you take out has no children, return its value straight away.
+hint: Otherwise add its existing children to the back, left first.
+right: Level order meets nodes in order of depth, left to right, so the first leaf it finds is the nearest one, and it never has to look deeper. A depth-first walk would have to check every leaf.
+wrong: Take nodes from the front of a queue, level by level. The first node with no children is the nearest leaf: return it. Otherwise queue its children.
+
+=== task: code hard
+title: Copy a tree
+prompt: Write `copy_tree(node)` that returns a new tree with the same shape and values, made of new `Node` objects, so that changing the copy doesn't change the original. Use preorder: make the new node first, then copy its left and right subtrees. `as_list` turns a tree into nested lists for the tests.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def copy_tree(node):
+    # your code here
+    return node
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def copy_tree(node):
+    if node is None:
+        return None
+    new = Node(node.val)
+    new.left = copy_tree(node.left)
+    new.right = copy_tree(node.right)
+    return new
+```
+tests:
+- as_list(copy_tree(Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))))
+- as_list(copy_tree(None))
+- (lambda t: copy_tree(t) is not t)(Node(1))
+- (lambda t: (lambda c: [setattr(c.left, "val", 99), as_list(t), as_list(c)][1:])(copy_tree(t)))(Node(1, Node(2)))
+fail[1]: The copy must have the same shape and values as the original.
+fail[2]: A copy of an empty tree is None.
+fail[3]: The copy must be a new object, not the original tree handed back.
+fail[4]: Changing the copy's left child must leave the original's left child alone: every node needs copying, not only the root.
+error[AttributeError]: Return None for an empty tree before using `node.val`.
+hint: An empty tree copies to None.
+hint: Make `new = Node(node.val)` first: that's the preorder visit.
+hint: Then set `new.left = copy_tree(node.left)` and `new.right = copy_tree(node.right)`, and return `new`.
+right: Preorder fits copying: each new node exists before its children are attached to it. Every node is copied once: O(n).
+wrong: For each node, make a new Node with the same value, then attach copies of its left and right subtrees, made the same way. Return None for None.
+
+=== task: predict hard
+title: Inorder of a search tree
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+t = Node(50, Node(30, Node(20), Node(40)), Node(70, Node(60), Node(80)))
+out = []
+inorder(t, out)
+print(out, out == sorted(out))
+```
+wrong[[50, 30, 20, 40, 70, 60, 80] False]: That's preorder. Inorder visits the root between its two subtrees.
+wrong[[20, 40, 30, 60, 80, 70, 50] False]: That's postorder. Inorder puts 30 between 20 and 40.
+wrong[[50, 30, 70, 20, 40, 60, 80] False]: That's level order.
+hint: In this tree every left child is smaller than its parent and every right child is bigger.
+hint: Left subtree (20, 30, 40), then 50, then the right subtree (60, 70, 80).
+right: `[20, 30, 40, 50, 60, 70, 80] True`: when smaller values always sit on the left, inorder lists them in sorted order.
+wrong: Inorder: 30's subtree gives 20, 30, 40; then 50; then 70's subtree gives 60, 70, 80. That list is already sorted.
+
+=== task: predict hard
+title: Prefix and postfix
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node, out):
+    if node is None:
+        return
+    out.append(node.val)
+    preorder(node.left, out)
+    preorder(node.right, out)
+
+def postorder(node, out):
+    if node is None:
+        return
+    postorder(node.left, out)
+    postorder(node.right, out)
+    out.append(node.val)
+
+expr = Node("-", Node("*", Node("a"), Node("b")), Node("c"))
+pre, post = [], []
+preorder(expr, pre)
+postorder(expr, post)
+print(" ".join(pre))
+print(" ".join(post))
+```
+wrong[- * a b c\na b c * -]: Postorder finishes the left subtree, `a b *`, before it visits c.
+wrong[* - a b c\na b * c -]: Preorder starts with the root, `-`.
+wrong[- * a b c\nc b a * -]: Postorder visits the left subtree first: a, b, then *.
+hint: The tree is (a * b) - c: `-` at the root, `*` on its left with a and b below, and c on its right.
+hint: Preorder puts each operator before its parts; postorder puts it after.
+right: `- * a b c` is prefix notation and `a b * c -` is postfix notation for (a * b) - c.
+wrong: Preorder: -, then the left subtree *, a, b, then c. Postorder: a, b, *, then c, then -.
+
+=== task: cells hard
+title: Inside the queue
+prompt: Level order runs on this tree. What is in the queue, from front to back, right after each of these nodes has been visited and its children added? Write the values separated by commas, like `2, 3`.
+
+```text
+        1
+      /   \
+     2     3
+    / \     \
+   4   5     6
+```
+labels: after 1 | after 2 | after 3 | after 4
+answer: 2, 3 | 3, 4, 5 | 4, 5, 6 | 5, 6
+wrong[2, 3 | 3, 4, 5 | 4, 5 | 5, 6]: When 3 is visited, its child 6 joins the back of the queue: 4, 5, 6.
+wrong[2, 3 | 3, 4, 5 | 4, 5, 6 | 4, 5, 6]: Visiting 4 takes it out of the front. It has no children, so nothing joins: 5, 6.
+hint: Each visit takes one node off the front and adds its children at the back.
+hint: 3 has one child, 6; 4 has none.
+right: The queue always holds the rest of the current level followed by the start of the next one.
+wrong: After 1: 2, 3. After 2 (adds 4, 5): 3, 4, 5. After 3 (adds 6): 4, 5, 6. After 4 (adds nothing): 5, 6.
+
+=== task: mcq hard
+title: Waiting nodes in a big tree
+prompt: A perfect binary tree has 1,023 nodes (height 9). At most how many nodes are waiting at once in a level-order queue, and at most how many calls are waiting in a recursive depth-first walk?
+* About 512 in the queue, but only about 10 waiting calls :: Right. The queue fills up with the last level, while recursion only holds one path.
+- About 10 in the queue and about 512 waiting calls :: That's the other way round: the queue holds a level, recursion holds a path.
+- About 1,023 for both :: Neither ever holds the whole tree at once.
+- About 10 for both :: The last level of the tree holds 512 nodes, and the queue ends up holding all of them.
+hint: How many nodes are on the last level of a perfect tree of height 9?
+hint: How long is a path from the root to a leaf?
+right: 2^9 = 512 nodes sit on the last level and pass through the queue together, while a path holds only 10 nodes. For bushy trees, depth-first uses much less memory.
+wrong: The queue holds up to a whole level, and the last level has 512 nodes. Recursion holds one call per node on the current path: 10 levels.
+
+=== task: multi hard
+title: The right order for the job
+prompt: Choose **every** pairing of a job with an order that suits it.
+* Copying a tree: preorder :: Right. Each new node is made before its children are attached.
+* Listing a search tree's values from smallest to largest: inorder :: Right. Smaller values on the left come out first.
+* Totalling the size of every folder: postorder :: Right. A folder's total needs its contents' totals first.
+* Finding the matching node closest to the root: level order :: Right. It meets nodes in order of depth.
+- Evaluating an expression tree: preorder :: An operator needs its operands' values first, so that's postorder.
+- Printing a tree level by level: inorder :: Inorder mixes the levels together; level order prints them one at a time.
+hint: Does the job need parents first, children first, sorted order, or nearest first?
+hint: An operator can only be worked out once both its parts are known.
+right: Parents first means preorder, children first means postorder, sorted means inorder, and nearest first means level order.
+wrong: Copy with preorder, list a search tree with inorder, total and evaluate with postorder, and search nearest-first or print by levels with level order.
+
+=== task: parsons hard
+title: Postorder with a stack
+prompt: Arrange the lines so that `postorder` uses a stack instead of recursion, and the program prints:
+
+```output
+[4, 5, 2, 6, 3, 1]
+```
+
+The trick: a stack walk that visits node, right, left is the exact reverse of postorder (left, right, node). Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def postorder(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.left is not None:
+            stack.append(node.left)
+        if node.right is not None:
+            stack.append(node.right)
+    out.reverse()
+    return out
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3, None, Node(6)))
+print(postorder(root))
+```
+distractors:
+```python
+    out.sort()
+    return out[::-1]
+```
+hint: Push the left child first, so the right child is on top and comes off first: node, right, left.
+hint: Reverse the whole list at the end.
+right: The stack walk gives 1, 3, 6, 2, 5, 4 (node, right, left), and reversing it gives 4, 5, 2, 6, 3, 1: postorder.
+wrong: Pop a node, record it, push its left child and then its right child. When the stack is empty, reverse the list and return it.
