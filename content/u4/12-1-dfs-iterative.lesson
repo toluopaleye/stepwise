@@ -1,0 +1,1267 @@
+=== lesson
+id: algo-dfs-iterative
+title: Recursive vs iterative DFS
+summary: Recursive DFS keeps its place on Python's call stack, which only goes about 1,000 calls deep. The same search can keep a stack of its own, a plain list, with no such limit. You'll write DFS with an explicit stack, see why its visiting order can come out differently and how to make it match, find out why vertices are marked when they're popped, carry parents and depths on the stack, and choose between the two versions.
+
+=== learn
+### A stack of your own
+Recursive DFS works because Python remembers every paused call. An explicit stack does the same job by hand: a list of the vertices still to visit. `pop()` takes the vertex from the top, the end of the list, and `append()` pushes new ones on top. Last in, first out means the newest vertex is always explored next, so the search keeps going deeper.
+
+Here it is on the graph from the last two lessons:
+```python
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    while stack:
+        v = stack.pop()
+        if v in seen:
+            continue
+        seen.add(v)
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                stack.append(w)
+    return order
+
+print(dfs_stack(graph, "A"))
+```
+```output
+['A', 'C', 'F', 'E', 'B', 'D']
+```
+The loop has the same shape as BFS, with one difference: BFS takes from the front of a queue with `popleft()`, and DFS takes from the top of a stack with `pop()`. That single change turns rings into a deep dive.
+
+### Why the order is different
+The recursive DFS from the last lesson visits A, B, D, E, F, C. The stack version visits A, C, F, E, B, D. Both are depth-first, but they choose differently at every vertex.
+
+The recursive version goes to the **first** unseen neighbour in the list. The stack version pushes the neighbours in list order, so the **last** one pushed is on top, and that's the one it pops first. From A it pushes B, then C, and so it goes to C.
+
+### Matching the recursive order
+Push the neighbours in reverse, and the first one in the list ends up on top:
+```python
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    while stack:
+        v = stack.pop()
+        if v in seen:
+            continue
+        seen.add(v)
+        order.append(v)
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.append(w)
+    return order
+
+print(dfs_stack(graph, "A"))
+```
+```output
+['A', 'B', 'D', 'E', 'F', 'C']
+```
+`reversed(graph[v])` goes through the list from the end, without copying it. Either order is a correct depth-first search; reversing matters only when the result has to match the recursive version. Animation 1 runs this version.
+
+### Mark when popped
+BFS marks a vertex when it joins the queue. This stack version marks a vertex when it's **popped**, and skips it if it's already been seen. So a vertex can be on the stack more than once, pushed by different neighbours, and the `if v in seen: continue` check throws the extra copies away. Animation 2 shows a second copy being skipped.
+
+Marking when pushed would keep one copy of each vertex, but it changes the search. In this graph, A pushes B, C and D and would mark all three at once:
+```python
+square = {"A": ["B", "C", "D"], "B": ["A", "D"], "C": ["A"], "D": ["A", "B"]}
+```
+When B is explored, its neighbour D is already marked, so the search can't go deeper through B, and it goes back to A's other neighbours instead:
+
+| version | visiting order |
+| --- | --- |
+| recursive DFS | A, B, D, C |
+| stack, marking when popped | A, B, D, C |
+| stack, marking when pushed | A, B, C, D |
+
+Marking on pop lets each vertex be claimed by the deepest path that reaches it first, as recursion does. The price is the extra copies: the stack can hold one entry for every edge, O(E), in the worst case.
+
+### Carrying more on the stack
+The stack can hold more than a vertex. Pushing pairs (vertex, parent) records where each vertex was found from, which gives paths:
+```python
+def dfs_parents(graph, start):
+    parent = {}
+    stack = [(start, None)]
+    while stack:
+        v, p = stack.pop()
+        if v in parent:
+            continue
+        parent[v] = p
+        for w in reversed(graph[v]):
+            if w not in parent:
+                stack.append((w, v))
+    return parent
+
+parent = dfs_parents(graph, "A")
+print(parent)
+
+path = []
+v = "C"
+while v is not None:
+    path.append(v)
+    v = parent[v]
+print(path[::-1])
+```
+```output
+{'A': None, 'B': 'A', 'D': 'B', 'E': 'B', 'F': 'E', 'C': 'F'}
+['A', 'B', 'E', 'F', 'C']
+```
+`parent` does the job of `seen` as well: a vertex has a key once it's been popped. The path is the same roundabout one that recursive DFS found. Pushing (vertex, depth) pairs works the same way, and Example 2 uses them to print a folder tree.
+
+### No depth limit
+Python's call stack is limited to about 1,000 calls; a list isn't. Here's a line of 5,000 vertices, too deep for recursion but no trouble for the stack:
+```python
+def dfs(graph, v, seen):
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen)
+
+line = {i: [i + 1] for i in range(4999)}
+line[4999] = []
+
+try:
+    dfs(line, 0, set())
+except RecursionError:
+    print("recursive: RecursionError")
+print("with a stack:", len(dfs_stack(line, 0)))
+```
+```output
+recursive: RecursionError
+with a stack: 5000
+```
+`sys.setrecursionlimit` can raise Python's limit, but very deep recursion can then crash Python altogether, so for graphs that might be deep, the explicit stack is the safe choice.
+
+### Which one to use?
+| | recursive | explicit stack |
+| --- | --- | --- |
+| code | shortest to write | a few more lines |
+| depth | about 1,000 calls in Python | as deep as memory allows |
+| order | neighbours in list order | the same, when neighbours are pushed in reverse |
+| answers from below | natural: a call can return a value, like a size or a path | needs extra bookkeeping |
+| time | O(V + E) | O(V + E) |
+
+Recursion suits graphs that can't be very deep, like a family tree or a small puzzle, especially when each call combines its children's answers. The explicit stack suits graphs that might be deep, like a long chain of links or a big grid. The next lesson's grids are a common case.
+
+=== keypoints
+- An explicit stack does recursion's job: `v = stack.pop()`, then push the unseen neighbours with `append`.
+- The loop is BFS's loop with one change: `pop()` from the top of a stack instead of `popleft()` from the front of a queue.
+- Pushing neighbours in list order explores the last one first. Push them in `reversed` order to match recursive DFS.
+- Mark a vertex when it's popped, and skip it if it's already seen: it can be on the stack more than once.
+- Push pairs like (vertex, parent) or (vertex, depth) to carry extra information.
+- The stack version has no recursion limit. Both versions are O(V + E).
+
+=== example: A way through the caves
+intro: A cave system as a graph. The search pushes (cave, parent) pairs on its own stack, then follows the parents back from the treasure to the entrance.
+```python
+caves = {
+    "entrance": ["bats", "river"],
+    "bats": ["entrance", "crystals"],
+    "river": ["entrance", "crystals", "falls"],
+    "crystals": ["bats", "river", "treasure"],
+    "falls": ["river"],
+    "treasure": ["crystals"],
+}
+
+parent = {}
+stack = [("entrance", None)]
+while stack:
+    cave, came_from = stack.pop()
+    if cave in parent:
+        continue
+    parent[cave] = came_from
+    for nxt in reversed(caves[cave]):
+        if nxt not in parent:
+            stack.append((nxt, cave))
+
+route = []
+cave = "treasure"
+while cave is not None:
+    route.append(cave)
+    cave = parent[cave]
+print(" -> ".join(route[::-1]))
+```
+1-8: Which caves connect to which, listed from both ends.
+10-11: Each entry on the stack is a cave and the cave it was reached from. The entrance has none.
+12-16: Pop the top pair, skip a cave that's already been reached, and otherwise record where it was reached from.
+17-19: Push the neighbours in reverse, so the first one listed is explored first, as recursion would.
+21-25: Walk back from the treasure through the parents.
+26: The route DFS found goes through the bats, the first way out of the entrance it tried.
+
+=== example: Folders with a stack
+intro: Printing a folder tree with an explicit stack. Each entry is a folder and its depth, so the indent can be worked out when the folder is popped.
+```python
+folders = {
+    "home": ["docs", "photos"],
+    "docs": ["work", "school"],
+    "photos": ["2024"],
+    "work": [],
+    "school": ["maths"],
+    "maths": [],
+    "2024": [],
+}
+
+stack = [("home", 0)]
+while stack:
+    folder, depth = stack.pop()
+    print("  " * depth + folder)
+    for sub in reversed(folders[folder]):
+        stack.append((sub, depth + 1))
+```
+1-9: The same folders as in the last lesson's example.
+11: The stack starts with the top folder, at depth 0.
+12-14: Pop a folder and print it, indented by its depth.
+15-16: Push the folders inside it, one level deeper. Pushing them in reverse puts the first one on top, so the output matches the recursive version. A tree has no cycles, so no `seen` set is needed.
+
+=== animation: The stack at work
+view: graph g pos=D:100,30;B:100,100;E:240,100;A:100,170;C:100,240;F:240,240 visited=seen current=v frontier=stack flabel=on_the_stack
+stack stack
+vars v w order
+intro: Green vertices have been visited, the yellow one has been popped, and dashed ones are waiting on the stack. Neighbours are pushed in reverse, so the first one in each list ends up on top.
+```python
+g = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+seen = set()
+stack = ["A"]
+order = []
+while stack:
+    v = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    order.append(v)
+    for w in reversed(g[v]):
+        if w not in seen:
+            stack.append(w)
+```
+1: The graph from the lesson.
+3: Nothing has been visited yet.
+4: The stack starts with A.
+5: The visiting order starts empty.
+6: {'Vertices are waiting on the stack: keep going.' if stack else 'The stack is empty: the search is over.'}
+7: Pop the top of the stack: {stack[-1]}.
+8: {'Has ' + str(v) + ' been visited already? ' + ('Yes.' if v in seen else 'No.')}
+9: {v} was visited already: throw this copy away.
+10: Mark {v} as visited.
+11: Record {v} in the visiting order.
+12: Next neighbour of {v}, from the end of its list backwards. When there are none left, go back to the stack.
+13: {'Has ' + str(w) + ' been visited? ' + ('Yes: skip it.' if w in seen else 'No.')}
+14: Push {w} on top of the stack.
+
+=== animation: Skipping a second copy
+view: graph square pos=A:60,40;B:200,40;C:60,160;D:200,160 visited=seen current=v frontier=stack flabel=on_the_stack
+stack stack
+vars v w order
+intro: Marking on pop means D can be pushed twice: once by A, and again by B before D is visited. The copy that comes off the stack later is thrown away.
+```python
+square = {"A": ["B", "C", "D"], "B": ["A", "D"], "C": ["A"], "D": ["A", "B"]}
+
+seen = set()
+stack = ["A"]
+order = []
+while stack:
+    v = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    order.append(v)
+    for w in reversed(square[v]):
+        if w not in seen:
+            stack.append(w)
+```
+1: A is joined to B, C and D, and B is joined to D.
+3: Nothing has been visited yet.
+4: The stack starts with A.
+5: The visiting order starts empty.
+6: {'Vertices are waiting on the stack: keep going.' if stack else 'The stack is empty: the search is over.'}
+7: Pop the top of the stack: {stack[-1]}.
+8: {'Has ' + str(v) + ' been visited already? ' + ('Yes.' if v in seen else 'No.')}
+9: {v} was visited already: this is the second copy, so throw it away.
+10: Mark {v} as visited.
+11: Record {v} in the visiting order.
+12: Next neighbour of {v}, from the end of its list backwards. When there are none left, go back to the stack.
+13: {'Has ' + str(w) + ' been visited? ' + ('Yes: skip it.' if w in seen else 'No.')}
+14: {'Push ' + str(w) + ' on top of the stack' + (', though a copy of it is already waiting further down.' if w in stack else '.')}
+
+=== task: predict easy
+title: Last pushed, first out
+code:
+```python
+graph = {"S": ["P", "Q"], "P": ["S", "R"], "Q": ["S", "R", "T"],
+         "R": ["P", "Q", "U"], "T": ["Q"], "U": ["R"]}
+
+seen = set()
+stack = ["S"]
+order = []
+while stack:
+    v = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            stack.append(w)
+print(order)
+```
+wrong[['S', 'P', 'R', 'Q', 'T', 'U']]: That's the recursive order. Here the neighbours are pushed in list order, so the last one pushed, Q, is on top and comes out first.
+wrong[['S', 'Q', 'R', 'T', 'U', 'P']]: From Q, the stack gets R and then T, so T is on top: T is visited before R.
+wrong[['S', 'P', 'Q', 'R', 'T', 'U']]: That's BFS's ring order. `pop()` takes the newest vertex, so the search dives instead of working ring by ring.
+hint: S pushes P, then Q. Which one is on top?
+hint: Each time, pop the top, then push that vertex's unseen neighbours in list order.
+right: `['S', 'Q', 'T', 'R', 'U', 'P']`. The last neighbour pushed is the first popped, so the search dives along the end of each list: S, Q, T, then back to R, U, and finally P.
+wrong: S pushes P, Q; pop Q. Q pushes R, T; pop T (nothing new). Pop R; R pushes P, U; pop U, then P. The stale copy of P at the bottom is skipped.
+
+=== task: mcq easy
+title: One change
+prompt: Take BFS's loop, with `queue = deque([start])`, `v = queue.popleft()` and `queue.append(w)`. Which single change makes it a depth-first search?
+* Take vertices with `pop()` instead of `popleft()`, so the newest one comes out first :: Right. Taking from the same end you add to makes the deque a stack: last in, first out.
+- Keep the waiting vertices in a set instead of a deque :: A set has no order at all, so there's no newest or oldest vertex to take next.
+- Sort the queue before each `popleft()` :: Sorting gives alphabetical order, not depth-first order.
+- Start the queue with every vertex in it :: The order of exploring would still be first in, first out.
+hint: A queue takes from the front; a stack takes from the end it adds to.
+hint: Which end does `append` add to?
+right: With `append` and `pop()`, vertices are added and taken at the same end, so the most recently found vertex is explored next and the search goes deep.
+wrong: DFS needs last in, first out. Keep `append` and swap `popleft()` for `pop()`.
+
+=== task: cells easy
+title: Pushed twice
+prompt: This stack DFS marks vertices when they're popped, so a vertex can be pushed more than once. Counting the first push of A, how many times is each vertex pushed?
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"],
+         "D": ["B", "C"]}
+
+seen = set()
+stack = ["A"]
+while stack:
+    v = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    for w in reversed(graph[v]):
+        if w not in seen:
+            stack.append(w)
+```
+labels: A | B | C | D
+answer: 1 | 1 | 2 | 2
+wrong[1 | 1 | 1 | 1]: Unseen means not yet popped, not "not on the stack". B pushes C even though A already pushed it, because C hasn't been visited yet.
+wrong[1 | 2 | 2 | 2]: B is pushed by A, then popped and visited straight away. By the time C or D looks at B, it's in `seen`.
+wrong[1 | 1 | 2 | 1]: D is pushed by B, and then again by C, which is visited before D.
+hint: Follow the stack: A pushes C and B; B is on top.
+hint: When B is visited, C and D haven't been popped yet, so B pushes them both, even though C is already waiting lower down.
+right: 1, 1, 2 and 2. C and D are each pushed by two different vertices before they're visited. The stale copies are skipped later, which is why the stack can hold one entry per edge.
+wrong: A pushes C and B. B is popped and pushes D and C (A is seen). C is popped and pushes D again. Then D, the stale D and the stale C come off; the stale ones are skipped.
+
+=== task: code easy
+title: DFS with a stack
+prompt: Write `dfs_stack(graph, start)` that returns the vertices in the same order as recursive DFS, using a list as a stack instead of recursion. Pop from the end, skip a vertex that's already been seen, mark and record it, then push its unseen neighbours in **reverse** order, so the first one in the list is popped first. One test uses a line of 3,000 vertices, too deep for recursion. The speed check uses a star with n vertices.
+starter:
+```python
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    # your code here
+    return order
+```
+solution:
+```python
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    while stack:
+        v = stack.pop()
+        if v in seen:
+            continue
+        seen.add(v)
+        order.append(v)
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.append(w)
+    return order
+```
+tests:
+- dfs_stack({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "A")
+- dfs_stack({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "C")
+- dfs_stack({0: [3, 1], 1: [0, 2], 2: [1], 3: [0, 4], 4: [3]}, 0)
+- dfs_stack({"a": ["a", "b"], "b": []}, "a")
+- dfs_stack({"x": []}, "x")
+- (lambda g: len(dfs_stack(g, 0)))({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+fail[1]: The recursive order on a square: ['A', 'B', 'D', 'C']. Without `reversed`, you'd get ['A', 'C', 'D', 'B'].
+fail[2]: From C: ['C', 'A', 'B', 'D'].
+fail[3]: Deep first, in list order: [0, 3, 4, 1, 2].
+fail[4]: a lists itself; it's seen by then, so it's visited once: ['a', 'b'].
+fail[5]: A vertex with no neighbours: ['x'].
+fail[6]: All 3,000 vertices of the line are visited. A recursive version would raise a RecursionError here.
+error[RecursionError]: The calls go too deep. Use the list as the stack and a `while` loop, with no function calling itself.
+speed: setup=graph = {i: [0] for i in range(1, n)}; graph[0] = list(range(1, n)) | call=dfs_stack(graph, 0) | target=O(n)
+slow:
+```python
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    while stack:
+        v = stack.pop(0)
+        if v in seen:
+            continue
+        seen.add(v)
+        order.append(v)
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.insert(0, w)
+    return order
+```
+hint: Loop `while stack:` and take `v = stack.pop()`. If v is in `seen`, `continue`.
+hint: Otherwise mark it, append it to `order`, and push each unseen neighbour from `reversed(graph[v])`.
+hint: Use the end of the list as the top. `pop(0)` and `insert(0, w)` shift every item, which the speed check will catch.
+right: The list's end is the top of the stack, so `append` and `pop()` are O(1). Pushing in reverse puts the first neighbour on top, which reproduces the recursive order without any recursion.
+wrong: While the stack isn't empty: pop the top; skip it if seen; otherwise mark it, record it, and push its unseen neighbours from the end of its list backwards.
+
+=== task: fill easy
+title: Pop and skip
+prompt: Fill in the blanks so that the loop takes vertices from the top of the stack and throws away copies of vertices it has already visited, and the program prints:
+
+```output
+['A', 'B', 'C', 'D', 'E']
+```
+code:
+```python
+graph = {"A": ["B", "C", "E"], "B": ["A", "C"], "C": ["A", "B", "D"],
+         "D": ["C"], "E": ["A"]}
+
+seen = set()
+stack = ["A"]
+order = []
+while stack:
+    v = ??
+    if v in seen:
+        ??
+    seen.add(v)
+    order.append(v)
+    for w in reversed(graph[v]):
+        if w not in seen:
+            stack.append(w)
+print(order)
+```
+answer: stack.pop() | continue
+wrong[stack.pop(0) | continue]: `pop(0)` takes from the bottom, the oldest vertex, which makes the list a queue: the order becomes A, E, C, B, D.
+wrong[stack.pop() | break]: `break` ends the whole search at the first stale copy. C is pushed twice, and its second copy comes off before E has been visited, so E is lost.
+hint: The top of the stack is the end of the list.
+hint: A stale copy should be skipped, and the loop should carry on with the next item.
+right: `stack.pop()` takes the newest vertex, and `continue` skips a vertex that was pushed more than once, going straight back to the stack.
+wrong: Take `v = stack.pop()`, and when v has been visited already, `continue` with the next item on the stack.
+
+=== task: multi easy
+title: True of the stack version
+prompt: Choose **every** true statement about DFS with an explicit stack, as written in this lesson.
+* Its loop has the same shape as BFS's; it takes from the top of a stack instead of the front of a queue :: Right. `pop()` instead of `popleft()` is the whole difference.
+* A vertex can be on the stack more than once :: Right. It's marked when popped, so other neighbours can push it while it waits.
+* It isn't limited by Python's recursion limit :: Right. The stack is an ordinary list, so it can grow as long as memory allows.
+- It always visits vertices in the same order as recursive DFS, whatever order the neighbours are pushed in :: Only when the neighbours are pushed in reverse. Otherwise the last neighbour in each list is explored first.
+- It needs no `seen` set, because the stack keeps track of what's been visited :: Without `seen`, vertices would be visited again and again, and a cycle would never end.
+- It's slower than recursive DFS: O(V × E) instead of O(V + E) :: It does the same work, O(V + E).
+hint: What does marking on pop allow?
+hint: What decides which neighbour is popped first?
+right: The stack version is BFS's loop with `pop()`, it can push a vertex more than once, and it has no recursion limit. It matches the recursive order only when neighbours are pushed in reverse, and it still needs `seen`.
+wrong: Marking on pop means repeats on the stack, a list has no depth limit, and the loop mirrors BFS's. The order depends on the push order, `seen` is still needed, and the time is O(V + E).
+
+=== task: parsons easy
+title: Is there a path?
+prompt: Arrange the lines so that `has_path` uses a stack and returns True as soon as the goal is popped, or False when the stack runs out. The program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def has_path(graph, start, goal):
+    seen = set()
+    stack = [start]
+    while stack:
+        v = stack.pop()
+        if v == goal:
+            return True
+        if v in seen:
+            continue
+        seen.add(v)
+        for w in graph[v]:
+            if w not in seen:
+                stack.append(w)
+    return False
+```
+distractors:
+```python
+                stack.append(v)
+    stack = []
+```
+after:
+```python
+paths = {"Ivy": ["Jay"], "Jay": ["Ivy", "Kip"], "Kip": ["Jay"], "Lux": []}
+print(has_path(paths, "Ivy", "Kip"), has_path(paths, "Kip", "Lux"))
+```
+hint: The search starts with the start on the stack.
+hint: Only an empty stack means there's no path, so `return False` goes after the loop.
+right: Each popped vertex is checked against the goal, so the search stops as soon as it gets there. If the stack empties first, every vertex that can be reached has been tried.
+wrong: Put the start on the stack. In the loop, pop the top: return True if it's the goal, skip it if seen, otherwise mark it and push its unseen neighbours. After the loop, return False.
+
+=== task: order easy
+title: One turn of the loop
+prompt: Put the steps of one turn of the stack DFS loop in order.
+items:
+- Pop the vertex on top of the stack.
+- If it's already been seen, skip the rest of this turn.
+- Mark it as seen and record it.
+- Push its unseen neighbours, from the end of its list backwards.
+hint: Nothing can be done with a vertex until it's off the stack.
+hint: A stale copy has to be caught before it's recorded a second time.
+right: Pop, skip it if it's a stale copy, mark and record it, then push its neighbours for later.
+wrong: Each turn takes the top vertex, throws it away if it was visited already, otherwise marks and records it, and finally pushes its unseen neighbours in reverse.
+
+=== task: predict easy
+title: Folders backwards
+prompt: This version pushes each folder's contents in list order, without `reversed`. What does it print?
+code:
+```python
+folders = {"home": ["docs", "photos"], "docs": ["work", "school"],
+           "photos": ["2024"], "work": [], "school": [], "2024": []}
+
+stack = [("home", 0)]
+while stack:
+    folder, depth = stack.pop()
+    print("  " * depth + folder)
+    for sub in folders[folder]:
+        stack.append((sub, depth + 1))
+```
+wrong[home\n  docs\n    work\n    school\n  photos\n    2024]: That's the order with `reversed`. Here docs is pushed first and photos last, so photos is on top and comes out first.
+wrong[home\n  photos\n  docs\n    2024\n    school\n    work]: That's level by level. The stack dives into photos as soon as it's popped, so 2024 comes straight after it.
+wrong[home\n  photos\n    2024\n  docs\n    work\n    school]: Inside docs, work is pushed before school, so school is on top and is printed first.
+hint: home pushes docs, then photos. Which is popped first?
+hint: Every folder's contents come out last pushed, first popped.
+right: The output is home, photos, 2024, docs, school, work, each indented by its depth. Every folder is still printed above its contents, but brothers and sisters come out in reverse, because the last one pushed is popped first.
+wrong: home pushes docs then photos. photos is popped and printed, then 2024. Then docs, which pushes work then school, so school is printed before work.
+
+=== task: mcq easy
+title: Off the end
+prompt: `stack = ["A", "B", "C"]`. What does `stack.pop()` return, and what's left?
+* `"C"`, leaving `["A", "B"]` :: Right. With no argument, `pop()` removes and returns the last item: the top of the stack.
+- `"A"`, leaving `["B", "C"]` :: That's `pop(0)`, which takes the first item and shifts the rest along.
+- `"C"`, leaving `["A", "B", "C"]` :: `pop()` removes the item as well as returning it. `stack[-1]` would only read it.
+- `None`, leaving `["A", "B"]` :: `pop()` returns the item it removes.
+hint: `append` adds to the end of the list. Where does `pop()` take from?
+hint: `pop` both removes and returns.
+right: `pop()` takes the last item, the one most recently appended, which is exactly what a stack needs. It's O(1), because nothing else moves.
+wrong: The end of the list is the top of the stack: `pop()` removes "C" and returns it, leaving A and B.
+
+=== task: code medium
+title: Pieces with a stack
+prompt: Write `count_pieces(graph)` that returns the number of connected pieces in a graph whose edges go both ways, without recursion. Use one `seen` set for all the searches; for each vertex that isn't seen yet, add 1 to the count and run a stack DFS from it. One test is a single line of 3,000 vertices.
+starter:
+```python
+def count_pieces(graph):
+    seen = set()
+    pieces = 0
+    # your code here
+    return pieces
+```
+solution:
+```python
+def count_pieces(graph):
+    seen = set()
+    pieces = 0
+    for s in graph:
+        if s in seen:
+            continue
+        pieces += 1
+        stack = [s]
+        while stack:
+            v = stack.pop()
+            if v in seen:
+                continue
+            seen.add(v)
+            for w in graph[v]:
+                if w not in seen:
+                    stack.append(w)
+    return pieces
+```
+tests:
+- count_pieces({1: [2], 2: [1, 3], 3: [2], 4: [5], 5: [4], 6: []})
+- count_pieces({"a": ["b", "c"], "b": ["a", "c"], "c": ["a", "b"]})
+- count_pieces({})
+- count_pieces({1: [], 2: [], 3: []})
+- count_pieces({1: [4], 2: [3], 3: [2], 4: [1, 5], 5: [4]})
+- count_pieces({i: [j for j in (i - 1, i + 1) if 0 <= j < 3000] for i in range(3000)})
+fail[1]: 1-2-3, 4-5, and 6 alone: 3.
+fail[2]: A triangle is one piece: 1.
+fail[3]: No vertices, no pieces: 0.
+fail[4]: Three vertices with no edges: 3 pieces.
+fail[5]: 1, 4 and 5 are one piece, 2 and 3 another: 2.
+fail[6]: A line of 3,000 vertices is one piece. Recursion would be 3,000 calls deep.
+error[RecursionError]: Use a list as the stack and a `while` loop instead of a function that calls itself.
+hint: The outer loop goes over every vertex; skip the ones already seen.
+hint: Each new start begins a stack holding only that vertex, and the inner `while` loop marks its whole piece.
+right: Every vertex is marked once, by whichever search reaches it first, and the number of searches that had to be started is the number of pieces. The explicit stack keeps it safe for long chains.
+wrong: For each vertex not yet seen, add 1 and run the stack loop from it: pop, skip if seen, mark, push unseen neighbours. Return the count.
+
+=== task: code medium
+title: Depths in a tree
+prompt: `tree` lists each node's children. Write `depths(tree, root)` that returns a dictionary giving every node's depth, the number of edges from the root (the root's depth is 0), without recursion: push (node, depth) pairs, and push each child with one more than its parent's depth. A tree has no cycles, so no `seen` set is needed. One test is a chain 3,000 nodes deep.
+starter:
+```python
+def depths(tree, root):
+    depth = {}
+    stack = [(root, 0)]
+    # your code here
+    return depth
+```
+solution:
+```python
+def depths(tree, root):
+    depth = {}
+    stack = [(root, 0)]
+    while stack:
+        node, d = stack.pop()
+        depth[node] = d
+        for child in tree[node]:
+            stack.append((child, d + 1))
+    return depth
+```
+tests:
+- depths({"a": ["b", "c"], "b": ["d"], "c": [], "d": []}, "a")
+- depths({"x": []}, "x")
+- depths({1: [2, 3, 4], 2: [], 3: [5], 4: [], 5: [6], 6: []}, 1)
+- depths({"a": ["b", "c"], "b": ["d"], "c": [], "d": []}, "b")
+- (lambda t: depths(t, 0)[2999])({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+fail[1]: {'a': 0, 'b': 1, 'c': 1, 'd': 2}.
+fail[2]: The root alone, at depth 0.
+fail[3]: 6 is three edges below 1, through 3 and 5: depth 3.
+fail[4]: Starting from b, only b and d are below it: {'b': 0, 'd': 1}.
+fail[5]: The bottom of the chain is 2,999 edges down.
+hint: Pop a (node, d) pair and record `depth[node] = d`.
+hint: Push `(child, d + 1)` for each child.
+right: The depth travels with each node on the stack, so it's known the moment the node is popped, with no parent links and no recursion.
+wrong: Start with (root, 0) on the stack. Pop a pair, record the depth, and push every child paired with one more than that depth.
+
+=== task: predict medium
+title: Marking when pushed
+prompt: This version marks each vertex as soon as it's pushed. What does it print?
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B"], "D": ["B"]}
+
+seen = {"A"}
+stack = ["A"]
+order = []
+while stack:
+    v = stack.pop()
+    order.append(v)
+    for w in reversed(graph[v]):
+        if w not in seen:
+            seen.add(w)
+            stack.append(w)
+print(order)
+```
+wrong[['A', 'B', 'C', 'D']]: That's what recursive DFS gives. Here A marks C as soon as it pushes it, so when B is explored, C counts as seen and only D is pushed. D, on top, comes out before C.
+wrong[['A', 'C', 'B', 'D']]: A pushes C first and B last, in reverse, so B is on top and is explored first.
+wrong[['A', 'B', 'D', 'C', 'C']]: Marking on push means each vertex is pushed at most once: C is never pushed a second time.
+hint: When A is explored, which vertices does it mark?
+hint: When B is explored, which of its neighbours are still unmarked?
+right: `['A', 'B', 'D', 'C']`. Marking when pushed lets A claim C before B can reach it, so B can't dive on to C; it goes to D instead. True depth-first order is A, B, C, D, so this isn't a depth-first search any more.
+wrong: A pushes and marks C and B. B is popped; only D is unmarked, so D is pushed and popped next. Finally C, which A pushed long ago, comes off.
+
+=== task: cells medium
+title: The top of the stack
+prompt: This is the reversed-push stack DFS from the lesson, on the lesson's graph, starting at A. Fill in each box, looking at the stack right after the named vertex's neighbours have been pushed.
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+seen = set()
+stack = ["A"]
+while stack:
+    v = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    for w in reversed(graph[v]):
+        if w not in seen:
+            stack.append(w)
+```
+labels: top after A | top after B | size after B | top after F | size after F
+answer: B | D | 3 | C | 2
+wrong[C | D | 3 | C | 2]: A pushes in reverse: C first, then B, so B is on top.
+wrong[B | E | 3 | C | 2]: B's list is D, A, E. Reversed, E is pushed first and D last, so D is on top.
+wrong[B | D | 2 | C | 1]: C, pushed by A, is still at the bottom. After B, the stack is C, E, D: three items.
+wrong[B | D | 3 | C | 1]: After F, the stack holds the old C from A and the new C from F: two copies, 2 items.
+hint: Write the stack out bottom to top after each step. After A: C, B.
+hint: After B: C, E, D. Then D is popped, then E, which pushes F.
+right: B, D, 3, C and 2. After F, both items are copies of C: the one A pushed at the very start and the one F has pushed. The second one popped will be skipped.
+wrong: After A: C, B. After B: C, E, D. D pushes nothing, so after D: C, E. E pushes F: C, F. F pushes C: C, C.
+
+=== task: fill medium
+title: Every path on the stack
+prompt: To list every path, each stack entry can carry the whole path so far. A path may not visit a vertex twice, so instead of a `seen` set, check the path itself. Fill in the blanks so that the program prints all the paths from A to D:
+
+```output
+[['A', 'B', 'C', 'D'], ['A', 'B', 'D'], ['A', 'C', 'B', 'D'], ['A', 'C', 'D']]
+```
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"],
+         "D": ["B", "C"]}
+
+def all_paths(graph, start, goal):
+    found = []
+    stack = [(start, [start])]
+    while stack:
+        v, path = stack.pop()
+        if v == goal:
+            found.append(path)
+            continue
+        for w in reversed(graph[v]):
+            if w not in ??:
+                stack.append((w, ??))
+    return found
+
+print(all_paths(graph, "A", "D"))
+```
+answer: path | path + [w]
+wrong[graph | path + [w]]: Every neighbour is a key of `graph`, so nothing is ever pushed, and no paths are found: [].
+wrong[path | path.append(w)]: `append` changes the list and returns None, so the next entry's path is None, and `w not in None` raises a TypeError.
+hint: A vertex may appear in many different paths, but only once in the same path.
+hint: Each new entry needs its own new list: the old path with w added.
+right: `w not in path` stops a path looping back on itself, and `path + [w]` makes a new list for each entry, so paths on the stack never share a list. With no `seen` set, every simple path is found.
+wrong: Skip neighbours already on this path (`w not in path`), and push w with a new list, `path + [w]`.
+
+=== task: mcq medium
+title: Raise the limit?
+prompt: `sys.setrecursionlimit(100000)` lets recursive DFS go much deeper than 1,000 calls. Why does the lesson still prefer an explicit stack for graphs that might be very deep?
+* Every call still takes up space on the program's real stack, which is small, so a very deep recursion can crash Python outright, with no error to catch :: Right. The limit is a safety net; raising it removes the net, not the cost.
+- `setrecursionlimit` makes every function call slower :: Raising the limit doesn't slow calls down. The danger is running out of the real stack.
+- The limit can't be changed while a program is running :: It can; that's what the function does.
+- A list used as a stack has a limit of 1,000 items too :: A list can hold millions of items; only memory limits it.
+hint: What actually stores each paused call?
+hint: What happens when that runs out?
+right: Python's limit protects a fixed-size machine stack. Push it too far and Python can crash without a RecursionError, while a list on the heap can grow as long as memory allows.
+wrong: Raising the limit only stops Python checking. Deep enough recursion then overflows the program's real stack, which can crash the whole program. An explicit stack has no such problem.
+
+=== task: predict medium
+title: Depth isn't distance
+prompt: Each stack entry carries a depth: how many edges the search took to reach that vertex. What does it print?
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+seen = set()
+stack = [("A", 0)]
+depth = {}
+while stack:
+    v, d = stack.pop()
+    if v in seen:
+        continue
+    seen.add(v)
+    depth[v] = d
+    for w in reversed(graph[v]):
+        if w not in seen:
+            stack.append((w, d + 1))
+print(depth)
+```
+wrong[{'A': 0, 'B': 1, 'C': 1, 'D': 2, 'E': 2, 'F': 2}]: Those are BFS distances. DFS reaches C last, at the end of the path A, B, E, F, C, so its depth is 4.
+wrong[{'A': 0, 'B': 1, 'D': 2, 'E': 2, 'F': 3, 'C': 1}]: The copy of C that A pushed, with depth 1, is still at the bottom of the stack when F pushes C with depth 4. F's copy is popped first, so C gets 4, and the old copy is skipped.
+wrong[{'A': 0, 'B': 1, 'D': 2, 'E': 3, 'F': 4, 'C': 5}]: E is pushed by B, so its depth is B's plus 1: 2. D's branch has ended by then.
+hint: The visiting order is A, B, D, E, F, C. Each vertex gets the depth of the copy that's popped first.
+hint: Which vertex pushes the copy of C that comes off first?
+right: `{'A': 0, 'B': 1, 'D': 2, 'E': 2, 'F': 3, 'C': 4}`. The depth is the length of the path DFS happened to take, not the shortest one: C is A's neighbour, yet it's 4 deep.
+wrong: A is 0; B 1; D and E are pushed by B, so 2; F is pushed by E, 3; C is pushed by F, 4, and that copy comes off before A's old copy with depth 1.
+
+=== task: multi medium
+title: Recursion or a stack?
+prompt: Choose **every** situation where an explicit stack is the safer choice than recursive DFS in Python.
+* Following a chain of 50,000 web pages, each linking to the next :: Right. Recursion would be 50,000 calls deep, far past the limit.
+* Exploring a 1,000 × 1,000 maze where a single corridor can wind through most of the cells :: Right. The path DFS follows can be hundreds of thousands of cells long.
+* A graph whose shape you don't know in advance, which might contain a very long path :: Right. A stack can't run out of depth, whatever the shape.
+- Printing a family tree that's 8 generations deep :: 8 levels is nowhere near the limit, and recursion is the shorter code.
+- Working out each team's size in a company with 6 levels of managers :: A shallow tree, and each call combines its children's answers, which recursion does naturally.
+- Searching a star-shaped network with 100,000 outer vertices from its centre :: The calls only ever go 2 deep, so recursion is fine here.
+hint: What matters is how deep the calls go, not how many vertices there are.
+hint: Which graphs have very long paths?
+right: The danger is depth: long chains, winding mazes and unknown shapes call for a stack. Shallow trees and wide stars never come near the limit, and recursion keeps them simple.
+wrong: Recursion depth follows the longest path DFS walks. Only graphs that can have long paths need the explicit stack.
+
+=== task: parsons medium
+title: A binary tree in order
+prompt: Each node of this binary tree has a (left, right) pair of children, with None for a missing child. Arrange the lines so that `preorder` lists every node before its children, and the left subtree before the right, using a stack. The program prints:
+
+```output
+['a', 'b', 'd', 'c', 'e']
+```
+
+Not every line is needed.
+lines:
+```python
+def preorder(tree, root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        left, right = tree[node]
+        if right is not None:
+            stack.append(right)
+        if left is not None:
+            stack.append(left)
+    return out
+```
+distractors:
+```python
+        node = stack.pop(0)
+            out.append(left)
+```
+after:
+```python
+tree = {"a": ("b", "c"), "b": ("d", None), "c": (None, "e"),
+        "d": (None, None), "e": (None, None)}
+print(preorder(tree, "a"))
+```
+hint: The child that should come out first must go on the stack last.
+hint: Push the right child, then the left one.
+right: Pushing right before left puts the left child on top, so the whole left subtree is listed before the right one, as recursion would.
+wrong: Pop a node and record it, then push its right child and its left child, in that order, skipping any that are None.
+
+=== task: order medium
+title: Pushed is not visited
+prompt: The reversed-push stack DFS runs from A on the lesson's graph. Its visiting order is A, B, D, E, F, C. Put the vertices in the order they're **first pushed** onto the stack instead, counting A as pushed at the start.
+items:
+- A
+- C
+- B
+- E
+- D
+- F
+hint: A pushes C first, then B, because the list is reversed.
+hint: B pushes E, then D. Which vertex pushes F?
+right: A, C, B, E, D and F. C is pushed second but visited last: pushing a vertex only puts it in line, and newer pushes keep going on top of it.
+wrong: A pushes C then B. B pushes E then D. E pushes F. C was waiting at the bottom all along, so it's pushed early but visited last.
+
+=== task: code hard
+title: Finishing order without recursion
+prompt: A vertex **finishes** when everything it leads to has been explored. Recursive DFS finishes a vertex when its call returns. Write `finish_order(graph, start)` that returns the vertices in the order recursive DFS would finish them, using an explicit stack. Push pairs (v, expanded): when (v, False) is popped and v is new, mark it, push (v, True) back, then push its unseen neighbours as (w, False), in reverse. When (v, True) is popped, everything above it has been explored, so v is finished. One test is a line of 3,000 vertices.
+starter:
+```python
+def finish_order(graph, start):
+    seen = set()
+    done = []
+    stack = [(start, False)]
+    # your code here
+    return done
+```
+solution:
+```python
+def finish_order(graph, start):
+    seen = set()
+    done = []
+    stack = [(start, False)]
+    while stack:
+        v, expanded = stack.pop()
+        if expanded:
+            done.append(v)
+            continue
+        if v in seen:
+            continue
+        seen.add(v)
+        stack.append((v, True))
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.append((w, False))
+    return done
+```
+tests:
+- finish_order({"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}, "A")
+- finish_order({"P": ["Q", "S"], "Q": ["P", "R", "T"], "R": ["Q"], "S": ["P", "T"], "T": ["Q", "S", "U"], "U": ["T"]}, "P")
+- finish_order({"x": []}, "x")
+- finish_order({1: [2], 2: [3], 3: [], 4: [1]}, 1)
+- (lambda g: finish_order(g, 0)[:3])({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+fail[1]: D finishes first, being a dead end, and the start finishes last: ['D', 'C', 'F', 'E', 'B', 'A'].
+fail[2]: ['R', 'S', 'U', 'T', 'Q', 'P'].
+fail[3]: One vertex: ['x'].
+fail[4]: Following the arrows from 1: 3 finishes first, then 2, then 1. Vertex 4 can't be reached: [3, 2, 1].
+fail[5]: On a line, the far end finishes first: [2999, 2998, 2997].
+hint: The (v, True) marker goes on the stack **below** v's neighbours, so it comes off only after all of them have been dealt with.
+hint: A (v, False) entry for a vertex that's already seen is a stale copy: skip it.
+hint: Record v in `done` when its (v, True) entry is popped.
+right: The marker for v sits under everything v pushes, so it surfaces exactly when recursion would return from v. This finishing order is what the DFS-based topological sort later in this unit is built on.
+wrong: Pop a pair. If it's expanded, record v as finished. Otherwise skip it if seen; if not, mark it, push (v, True), then push each unseen neighbour as (w, False) in reverse.
+
+=== task: code hard
+title: A path without recursion
+prompt: Write `dfs_path(graph, start, goal)` that returns the path DFS finds from start to goal, as a list, or None if there isn't one. Push (vertex, parent) pairs, in reverse order of the neighbour lists. When a pair is popped for a vertex that has no parent recorded yet, record the parent, and stop once the goal has been recorded. Then walk back from the goal. The path must match recursive DFS's. One test is a line of 3,000 vertices.
+starter:
+```python
+def dfs_path(graph, start, goal):
+    parent = {}
+    stack = [(start, None)]
+    # your code here
+    return None
+```
+solution:
+```python
+def dfs_path(graph, start, goal):
+    parent = {}
+    stack = [(start, None)]
+    while stack:
+        v, p = stack.pop()
+        if v in parent:
+            continue
+        parent[v] = p
+        if v == goal:
+            break
+        for w in reversed(graph[v]):
+            if w not in parent:
+                stack.append((w, v))
+    if goal not in parent:
+        return None
+    path = []
+    v = goal
+    while v is not None:
+        path.append(v)
+        v = parent[v]
+    return path[::-1]
+```
+tests:
+- dfs_path({"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}, "A", "C")
+- dfs_path({"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}, "D", "F")
+- dfs_path({1: [2], 2: [1], 3: []}, 1, 3)
+- dfs_path({"A": ["B"], "B": ["A"]}, "B", "B")
+- (lambda g: len(dfs_path(g, 0, 2999)))({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+fail[1]: The same roundabout path recursive DFS finds: ['A', 'B', 'E', 'F', 'C'].
+fail[2]: ['D', 'B', 'A', 'C', 'F'].
+fail[3]: 3 can't be reached from 1: None.
+fail[4]: The start is the goal: ['B'].
+fail[5]: The path along the whole line has 3,000 vertices.
+hint: `parent` doubles as `seen`: a vertex with a key has been popped and claimed.
+hint: The parent recorded is the one in the pair that's popped first, which is the deepest route, as in recursion.
+hint: Walk back from the goal through the parents until you reach None, then reverse.
+right: Each pair remembers who pushed it, and the first pair popped for a vertex wins, as the first call to reach a vertex does in recursion. The parents then spell out the path, with no recursion anywhere.
+wrong: Pop (v, p); skip v if it already has a parent; otherwise record p and stop if v is the goal, else push (w, v) for each unparented neighbour in reverse. Afterwards return None if the goal has no parent, or walk back and reverse.
+
+=== task: code hard
+title: Same piece?
+prompt: Write `same_piece(graph, pairs)` that returns a list of booleans: for each pair (a, b), whether a and b are in the same connected piece. Don't search once per pair. Instead, label every vertex with the number of its piece in one pass of stack DFS, numbering the pieces 0, 1, 2 upwards, then answer each pair by comparing labels. The speed check uses a line of n vertices, one piece, and n pairs.
+starter:
+```python
+def same_piece(graph, pairs):
+    label = {}
+    # your code here
+    return []
+```
+solution:
+```python
+def same_piece(graph, pairs):
+    label = {}
+    piece = 0
+    for s in graph:
+        if s in label:
+            continue
+        stack = [s]
+        while stack:
+            v = stack.pop()
+            if v in label:
+                continue
+            label[v] = piece
+            for w in graph[v]:
+                if w not in label:
+                    stack.append(w)
+        piece += 1
+    return [label[a] == label[b] for a, b in pairs]
+```
+tests:
+- same_piece({1: [2], 2: [1], 3: [4], 4: [3], 5: []}, [(1, 2), (1, 3), (3, 4), (5, 5), (2, 5)])
+- same_piece({"a": ["b"], "b": ["a", "c"], "c": ["b"]}, [("a", "c"), ("c", "a")])
+- same_piece({1: []}, [])
+- same_piece({1: [], 2: []}, [(1, 2)])
+fail[1]: 1 and 2 share a piece, 3 and 4 share another, and 5 is alone but in its own piece: [True, False, True, True, False].
+fail[2]: a reaches c through b, both ways round: [True, True].
+fail[3]: No pairs: [].
+fail[4]: Two vertices with no edge are in different pieces: [False].
+speed: setup=graph = {i: [j for j in (i - 1, i + 1) if 0 <= j < n] for i in range(n)}; pairs = [(i, (i * 7) % n) for i in range(n)] | call=same_piece(graph, pairs) | target=O(n)
+slow:
+```python
+def same_piece(graph, pairs):
+    answers = []
+    for a, b in pairs:
+        seen = set()
+        stack = [a]
+        while stack:
+            v = stack.pop()
+            if v in seen:
+                continue
+            seen.add(v)
+            for w in graph[v]:
+                if w not in seen:
+                    stack.append(w)
+        answers.append(b in seen)
+    return answers
+```
+hint: The labels do the job of `seen`: a vertex with a label has been visited.
+hint: Every vertex reached from the same start gets the same label; add 1 to the label before the next start.
+hint: A search per pair would repeat the work for every pair: the speed check gives n pairs.
+right: One pass labels every vertex in O(V + E); after that, each pair is a comparison of two labels, O(1). The answers come in O(V + E + number of pairs).
+wrong: Loop over the vertices; each unlabelled one starts a stack DFS that gives its whole piece the current piece number, then the number goes up by 1. Compare labels for each pair.
+
+=== task: code hard
+title: Team sizes without recursion
+prompt: `tree` lists the people who report directly to each person. Write `team_sizes(tree, root)` that returns a dictionary giving every person's team size: the person plus everyone below them. Do it without recursion in two passes. First, a stack walk from the root lists everyone, each person before the people below them. Then go through that list **backwards**, so everyone below a person is handled before the person, and set each person's size to 1 plus their direct reports' sizes. One test is a chain 3,000 people deep.
+starter:
+```python
+def team_sizes(tree, root):
+    order = []
+    stack = [root]
+    # your code here
+    return {}
+```
+solution:
+```python
+def team_sizes(tree, root):
+    order = []
+    stack = [root]
+    while stack:
+        person = stack.pop()
+        order.append(person)
+        for report in tree[person]:
+            stack.append(report)
+    size = {}
+    for person in reversed(order):
+        size[person] = 1
+        for report in tree[person]:
+            size[person] += size[report]
+    return size
+```
+tests:
+- team_sizes({"ceo": ["cto", "cfo"], "cto": ["dev1", "dev2", "dev3"], "cfo": ["acct"], "dev1": [], "dev2": [], "dev3": [], "acct": []}, "ceo")
+- team_sizes({"x": []}, "x")
+- team_sizes({1: [2], 2: [3], 3: [], 4: [1]}, 1)
+- (lambda t: team_sizes(t, 0)[0])({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+fail[1]: The developers and the accountant are teams of 1, the cto's team is 4, the cfo's 2 and the ceo's 7.
+fail[2]: One person, a team of 1.
+fail[3]: Starting from 1: 3 is 1, 2 is 2, 1 is 3. Person 4 isn't below 1, so 4 isn't in the result.
+fail[4]: The top of the chain has all 3,000 people in their team.
+hint: In the first pass, everyone is appended after the person above them.
+hint: So in `reversed(order)`, every direct report's size is already known when their manager comes up.
+right: Reversing an order where every person comes before their reports gives one where every report comes before their manager, which is exactly the order recursion would finish them in. Each size is then a sum of sizes already worked out.
+wrong: Pass 1: pop a person, append them to `order`, push their reports. Pass 2: for each person in `reversed(order)`, size is 1 plus the sizes of their reports.
+
+=== task: predict hard
+title: Wide or deep?
+prompt: `peak` reports the largest number of entries the explicit stack ever holds. What does it print?
+code:
+```python
+def peak(graph, start):
+    seen = set()
+    stack = [start]
+    biggest = 1
+    while stack:
+        v = stack.pop()
+        if v in seen:
+            continue
+        seen.add(v)
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.append(w)
+        biggest = max(biggest, len(stack))
+    return biggest
+
+line = {i: [j for j in (i - 1, i + 1) if 0 <= j < 10] for i in range(10)}
+star = {0: list(range(1, 11))}
+for i in range(1, 11):
+    star[i] = [0]
+print(peak(line, 0), peak(star, 0))
+```
+wrong[10 2]: Those are the recursion depths. The explicit stack is the other way round: the line keeps only 1 entry waiting at a time, while the star's centre pushes all 10 outer vertices at once.
+wrong[1 1]: The centre of the star pushes every one of its 10 neighbours in one go, before any of them is popped.
+wrong[2 11]: On the line, each vertex is popped before it pushes the next one, so the stack never holds more than 1 entry. The star's centre is popped before its 10 neighbours are pushed: 10, not 11.
+hint: On the line from one end, how many unseen neighbours does each vertex have when it's visited?
+hint: How many entries does the star's centre push?
+right: `1 10`. The explicit stack holds vertices waiting their turn, so it grows with how many neighbours pile up, while recursion grows with how deep the path goes. A line is deep but thin; a star is shallow but wide.
+wrong: Line: each vertex pushes only the next one, which is popped straight away, so 1. Star: the centre pushes its 10 outer vertices at once, so 10.
+
+=== task: predict hard
+title: Which way round?
+prompt: The same (vertex, parent) search runs twice, once pushing neighbours in reverse and once in list order. What does it print?
+code:
+```python
+def parents(graph, start, backwards):
+    parent = {}
+    stack = [(start, None)]
+    while stack:
+        v, p = stack.pop()
+        if v in parent:
+            continue
+        parent[v] = p
+        neighbours = reversed(graph[v]) if backwards else graph[v]
+        for w in neighbours:
+            if w not in parent:
+                stack.append((w, v))
+    return parent
+
+def path_to(parent, goal):
+    path = []
+    while goal is not None:
+        path.append(goal)
+        goal = parent[goal]
+    return path[::-1]
+
+graph = {"S": ["A", "B"], "A": ["S", "G"], "B": ["S", "C"], "C": ["B", "G"],
+         "G": ["A", "C"]}
+print(path_to(parents(graph, "S", True), "G"))
+print(path_to(parents(graph, "S", False), "G"))
+```
+wrong[['S', 'A', 'G']\n['S', 'A', 'G']]: In the second search S pushes A, then B, so B is on top. The search dives through B and C, and C reaches G first.
+wrong[['S', 'B', 'C', 'G']\n['S', 'A', 'G']]: That's the wrong way round. Pushing in reverse puts S's first neighbour, A, on top, so the first search goes through A.
+wrong[['S', 'A', 'G']\n['S', 'B', 'C', 'G', 'A']]: The path ends at the goal: walking back from G through the parents gives G, C, B, S.
+hint: In each search, which of S's neighbours is popped first?
+hint: G's parent is the vertex whose pair for G comes off the stack first.
+right: `['S', 'A', 'G']`, then `['S', 'B', 'C', 'G']`. The push order decides which way each dive goes, so the two searches reach G along different routes. Both are valid DFS paths; neither search looks for the shortest.
+wrong: Reversed: A is on top, and A pushes G, so G's parent is A. List order: B is on top, B pushes C, and C pushes G, which comes off before A's turn, so G's parent is C.
+
+=== task: cells hard
+title: Will recursion cope?
+prompt: Python allows about 1,000 nested calls. For each graph, would recursive DFS from the given start finish without a RecursionError? Write yes or no.
+
+| box | graph | start |
+| --- | --- | --- |
+| line 900 | 900 vertices in a row | one end |
+| line 1,100 | 1,100 vertices in a row | one end |
+| star | a centre joined to 100,000 outer vertices | the centre |
+| tree | a balanced binary tree with about a million vertices, 20 levels deep | the root |
+| ring | 2,000 vertices in a circle | any vertex |
+labels: line 900 | line 1,100 | star | tree | ring
+answer: yes | no | yes | yes | no
+wrong[yes | no | no | no | no]: Size doesn't matter, depth does. The star's calls go only 2 deep, and the tree's only 20, however many vertices they have.
+wrong[yes | no | yes | yes | yes]: DFS goes round the ring one way, visiting each vertex from inside the previous one's call, so the calls nest 2,000 deep.
+wrong[no | no | yes | yes | no]: 900 nested calls is under the limit of about 1,000, so the shorter line is fine.
+hint: How deep do the calls go: the longest path DFS follows, not the number of vertices.
+hint: In a ring, does DFS turn back halfway?
+right: yes, no, yes, yes, no. The calls nest as deep as the path DFS follows: the long line and the ring go past 1,000, while the star, the tree and the short line stay under it.
+wrong: Line 900: 900 deep, under the limit. Line 1,100: over. Star: 2 deep. Tree: 20 deep. Ring: DFS goes all the way round, 2,000 deep.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the stack DFS from this lesson. Choose **every** change that can make it visit a vertex twice, miss a vertex it should reach, or never finish.
+code:
+```python
+def dfs_stack(graph, start):
+    seen = set()
+    stack = [start]
+    order = []
+    while stack:
+        v = stack.pop()
+        if v in seen:
+            continue
+        seen.add(v)
+        order.append(v)
+        for w in reversed(graph[v]):
+            if w not in seen:
+                stack.append(w)
+    return order
+```
+* Leaving out `if v in seen: continue` :: Right. A vertex pushed twice is then recorded twice, once for each copy.
+* Also adding `seen.add(w)` right before `stack.append(w)` :: Right. Every pushed vertex is then already in `seen` when it's popped, so it's skipped: only the start gets visited.
+* Changing `if w not in seen` to `if w in seen` :: Right. Only vertices that are already visited get pushed, so the search never gets past the start.
+- Changing `stack.pop()` to `stack.pop(0)` :: That takes the oldest vertex, giving a breadth-first order, but each reachable vertex is still visited exactly once.
+- Pushing `graph[v]` in list order instead of reversed :: Only the order changes; every reachable vertex is still visited once.
+- Starting with `stack = deque([start])` and keeping `pop()` :: A deque's `pop()` also takes from the right end, so it works the same way.
+hint: Which changes break the rule "visit each vertex exactly once"?
+hint: A different visiting order isn't a bug here.
+right: Dropping the skip records stale copies, marking at push time while still skipping at pop time throws every vertex away, and the inverted test pushes nothing new. Taking from the front, not reversing, or using a deque only change the order.
+wrong: The search is correct as long as each popped vertex is checked against `seen` before it's recorded, it's marked only when it's visited, and unseen neighbours get pushed. The order of pushing or popping doesn't affect which vertices are reached.
+
+=== task: fill hard
+title: Exactly like recursion
+prompt: A call to recursive DFS remembers its place in its own `for` loop. An **iterator** does the same: `iter(lst)` makes one, and each `next(it, None)` hands out the list's next item, or None when there are none left. A stack of (vertex, iterator) pairs is then exactly what Python's call stack holds, and it also gives the finishing order. Fill in the blanks so that the program prints:
+
+```output
+['A', 'B', 'D', 'E', 'F', 'C']
+['D', 'C', 'F', 'E', 'B', 'A']
+```
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def dfs_exact(graph, start):
+    seen = {start}
+    order = [start]
+    finished = []
+    stack = [(start, iter(graph[start]))]
+    while stack:
+        v, neighbours = stack[-1]
+        w = ??
+        if w is None:
+            stack.pop()
+            finished.append(v)
+        elif w not in seen:
+            seen.add(w)
+            order.append(w)
+            stack.append((w, ??))
+    return order, finished
+
+order, finished = dfs_exact(graph, "A")
+print(order)
+print(finished)
+```
+answer: next(neighbours, None) | iter(graph[w])
+wrong[next(neighbours) | iter(graph[w])]: Without the default, `next` raises StopIteration when a vertex has no neighbours left, instead of giving None.
+wrong[next(neighbours, None) | graph[w]]: A list isn't an iterator: `next` can't be called on it, so this raises a TypeError. `iter(graph[w])` makes one.
+wrong[next(neighbours, None) | iter(graph[v])]: The new entry must walk through w's neighbours, not v's again.
+hint: Each turn asks the vertex on top for its next neighbour.
+hint: A newly visited vertex needs its own iterator over its own neighbours.
+right: The top entry is the call that's running: `next` moves it one step through its loop, an unseen neighbour becomes a new entry on top, and an exhausted iterator means the call returns. The stack only ever holds the current path, as recursion's does.
+wrong: Fetch the next neighbour with `next(neighbours, None)`; when a new vertex is visited, push it with `iter(graph[w])`.
+
+=== task: parsons hard
+title: Flattening with a stack
+prompt: Lists can hold numbers and other lists, nested to any depth. Arrange the lines so that `flatten` collects the numbers in order using a stack instead of recursion. Push a list's items in reverse, so the first item comes off first. `isinstance(item, list)` is True when item is a list. The program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+
+Not every line is needed.
+lines:
+```python
+def flatten(nested):
+    out = []
+    stack = [nested]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, list):
+            for x in reversed(item):
+                stack.append(x)
+        else:
+            out.append(item)
+    return out
+```
+distractors:
+```python
+            for x in item:
+            out.append(x)
+```
+after:
+```python
+print(flatten([1, [2, [3, 4]], [], [[5]], 6]))
+```
+hint: A popped list is opened up: its items go on the stack.
+hint: The first item must come off first, so push the items from the last one backwards.
+right: Each list is replaced on the stack by its items, first item on top, so the numbers come off in the order they're written, however deep they're nested, with no recursion limit to worry about.
+wrong: Start with the whole list on the stack. Pop an item: if it's a list, push its items in reverse; if it's a number, append it to `out`.
