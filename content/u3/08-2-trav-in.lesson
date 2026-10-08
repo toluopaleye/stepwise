@@ -1,0 +1,1378 @@
+=== lesson
+id: ds-trav-in
+title: Inorder traversal
+summary: Inorder visits a node between its subtrees: everything on its left, then the node, then everything on its right. On a binary search tree that gives the values in sorted order. You'll write inorder recursively and with an explicit stack, find the first and last nodes, use inorder to check a search tree and to find the k-th smallest value, and rebuild a tree from its preorder and inorder lists.
+
+=== learn
+### Left, node, right
+**Inorder** visits each node **between** its two subtrees: its whole left subtree first, then the node, then its whole right subtree. This lesson uses this tree:
+```text
+        8
+      /   \
+     3     10
+    / \      \
+   1   6      14
+      / \    /
+     4   7  13
+```
+Its inorder is 1 3 4 6 7 8 10 13 14. The root, 8, sits in the middle: everything before it comes from the left subtree, and everything after it from the right subtree. The same holds inside every subtree: 3 sits between 1 (its left subtree) and 4 6 7 (its right subtree).
+
+### Recursive inorder
+The recursive version puts the node's value between the two subtrees' lists:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(8,
+            Node(3, Node(1), Node(6, Node(4), Node(7))),
+            Node(10, None, Node(14, Node(13))))
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+print(inorder(root))
+print(inorder(root.left), root.val, inorder(root.right))
+```
+```output
+[1, 3, 4, 6, 7, 8, 10, 13, 14]
+[1, 3, 4, 6, 7] 8 [10, 13, 14]
+```
+The second line shows the split: the left subtree's inorder, then the root, then the right subtree's inorder. Animation 2 follows the recursive calls on a smaller tree.
+
+### The first and last nodes
+Inorder can only visit a node once its whole left subtree is done. So the very first node visited is the one reached by going **left** from the root for as long as possible: the **leftmost** node. In the same way, the last node is the **rightmost** one:
+```python
+def leftmost(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def rightmost(node):
+    while node.right is not None:
+        node = node.right
+    return node.val
+
+print(leftmost(root), rightmost(root))
+```
+```output
+1 14
+```
+Each of these follows one path down: O(h), with no need to walk the whole tree. Notice that the leftmost node isn't always a leaf: if it has a right child, that child's subtree comes straight after it.
+
+### Search trees come out sorted
+This tree follows a rule: at every node, all the values in the left subtree are **smaller** than the node, and all the values in the right subtree are **bigger**. A tree with that rule is a **binary search tree**, the subject of a later lesson. Inorder lists its values in sorted order, because every node comes after everything smaller (its left subtree) and before everything bigger (its right subtree):
+```python
+order = inorder(root)
+print(order == sorted(order))
+bad = Node(8, Node(3, Node(1), Node(9)), Node(10))
+print(inorder(bad), inorder(bad) == sorted(inorder(bad)))
+```
+```output
+True
+[1, 3, 9, 8, 10] False
+```
+In `bad`, 9 sits in 8's left subtree although it's bigger than 8, so inorder puts it in the wrong place. That gives a test for the rule: a tree is a search tree exactly when its inorder list is sorted, with every value bigger than the one before.
+
+### Inorder with a stack
+Inorder can also run without recursion. The idea: go left as far as possible, pushing each node on a stack because it can't be visited until its left subtree is done. When there's no further left to go, pop a node, visit it, and move to its right subtree, where the same thing starts again:
+```python
+def inorder_stack(root):
+    out = []
+    stack = []
+    node = root
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        out.append(node.val)
+        node = node.right
+    return out
+
+print(inorder_stack(root))
+print(inorder_stack(Node(4, Node(2, Node(1), Node(3)), Node(5))))
+```
+```output
+[1, 3, 4, 6, 7, 8, 10, 13, 14]
+[1, 2, 3, 4, 5]
+```
+The outer loop keeps going while there's a node to start from or something still waiting on the stack. Animation 1 runs this on the small tree in the second line.
+
+### Tracing the stack
+Here is the stack version on the small tree, 4 with 2 and 5 below it, and 1 and 3 below 2 (the top of the stack is on the right):
+
+| step | stack after | visited so far |
+| --- | --- | --- |
+| go left from 4: push 4, 2, 1 | 4 2 1 | |
+| pop 1 and visit it; 1 has no right child | 4 2 | 1 |
+| pop 2 and visit it; move to its right child, 3 | 4 | 1 2 |
+| go left from 3: push 3 | 4 3 | 1 2 |
+| pop 3 and visit it; no right child | 4 | 1 2 3 |
+| pop 4 and visit it; move to its right child, 5 | | 1 2 3 4 |
+| go left from 5: push 5 | 5 | 1 2 3 4 |
+| pop 5 and visit it; no right child | | 1 2 3 4 5 |
+
+The stack holds the nodes on the current path whose left subtrees are still being walked: they're waiting for their turn. Every node is pushed once and popped once, so this is O(n), and the stack never holds more than one path, O(h).
+
+### The k-th smallest value
+In a search tree, the k-th node in inorder holds the k-th smallest value. The stack version can stop as soon as it gets there, without walking the rest of the tree:
+```python
+def kth_smallest(root, k):
+    stack = []
+    node = root
+    count = 0
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        count += 1
+        if count == k:
+            return node.val
+        node = node.right
+    return None
+
+print(kth_smallest(root, 1), kth_smallest(root, 4), kth_smallest(root, 9), kth_smallest(root, 10))
+```
+```output
+1 6 14 None
+```
+The 1st smallest is 1, the 4th is 6, the 9th is the largest, 14, and the tree has no 10th value. To find the k-th value, the walk only touches the path down to the smallest value and then about k more nodes.
+
+### What inorder can't tell you
+Different trees can share an inorder list. For example, 1 2 3 is the inorder of every one of these trees:
+```text
+  1        1          2          3      3
+   \        \        / \        /      /
+    2        3      1   3      2      1
+     \      /                 /        \
+      3    2                 1          2
+```
+So an inorder list alone doesn't fix a tree's shape. But inorder **together with** preorder does, as long as the values are all different. Preorder names the root first; finding that root in the inorder list splits it into the left subtree's values and the right subtree's values; and the same split works again inside each part. Example 2 rebuilds a tree this way.
+
+=== keypoints
+- Inorder visits the left subtree, then the node, then the right subtree. Each node sits between its left subtree's values and its right subtree's values.
+- The first node in inorder is the leftmost one (go left from the root until you can't) and the last is the rightmost: O(h) to find either.
+- In a binary search tree (smaller values on the left, bigger on the right, at every node), inorder lists the values in sorted order. A tree follows that rule exactly when its inorder list is sorted.
+- Inorder with a stack: go left pushing nodes, pop one and visit it, then move to its right child. Every node is pushed and popped once: O(n) time, O(h) stack.
+- Stopping the stack walk at the k-th visit finds the k-th smallest value of a search tree without walking the whole tree.
+- Many trees share an inorder list, but preorder and inorder together fix the tree when the values are all different.
+
+=== example: Merging two search trees
+intro: Two binary search trees, each walked in inorder to get a sorted list. Two sorted lists can be merged into one sorted list in a single pass.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def merge(a, b):
+    result = []
+    i = 0
+    j = 0
+    while i < len(a) and j < len(b):
+        if a[i] <= b[j]:
+            result.append(a[i])
+            i += 1
+        else:
+            result.append(b[j])
+            j += 1
+    return result + a[i:] + b[j:]
+
+t1 = Node(5, Node(2), Node(9))
+t2 = Node(4, Node(1), Node(8, Node(6)))
+a = []
+b = []
+inorder(t1, a)
+inorder(t2, b)
+print(a, b)
+print(merge(a, b))
+```
+7-12: Inorder into a list: left subtree, node, right subtree.
+14-25: Merge two sorted lists: compare the front values, take the smaller one, and move on in that list. When one list runs out, the rest of the other is added at the end.
+27-28: Two search trees: smaller values on the left and bigger on the right, at every node.
+29-33: Inorder gives each tree's values in sorted order.
+34: The merge takes O(n + m) steps. Sorting the two lists joined together would be O((n + m) log(n + m)).
+
+=== example: Rebuilding from two orders
+intro: The preorder and inorder lists of a tree are enough to rebuild it, if its values are all different. The rebuilt tree is printed sideways.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def rebuild(pre, ino):
+    if not pre:
+        return None
+    i = ino.index(pre[0])
+    left = rebuild(pre[1:1 + i], ino[:i])
+    right = rebuild(pre[1 + i:], ino[i + 1:])
+    return Node(pre[0], left, right)
+
+def show(node, depth):
+    if node is None:
+        return
+    show(node.right, depth + 1)
+    print("    " * depth + node.val)
+    show(node.left, depth + 1)
+
+pre = ["F", "B", "A", "D", "C", "E", "G", "I", "H"]
+ino = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+show(rebuild(pre, ino), 0)
+```
+7-9: No values: an empty tree.
+10: Preorder starts with the root, F. In the inorder list, F is at index i = 5, so the 5 values before it (A to E) form the left subtree and the values after it (G, H, I) the right subtree.
+11: The left subtree's preorder is the next i values of `pre`, and its inorder is the first i values of `ino`.
+12-13: The right subtree gets everything after those, and the node joins the two subtrees.
+15-20: Prints the tree on its side: the right subtree above, the node, then the left subtree below, each level indented further. This is inorder backwards: right, node, left.
+22-24: Tilt your head to the left: F is the root at the left edge, G and I are on its right (above), and B, D and A are on its left (below). It's the tree from the Tree traversals lesson.
+
+=== animation: Inorder with a stack
+view: tree root ptr=node visited=out
+stack stack
+vars out
+intro: The stack version of inorder on a tree of 5 nodes. Watch it go left pushing nodes, then pop and visit one, then move to its right child.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(4, Node(2, Node(1), Node(3)), Node(5))
+out = []
+stack = []
+node = root
+while stack or node is not None:
+    while node is not None:
+        stack.append(node)
+        node = node.left
+    node = stack.pop()
+    out.append(node.val)
+    node = node.right
+print(out)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: 4 at the root; 2 and 5 below it; 1 and 3 below 2.
+8: The visited values will go into out.
+9: An empty stack.
+10: Start at the root.
+11: Is there a node to start from, or something waiting on the stack? {len(stack) > 0 or node is not None}.
+12: {'Go left from ' + str(node.val) + '.' if node is not None else 'No node here: there is no further left to go.'}
+13: {node.val} can't be visited before its left subtree, so push it to wait.
+14: Move to {node.val}'s left child{': ' + str(node.left.val) if node.left is not None else ', which is None'}.
+15: Pop the node on top: {stack[-1].val}. Everything on its left is done.
+16: Visit {node.val}: add it to out.
+17: Now move to {node.val}'s right subtree{': ' + str(node.right.val) if node.right is not None else ', which is empty'}.
+18: Sorted order: [1, 2, 3, 4, 5].
+
+=== animation: Recursive inorder
+view: tree root ptr=node visited=out
+callstack
+intro: The recursive version on a search tree of 4 nodes. Each call walks its left subtree, then visits its own node, then walks its right subtree. Green nodes have been visited.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+root = Node(20, Node(10, None, Node(15)), Node(30))
+out = []
+inorder(root, out)
+print(out)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines inorder. Nothing runs yet.
+8: {'A call for ' + str(node.val) + '.' if node is not None else 'An empty subtree.'}
+9: Nothing to visit here: go back.
+10: First, the whole left subtree of {node.val}.
+11: The left subtree of {node.val} is done: visit {node.val}.
+12: Now the right subtree of {node.val}.
+14: 20 at the root, 10 on its left with 15 as 10's right child, and 30 on its right.
+16: Start at the root.
+17: The values in sorted order: [10, 15, 20, 30].
+
+=== task: predict easy
+title: Inorder as a list
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+t = Node(7, Node(3, None, Node(5)), Node(9, Node(8)))
+print(inorder(t))
+```
+wrong[[7, 3, 5, 9, 8]]: That's preorder. Inorder visits the root after its whole left subtree.
+wrong[[5, 3, 8, 9, 7]]: That's postorder, which visits each node after both of its subtrees.
+wrong[[7, 3, 9, 5, 8]]: That's level order.
+hint: 7's left subtree is 3 with 5 on its right; its right subtree is 9 with 8 on its left.
+hint: Left subtree, node, right subtree, at every node.
+right: `[3, 5, 7, 8, 9]`: 3's subtree (3, 5), then 7, then 9's subtree (8, 9). It comes out sorted because this is a search tree.
+wrong: Inorder of 3's subtree is 3, 5 (5 is on 3's right). Then 7. Inorder of 9's subtree is 8, 9 (8 is on 9's left).
+
+=== task: mcq easy
+title: Where the root goes
+prompt: Where does the root appear in the inorder list of a tree?
+* After all the values of its left subtree, and before all the values of its right subtree :: Right. Left subtree, node, right subtree.
+- Always first :: That's preorder.
+- Always last :: That's postorder.
+- Always exactly in the middle of the list :: Only if both subtrees have the same number of nodes.
+hint: "In" means the node goes in between.
+hint: Between what?
+right: The root splits the inorder list into its left subtree's values and its right subtree's values.
+wrong: Inorder visits the whole left subtree, then the node, then the whole right subtree, so the root sits between those two blocks.
+
+=== task: cells easy
+title: Inorder by position
+prompt: In what order does inorder visit the nodes of this tree?
+
+```text
+        P
+      /   \
+     Q     R
+    / \     \
+   S   T     U
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th
+answer: S | Q | T | P | R | U
+wrong[P | Q | S | T | R | U]: That's preorder. Inorder starts with the leftmost node, S.
+wrong[S | T | Q | U | R | P]: That's postorder. Inorder visits Q between S and T.
+hint: Start by going left from P as far as possible.
+hint: Q's left subtree (S), then Q, then Q's right subtree (T), then P.
+right: S, Q, T, P, R, U: each node between its left and right subtrees.
+wrong: Q's subtree in inorder is S, Q, T. Then the root P. Then R's subtree: R has no left child, so R, then U.
+
+=== task: code easy
+title: Write inorder
+prompt: Write `inorder(node)` that returns a list of a binary tree's values in inorder: the left subtree, then the node, then the right subtree. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+```
+tests:
+- inorder(None)
+- inorder(Node(1))
+- inorder(Node(4, Node(2, Node(1), Node(3)), Node(6, Node(5))))
+- inorder(Node("b", Node("a"), Node("c")))
+- inorder(Node(1, None, Node(2, None, Node(3))))
+fail[2]: A single node: [1].
+fail[3]: A search tree comes out sorted: [1, 2, 3, 4, 5, 6].
+fail[4]: The left child, then the node, then the right child.
+error[AttributeError]: Return [] for None before using `node.left`.
+hint: For None, return an empty list.
+hint: Otherwise return `inorder(node.left) + [node.val] + inorder(node.right)`.
+right: The node's value goes between the two subtrees' lists. O(n).
+wrong: Return [] for an empty tree; otherwise join the left subtree's inorder, a list holding the node's value, and the right subtree's inorder.
+
+=== task: fill easy
+title: The node in the middle
+prompt: Fill in the blank so that `inorder` returns the values in inorder, and the program prints:
+
+```output
+[1, 2, 3]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + ?? + inorder(node.right)
+
+print(inorder(Node(2, Node(1), Node(3))))
+```
+answer: [node.val]
+wrong[node.val]: Lists can only be joined to lists: `TypeError: can only concatenate list (not "int") to list`. Wrap the value in a list.
+hint: The two recursive calls return lists.
+hint: The middle part must be a list holding the node's value.
+right: `[node.val]` is a one-item list, so `+` can join it between the two subtrees' lists.
+wrong: To join with `+`, every part must be a list: put the node's value in a list of its own, `[node.val]`.
+
+=== task: multi easy
+title: True of inorder
+prompt: Choose **every** statement that is true of the inorder list of any non-empty binary tree.
+* The first node is the leftmost node :: Right. Go left from the root until there's no left child.
+* The last node is the rightmost node :: Right. Go right from the root until there's no right child.
+* The root comes after every value in its left subtree :: Right. The whole left subtree comes first.
+* On a binary search tree, the values come out sorted :: Right. Smaller values are on the left at every node.
+- The first node is always a leaf :: The leftmost node can have a right child, which comes straight after it.
+- The root is always in the middle of the list :: Only when both subtrees are the same size.
+hint: Which node has nothing to its left at all?
+hint: Can the leftmost node have a child on its right?
+right: Leftmost first, rightmost last, each root after its left subtree, and sorted values for a search tree.
+wrong: The walk starts at the end of the leftmost path and ends at the end of the rightmost path. The leftmost node needn't be a leaf, and the root's position depends on the subtree sizes.
+
+=== task: parsons easy
+title: The leftmost node
+prompt: Arrange the lines so that `leftmost` finds the first node inorder would visit, by following one path, and the program prints:
+
+```output
+1 4
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def leftmost(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+print(leftmost(Node(8, Node(3, Node(1), Node(6)))), leftmost(Node(4, None, Node(7))))
+```
+distractors:
+```python
+    while node is not None:
+        node = node.right
+```
+hint: Keep going left while there is a left child.
+hint: Stop at the node that has no left child, even if it has a right child.
+right: 8 → 3 → 1, and 1 has no left child. 4 has no left child at all, so it's first itself.
+wrong: Loop while the node has a left child, moving to that child each time, then return the value of the node where the loop stops.
+
+=== task: order easy
+title: Inorder by hand
+prompt: Put the nodes of this tree in the order an inorder traversal visits them.
+
+```text
+        P
+      /   \
+     Q     R
+    / \     \
+   S   T     U
+```
+items:
+- S
+- Q
+- T
+- P
+- R
+- U
+hint: Start at the leftmost node.
+hint: P comes after the whole of Q's subtree.
+right: S, Q, T, P, R, U: left subtree, node, right subtree, at every node.
+wrong: Q's subtree first, in inorder: S, Q, T. Then P. Then R's subtree: R, then its right child U.
+
+=== task: predict easy
+title: Sorted or not?
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+t = Node(5, Node(2, Node(1), Node(6)), Node(8))
+order = inorder(t)
+print(order, order == sorted(order))
+```
+wrong[[1, 2, 5, 6, 8] True]: Inorder follows the tree's shape, not the values: 6 is in 5's left subtree, so it comes before 5.
+wrong[[5, 2, 1, 6, 8] False]: That's preorder. Inorder starts with the leftmost node, 1.
+wrong[[1, 2, 6, 5, 8] True]: 6 comes before 5, so the list isn't sorted.
+hint: 6 is the right child of 2, inside 5's left subtree.
+hint: Is 6 bigger than the value after it?
+right: `[1, 2, 6, 5, 8] False`: 6 sits on the wrong side of 5, so this isn't a search tree, and inorder shows it.
+wrong: 5's left subtree is 2 with 1 and 6: inorder 1, 2, 6. Then 5, then 8. 6 before 5 means the list isn't sorted.
+
+=== task: mcq easy
+title: The search tree rule
+prompt: What rule does a binary search tree follow?
+* At every node, every value in the left subtree is smaller and every value in the right subtree is bigger :: Right. That's why inorder lists its values in sorted order.
+- Every node's left child is smaller than its right child :: The rule covers whole subtrees, compared with the node, not only the two children.
+- The values are sorted level by level :: Level order of a search tree isn't sorted.
+- Every node has two children :: A search tree can have nodes with one child or none.
+hint: The rule compares each node with whole subtrees.
+hint: What makes inorder come out sorted?
+right: Smaller everything on the left, bigger everything on the right, at every node: so inorder meets the values smallest first.
+wrong: In a binary search tree, all values in a node's left subtree are smaller than it and all values in its right subtree are bigger, at every node.
+
+=== task: code medium
+title: Inorder without recursion
+prompt: Write `inorder_stack(root)` that returns a binary tree's values in inorder **without recursion**: go left pushing each node on a stack, then pop a node, visit it, and move to its right child. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder_stack(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder_stack(root):
+    out = []
+    stack = []
+    node = root
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        out.append(node.val)
+        node = node.right
+    return out
+```
+tests:
+- inorder_stack(None)
+- inorder_stack(Node(1))
+- inorder_stack(Node(4, Node(2, Node(1), Node(3)), Node(6, Node(5))))
+- inorder_stack(Node(1, None, Node(2, None, Node(3))))
+- inorder_stack(Node(3, Node(2, Node(1))))
+require[pop(]: Use a stack: take each node off it with `pop()`.
+fail[1]: An empty tree gives [].
+fail[3]: A search tree comes out sorted: [1, 2, 3, 4, 5, 6].
+fail[4]: After each node is visited, the walk moves to its right child and starts going left again.
+fail[5]: A line of left children: all three are pushed before the first visit.
+error[AttributeError]: Pop only when there's no further left to go; the inner loop stops at None.
+hint: Keep a `node` variable and a stack. The outer loop runs while the stack isn't empty or `node` isn't None.
+hint: Inside, first go left: `while node is not None:` push it and move to `node.left`.
+hint: Then pop a node, append its value, and set `node = node.right`.
+right: Each node waits on the stack until its left subtree is done, is visited when popped, and then hands over to its right subtree. Every node is pushed and popped once: O(n).
+wrong: Go left pushing nodes. When you can't go further, pop one, visit it, and move to its right child. Repeat until there's no node and the stack is empty.
+
+=== task: code medium
+title: Is it a search tree?
+prompt: Write `is_bst(root)` that returns True if the tree follows the search tree rule, and False otherwise. Use inorder: the tree follows the rule exactly when its inorder list is **strictly** increasing, each value bigger than the one before. An empty tree counts as a search tree.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+def is_bst(root):
+    # your code here
+    return True
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+def is_bst(root):
+    order = inorder(root)
+    for i in range(1, len(order)):
+        if order[i - 1] >= order[i]:
+            return False
+    return True
+```
+tests:
+- is_bst(Node(8, Node(3, Node(1), Node(6)), Node(10)))
+- is_bst(Node(5, Node(2, Node(1), Node(6)), Node(8)))
+- is_bst(None)
+- is_bst(Node(5, Node(5)))
+- is_bst(Node(2, Node(1), Node(3, None, Node(0))))
+fail[2]: 6 is in 5's left subtree but bigger than 5: inorder gives 1, 2, 6, 5, 8, which isn't increasing.
+fail[3]: An empty tree breaks no rules: True.
+fail[4]: A repeated value isn't strictly bigger: 5 then 5 fails.
+fail[5]: 0 sits deep in the right subtree of 2, so inorder ends 3, 0.
+hint: Get the inorder list.
+hint: Compare each value with the one before it: if any `order[i - 1] >= order[i]`, return False.
+right: Checking only each node against its own children would miss 6 in the second tree; comparing neighbours in the inorder list checks the rule everywhere at once. O(n).
+wrong: Walk the tree in inorder and check that each value is strictly bigger than the previous one. Any value that isn't means the rule is broken somewhere.
+
+=== task: predict medium
+title: The k-th smallest
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def kth_smallest(root, k):
+    stack = []
+    node = root
+    count = 0
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        count += 1
+        if count == k:
+            return node.val
+        node = node.right
+    return None
+
+root = Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+print(kth_smallest(root, 2), kth_smallest(root, 5), kth_smallest(root, 8))
+```
+wrong[1 6 10]: k counts from 1: the 1st smallest is 1, so the 2nd is 3.
+wrong[3 6 13]: The sorted values are 1, 3, 4, 6, 7, ...: the 5th is 7.
+wrong[3 7 14]: The 8th of 1, 3, 4, 6, 7, 8, 10, 13, 14 is 13; 14 is the 9th.
+hint: Inorder of this search tree is 1, 3, 4, 6, 7, 8, 10, 13, 14.
+hint: The count goes up by 1 for each node popped, starting from 1.
+right: `3 7 13`: the k-th node popped in inorder is the k-th smallest value.
+wrong: In sorted order the values are 1, 3, 4, 6, 7, 8, 10, 13, 14. The 2nd is 3, the 5th is 7, and the 8th is 13.
+
+=== task: cells medium
+title: The stack before each visit
+prompt: The stack version of inorder runs on this tree. What is on the stack, from bottom to top, right before each of these nodes is popped? Separate the values with commas, like `6, 4`.
+
+```text
+      6
+     / \
+    4   9
+     \  /
+      5 7
+```
+labels: before 4 | before 5 | before 7 | before 9
+answer: 6, 4 | 6, 5 | 9, 7 | 9
+wrong[6, 4 | 6, 4, 5 | 9, 7 | 9]: 4 was popped (and visited) before the walk moved to its right child 5, so 4 is no longer on the stack.
+wrong[6, 4 | 6, 5 | 6, 9, 7 | 6, 9]: 6 was popped and visited before the walk moved to its right subtree, so it's gone by then.
+hint: Going left from 6 pushes 6, then 4.
+hint: After a node is visited, the walk moves to its right child and pushes from there.
+right: Only the nodes still waiting for their left subtree to finish are on the stack: 6 waits during 4 and 5, and 9 waits during 7.
+wrong: Before 4: 6, 4. Then 4 is popped and the walk pushes 5: 6, 5. Then 5 and 6 are popped, and going left from 9 pushes 9, 7. After 7 is popped, only 9 is left.
+
+=== task: fill medium
+title: Left first, then right
+prompt: Fill in the blanks so that the stack walk visits the tree in inorder, and the program prints:
+
+```output
+[1, 2, 3, 4, 5]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(4, Node(2, Node(1), Node(3)), Node(5))
+out = []
+stack = []
+node = root
+while stack or node is not None:
+    while node is not None:
+        stack.append(node)
+        node = node.??
+    node = stack.pop()
+    out.append(node.val)
+    node = node.??
+print(out)
+```
+answer: left | right
+wrong[right | left]: That walks right first, the mirror image of inorder: [5, 4, 3, 2, 1].
+hint: Everything on a node's left must be visited before the node.
+hint: After visiting a node, its right subtree is next.
+right: Going left while pushing, then right after each visit, gives left, node, right: inorder.
+wrong: The inner loop follows `left` children, pushing each node to wait. After a node is popped and visited, the walk continues in its `right` subtree.
+
+=== task: mcq medium
+title: Why the leftmost node comes first
+prompt: Why does inorder always start with the leftmost node?
+* Every node must wait until its whole left subtree has been visited, and the leftmost node is the first one with no left subtree to wait for :: Right. The walk goes left until there's nothing to wait for.
+- Because it's always the smallest value :: That's true only for search trees, but inorder starts there in every binary tree.
+- Because it's always a leaf :: The leftmost node can have a right child.
+- Because inorder visits the root first :: That's preorder.
+hint: Which nodes can't be visited yet when the walk starts?
+hint: Which node has nothing on its left?
+right: Every node on the path left from the root is waiting for its left subtree; the first one without a left child can be visited at once.
+wrong: Inorder visits a node only after its left subtree. Going left from the root, each node has to wait, until the leftmost node, which has no left subtree and is visited first.
+
+=== task: predict medium
+title: Leftmost isn't always a leaf
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def inorder(node):
+    if node is None:
+        return []
+    return inorder(node.left) + [node.val] + inorder(node.right)
+
+def leftmost(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def rightmost(node):
+    while node.right is not None:
+        node = node.right
+    return node.val
+
+t = Node(9, Node(4, None, Node(6, Node(5))), Node(12, Node(10)))
+print(leftmost(t), rightmost(t), inorder(t)[0], inorder(t)[-1])
+```
+wrong[5 12 5 12]: 4 has no left child, so it's the leftmost node even though it isn't a leaf. 5 comes after 4.
+wrong[4 10 4 10]: 12 has no right child, so it's the rightmost node; 10 is its left child and comes before it.
+wrong[4 12 4 10]: The last value in inorder is the rightmost node, 12.
+hint: Go left from 9: 4. Does 4 have a left child?
+hint: Go right from 9: 12. Does 12 have a right child?
+right: `4 12 4 12`: the leftmost and rightmost nodes are the first and last in inorder, whether or not they're leaves.
+wrong: 9 → 4, which has no left child: leftmost is 4. 9 → 12, which has no right child: rightmost is 12. Inorder is 4, 5, 6, 9, 10, 12.
+
+=== task: multi medium
+title: The stack version of inorder
+prompt: Choose **every** true statement about the stack version of inorder.
+* Every node is pushed once and popped once :: Right. So it's O(n).
+* A node is visited when it's popped, not when it's pushed :: Right. It's pushed while its left subtree still has to be walked.
+* The stack holds nodes on the current path that are waiting for their left subtrees to finish :: Right. So it holds at most O(h) nodes.
+- A node is visited when it's pushed :: That would put each node before its left subtree.
+- It needs a queue instead of a stack :: The most recently pushed node is the next to be visited: that's a stack.
+- It can't stop early :: It can stop at any visit, for example at the k-th smallest value.
+hint: When can a node be visited?
+hint: What is a node waiting for while it's on the stack?
+right: Push to wait, pop to visit, then move right: O(n) time, O(h) stack, and the walk can stop whenever it has what it needs.
+wrong: Nodes are pushed while their left subtrees are pending and visited when popped. Each goes on and off once, the stack holds one path, and the loop can return early.
+
+=== task: parsons medium
+title: Stop at the k-th
+prompt: Arrange the lines so that `kth_smallest` stops at the k-th value of a search tree, and the program prints:
+
+```output
+6 None
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def kth_smallest(root, k):
+    stack = []
+    node = root
+    count = 0
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        count += 1
+        if count == k:
+            return node.val
+        node = node.right
+    return None
+
+t = Node(8, Node(3, Node(1), Node(6)), Node(10))
+print(kth_smallest(t, 3), kth_smallest(t, 9))
+```
+distractors:
+```python
+        if count > k:
+            node = node.left.left
+```
+hint: Count each node as it's popped.
+hint: Return as soon as the count reaches k; after the loop, there weren't k nodes.
+right: The sorted values are 1, 3, 6, 8, 10: the 3rd is 6, and there's no 9th.
+wrong: Go left pushing, pop a node and add 1 to the count, return its value when the count is k, and otherwise move to its right child. Return None if the walk ends.
+
+=== task: order medium
+title: The stack walk, step by step
+prompt: Put the steps of one round of the stack version of inorder in order.
+items:
+- Go left from the current node, pushing every node on the way
+- When there's no further left to go, pop the node on top of the stack
+- Visit the popped node
+- Move to the popped node's right child, and start the next round from there
+hint: Nothing can be visited until the walk has gone as far left as it can.
+hint: The right subtree comes after the node.
+right: Push left, pop, visit, go right: left subtree, node, right subtree, without recursion.
+wrong: First go left pushing nodes. Then pop one, visit it, and continue from its right child.
+
+=== task: code hard
+title: Rebuild from two orders
+prompt: Write `rebuild(pre, ino)` that rebuilds a binary tree from its preorder list `pre` and its inorder list `ino` (the values are all different). The first value of `pre` is the root; find it in `ino`, at index i: the i values before it are the left subtree's, and the rest are the right subtree's. Empty lists give None. `as_list` turns a tree into nested lists for the tests.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def rebuild(pre, ino):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def rebuild(pre, ino):
+    if not pre:
+        return None
+    i = ino.index(pre[0])
+    left = rebuild(pre[1:1 + i], ino[:i])
+    right = rebuild(pre[1 + i:], ino[i + 1:])
+    return Node(pre[0], left, right)
+```
+tests:
+- as_list(rebuild([2, 1, 3], [1, 2, 3]))
+- as_list(rebuild([], []))
+- as_list(rebuild([1, 2, 3], [3, 2, 1]))
+- as_list(rebuild([1, 2, 3], [1, 2, 3]))
+- as_list(rebuild(["F", "B", "A", "D", "G"], ["A", "B", "D", "F", "G"]))
+fail[1]: 2 is the root; 1 is before it in inorder (left subtree) and 3 after it (right subtree).
+fail[2]: No values: None.
+fail[3]: 1 is the last in inorder, so everything else is on its left: a line of left children, 1 → 2 → 3.
+fail[4]: 1 is first in inorder, so everything else is on its right: 1 → 2 → 3 down the right.
+fail[5]: F is the root; A, B and D are on its left (B with A and D below it), and G is on its right.
+error[ValueError]: Each recursive call must get the matching parts of both lists: the left subtree's i values from each.
+hint: An empty `pre` gives None.
+hint: `i = ino.index(pre[0])`. The left subtree's lists are `pre[1:1 + i]` and `ino[:i]`.
+hint: The right subtree's lists are `pre[1 + i:]` and `ino[i + 1:]`. Make the root from `pre[0]` with the two rebuilt subtrees.
+right: Preorder names each subtree's root, and inorder says how many values go to its left: together they fix the tree. (This version is O(n²) in the worst case because of `index` and slicing; a dictionary of positions makes it O(n).)
+wrong: Take the root from the front of the preorder list, find it in the inorder list to split the values into left and right, and rebuild each side from the matching parts of both lists.
+
+=== task: code hard
+title: What comes next?
+prompt: Write `next_in_order(root, target)` that returns the value inorder visits right after the value `target`, or None if `target` is visited last or isn't in the tree. Use the stack walk and stop as soon as you have the answer. `make()` builds this tree:
+
+```text
+        8
+      /   \
+     3     10
+    / \      \
+   1   6      14
+      / \    /
+     4   7  13
+```
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def next_in_order(root, target):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def next_in_order(root, target):
+    stack = []
+    node = root
+    found = False
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.left
+        node = stack.pop()
+        if found:
+            return node.val
+        if node.val == target:
+            found = True
+        node = node.right
+    return None
+```
+tests:
+- next_in_order(make(), 7)
+- next_in_order(make(), 4)
+- next_in_order(make(), 8)
+- next_in_order(make(), 14)
+- next_in_order(make(), 99)
+- next_in_order(make(), 1)
+fail[1]: 7 is the last node of 8's left subtree, so the next one is the root, 8.
+fail[2]: After 4 comes its parent, 6.
+fail[3]: After the root comes the leftmost node of its right subtree: 10.
+fail[4]: 14 is the last node in inorder: None.
+fail[5]: 99 isn't in the tree: None.
+hint: Run the usual stack walk.
+hint: When you pop the target, remember that you've found it.
+hint: The next node popped after that is the answer; if the walk ends first, return None.
+right: The walk stops one visit after the target, so it never touches the rest of the tree. In a search tree, this is the next bigger value.
+wrong: Walk in inorder with a stack. Once the target has been visited, return the value of the next node visited; if there isn't one, return None.
+
+=== task: code hard
+title: Values in a range
+prompt: Write `range_values(root, lo, hi)` that returns, in sorted order, the values of a binary search tree that are between `lo` and `hi` (both included). Don't walk the whole tree: skip a node's left subtree when the node's value is `lo` or less (everything there is smaller still), and skip its right subtree when the node's value is `hi` or more. `build` makes balanced search trees for the speed check, and `make()` builds the tree from "What comes next?".
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def range_values(root, lo, hi):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def collect(node, lo, hi, out):
+    if node is None:
+        return
+    if node.val > lo:
+        collect(node.left, lo, hi, out)
+    if lo <= node.val <= hi:
+        out.append(node.val)
+    if node.val < hi:
+        collect(node.right, lo, hi, out)
+
+def range_values(root, lo, hi):
+    out = []
+    collect(root, lo, hi, out)
+    return out
+```
+tests:
+- range_values(make(), 4, 10)
+- range_values(make(), 0, 2)
+- range_values(make(), 11, 12)
+- range_values(make(), 1, 14)
+- range_values(None, 1, 5)
+speed: setup=root = build(list(range(n))) | call=range_values(root, 3, 6) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def range_values(root, lo, hi):
+    out = []
+    inorder(root, out)
+    return [v for v in out if lo <= v <= hi]
+```
+fail[1]: The values from 4 to 10 in order: 4, 6, 7, 8, 10.
+fail[2]: Only 1 is between 0 and 2.
+fail[3]: No values between 11 and 12: [].
+fail[4]: The whole tree: every value is in range.
+fail[5]: An empty tree: [].
+hint: Write a recursive helper that does inorder, but with conditions on the two recursive calls.
+hint: Go left only if `node.val > lo`; record the node if `lo <= node.val <= hi`; go right only if `node.val < hi`.
+hint: In inorder, those three steps come out in sorted order.
+right: The search tree rule tells the walk which subtrees can't hold anything in range, so it skips them: about O(h + k) steps for k results, instead of O(n).
+wrong: Walk in inorder, but go into the left subtree only when the node is bigger than `lo`, and into the right subtree only when it's smaller than `hi`. Record the values that are in range.
+
+=== task: code hard
+title: The smallest gap
+prompt: Write `min_gap(root)` that returns the smallest difference between any two values in a binary search tree with at least 2 nodes. In sorted order, the closest values are always next to each other, so walk the tree in inorder and compare each value with the one before it. Don't compare every pair. `build` makes search trees for the speed check, and `make()` builds the tree from "What comes next?".
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def min_gap(root):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def min_gap(root):
+    order = []
+    inorder(root, order)
+    best = order[1] - order[0]
+    for i in range(2, len(order)):
+        best = min(best, order[i] - order[i - 1])
+    return best
+```
+tests:
+- min_gap(make())
+- min_gap(Node(10, Node(4), Node(20)))
+- min_gap(Node(5, None, Node(9)))
+- min_gap(build([0, 10, 25, 31]))
+speed: setup=root = build(list(range(0, 3 * n, 3))) | call=min_gap(root) | target=O(n log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def min_gap(root):
+    order = []
+    inorder(root, order)
+    best = None
+    for i in range(len(order)):
+        for j in range(i + 1, len(order)):
+            d = abs(order[i] - order[j])
+            if best is None or d < best:
+                best = d
+    return best
+```
+fail[1]: Sorted, the values are 1, 3, 4, 6, 7, 8, 10, 13, 14: the smallest gap is 1 (3 to 4, 6 to 7, 7 to 8 and 13 to 14).
+fail[2]: 4, 10, 20: the gaps are 6 and 10.
+fail[3]: Two values: 9 − 5 = 4.
+fail[4]: 0, 10, 25, 31: the gaps are 10, 15 and 6.
+hint: Walk in inorder to get the values in sorted order.
+hint: The answer is the smallest difference between neighbours: `order[i] - order[i - 1]`.
+hint: Start `best` with the first gap, then keep the smaller one as you go.
+right: Sorting puts the closest pair side by side, and inorder hands you the sorted order for free: one O(n) pass instead of comparing all n² pairs.
+wrong: Get the inorder list of the search tree, which is sorted, and take the smallest difference between consecutive values.
+
+=== task: predict hard
+title: Rebuilt, then postorder
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def rebuild(pre, ino):
+    if not pre:
+        return None
+    i = ino.index(pre[0])
+    left = rebuild(pre[1:1 + i], ino[:i])
+    right = rebuild(pre[1 + i:], ino[i + 1:])
+    return Node(pre[0], left, right)
+
+def postorder(node):
+    if node is None:
+        return []
+    return postorder(node.left) + postorder(node.right) + [node.val]
+
+t = rebuild(["a", "b", "d", "c", "e"], ["d", "b", "a", "c", "e"])
+print("".join(postorder(t)))
+```
+wrong[debca]: d and b form a's whole left subtree, which is finished before the right subtree starts: d, b, then e, c.
+wrong[dbcea]: In postorder, c comes after its own right child, e.
+wrong[abdce]: That's the preorder of the rebuilt tree. Postorder ends with the root, a.
+hint: a is the root. In inorder, d and b come before a, and c and e after.
+hint: b has d on its left; c has e on its right.
+right: `dbeca`: the rebuilt tree is a with b (and b's left child d) on its left, and c (with its right child e) on its right.
+wrong: Root a. Left part: pre [b, d], in [d, b], so b with d on its left. Right part: pre [c, e], in [c, e], so c with e on its right. Postorder: d, b, e, c, a.
+
+=== task: predict hard
+title: Right, node, left
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def backwards(node, out):
+    if node is None:
+        return
+    backwards(node.right, out)
+    out.append(node.val)
+    backwards(node.left, out)
+
+t = Node(8, Node(3, Node(1), Node(6)), Node(10, None, Node(14)))
+out = []
+backwards(t, out)
+print(out, out[:2])
+```
+wrong[[1, 3, 6, 8, 10, 14] [1, 3]]: This walk does the right subtree first, so it starts at the rightmost node, 14.
+wrong[[14, 10, 8, 3, 6, 1] [14, 10]]: Inside 3's subtree it's still right, node, left: 6, 3, 1.
+wrong[[8, 10, 14, 3, 6, 1] [8, 10]]: The node is visited between its subtrees, not first.
+hint: Swapping left and right reverses inorder.
+hint: On a search tree, inorder is smallest first.
+right: `[14, 10, 8, 6, 3, 1] [14, 10]`: reversed inorder lists a search tree from largest to smallest, so the first k values are the k largest.
+wrong: Right subtree first: 14, 10 (10's subtree backwards), then 8, then 3's subtree backwards: 6, 3, 1.
+
+=== task: cells hard
+title: The next one along
+prompt: In an inorder traversal of this tree, which value is visited right **after** each of these?
+
+```text
+        8
+      /   \
+     3     10
+    / \      \
+   1   6      14
+      / \    /
+     4   7  13
+```
+labels: after 1 | after 7 | after 8 | after 13
+answer: 3 | 8 | 10 | 14
+wrong[3 | 6 | 10 | 14]: 7 is the last node of 6's subtree, and 6's subtree is the right side of 3's, which is all of 8's left subtree. So after 7 comes 8.
+wrong[3 | 8 | 3 | 14]: After 8 comes its right subtree, starting at its leftmost node: 10 has no left child, so 10.
+hint: If a node has a right subtree, the next node is the leftmost node of that subtree.
+hint: If it doesn't, climb up until you come from a left child: that parent is next.
+right: 3, 8, 10 and 14: in a search tree, the next value in inorder is the next bigger value.
+wrong: After 1 (no right child), climb to 3. After 7 (no right child), climb past 6 and 3 to 8. After 8, go to its right subtree's leftmost node, 10. After 13, its parent 14.
+
+=== task: mcq hard
+title: One inorder, many trees
+prompt: How many differently shaped binary trees have the inorder list 1 2 3?
+* 5 :: Right. Every possible shape of a 3-node tree, labelled in inorder, gives 1 2 3.
+- 1 :: The root could be 1, 2 or 3, and the other values arranged in more than one way.
+- 3 :: The root can be 1, 2 or 3, but with 1 or 3 at the root, the other two can be arranged two ways.
+- 6 :: Only 5 shapes of 3-node binary tree exist.
+hint: The root can be 1, 2 or 3.
+hint: With root 1, the values 2 and 3 are both on its right, in two possible shapes.
+right: 5 trees, which is why inorder alone can't rebuild a tree; adding preorder pins it down.
+wrong: Root 2: one tree. Root 1: 2 and 3 on its right, as 2 → 3 or 3 → 2 (two trees). Root 3: two trees the same way. 5 in all.
+
+=== task: multi hard
+title: Two orders make a tree
+prompt: Choose **every** true statement about rebuilding a tree from its preorder and inorder lists.
+* The first value in the preorder list is the root :: Right. Preorder visits the root first.
+* The values before the root in the inorder list belong to the left subtree :: Right. Inorder puts the whole left subtree before the root.
+* The values must all be different, or the root's position in inorder can be ambiguous :: Right. A repeated value could be found in the wrong place.
+* The same split works again inside each subtree :: Right. That's what makes the rebuild recursive.
+- Preorder and postorder together always fix the tree too :: Not always: a single child could be a left or a right child, and both lists look the same.
+- Inorder alone is enough if the tree is complete :: The question is general: inorder alone fits several shapes.
+hint: What does each list tell you about the root?
+hint: Try a root with one child: do preorder and postorder show which side it's on?
+right: Preorder names roots, inorder splits sides, distinct values make the split certain, and it repeats in each part.
+wrong: Preorder gives the root; inorder splits the rest into left and right; repeated values would break the split; and each part is rebuilt the same way. Preorder with postorder can't tell a lone left child from a lone right child.
+
+=== task: parsons hard
+title: A tree on its side
+prompt: Arrange the lines so that `show` prints the tree on its side, with the right subtree above each node and the left subtree below it, and the program prints:
+
+```output
+    10
+8
+        6
+    3
+        1
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def show(node, depth):
+    if node is None:
+        return
+    show(node.right, depth + 1)
+    print("    " * depth + str(node.val))
+    show(node.left, depth + 1)
+
+show(Node(8, Node(3, Node(1), Node(6)), Node(10)), 0)
+```
+distractors:
+```python
+    show(node.left, depth)
+    print("    " * (depth + 1) + str(node.val))
+```
+hint: The right subtree is printed first, above the node.
+hint: Each level is indented 4 spaces more than the one above it.
+right: Right, node, left is inorder backwards, so tilting your head to the left shows the tree the right way up: 8 at the root, 10 above-right, 3 below-left.
+wrong: Return at None. Print the right subtree one level deeper, then the node indented by its depth, then the left subtree one level deeper.
