@@ -1,0 +1,1403 @@
+=== lesson
+id: ds-trav-pre
+title: Preorder traversal
+summary: Preorder visits a node first, then its left subtree, then its right subtree, so every parent comes before everything below it. You'll write preorder recursively and with an explicit stack, see why the right child goes on the stack first, and use preorder for the jobs where parents must come first: copying a tree, saving it as a list and loading it back, and printing a folder outline.
+
+=== learn
+### Node, left, right
+**Preorder** visits each node **before** its subtrees: the node, then its whole left subtree, then its whole right subtree. This lesson uses this tree:
+```text
+        A
+      /   \
+     B     C
+    / \   /
+   D   E F
+        \
+         G
+```
+Its preorder is A B D E G C F. The walk visits A, dives into the left subtree and finishes all of it (B, then B's left subtree D, then B's right subtree E, G), and only then moves to the right subtree (C, F). Two facts follow from the rule:
+
+- The root comes first, and every node comes before all of the nodes below it, its **descendants**.
+- Each subtree's nodes appear together, in one unbroken block.
+
+### Recursive preorder
+The recursive version follows the rule word for word. It returns a list: the node's value, then the preorder of the left subtree, then the preorder of the right subtree:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", Node("D"), Node("E", None, Node("G"))), Node("C", Node("F")))
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+print(preorder(root))
+print(preorder(root.left), preorder(root.right))
+```
+```output
+['A', 'B', 'D', 'E', 'G', 'C', 'F']
+['B', 'D', 'E', 'G'] ['C', 'F']
+```
+An empty subtree adds an empty list. The second line shows the two blocks that follow A: B's subtree and C's subtree, each in preorder too.
+
+### The blocks of a preorder list
+Because each subtree forms one block, a preorder list splits cleanly: the root, then as many values as the left subtree has nodes, then the rest:
+```python
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+
+order = preorder(root)
+k = count(root.left)
+print(order[0], order[1:1 + k], order[1 + k:])
+```
+```output
+A ['B', 'D', 'E', 'G'] ['C', 'F']
+```
+The left subtree has k = 4 nodes, so `order[1:5]` is its block and `order[5:]` is the right subtree's. The same split works inside each block: B's block starts with B, followed by D's block and E's block. This is what lets a preorder list be turned back into a tree, as the "Saving a tree" step shows.
+
+### Preorder with a stack
+Recursion keeps its waiting work on Python's call stack. The walk can keep that work on a stack of its own instead: pop a node, visit it, and push its children so that they're visited later.
+```python
+def preorder_stack(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.right is not None:
+            stack.append(node.right)
+        if node.left is not None:
+            stack.append(node.left)
+    return out
+
+print(preorder_stack(root))
+```
+```output
+['A', 'B', 'D', 'E', 'G', 'C', 'F']
+```
+Here is the stack after each step (the top is on the right):
+
+| pop and visit | push | stack after |
+| --- | --- | --- |
+| A | C, then B | C B |
+| B | E, then D | C E D |
+| D | nothing | C E |
+| E | G | C G |
+| G | nothing | C |
+| C | F | F |
+| F | nothing | (empty) |
+
+C waits at the bottom of the stack the whole time B's subtree is being walked, in the same way that the recursive call for C waits until the call for B returns. Animation 1 shows this stack moving.
+
+### Why the right child goes first
+A stack hands back the item pushed **last**. To visit the left subtree before the right one, the left child must be pushed last, so the right child goes on first. Push them the other way round and the walk goes right before left:
+```python
+def wrong_way(root):
+    out = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.left is not None:
+            stack.append(node.left)
+        if node.right is not None:
+            stack.append(node.right)
+    return out
+
+print(wrong_way(root))
+```
+```output
+['A', 'C', 'F', 'B', 'E', 'G', 'D']
+```
+That's still "node first", but with the right subtree before the left: a preorder of the tree's mirror image. Both versions are O(n): every node is pushed once and popped once. The stack never holds more than about one waiting node per level, so it stays O(h), like the call stack of the recursive version.
+
+### Saving a tree as a list
+A preorder list on its own can't be turned back into a tree: D B and B D could each come from more than one shape. Writing None for every empty subtree fixes that, because then the list says exactly where each subtree ends:
+```python
+def save(node, out):
+    if node is None:
+        out.append(None)
+        return
+    out.append(node.val)
+    save(node.left, out)
+    save(node.right, out)
+
+items = []
+save(Node(1, Node(2), Node(3, Node(4))), items)
+print(items)
+```
+```output
+[1, 2, None, None, 3, 4, None, None, None]
+```
+Read it with the preorder rule: 1, then 1's left subtree (2, with two empty children), then 1's right subtree (3, whose left child is 4, then 4's two empty children, then 3's empty right child). Reading the list back with the same rule rebuilds the tree: Example 1 does it. Preorder suits this job because each node is written before its children, so a reader can make the node first and then attach its children as they come.
+
+### Printing an outline
+An outline of folders is a preorder walk: each folder is printed before its contents, indented one step deeper. Folders can hold any number of subfolders, so they form an n-ary tree, and preorder there means "the node, then each child's subtree in order":
+```python
+class Folder:
+    def __init__(self, name, children=None):
+        self.name = name
+        if children is None:
+            children = []
+        self.children = children
+
+def show(folder, depth):
+    print("  " * depth + folder.name)
+    for child in folder.children:
+        show(child, depth + 1)
+
+show(Folder("home", [Folder("music", [Folder("jazz")]), Folder("work")]), 0)
+```
+```output
+home
+  music
+    jazz
+  work
+```
+Example 2 prints a bigger outline without recursion, using a stack of (folder, depth) pairs.
+
+### Copying a tree
+To copy a tree, make the new node first, then attach copies of its subtrees: node, left, right, which is preorder.
+```python
+def copy_tree(node):
+    if node is None:
+        return None
+    new = Node(node.val)
+    new.left = copy_tree(node.left)
+    new.right = copy_tree(node.right)
+    return new
+
+twin = copy_tree(root)
+twin.left.val = "X"
+print(preorder(root))
+print(preorder(twin))
+```
+```output
+['A', 'B', 'D', 'E', 'G', 'C', 'F']
+['A', 'X', 'D', 'E', 'G', 'C', 'F']
+```
+The copy has the same shape and values, but it's made of new nodes: changing the copy's B to X leaves the original alone. Each node is copied once, so copying is O(n). Animation 2 saves a tree as a list, writing each node before its subtrees.
+
+=== keypoints
+- Preorder visits the node, then its left subtree, then its right subtree. The root comes first, and every node comes before all its descendants.
+- Each subtree forms one unbroken block of the preorder list: the root, then count(left) values for the left subtree, then the right subtree.
+- Recursive preorder: `[node.val] + preorder(node.left) + preorder(node.right)`, with `[]` for None.
+- With a stack: pop a node, visit it, push its right child and then its left child, so the left child comes off first. Pushing them the other way gives node, right, left. Both are O(n) time and keep O(h) nodes waiting.
+- Preorder fits jobs where a parent must come before its children: saving a tree as a list (with None for empty subtrees), copying a tree, and printing an outline of folders.
+
+=== example: Saving and loading a tree
+intro: A tree is saved as a preorder list with None for every empty subtree, then rebuilt from that list with the same rule.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def save(node, out):
+    if node is None:
+        out.append(None)
+        return
+    out.append(node.val)
+    save(node.left, out)
+    save(node.right, out)
+
+def load(items, pos):
+    if items[pos] is None:
+        return None, pos + 1
+    node = Node(items[pos])
+    node.left, pos = load(items, pos + 1)
+    node.right, pos = load(items, pos)
+    return node, pos
+
+def show(node, depth):
+    if node is None:
+        return
+    print("  " * depth + str(node.val))
+    show(node.left, depth + 1)
+    show(node.right, depth + 1)
+
+items = []
+save(Node(1, Node(2), Node(3, Node(4))), items)
+print(items)
+copy, end = load(items, 0)
+show(copy, 0)
+print(end == len(items))
+```
+7-13: Save in preorder, writing None wherever a subtree is empty.
+15-21: `load` reads from position `pos` and returns the subtree it built and the position right after it. A None means an empty subtree, one item long.
+18-20: Preorder again: make the node from the current item, then load its left subtree from the next position, then its right subtree from wherever the left one ended.
+23-28: Print the tree as an outline: also preorder.
+30-32: 9 items for 4 nodes: every node has two child slots, and the 5 empty ones are written as None.
+33-34: The rebuilt tree has 2 and 3 below 1, and 4 below 3. (`show` skips empty subtrees, so it doesn't show that 4 is 3's left child.)
+35: Loading used up exactly the whole list, as it should.
+
+=== example: An outline without recursion
+intro: A folder outline printed with an explicit stack. Each stack entry is a pair: a folder and its depth.
+```python
+class Folder:
+    def __init__(self, name, children=None):
+        self.name = name
+        if children is None:
+            children = []
+        self.children = children
+
+def outline(root):
+    lines = []
+    stack = [(root, 0)]
+    while stack:
+        folder, depth = stack.pop()
+        lines.append("  " * depth + folder.name)
+        for child in reversed(folder.children):
+            stack.append((child, depth + 1))
+    return lines
+
+home = Folder("home", [
+    Folder("music", [Folder("jazz"), Folder("rock")]),
+    Folder("photos", [Folder("2024", [Folder("june")])]),
+    Folder("work"),
+])
+for line in outline(home):
+    print(line)
+```
+1-6: A folder with any number of subfolders: an n-ary tree.
+8-16: The stack holds (folder, depth) pairs, so each folder remembers how deep it is.
+12-13: Pop a folder and its depth, and write its line, indented by the depth.
+14-15: Push the subfolders in **reverse**, so that the first subfolder ends up on top and is printed first: the n-ary version of "push the right child first".
+18-22: home holds music, photos and work.
+23-24: Every folder is printed before its contents, and each folder's contents are printed before its next sibling: preorder.
+
+=== animation: Preorder with a stack
+view: tree root ptr=node visited=out
+stack stack
+vars out
+intro: The stack version of preorder on a tree of 5 nodes. Each step pops one node, visits it, and pushes its right child and then its left child. Watch the right child wait under the left one.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", Node("D"), Node("E")), Node("C"))
+out = []
+stack = [root]
+while stack:
+    node = stack.pop()
+    out.append(node.val)
+    if node.right is not None:
+        stack.append(node.right)
+    if node.left is not None:
+        stack.append(node.left)
+print(out)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: A at the root, B and C below it, D and E below B.
+8: The visited values will go into out.
+9: The stack starts with only the root.
+10: Is anything left on the stack? {len(stack) > 0}.
+11: Pop the node on top: {stack[-1].val}.
+12: Visit {node.val}: add it to out.
+13: Does {node.val} have a right child? {node.right is not None}.
+14: Push {node.right.val} first, so that it waits under the left child.
+15: Does {node.val} have a left child? {node.left is not None}.
+16: Push {node.left.val} last: it's on top, so it's visited next.
+17: Preorder: A, B, D, E, C.
+
+=== animation: Saving a tree as a list
+view: tree root ptr=node
+vars out
+intro: `save` writes the tree in preorder, with None for every empty subtree. Watch each node go into the list before anything below it.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def save(node, out):
+    if node is None:
+        out.append(None)
+        return
+    out.append(node.val)
+    save(node.left, out)
+    save(node.right, out)
+
+root = Node(1, Node(2), Node(3, Node(4)))
+out = []
+save(root, out)
+print(out)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines save. Nothing runs yet.
+8: {'Save node ' + str(node.val) + ' and everything below it.' if node is not None else 'An empty subtree.'}
+9: Write None, so the list shows that this subtree is empty.
+10: Nothing more to save here.
+11: Write {node.val} first, before its subtrees.
+12: Then save {node.val}'s left subtree.
+13: Then save {node.val}'s right subtree.
+15: 1 at the root, 2 on its left, 3 on its right, and 4 as 3's left child.
+17: Start at the root.
+18: 4 values and 5 Nones: one None for each empty child slot.
+
+=== task: predict easy
+title: Preorder as a list
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+t = Node(7, Node(3, None, Node(5)), Node(9, Node(8)))
+print(preorder(t))
+```
+wrong[[7, 3, 9, 5, 8]]: That's level order. Preorder finishes 3's subtree (3, 5) before it moves to 9.
+wrong[[3, 5, 7, 8, 9]]: That's inorder. Preorder puts each node before its subtrees, so it starts with the root, 7.
+wrong[[5, 3, 8, 9, 7]]: That's postorder, which ends with the root.
+hint: The node's value comes first in the list it returns.
+hint: Then everything in its left subtree, then everything in its right subtree.
+right: `[7, 3, 5, 9, 8]`: 7, then 3's block (3, 5), then 9's block (9, 8).
+wrong: 7 comes first. Its left subtree in preorder is 3, 5 (5 is 3's right child). Its right subtree is 9, 8 (8 is 9's left child).
+
+=== task: mcq easy
+title: Always first
+prompt: Which value always comes first in the preorder list of a non-empty tree?
+* The root's value :: Right. Preorder visits each node before its subtrees, starting at the root.
+- The smallest value :: Preorder doesn't look at the values; that's inorder on a search tree.
+- The leftmost leaf's value :: That comes first in inorder and postorder.
+- The root's left child's value :: That comes second, if the root has a left child.
+hint: "Pre" means the node comes before its subtrees.
+hint: Where does the walk start?
+right: The root: it's visited before both of its subtrees, and those hold every other node.
+wrong: Preorder starts at the root and visits it before anything else, so the root's value is always first.
+
+=== task: cells easy
+title: Preorder by position
+prompt: In what order does preorder visit the nodes of this tree?
+
+```text
+        K
+      /   \
+     F     T
+    /     / \
+   B     M   W
+    \
+     D
+```
+labels: 1st | 2nd | 3rd | 4th | 5th | 6th | 7th
+answer: K | F | B | D | T | M | W
+wrong[K | F | T | B | M | W | D]: That's level order. Preorder finishes F's whole subtree (F, B, D) before going to T.
+wrong[K | F | B | T | M | W | D]: D is in F's subtree (it's B's right child), so it comes before T.
+hint: Start at K, then go all the way through F's subtree.
+hint: B has a right child, D, which comes straight after B.
+right: K, F, B, D, then T, M, W: each subtree is one unbroken block.
+wrong: K first. Then F's subtree: F, B, D. Then T's subtree: T, M, W.
+
+=== task: code easy
+title: Write preorder
+prompt: Write `preorder(node)` that returns a list of a binary tree's values in preorder: the node, then its left subtree, then its right subtree. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+```
+tests:
+- preorder(None)
+- preorder(Node(1))
+- preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))))
+- preorder(Node(1, None, Node(2, Node(3))))
+fail[2]: A single node: [1].
+fail[3]: 1, then 2's subtree (2, 3, 4), then 5's subtree (5, 6).
+fail[4]: 1 has only a right child, 2, and 3 is 2's left child: [1, 2, 3].
+error[AttributeError]: Return [] for None before using `node.val`.
+hint: For None, return an empty list.
+hint: Otherwise return `[node.val] + preorder(node.left) + preorder(node.right)`.
+right: The node's value goes in front of both subtrees' lists: that one line is the whole preorder rule. O(n).
+wrong: Return [] for an empty tree; otherwise put the node's value first, then the left subtree's preorder, then the right subtree's.
+
+=== task: fill easy
+title: Off the top
+prompt: Fill in the blank so that the walk takes the most recently pushed node each time, and the program prints:
+
+```output
+['A', 'B', 'D', 'C']
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", Node("D")), Node("C"))
+out = []
+stack = [root]
+while stack:
+    node = stack.??()
+    out.append(node.val)
+    if node.right is not None:
+        stack.append(node.right)
+    if node.left is not None:
+        stack.append(node.left)
+print(out)
+```
+answer: pop
+wrong[popleft]: `stack` is a plain list, and lists have no `popleft`: `AttributeError: 'list' object has no attribute 'popleft'`.
+hint: The stack is a Python list.
+hint: Which list method removes and returns the last item?
+right: `pop()` takes the item pushed last, the top of the stack, so the left child, pushed last, is visited next.
+wrong: A list used as a stack takes items from the end with `pop()`.
+
+=== task: multi easy
+title: True of preorder
+prompt: Choose **every** statement that is true of the preorder list of any binary tree.
+* The root comes first :: Right. It's visited before both subtrees.
+* Every node comes before all the nodes below it :: Right. Each node is visited before its subtrees.
+* The nodes of each subtree appear together, in one unbroken block :: Right. A subtree is finished before the walk leaves it.
+* The last node is a leaf :: Right. If it had a child, the child would come after it.
+- The last node is always the root's right child :: Only if that child is a leaf; often the walk ends deeper, or on the left side.
+- The second node is always the root's right child :: It's the left child whenever the root has one.
+hint: Ask what preorder says about a node and its descendants.
+hint: Could the last node have a child?
+right: Root first, parents before descendants, subtrees in blocks, and a leaf at the end.
+wrong: Preorder visits each node before its subtrees and finishes each subtree before leaving it. So the root is first, each block is unbroken, and the last node has no children.
+
+=== task: parsons easy
+title: Recursive preorder
+prompt: Arrange the lines so that `preorder` returns the values in preorder, and the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+print(preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6)))))
+```
+distractors:
+```python
+        return [None]
+    return preorder(node.left) + [node.val] + preorder(node.right)
+```
+hint: An empty subtree adds nothing to the list.
+hint: In preorder, the node's value comes before both subtrees.
+right: An empty list for None and the node's value in front: the tree's values come out 1 to 6, because it was numbered in preorder.
+wrong: Return `[]` at None. Otherwise return the node's value as a one-item list, followed by the left subtree's preorder and then the right subtree's.
+
+=== task: order easy
+title: Preorder by hand
+prompt: Put the nodes of this tree in the order a preorder traversal visits them.
+
+```text
+        K
+      /   \
+     F     T
+    /     / \
+   B     M   W
+    \
+     D
+```
+items:
+- K
+- F
+- B
+- D
+- T
+- M
+- W
+hint: Each node comes before its own subtrees.
+hint: Finish F's whole subtree before going to T.
+right: K, F, B, D, T, M, W: the left subtree's block, then the right subtree's block.
+wrong: Visit K, then walk F's subtree (F, B and B's right child D), then T's subtree (T, M, W).
+
+=== task: predict easy
+title: The stack walk
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("P", Node("Q", Node("S"), Node("T")), Node("R", None, Node("U")))
+out = []
+stack = [root]
+while stack:
+    node = stack.pop()
+    out.append(node.val)
+    if node.right is not None:
+        stack.append(node.right)
+    if node.left is not None:
+        stack.append(node.left)
+print(" ".join(out))
+```
+wrong[P Q R S T U]: That's level order. The stack returns the left child first and keeps going deeper: Q's children come before R.
+wrong[P R U Q T S]: The left child is pushed last, so it's on top and comes off first.
+wrong[P Q T S R U]: Q pushes T and then S, so S is on top and comes off before T.
+hint: After P: the stack holds R, Q, with Q on top.
+hint: After Q: it holds R, T, S, with S on top.
+right: `P Q S T R U`: pushing right before left makes the stack walk visit nodes in preorder.
+wrong: Pop P (push R, Q). Pop Q (push T, S). Pop S, then T. Pop R (push U). Pop U.
+
+=== task: mcq easy
+title: Right child first
+prompt: In the stack version of preorder, why is a node's right child pushed **before** its left child?
+* So that the left child is on top of the stack and comes off first :: Right. A stack hands back the item pushed last.
+- Because the right child is visited first in preorder :: Preorder visits the left subtree first; pushing the right child first is what achieves that.
+- Because the right child has to be in the list before the left child :: Neither child is in the list yet; they're waiting on the stack.
+- It doesn't matter which is pushed first :: The other way round, the walk goes node, right, left.
+hint: Which item does `pop()` return?
+hint: Which child should be visited next?
+right: Last in, first out: the left child, pushed last, is popped next, so the left subtree is walked before the right one.
+wrong: The stack returns the most recently pushed node. For the left child to come out first, it must go in last, after the right child.
+
+=== task: code medium
+title: Preorder without recursion
+prompt: Write `preorder_stack(root)` that returns a binary tree's values in preorder **without recursion**: keep the waiting nodes on a stack (a list), pop a node, visit it, and push its children. An empty tree gives an empty list.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder_stack(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder_stack(root):
+    out = []
+    if root is None:
+        return out
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        out.append(node.val)
+        if node.right is not None:
+            stack.append(node.right)
+        if node.left is not None:
+            stack.append(node.left)
+    return out
+```
+tests:
+- preorder_stack(None)
+- preorder_stack(Node(1))
+- preorder_stack(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))))
+- preorder_stack(Node(1, Node(2, Node(3, Node(4)))))
+- preorder_stack(Node(1, None, Node(2, None, Node(3))))
+require[pop(]: Use a stack: take the next node off it with `pop()`.
+fail[1]: An empty tree: []. Don't put None on the stack.
+fail[3]: The left subtree must come before the right one: push the right child first.
+error[AttributeError]: Only push children that aren't None.
+hint: Start the stack with the root, unless the tree is empty.
+hint: Loop while the stack isn't empty: `pop()` a node and append its value.
+hint: Push its right child, then its left child, each only if it exists.
+right: Every node is pushed once and popped once: O(n). Pushing the right child first makes the left subtree come off the stack first.
+wrong: Put the root on a stack. Repeatedly pop a node, record its value, and push its right and then its left child (if they exist), until the stack is empty.
+
+=== task: code medium
+title: A folder outline
+prompt: Write `outline(folder, depth)` that returns a list of lines for the folder tree below `folder`, in preorder: first the folder's own line, its name indented by two spaces per level of `depth`, then the lines of each subfolder, at `depth + 1`. `make()` builds a folder tree to test with.
+
+For example, `outline(make(), 0)` starts `['home', '  music', '    jazz', ...]`.
+starter:
+```python
+class Folder:
+    def __init__(self, name, children=None):
+        self.name = name
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Folder("home", [
+        Folder("music", [Folder("jazz"), Folder("rock")]),
+        Folder("photos", [Folder("2024", [Folder("june")])]),
+        Folder("work"),
+    ])
+
+def outline(folder, depth):
+    lines = []
+    # your code here
+    return lines
+```
+solution:
+```python
+class Folder:
+    def __init__(self, name, children=None):
+        self.name = name
+        if children is None:
+            children = []
+        self.children = children
+
+def make():
+    return Folder("home", [
+        Folder("music", [Folder("jazz"), Folder("rock")]),
+        Folder("photos", [Folder("2024", [Folder("june")])]),
+        Folder("work"),
+    ])
+
+def outline(folder, depth):
+    lines = ["  " * depth + folder.name]
+    for child in folder.children:
+        lines += outline(child, depth + 1)
+    return lines
+```
+tests:
+- outline(make(), 0)
+- outline(Folder("solo"), 0)
+- outline(Folder("a", [Folder("b")]), 2)
+- outline(make().children[1], 0)
+fail[1]: Each folder's line comes before the lines of everything inside it, indented two spaces per level.
+fail[2]: A folder with nothing inside gives one line.
+fail[3]: The depth you're given is where the indent starts: 4 spaces for a, 6 for b.
+fail[4]: photos at depth 0, 2024 at depth 1, june at depth 2.
+hint: Start the list with this folder's line: `"  " * depth + folder.name`.
+hint: Then, for each child, add the lines of `outline(child, depth + 1)` to the list.
+right: Preorder puts each folder in front of its contents, which is exactly what an outline needs. O(n) lines for n folders.
+wrong: Make the folder's own line first, then add each subfolder's outline, one level deeper, in order.
+
+=== task: predict medium
+title: Left pushed first
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6)))
+out = []
+stack = [root]
+while stack:
+    node = stack.pop()
+    out.append(node.val)
+    if node.left is not None:
+        stack.append(node.left)
+    if node.right is not None:
+        stack.append(node.right)
+print(out)
+```
+wrong[[1, 2, 3, 4, 5, 6]]: That's preorder, which needs the right child pushed first. Here the right child is pushed last, so it comes off first.
+wrong[[1, 5, 2, 6, 4, 3]]: A stack keeps going deep: after 5 comes 5's child 6, before 2.
+wrong[[1, 5, 6, 2, 3, 4]]: 2 pushes 3 and then 4, so 4 is on top and comes off before 3.
+hint: After 1: the stack holds 2, 5, with 5 on top.
+hint: After 5: it holds 2, 6. After 6: 2. After 2: 3, 4.
+right: `[1, 5, 6, 2, 4, 3]`: node, right, left. Still each node before its subtrees, but the right subtree comes first.
+wrong: Pop 1 (push 2, 5). Pop 5 (push 6). Pop 6. Pop 2 (push 3, 4). Pop 4, then 3.
+
+=== task: cells medium
+title: The stack after each step
+prompt: The stack version of preorder runs on this tree. What does the stack hold, from bottom to top, after each of these nodes has been popped and its children pushed? Separate the values with commas, like `C, B`.
+
+```text
+      A
+     / \
+    B   C
+   /     \
+  D       E
+```
+labels: after A | after B | after D | after C
+answer: C, B | C, D | C | E
+wrong[B, C | B, D | B | E]: The right child is pushed first, so C sits at the bottom, under B.
+wrong[C, B | C, D | C | C, E]: Popping C takes it off the stack before its child E is pushed, so only E is left.
+hint: A pushes C, then B. B has only a left child, D.
+hint: Popping takes the top value off; then that node's children go on.
+right: C waits at the bottom while B's whole subtree (B, D) is walked, then C is popped and pushes E.
+wrong: After A: C, B. After B (pushes D): C, D. After D (no children): C. After C (pushes E): E.
+
+=== task: fill medium
+title: Mark the empty subtrees
+prompt: Fill in the blank so that `save` writes a marker for every empty subtree, and the program prints:
+
+```output
+[1, None, 2, None, None]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def save(node, out):
+    if node is None:
+        out.append(??)
+        return
+    out.append(node.val)
+    save(node.left, out)
+    save(node.right, out)
+
+items = []
+save(Node(1, None, Node(2)), items)
+print(items)
+```
+answer: None
+wrong[0]: 0 could be a real value in a tree, so a reader couldn't tell it from a node: `[1, 0, 2, 0, 0]`.
+hint: The marker must mean "no node here".
+hint: Which Python value means "nothing"?
+right: None marks each empty slot, so the list records the exact shape: 1 has no left child, and 2 has no children.
+wrong: An empty subtree is written as `None`, the value that already means "no node" in a tree.
+
+=== task: mcq medium
+title: A preorder job
+prompt: Which of these jobs fits preorder best?
+* Printing an outline of folders, each folder before its contents :: Right. Parents come before their descendants.
+- Adding up the size of every folder :: A folder's total needs its contents' totals first: postorder.
+- Listing a search tree's values from smallest to largest :: That's inorder.
+- Finding the folder with a given name that's closest to the top :: Level order meets the shallowest folders first.
+hint: Preorder visits a node before everything below it.
+hint: Which job needs the parent handled before its children?
+right: An outline prints each folder before its contents: node first, then children, which is preorder.
+wrong: Preorder suits jobs where the parent comes first. Totals need children first (postorder), sorted order needs inorder, and nearest-first needs level order.
+
+=== task: predict medium
+title: Splitting into blocks
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+
+t = Node("K", Node("F", Node("B", None, Node("D"))), Node("T", Node("M"), Node("W")))
+order = preorder(t)
+k = count(t.left)
+print(order[1:1 + k], order[1 + k:])
+```
+wrong[['F', 'T'] ['B', 'D', 'M', 'W']]: Preorder doesn't group by levels: F's whole subtree comes before T.
+wrong[['K', 'F', 'B'] ['D', 'T', 'M', 'W']]: `order[0]` is the root, K, so the left block starts at index 1.
+wrong[['F', 'B'] ['D', 'T', 'M', 'W']]: F's subtree has 3 nodes, F, B and D, so k is 3.
+hint: The preorder list is K F B D T M W.
+hint: The left subtree, F, holds F, B and D.
+right: `['F', 'B', 'D'] ['T', 'M', 'W']`: after the root come the left subtree's 3 values in one block, then the right subtree's.
+wrong: preorder is K F B D T M W and count(t.left) is 3, so order[1:4] is F, B, D and order[4:] is T, M, W.
+
+=== task: multi medium
+title: The stack version
+prompt: Choose **every** true statement about the stack version of preorder.
+* Every node is pushed once and popped once :: Right. So it's O(n).
+* It visits the nodes in the same order as the recursive version :: Right. As long as the right child is pushed first.
+* The stack stays small: about one waiting node for each level of the current path :: Right. O(h), like the call stack of the recursive version.
+- It needs a queue instead of a stack :: A queue would give level order.
+- Pushing the left child first still gives preorder :: That gives node, right, left.
+- It takes more steps than the recursive version: O(n log n) :: Both are O(n).
+hint: How many times does each node go on and come off the stack?
+hint: What waits on the stack: whole levels, or right children along the current path?
+right: O(n) time, the same order as recursion, and O(h) waiting: the explicit stack does what the call stack did.
+wrong: Each node goes on and off once (O(n)), the order matches recursion when the right child is pushed first, and only right siblings along the current path wait (O(h)).
+
+=== task: parsons medium
+title: Save a tree
+prompt: Arrange the lines so that `save` writes the tree in preorder with None for every empty subtree, and the program prints:
+
+```output
+[1, 2, None, None, 3, None, None]
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def save(node, out):
+    if node is None:
+        out.append(None)
+        return
+    out.append(node.val)
+    save(node.left, out)
+    save(node.right, out)
+
+items = []
+save(Node(1, Node(2), Node(3)), items)
+print(items)
+```
+distractors:
+```python
+        out.append(0)
+    save(node.left, [])
+```
+hint: An empty subtree writes None and stops.
+hint: Write the node's value before saving its two subtrees into the same list.
+right: 1, then 2's block (2 and two Nones), then 3's block (3 and two Nones): 3 nodes and 4 empty slots.
+wrong: At None, append None and return. Otherwise append the value, then save the left subtree and the right subtree into `out`.
+
+=== task: code medium
+title: Preorder of an n-ary tree
+prompt: Write `preorder_n(node)` for an n-ary tree whose nodes keep their children in a list: return the values in preorder, which for an n-ary tree means the node, then the preorder of each child's subtree, in order. The tree is never empty.
+starter:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def preorder_n(node):
+    # your code here
+    return []
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, children=None):
+        self.val = val
+        if children is None:
+            children = []
+        self.children = children
+
+def preorder_n(node):
+    result = [node.val]
+    for child in node.children:
+        result += preorder_n(child)
+    return result
+```
+tests:
+- preorder_n(Node(1))
+- preorder_n(Node(1, [Node(2), Node(3), Node(4)]))
+- preorder_n(Node("a", [Node("b", [Node("d"), Node("e")]), Node("c", [Node("f")])]))
+- preorder_n(Node(1, [Node(2, [Node(3, [Node(4)])])]))
+fail[2]: The node, then each child in order: [1, 2, 3, 4].
+fail[3]: b's whole subtree (b, d, e) comes before c's (c, f).
+fail[4]: In a chain, each node comes before the one below it.
+hint: Start the list with the node's own value.
+hint: For each child in order, add `preorder_n(child)` to the list.
+right: The n-ary rule is the same idea: the node first, then each child's subtree as a block. A leaf's loop doesn't run, so it returns only its own value.
+wrong: Put the node's value first, then the preorder of every child's subtree, child by child.
+
+=== task: code hard
+title: Load a saved tree
+prompt: A tree was saved in preorder with None for every empty subtree. Write `load(items)` that rebuilds it. Use a helper `load_from(items, pos)` that builds the subtree starting at position `pos` and returns a pair: the subtree's root (or None) and the position right after the subtree's items. `as_list` turns a tree into nested lists for the tests.
+
+For example, `as_list(load([1, None, 2, None, None]))` returns `[1, None, [2, None, None]]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def load_from(items, pos):
+    # your code here
+    return None, pos + 1
+
+def load(items):
+    node, end = load_from(items, 0)
+    return node
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def as_list(node):
+    if node is None:
+        return None
+    return [node.val, as_list(node.left), as_list(node.right)]
+
+def load_from(items, pos):
+    if items[pos] is None:
+        return None, pos + 1
+    node = Node(items[pos])
+    node.left, pos = load_from(items, pos + 1)
+    node.right, pos = load_from(items, pos)
+    return node, pos
+
+def load(items):
+    node, end = load_from(items, 0)
+    return node
+```
+tests:
+- as_list(load([1, 2, None, None, 3, 4, None, None, None]))
+- as_list(load([None]))
+- as_list(load([5, None, None]))
+- as_list(load([1, None, 2, None, 3, None, None]))
+- as_list(load([1, 2, 3, None, None, None, None]))
+fail[1]: 1 has 2 on its left and 3 on its right; 4 is 3's left child.
+fail[2]: A single None is an empty tree.
+fail[3]: One node with two empty children.
+fail[4]: Each node's left slot is None, so the nodes run down the right: 1 → 2 → 3.
+fail[5]: Here the left slots are filled: 1 → 2 → 3 down the left side.
+error[IndexError]: Each call must use up exactly its own items: 1 for None, and 1 plus both subtrees for a node.
+hint: If `items[pos]` is None, return `None, pos + 1`: an empty subtree takes up one item.
+hint: Otherwise make `Node(items[pos])`, load its left subtree from `pos + 1`, then its right subtree from wherever the left one ended.
+hint: Return the node and the position after its right subtree.
+right: Reading follows the same rule as writing: the node first, then its whole left subtree, then its whole right subtree. Each item is read once: O(n).
+wrong: A None item is an empty subtree, one item long. Any other item becomes a node; its left subtree starts at the next item, and its right subtree starts where the left one ended.
+
+=== task: code hard
+title: The last node in preorder
+prompt: Write `last_in_preorder(root)` that returns the value of the last node a preorder traversal would visit, **without** visiting the whole tree. It must be O(h): start at the root, and keep stepping to the right child if there is one, or else to the left child, until you reach a leaf. The tree is never empty. `build` makes balanced trees for the speed check.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def last_in_preorder(root):
+    # your code here
+    return root.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def last_in_preorder(root):
+    node = root
+    while node.left is not None or node.right is not None:
+        if node.right is not None:
+            node = node.right
+        else:
+            node = node.left
+    return node.val
+```
+tests:
+- last_in_preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))))
+- last_in_preorder(Node(1))
+- last_in_preorder(Node(1, Node(2, Node(3))))
+- last_in_preorder(Node(1, Node(2, None, Node(4))))
+- last_in_preorder(build(list(range(10))))
+speed: setup=root = build(list(range(n))) | call=last_in_preorder(root) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def last_in_preorder(root):
+    return preorder(root)[-1]
+```
+fail[1]: From 1 go right to 5, then right to 6, a leaf.
+fail[3]: There's no right child anywhere, so the walk goes left: 1 → 2 → 3.
+fail[4]: 1 has no right child, so go left to 2; 2 has a right child, 4.
+error[AttributeError]: Stop at a leaf: don't step to a child that is None.
+hint: Preorder ends with the right subtree whenever there is one.
+hint: Loop while the node has any child: step right if it can, otherwise left.
+hint: Return the value of the leaf where the loop stops.
+right: The right subtree is always walked last, so the last node is found by going right whenever possible: one step per level, O(h). Building the whole preorder list would be O(n).
+wrong: Starting at the root, go to the right child if there is one, otherwise to the left child, until you reach a node with no children. That leaf is the last node in preorder.
+
+=== task: code hard
+title: Values with their depths
+prompt: Write `depths(root)` that returns a list of `(value, depth)` pairs, one for each node, in preorder (the root has depth 0). An empty tree gives an empty list. Use a helper that passes the depth down.
+
+For example, `depths(Node("a", None, Node("b")))` returns `[('a', 0), ('b', 1)]`.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def depths(root):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def collect(node, depth, out):
+    if node is None:
+        return
+    out.append((node.val, depth))
+    collect(node.left, depth + 1, out)
+    collect(node.right, depth + 1, out)
+
+def depths(root):
+    out = []
+    collect(root, 0, out)
+    return out
+```
+tests:
+- depths(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))))
+- depths(None)
+- depths(Node("a", None, Node("b")))
+- depths(Node(1, Node(2, Node(3, Node(4)))))
+fail[1]: Preorder with depths: (1, 0), (2, 1), (3, 2), (4, 2), (5, 1), (6, 2).
+fail[2]: An empty tree: [].
+fail[4]: A line: each node is one deeper than the one before.
+error[AttributeError]: Return at None before using `node.val`.
+hint: Write a helper `collect(node, depth, out)` that returns at None.
+hint: Append `(node.val, depth)` first, then collect the left and right subtrees with `depth + 1`.
+hint: `depths` calls the helper on the root with depth 0.
+right: The depth travels down as a parameter, and preorder records each node as soon as it's reached, with the depth it was given.
+wrong: Walk in preorder, passing the depth down: record (value, depth) for the node, then walk each child with depth + 1.
+
+=== task: code hard
+title: The k-th node in preorder
+prompt: Write `kth_preorder(root, k)` that returns the value of the k-th node visited in preorder (k = 1 is the root), or None if the tree has fewer than k nodes. Use the stack walk and stop as soon as the k-th node is popped, so that finding an early node doesn't walk the whole tree. `build` makes balanced trees for the speed check.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def kth_preorder(root, k):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def kth_preorder(root, k):
+    if root is None:
+        return None
+    stack = [root]
+    count = 0
+    while stack:
+        node = stack.pop()
+        count += 1
+        if count == k:
+            return node.val
+        if node.right is not None:
+            stack.append(node.right)
+        if node.left is not None:
+            stack.append(node.left)
+    return None
+```
+tests:
+- kth_preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))), 4)
+- kth_preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))), 1)
+- kth_preorder(Node(1, Node(2, Node(3), Node(4)), Node(5, None, Node(6))), 7)
+- kth_preorder(None, 1)
+- kth_preorder(Node("a", Node("b"), Node("c")), 3)
+speed: setup=root = build(list(range(n))) | call=kth_preorder(root, 5) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def kth_preorder(root, k):
+    order = preorder(root)
+    if k > len(order):
+        return None
+    return order[k - 1]
+```
+fail[1]: Preorder is 1, 2, 3, 4, 5, 6, so the 4th is 4.
+fail[2]: The 1st node is the root.
+fail[3]: The tree has only 6 nodes: None.
+fail[4]: An empty tree has no 1st node: None.
+error[AttributeError]: Only push children that exist, and check for an empty tree first.
+hint: Use the usual stack walk, with a counter that goes up each time a node is popped.
+hint: When the counter reaches k, return that node's value straight away.
+hint: If the stack runs out first, return None.
+right: Stopping at the k-th pop means only about k nodes are ever touched: finding the 5th node takes the same few steps in a tree of 10 or 10,000 nodes. Building the whole list first is O(n).
+wrong: Walk in preorder with a stack and count the nodes as they're popped. Return the k-th one as soon as it's reached, or None if the walk ends before k.
+
+=== task: predict hard
+title: Loading a list
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def load(items, pos):
+    if items[pos] is None:
+        return None, pos + 1
+    node = Node(items[pos])
+    node.left, pos = load(items, pos + 1)
+    node.right, pos = load(items, pos)
+    return node, pos
+
+t, end = load([1, None, 2, 3, None, None, None], 0)
+print(t.val, t.left, t.right.val, t.right.left.val, end)
+```
+wrong[1 None 2 3 6]: Loading reads all 7 items, so it stops at position 7, right after the last one.
+wrong[1 None 3 2 7]: 2 comes first after 1's empty left slot, so 2 is 1's right child, and 3 is 2's left child.
+wrong[1 2 3 None 7]: The None right after 1 is 1's left subtree: it's empty.
+hint: Read the list in preorder: 1, then 1's left subtree, then 1's right subtree.
+hint: 1's left subtree is the single None. Its right subtree starts with 2, and 2's left subtree starts with 3.
+right: `1 None 2 3 7`: 1 has no left child, 2 is its right child, and 3 is 2's left child. The 7 items are all used.
+wrong: 1 → left: None (item 1). Right: 2 (item 2), whose left is 3 (item 3) with two empty children (items 4, 5), and whose right is None (item 6). The end position is 7.
+
+=== task: predict hard
+title: A copy and an alias
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def copy_tree(node):
+    if node is None:
+        return None
+    new = Node(node.val)
+    new.left = copy_tree(node.left)
+    new.right = copy_tree(node.right)
+    return new
+
+a = Node(1, Node(2), Node(3))
+b = copy_tree(a)
+c = a
+b.left.val = 20
+c.right.val = 30
+print(preorder(a), preorder(b))
+```
+wrong[[1, 20, 30] [1, 20, 30]]: `copy_tree` makes new nodes, so changing b's left child doesn't touch a.
+wrong[[1, 2, 3] [1, 20, 3]]: `c = a` doesn't copy anything: c and a are the same tree, so changing c changes a.
+wrong[[1, 2, 30] [1, 20, 30]]: b was copied before c changed a's right child, and its nodes are separate, so b still has 3.
+hint: `copy_tree` builds new nodes; `c = a` gives the same tree a second name.
+hint: Follow each change: one goes to b's nodes, the other to a's.
+right: `[1, 2, 30] [1, 20, 3]`: the copy is independent, but the alias is the same tree under another name.
+wrong: b is a separate copy, so setting b.left.val to 20 changes only b. c is a itself, so setting c.right.val to 30 changes a.
+
+=== task: cells hard
+title: What comes next?
+prompt: In a preorder traversal of this tree, which node is visited right **after** each of these nodes?
+
+```text
+        K
+      /   \
+     F     T
+    /     / \
+   B     M   W
+    \
+     D
+```
+labels: after K | after B | after D | after T
+answer: F | D | T | M
+wrong[F | D | M | M]: D is a leaf, so the walk climbs back up until it finds an ancestor whose right subtree hasn't been walked: K, whose right child is T.
+wrong[T | D | T | M]: K's left child, F, comes before its right child.
+hint: A node with a left child is followed by its left child; with only a right child, by its right child.
+hint: A leaf is followed by the right child of the nearest ancestor that still has an unwalked right subtree.
+right: F, D, T, M: children follow their parent, and after a leaf the walk jumps to the next waiting right subtree.
+wrong: After K: its left child F. After B: its only child, D. After D (a leaf): F and B have no unwalked right subtrees, so it's K's right child, T. After T: its left child M.
+
+=== task: mcq hard
+title: Many trees, one list
+prompt: A binary tree's preorder list is A B C, with no None markers. How many differently shaped trees could have produced it?
+* 5 :: Right. Every possible shape of a 3-node tree, labelled in preorder, gives A B C.
+- 1 :: B could be A's left or right child, and C could hang in several places.
+- 2 :: There are more: C can be B's left child, B's right child, or A's other child.
+- 6 :: Only 5 shapes of 3-node binary tree exist.
+hint: B is A's left child or its right child. Where can C go each time?
+hint: Count: C as B's left child, as B's right child, or as A's other child.
+right: 5 shapes, all with preorder A B C. That's why saving a tree needs the None markers: they pin down the shape.
+wrong: With B on A's left, C can be B's left child, B's right child or A's right child (3 trees). With B on A's right, C can be B's left or right child (2 more). 5 in all.
+
+=== task: multi hard
+title: Saving with markers
+prompt: A tree is saved as its preorder list with None for every empty subtree. Choose **every** true statement.
+* A tree of 4 nodes is saved as 9 items :: Right. n nodes have n + 1 empty child slots, so there are 2n + 1 items.
+* The first item is the root's value, unless the tree is empty :: Right. Preorder starts at the root.
+* The list `[None]` is an empty tree :: Right. One empty subtree, one item.
+* Without the Nones, different trees could be saved as the same list :: Right. A B C fits 5 different shapes.
+- If all the values are different, the Nones can be left out :: Shape is still lost: B can be A's left or right child.
+- The list always ends with a value :: It always ends with None: the last node is a leaf, whose empty children come last.
+hint: How many empty child slots does a tree of n nodes have?
+hint: What comes after the last node's value?
+right: 2n + 1 items, the root first, `[None]` for an empty tree, and the Nones are what make the shape recoverable.
+wrong: Each of n nodes has 2 child slots, n − 1 of them filled, so n + 1 are None: 2n + 1 items. The root comes first, the last items are Nones, and without them the shape is ambiguous.
+
+=== task: parsons hard
+title: An outline with a stack
+prompt: Arrange the lines so that `outline` prints a folder tree in preorder without recursion, using a stack of (folder, depth) pairs, and the program prints:
+
+```output
+home
+  music
+    jazz
+  work
+```
+
+Not every line is needed.
+lines:
+```python
+class Folder:
+    def __init__(self, name, children=None):
+        self.name = name
+        if children is None:
+            children = []
+        self.children = children
+
+def outline(root):
+    stack = [(root, 0)]
+    while stack:
+        folder, depth = stack.pop()
+        print("  " * depth + folder.name)
+        for child in reversed(folder.children):
+            stack.append((child, depth + 1))
+
+outline(Folder("home", [Folder("music", [Folder("jazz")]), Folder("work")]))
+```
+distractors:
+```python
+        for child in folder.children:
+            stack.append((child, depth))
+```
+hint: Each stack entry carries its folder's depth.
+hint: Push the children in reverse, one level deeper, so the first child is on top.
+right: home is printed, then music (pushed last, so on top) and its contents, and work last: each folder before its contents.
+wrong: Start with (home, 0). Pop a pair, print the name indented by its depth, and push its children in reverse order with depth + 1.
