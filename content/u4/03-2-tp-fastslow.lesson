@@ -1,0 +1,1232 @@
+=== lesson
+id: algo-tp-fastslow
+title: Fast and slow pointers
+summary: Both pointers start at the front and move the same way, but at different speeds. In a list, a fast pointer reads every item while a slow one marks where the next keeper goes: that removes duplicates and moves zeros in place. In a linked list, a pointer that moves two nodes at a time finds the middle in one pass and detects a loop with no extra memory.
+
+=== learn
+### Same direction, different speeds
+In this style both pointers start at the front and only move forward. `fast` moves on every step and looks at each item once. `slow` moves only when something happens, so it lags behind and marks a position: where the next item to keep goes, or how far into the list you are.
+
+| job | fast | slow |
+| --- | --- | --- |
+| remove duplicates from a sorted list | reads every item | marks the last unique value kept |
+| move the zeros to the end | reads every item | marks where the next non-zero goes |
+| middle of a linked list | two nodes per step | one node per step |
+| detect a loop in a linked list | two nodes per step | one node per step |
+
+In the first two jobs, `slow` never gets ahead of `fast`, so the list can be rewritten in place: an item is only overwritten after `fast` has read it. In the last two, `fast` covers twice the distance of `slow`, and that difference answers the question.
+
+### Removing duplicates from a sorted list
+In a sorted list, the copies of a value sit next to each other. `slow` points at the last unique value kept so far. When `fast` finds a value different from it, `slow` moves on one place and the new value is copied there:
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    for fast in range(1, len(nums)):
+        if nums[fast] != nums[slow]:
+            slow += 1
+            nums[slow] = nums[fast]
+    del nums[slow + 1:]
+    return nums
+
+print(dedupe([1, 1, 2, 3, 3, 3, 5]), dedupe([4, 4, 4]), dedupe([]))
+```
+```output
+[1, 2, 3, 5] [4] []
+```
+| fast | nums[fast] | same as nums[slow]? | slow after | list after |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | yes | 0 | [1, 1, 2, 3, 3, 3, 5] |
+| 2 | 2 | no: copy to index 1 | 1 | [1, 2, 2, 3, 3, 3, 5] |
+| 3 | 3 | no: copy to index 2 | 2 | [1, 2, 3, 3, 3, 3, 5] |
+| 4 | 3 | yes | 2 | unchanged |
+| 5 | 3 | yes | 2 | unchanged |
+| 6 | 5 | no: copy to index 3 | 3 | [1, 2, 3, 5, 3, 3, 5] |
+
+The unique values now fill indexes 0 to 3, and `del nums[slow + 1:]` deletes the rest. One pass, O(n), and O(1) extra space. The empty list is handled first, because `nums[0]` wouldn't exist. Animation 1 runs this.
+
+### Moving the zeros to the end
+Here the non-zero values must keep their order and the zeros go to the end, without losing any. `slow` marks where the next non-zero belongs; when `fast` finds one, the two items **swap**, so a zero at `slow` moves back to where `fast` is:
+```python
+def move_zeros(nums):
+    slow = 0
+    for fast in range(len(nums)):
+        if nums[fast] != 0:
+            nums[slow], nums[fast] = nums[fast], nums[slow]
+            slow += 1
+    return nums
+
+print(move_zeros([0, 3, 0, 5, 7, 0, 1]))
+```
+```output
+[3, 5, 7, 1, 0, 0, 0]
+```
+| fast | item | action | list after |
+| --- | --- | --- | --- |
+| 0 | 0 | skip | [0, 3, 0, 5, 7, 0, 1] |
+| 1 | 3 | swap indexes 0 and 1, slow = 1 | [3, 0, 0, 5, 7, 0, 1] |
+| 2 | 0 | skip | unchanged |
+| 3 | 5 | swap indexes 1 and 3, slow = 2 | [3, 5, 0, 0, 7, 0, 1] |
+| 4 | 7 | swap indexes 2 and 4, slow = 3 | [3, 5, 7, 0, 0, 0, 1] |
+| 5 | 0 | skip | unchanged |
+| 6 | 1 | swap indexes 3 and 6, slow = 4 | [3, 5, 7, 1, 0, 0, 0] |
+
+Everything before `slow` is a non-zero in its original order, and everything from `slow` up to `fast` is a zero. Swapping instead of copying keeps the zeros in the list, so nothing has to be deleted or added back.
+
+### Linked lists: one step and two steps
+A **linked list** is a chain of nodes, each holding a value and a link, `next`, to the following node; the last node's `next` is None. There's no index, so a pointer can only walk forward. Here `slow` moves one node per step, `slow = slow.next`, and `fast` moves two, `fast = fast.next.next`:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build(values):
+    head = None
+    for v in reversed(values):
+        head = Node(v, head)
+    return head
+
+head = build([10, 20, 30, 40, 50])
+slow = head
+fast = head
+for step in range(2):
+    slow = slow.next
+    fast = fast.next.next
+    print(step + 1, slow.val, fast.val)
+```
+```output
+1 20 30
+2 30 50
+```
+`build` makes a linked list from a Python list, starting from the last value. After k steps, `slow` is k nodes in and `fast` is 2k nodes in: always twice as far. Before taking a double step, `fast` must check that both `fast` and `fast.next` exist, or `fast.next.next` crashes at the end of the list.
+
+### The middle of a linked list
+Because `fast` goes twice as far, `slow` is halfway along when `fast` reaches the end:
+```python
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+
+print(middle(build([1, 2, 3, 4, 5])), middle(build([1, 2, 3, 4, 5, 6])), middle(build([7])))
+```
+```output
+3 4 7
+```
+| step | slow | fast | can fast take two more steps? |
+| --- | --- | --- | --- |
+| start | 1 | 1 | yes |
+| 1 | 2 | 3 | yes |
+| 2 | 3 | 5 | no: 5 is the last node, stop |
+
+With 6 nodes, `fast` goes 1, 3, 5 and then off the end to None, while `slow` goes 1, 2, 3, 4, so the even case gives the second of the two middle nodes. Without fast and slow you would walk the list twice: once to count the nodes, then n // 2 nodes to the middle. Fast and slow do it in one pass, still O(n) with O(1) extra space.
+
+### Detecting a loop
+If a node's `next` points back to an earlier node, the list has a **cycle**: walking it never reaches None. Send `slow` and `fast` along it. Without a cycle, `fast` reaches the end. With one, both get stuck going round the loop, and `fast`, which moves one node per step faster, catches up with `slow` from behind:
+```python
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+a = build([1, 2, 3, 4, 5])
+print(has_cycle(a))
+a.next.next.next.next.next = a.next.next
+print(has_cycle(a))
+```
+```output
+False
+True
+```
+`a.next.next.next.next` is the node 5, and the line sets its `next` to the node 3, making the loop 3 → 4 → 5 → 3. `slow is fast` asks whether the two pointers are on the **same node**, not whether two nodes hold equal values. This is **Floyd's cycle detection**, also called the tortoise and the hare. Animation 2 runs it.
+
+### Why fast and slow must meet
+| step | slow | fast |
+| --- | --- | --- |
+| start | 1 | 1 |
+| 1 | 2 | 3 |
+| 2 | 3 | 5 |
+| 3 | 4 | 4: they meet |
+
+At step 3, `fast` goes from 5 round the loop to 3 and then 4, the node `slow` has moved to. Once both are inside the loop, think of the distance from `fast` forward to `slow`. Each step `slow` adds 1 to it and `fast` takes 2 away, so it shrinks by exactly 1. It can't jump past 0, so it reaches 0: they meet within one lap of the loop. So the search takes O(n) steps, and it needs only two pointers: O(1) extra space. Remembering every node visited in a set also finds a loop, but needs O(n) extra space.
+
+### Comparing the jobs
+| job | fast and slow | another way |
+| --- | --- | --- |
+| remove duplicates from a sorted list | O(n), O(1) extra space | build a new list: O(n) extra space |
+| move zeros to the end | O(n), O(1) extra space | removing each zero and appending it again: O(n²) |
+| middle of a linked list | one pass, O(1) extra space | count the nodes, then walk again: two passes |
+| detect a cycle | O(n), O(1) extra space | a set of visited nodes: O(n) extra space |
+
+Each job is a single pass with two pointers and no extra list. The other ways need extra memory, a second pass, or a list that shifts again and again.
+
+=== keypoints
+- Fast and slow pointers start at the front and move the same way. `fast` moves every step; `slow` moves only sometimes, or one node to fast's two.
+- Remove duplicates from a sorted list: when `nums[fast] != nums[slow]`, do `slow += 1` and copy the value there; then `del nums[slow + 1:]`. O(n) time, O(1) extra space.
+- Move zeros: when `nums[fast]` isn't 0, swap it with `nums[slow]` and move slow. The non-zeros keep their order.
+- In a linked list, `slow = slow.next` and `fast = fast.next.next`. Loop while `fast is not None and fast.next is not None`.
+- When fast reaches the end, slow is at the middle (the second middle for an even length): one pass instead of two.
+- With a cycle, fast gains one node per step on slow inside the loop, so they meet (`slow is fast`). Without one, fast reaches None. O(n) time, O(1) space.
+
+=== example: Unique readings
+intro: A sorted log of temperature readings has many repeats. The program keeps one copy of each value, in place, and reports how many copies it removed.
+```python
+readings = [18, 18, 19, 19, 19, 21, 22, 22, 25]
+before = len(readings)
+
+slow = 0
+for fast in range(1, len(readings)):
+    if readings[fast] != readings[slow]:
+        slow += 1
+        readings[slow] = readings[fast]
+del readings[slow + 1:]
+
+print(readings)
+print("removed", before - len(readings), "repeats")
+```
+1-2: Nine readings, sorted, so equal readings are next to each other.
+4-8: `slow` marks the last unique reading kept. `fast` reads every reading; a new value goes into the next place after `slow`.
+9: After the loop, `slow` is the index of the last unique reading. Everything after it is left over.
+11-12: Five unique readings remain, so four repeats were removed. No second list was made.
+
+=== example: Does the route loop?
+intro: A bus route is a linked list of stops. Somebody linked the last stop back to an earlier one by mistake. Fast and slow pointers find out whether a route loops, counting the steps until they meet.
+```python
+class Stop:
+    def __init__(self, name, next=None):
+        self.name = name
+        self.next = next
+
+def check_route(first):
+    slow = first
+    fast = first
+    steps = 0
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        steps += 1
+        if slow is fast:
+            return "loops: they met at " + slow.name + " after " + str(steps) + " steps"
+    return "ends after " + str(steps) + " steps"
+
+route = Stop("Depot", Stop("Mill", Stop("Park", Stop("School", Stop("Square", Stop("Station"))))))
+print(check_route(route))
+route.next.next.next.next.next.next = route.next.next
+print(check_route(route))
+```
+1-4: Each stop has a name and a link to the next stop.
+6-16: The same check as `has_cycle`, but it also counts the steps and names the stop where the pointers meet.
+18-19: Six stops in a line. On step 3, `fast` jumps from Square past Station to None, so the route ends.
+20-21: Station now links back to Park, making the loop Park, School, Square, Station, Park. `fast` catches `slow` at Square after 4 steps.
+
+=== animation: Removing duplicates
+view: array nums ptr=slow,fast done=0:slow
+vars slow fast
+intro: `fast` reads every item. `slow` marks the last unique value kept, and the green cells are the unique values found so far.
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    for fast in range(1, len(nums)):
+        if nums[fast] != nums[slow]:
+            slow += 1
+            nums[slow] = nums[fast]
+    del nums[slow + 1:]
+    return nums
+
+data = [1, 1, 2, 3, 3, 3, 5]
+dedupe(data)
+print(data)
+```
+1: Defines dedupe. Nothing runs yet.
+2: Is the list empty? It isn't, so there's at least one value to keep.
+4: The first item is always kept, so slow starts on it.
+5: fast moves on to the next item.
+6: Is nums[{fast}] = {nums[fast]} different from the last value kept, {nums[slow]}? {nums[fast] != nums[slow]}.
+7: A new value: slow moves on to {slow + 1}.
+8: Copy {nums[fast]} into index {slow}.
+9: The unique values fill indexes 0 to {slow}. Delete everything after them.
+10: The same list, with one copy of each value.
+12: A sorted list with repeats.
+13: Remove the repeats in place.
+14: Four unique values are left.
+
+=== animation: Fast and slow round a loop
+view: linked head ptr=slow,fast
+intro: A linked list whose last node links back to the node 3. `slow` moves one node per step and `fast` two. Inside the loop, `fast` gains one node per step, so it catches `slow`.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+head = Node(1, Node(2, Node(3, Node(4, Node(5)))))
+head.next.next.next.next.next = head.next.next
+print(has_cycle(head))
+```
+1: Defines the Node class. Nothing runs yet.
+2: Defines how a new node is set up: its value and its link.
+3: Store the node's value.
+4: Store the link to the next node.
+6: Defines has_cycle.
+7: slow starts at the head.
+8: fast starts at the head too.
+9: Can fast take two more steps? {fast is not None and fast.next is not None}.
+10: slow moves one node, to {slow.next.val}.
+11: fast moves two nodes, to {fast.next.next.val}.
+12: Are they on the same node? {slow is fast}.
+13: fast has caught slow inside the loop: the list has a cycle.
+14: fast reached the end of the list: no cycle.
+16: Build the list 1 → 2 → 3 → 4 → 5.
+17: Link node 5 back to node 3, making the loop 3 → 4 → 5 → 3.
+18: Does the list loop?
+
+=== task: predict easy
+title: Two dedupes
+code:
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    for fast in range(1, len(nums)):
+        if nums[fast] != nums[slow]:
+            slow += 1
+            nums[slow] = nums[fast]
+    del nums[slow + 1:]
+    return nums
+
+print(dedupe([2, 2, 3, 4, 4]), dedupe([7, 8, 9]))
+```
+wrong[[2, 2, 3, 4, 4] [7, 8, 9]]: `dedupe` copies each new value next to the last one kept and deletes the leftovers, so the repeats are gone.
+wrong[[3] [7, 8, 9]]: Repeated values are kept once, not dropped: 2 and 4 stay, as one copy each.
+wrong[[2, 3, 4] []]: With no repeats every value is new, so all three are kept.
+hint: slow marks the last value kept; a value different from it is copied to the next place.
+hint: After the loop, everything after index slow is deleted.
+right: `[2, 3, 4] [7, 8, 9]`: one copy of each value, in order. A list with no repeats stays the same.
+wrong: For [2, 2, 3, 4, 4]: 2 is kept, the second 2 is skipped, 3 and 4 are copied to indexes 1 and 2, and the last 4 is skipped. Then `del nums[3:]` removes the leftovers.
+
+=== task: mcq easy
+title: Two checks before a double step
+prompt: The middle-finding loop runs `while fast is not None and fast.next is not None:`. Why does it check `fast.next` as well?
+* Because `fast = fast.next.next` would crash if `fast.next` were None :: Right. None has no `.next`, so the double step needs both links to exist.
+- To make the loop run faster :: It's a safety check, not a speed-up.
+- Because `fast.next` is always None at the start :: At the start fast is the head, and its next is usually a real node.
+- To skip the middle node :: The check doesn't skip nodes; it stops the loop before a crash.
+hint: What does `fast.next.next` need in order to work?
+hint: What happens when you ask None for `.next`?
+right: The double step reads `fast.next` and then its `.next`. If `fast.next` is None, that second read raises an AttributeError, so the loop must stop first.
+wrong: `fast.next.next` needs both `fast` and `fast.next` to be real nodes. Checking both before each double step stops the loop at the end of the list instead of crashing.
+
+=== task: cells easy
+title: Zeros to the back
+prompt: `move_zeros([0, 4, 0, 6])` runs. Fill in the values.
+labels: slow after fast reads index 1 | number of swaps made | slow after the loop | the list at the end
+answer: 1 | 2 | 2 | [4, 6, 0, 0]
+wrong[0 | 2 | 2 | [4, 6, 0, 0]]: At index 1, fast finds 4, which isn't zero: it swaps with index 0, and slow moves on to 1.
+wrong[1 | 4 | 2 | [4, 6, 0, 0]]: Only the non-zero items are swapped, 4 and 6: 2 swaps.
+wrong[1 | 2 | 2 | [6, 4, 0, 0]]: The non-zeros keep their order: 4 came before 6.
+hint: Only items that aren't 0 are swapped, and each swap moves slow on by one.
+hint: The list has two non-zero items.
+right: 4 swaps with index 0 (slow = 1), 6 swaps with index 1 (slow = 2), and the zeros end up at the back: [4, 6, 0, 0].
+wrong: fast = 1 finds 4: swap it with index 0, slow = 1. fast = 3 finds 6: swap it with index 1, slow = 2. Two swaps, and the list is [4, 6, 0, 0].
+
+=== task: code easy
+title: Find the middle
+prompt: Write `middle(head)` that returns the value of the middle node of a non-empty linked list, in one pass, with `slow` moving one node and `fast` moving two nodes per step. For an even number of nodes, return the second of the two middle nodes. `Node` is given.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    slow = head
+    fast = head
+    # your code here
+    return slow.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+```
+tests:
+- middle(Node(1, Node(2, Node(3, Node(4, Node(5))))))
+- middle(Node(1, Node(2, Node(3, Node(4)))))
+- middle(Node(7))
+- middle(Node(4, Node(9)))
+- middle(Node("a", Node("b", Node("c"))))
+fail[1]: Five nodes: the middle one is the third, 3.
+fail[2]: Four nodes: the two middles are 2 and 3, and the second one is 3.
+fail[4]: Two nodes: the second middle is the second node, 9.
+error[AttributeError]: Loop only while `fast is not None and fast.next is not None`, so `fast.next.next` never reads from None.
+hint: Loop while `fast is not None and fast.next is not None`.
+hint: In the loop: `slow = slow.next` and `fast = fast.next.next`.
+hint: When the loop ends, slow is on the middle node.
+right: fast covers twice the distance of slow, so slow is halfway when fast reaches the end: one pass, O(n), with O(1) extra space.
+wrong: Move slow one node and fast two nodes per step, while fast can still take a double step. Then return `slow.val`.
+
+=== task: fill easy
+title: Which items move forward?
+prompt: Fill in the blanks so that `move_zeros` moves the zeros to the end, keeping the other numbers in order, and the program prints:
+
+```output
+[3, 5, 7, 1, 0, 0, 0]
+```
+code:
+```python
+def move_zeros(nums):
+    slow = 0
+    for fast in range(len(nums)):
+        if nums[fast] != ??:
+            nums[slow], nums[fast] = nums[fast], nums[slow]
+            ?? += 1
+    return nums
+
+print(move_zeros([0, 3, 0, 5, 7, 0, 1]))
+```
+answer: 0 | slow
+wrong[0 | fast]: `fast += 1` doesn't help: the for loop sets fast itself, and slow never moves, so every non-zero is swapped with index 0.
+wrong[1 | slow]: `!= 1` treats every number except 1 as a keeper, zeros included, so almost nothing moves: [0, 3, 0, 5, 7, 0, 1].
+hint: The items that move forward are the ones that aren't zero.
+hint: After a swap, the place for the next non-zero is one further on.
+right: Every non-zero is swapped to index slow, and slow moves on, so the non-zeros fill the front in order and the zeros collect at the back.
+wrong: Test `nums[fast] != 0`, and after each swap do `slow += 1`, so the next non-zero goes into the next place.
+
+=== task: multi easy
+title: True of fast and slow pointers
+prompt: Choose **every** true statement about the fast and slow pointers in this lesson.
+* Both pointers start at the front and only move forward :: Right. That's the same-direction style.
+* In `dedupe`, slow never gets ahead of fast :: Right. That's why an item is never overwritten before it has been read.
+* In a linked list with no cycle, fast reaches the end first :: Right. It moves two nodes per step, slow only one.
+- In a linked list with a cycle, fast reaches None :: It never reaches None: it goes round and round the loop.
+- Finding the middle needs the length of the list first :: One pass is enough: slow is halfway when fast finishes.
+- The two pointers are always one item apart :: The gap changes: fast moves every step, slow only sometimes, or half as fast.
+hint: Where do the pointers start, and which way do they move?
+hint: What happens to fast in a list that loops?
+right: Both start at the front and move forward; slow trails fast, which makes in-place rewriting safe; and without a loop, fast hits the end first.
+wrong: Fast and slow move forward from the front at different speeds, so the gap between them changes. Without a cycle fast reaches None first; with one, it never does. No length is needed to find the middle.
+
+=== task: parsons easy
+title: Arrange has_cycle
+prompt: Arrange the lines of `has_cycle` so that the program prints:
+
+```output
+False
+True
+```
+
+Not every line is needed.
+lines:
+```python
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+```
+after:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = Node(1, Node(2, Node(3)))
+print(has_cycle(a))
+a.next.next.next = a
+print(has_cycle(a))
+```
+distractors:
+```python
+        if slow is not fast:
+        fast = fast.next
+```
+hint: slow moves one node per step, fast moves two.
+hint: Check whether they're on the same node after both have moved.
+right: Without the loop, fast falls off the end after node 3: False. After node 3 is linked back to node 1, fast catches slow: True.
+wrong: Start both at the head. While fast can take two steps, move slow one node and fast two, and return True if `slow is fast`. If the loop ends, return False.
+
+=== task: order easy
+title: The middle of five
+prompt: `middle` runs on the linked list 10 → 20 → 30 → 40 → 50. Put the steps in order.
+items:
+- slow and fast both start at 10
+- slow moves to 20, and fast to 30
+- slow moves to 30, and fast to 50
+- fast.next is None, so the loop stops, and the middle is 30
+hint: fast moves two nodes per step.
+hint: The loop stops when fast can't take another double step.
+right: Two steps: fast goes 10, 30, 50 and slow goes 10, 20, 30, so slow is halfway when fast reaches the end.
+wrong: Both start at 10. Step 1: slow 20, fast 30. Step 2: slow 30, fast 50. fast.next is None, so the loop stops with slow on 30.
+
+=== task: predict easy
+title: Even and odd lengths
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def build(values):
+    head = None
+    for v in reversed(values):
+        head = Node(v, head)
+    return head
+
+def middle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+
+print(middle(build([5, 6, 7, 8])), middle(build([5, 6, 7])))
+```
+wrong[6 6]: With four nodes, fast goes 5, 7 and then off the end, while slow goes 5, 6, 7: the second middle, 7.
+wrong[7 7]: With three nodes, fast goes 5, 7 and stops there, because 7 is the last node. slow is on 6.
+wrong[6 7]: For [5, 6, 7, 8] fast can take two double steps, so slow moves twice, to 7. For [5, 6, 7], slow moves once, to 6.
+hint: Count how many double steps fast can take in each list.
+hint: slow moves once for each double step.
+right: `7 6`: four nodes give two steps (the second middle, 7); three nodes give one step (the middle, 6).
+wrong: [5, 6, 7, 8]: fast 5 → 7 → None, slow 5 → 6 → 7. [5, 6, 7]: fast 5 → 7, then 7.next is None, so slow stops at 6.
+
+=== task: mcq easy
+title: Memory for the loop check
+prompt: How much extra memory does the fast-and-slow cycle check need for a linked list of n nodes?
+* O(1): two pointers, whatever the length :: Right. It remembers two positions and nothing else.
+- O(n): it remembers every node visited :: That's the set approach. Fast and slow remember only where they are.
+- O(log n) :: Nothing is halved here; the memory doesn't grow at all.
+- O(n²) :: Even remembering every node would only be O(n).
+hint: What does the check store as it walks?
+hint: Does that grow with the length of the list?
+right: O(1): `slow` and `fast` are the only things it keeps, so a list of a million nodes needs no more memory than a list of three.
+wrong: The check keeps two pointers and moves them along. It never stores the nodes it has passed, so its extra memory doesn't grow with n: O(1).
+
+=== task: code medium
+title: Write dedupe
+prompt: Write `dedupe(nums)` that removes the repeats from a **sorted** list in place, keeping one copy of each value in order, and returns `nums`. Use a slow pointer for the last value kept and a fast one that reads every item. The speed check uses long lists, so deleting the repeats one at a time is too slow.
+starter:
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    # your code here
+    return nums
+```
+solution:
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    for fast in range(1, len(nums)):
+        if nums[fast] != nums[slow]:
+            slow += 1
+            nums[slow] = nums[fast]
+    del nums[slow + 1:]
+    return nums
+```
+tests:
+- dedupe([1, 1, 2, 3, 3, 3, 5])
+- dedupe([4, 4, 4])
+- dedupe([])
+- dedupe([1, 2, 3])
+- dedupe([-2, -2, 0, 0, 7])
+speed: setup=nums = sorted(list(range(n)) * 2) | call=dedupe(nums) | target=O(n)
+slow:
+```python
+def dedupe(nums):
+    i = 1
+    while i < len(nums):
+        if nums[i] == nums[i - 1]:
+            nums.pop(i)
+        else:
+            i += 1
+    return nums
+```
+fail[1]: Each value once, in order: [1, 2, 3, 5].
+fail[2]: Three 4s become one.
+fail[5]: Negative numbers repeat too: [-2, 0, 7].
+hint: Loop fast from 1 to the end of the list.
+hint: When `nums[fast] != nums[slow]`, do `slow += 1` and then `nums[slow] = nums[fast]`.
+hint: After the loop, `del nums[slow + 1:]` removes the leftovers.
+right: One pass and one deletion at the end: O(n) time, O(1) extra space. Popping each repeat would shift the list every time: O(n²).
+wrong: Keep slow on the last unique value. Each new value fast finds goes into the next place after slow. Finally delete everything after slow.
+
+=== task: code medium
+title: Write move_zeros
+prompt: Write `move_zeros(nums)` that moves every 0 to the end of the list in place, keeping the other numbers in their order, and returns `nums`. The speed check uses long lists, so removing each zero and appending it again is too slow.
+starter:
+```python
+def move_zeros(nums):
+    slow = 0
+    # your code here
+    return nums
+```
+solution:
+```python
+def move_zeros(nums):
+    slow = 0
+    for fast in range(len(nums)):
+        if nums[fast] != 0:
+            nums[slow], nums[fast] = nums[fast], nums[slow]
+            slow += 1
+    return nums
+```
+tests:
+- move_zeros([0, 3, 0, 5, 7, 0, 1])
+- move_zeros([0, 0, 1])
+- move_zeros([1, 2])
+- move_zeros([])
+- move_zeros([0])
+- move_zeros([4, 0, -2, 0])
+speed: setup=nums = [0, 1] * n | call=move_zeros(nums) | target=O(n)
+slow:
+```python
+def move_zeros(nums):
+    zeros = nums.count(0)
+    for _ in range(zeros):
+        nums.remove(0)
+        nums.append(0)
+    return nums
+```
+forbid[.remove(]: Each `.remove` shifts the rest of the list. Use a slow pointer instead.
+fail[1]: The non-zeros keep their order: 3, 5, 7, 1, then three zeros.
+fail[2]: The 1 moves to the front: [1, 0, 0].
+fail[6]: Negative numbers aren't zero either: [4, -2, 0, 0].
+hint: Loop fast over every index.
+hint: When `nums[fast] != 0`, swap `nums[slow]` and `nums[fast]`, then `slow += 1`.
+hint: Swapping, instead of copying, keeps the zeros in the list.
+right: One pass with one swap per non-zero: O(n) time, O(1) extra space. Removing and appending each zero would shift the list every time: O(n²).
+wrong: Walk fast through the list. Each non-zero is swapped to index slow, and slow moves on; the zeros it swaps out end up behind the non-zeros.
+
+=== task: predict medium
+title: Two loops, one not
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+a = Node(1, Node(2, Node(3, Node(4))))
+b = Node(9)
+b.next = b
+print(has_cycle(a), has_cycle(b), has_cycle(None))
+```
+wrong[False False False]: b's only node links to itself: after one step, slow and fast are both on it.
+wrong[False True True]: With head = None the loop never runs, so the answer is False.
+wrong[True True False]: a ends with 4, whose next is None, so fast falls off the end: no cycle.
+hint: a is an ordinary list of four nodes.
+hint: b is a single node whose next is itself.
+right: `False True False`: a ends at None, b loops round its single node, and an empty list has no loop.
+wrong: In a, fast goes 1, 3 and then off the end. In b, both pointers land on the one node after a single step. None never enters the loop.
+
+=== task: cells medium
+title: Seven nodes
+prompt: `middle` runs on the linked list 1 → 2 → 3 → 4 → 5 → 6 → 7. Fill in the values.
+labels: slow after step 1 | fast after step 1 | fast after step 3 | steps taken | middle value
+answer: 2 | 3 | 7 | 3 | 4
+wrong[2 | 2 | 7 | 3 | 4]: fast moves two nodes per step: from 1 to 3.
+wrong[2 | 3 | 7 | 4 | 5]: After step 3, fast is on 7, the last node, so it can't take two more steps: 3 steps, and slow is on 4.
+wrong[2 | 3 | 6 | 3 | 4]: fast goes 1, 3, 5, 7.
+hint: slow moves one node per step, and fast moves two.
+hint: The loop stops when fast is on the last node.
+right: Step 1: slow 2, fast 3. Step 2: slow 3, fast 5. Step 3: slow 4, fast 7. Then 7.next is None, so the middle is 4.
+wrong: fast takes three double steps (1 → 3 → 5 → 7), and slow takes three single steps (1 → 2 → 3 → 4). 4 is the middle of seven nodes.
+
+=== task: fill medium
+title: The loop test and the meeting test
+prompt: Fill in the blanks in `has_cycle`, so that the program prints:
+
+```output
+False True
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and ?? is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow ?? fast:
+            return True
+    return False
+
+a = Node(1, Node(2, Node(3)))
+b = Node(1, Node(2, Node(3)))
+b.next.next.next = b
+print(has_cycle(a), has_cycle(b))
+```
+answer: fast.next | is
+wrong[fast.next.next | is]: For a, fast reaches the last node, 3, and the loop test then asks for `fast.next.next`, which is `None.next`: an AttributeError.
+wrong[slow.next | is]: slow is always behind fast, so testing slow doesn't protect the double step: for a, `fast.next.next` is read from None and crashes.
+hint: The double step reads `fast.next`, then its `.next`.
+hint: "The same node" is tested with `is`.
+right: Checking `fast` and `fast.next` makes the double step safe, and `is` asks whether both pointers are on the same node.
+wrong: Test `fast.next is not None` alongside `fast is not None`, and compare the pointers with `is`.
+
+=== task: mcq medium
+title: Why must they meet?
+prompt: Inside the loop of a cyclic linked list, why can't fast jump over slow without ever landing on the same node?
+* The distance from fast forward to slow shrinks by exactly 1 each step, so it must reach 0 :: Right. slow adds 1 to that distance and fast takes 2 away.
+- fast moves at random :: Every move is fixed: two nodes per step.
+- slow stops moving inside the loop :: Both keep moving; fast is only one node per step faster.
+- The loop always has an even number of nodes :: Any loop length works.
+hint: Measure how far fast is behind slow, going round the loop.
+hint: How does that distance change in one step?
+right: Each step changes the distance by +1 (slow) and −2 (fast): exactly −1. A distance that drops by 1 each time can't skip 0, so they land on the same node.
+wrong: Going round the loop, fast is some number of nodes behind slow. Each step, that number goes down by exactly one, so it reaches 0, the meeting, within one lap.
+
+=== task: predict medium
+title: Zeros and negatives
+code:
+```python
+def move_zeros(nums):
+    slow = 0
+    for fast in range(len(nums)):
+        if nums[fast] != 0:
+            nums[slow], nums[fast] = nums[fast], nums[slow]
+            slow += 1
+    return nums
+
+print(move_zeros([0, -1, 0, 0, 2, -3]))
+```
+wrong[[-3, -1, 2, 0, 0, 0]]: The non-zeros keep their order: −1, 2, −3.
+wrong[[-1, 0, 0, 0, 2, -3]]: Every non-zero is swapped forward, not only the first one.
+wrong[[0, 0, 0, -1, 2, -3]]: The zeros go to the end, not the front.
+hint: −1, 2 and −3 are the non-zeros, in that order.
+hint: Each one is swapped to index slow, which moves on after each swap.
+right: `[-1, 2, -3, 0, 0, 0]`: −1, 2 and −3 move to indexes 0, 1 and 2 in their original order, and the zeros end up behind them.
+wrong: −1 swaps to index 0, 2 swaps to index 1 and −3 swaps to index 2. The zeros are swapped backwards each time, ending at indexes 3 to 5.
+
+=== task: multi medium
+title: Which jobs fit fast and slow?
+prompt: Choose **every** job that fast and slow pointers, moving the same way, do well.
+* Removing the repeats from a sorted list in place :: Right. slow keeps the last unique value; fast reads ahead.
+* Moving the zeros to the end, keeping the order of the rest :: Right. slow marks where the next non-zero goes.
+* Finding the middle of a linked list in one pass :: Right. fast moves two nodes, slow one.
+* Detecting a loop in a linked list :: Right. fast catches slow inside the loop.
+- Checking whether a word is a palindrome :: That compares the two ends: opposite pointers.
+- Finding the two walls that hold the most water :: That's opposite pointers again.
+hint: Same direction means both pointers start at the front.
+hint: Which jobs need the front and the back at the same time instead?
+right: The four in-place and linked-list jobs use same-direction pointers. Palindromes and the most water work from both ends inward.
+wrong: Fast and slow pointers both start at the front: in-place removal, moving zeros, the middle and loop detection. Palindromes and water containers compare the two ends, which is the opposite-ends style.
+
+=== task: parsons medium
+title: The first middle
+prompt: This version of `middle` returns the **first** of the two middle nodes when the length is even, because fast stops one step earlier: it only steps while it could take **another** double step afterwards. Arrange the lines so that the program prints:
+
+```output
+2 2
+```
+
+Not every line is needed.
+lines:
+```python
+def first_middle(head):
+    slow = head
+    fast = head
+    while fast.next is not None and fast.next.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow.val
+```
+after:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+print(first_middle(Node(1, Node(2, Node(3, Node(4))))), first_middle(Node(1, Node(2, Node(3)))))
+```
+distractors:
+```python
+    while fast is not None and fast.next is not None:
+        slow = slow.next.next
+```
+hint: fast only steps when both `fast.next` and `fast.next.next` exist.
+hint: slow still moves one node per step.
+right: For 1 → 2 → 3 → 4, fast steps from 1 to 3 and then stops, because 4 has no next: slow is on 2, the first middle. For three nodes the middle is 2 as well.
+wrong: Loop while `fast.next` and `fast.next.next` both exist; move slow one node and fast two. Return `slow.val`.
+
+=== task: order medium
+title: Zeros moving back
+prompt: `move_zeros([0, 1, 0, 2])` runs. Put the states in order.
+items:
+- [0, 1, 0, 2], before the loop
+- [1, 0, 0, 2], after fast reads the 1
+- [1, 2, 0, 0], after fast reads the 2
+- Return the list, with slow at 2
+hint: The 1 is at index 1; it swaps with index 0.
+hint: The 2 is at index 3; it swaps with index 1.
+right: Two swaps: the 1 moves to index 0 and the 2 to index 1, and the zeros are pushed behind them.
+wrong: First the 1 swaps with the 0 at index 0: [1, 0, 0, 2]. Then the 2 swaps with the 0 at index 1: [1, 2, 0, 0]. slow ends at 2.
+
+=== task: code hard
+title: At most two of each
+prompt: Write `keep_two(nums)` for a **sorted** list: remove extra copies in place so that each value appears **at most twice**, keep the order, and return `nums`. A value can be written at index `slow` if it differs from `nums[slow - 2]`, the item two places back in the part kept so far. The speed check uses long lists.
+starter:
+```python
+def keep_two(nums):
+    slow = 0
+    # your code here
+    return nums
+```
+solution:
+```python
+def keep_two(nums):
+    slow = 0
+    for fast in range(len(nums)):
+        if slow < 2 or nums[fast] != nums[slow - 2]:
+            nums[slow] = nums[fast]
+            slow += 1
+    del nums[slow:]
+    return nums
+```
+tests:
+- keep_two([1, 1, 1, 2, 2, 3])
+- keep_two([0, 0, 1, 1, 1, 1, 2, 3, 3])
+- keep_two([5])
+- keep_two([])
+- keep_two([4, 4])
+- keep_two([7, 7, 7, 7])
+speed: setup=nums = sorted(list(range(n)) * 3) | call=keep_two(nums) | target=O(n)
+slow:
+```python
+def keep_two(nums):
+    i = 2
+    while i < len(nums):
+        if nums[i] == nums[i - 2]:
+            nums.pop(i)
+        else:
+            i += 1
+    return nums
+```
+fail[1]: The third 1 goes: [1, 1, 2, 2, 3].
+fail[2]: Four 1s become two: [0, 0, 1, 1, 2, 3, 3].
+fail[6]: Four 7s become two.
+hint: The first two items are always kept: `slow < 2`.
+hint: Otherwise keep `nums[fast]` only if it differs from `nums[slow - 2]`.
+hint: Copy a kept item to `nums[slow]` and move slow; after the loop, `del nums[slow:]`.
+right: If `nums[fast]` equals the item two places back in the kept part, that value already has two copies kept. One pass: O(n) time, O(1) extra space.
+wrong: Write each item that's allowed to `nums[slow]` and move slow. An item is allowed if fewer than two items are kept yet, or if it differs from `nums[slow - 2]`. Delete the leftovers at the end.
+
+=== task: code hard
+title: How long is the loop?
+prompt: Write `cycle_length(head)` that returns how many nodes are in the loop of a linked list, or 0 if there's no loop. First find a meeting point with fast and slow; then walk a third pointer from the meeting point round the loop until it's back, counting the nodes. Use O(1) extra space: don't store the nodes. `Node` and `make_list(values, loop_to)` are given: `make_list` links the last node back to the node at index `loop_to`, or to None if `loop_to` is -1.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def make_list(values, loop_to=-1):
+    nodes = [Node(v) for v in values]
+    for i in range(len(nodes) - 1):
+        nodes[i].next = nodes[i + 1]
+    if not nodes:
+        return None
+    if loop_to >= 0:
+        nodes[-1].next = nodes[loop_to]
+    return nodes[0]
+
+def cycle_length(head):
+    # your code here
+    return 0
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def make_list(values, loop_to=-1):
+    nodes = [Node(v) for v in values]
+    for i in range(len(nodes) - 1):
+        nodes[i].next = nodes[i + 1]
+    if not nodes:
+        return None
+    if loop_to >= 0:
+        nodes[-1].next = nodes[loop_to]
+    return nodes[0]
+
+def cycle_length(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            count = 1
+            walker = slow.next
+            while walker is not slow:
+                walker = walker.next
+                count += 1
+            return count
+    return 0
+```
+tests:
+- cycle_length(make_list([1, 2, 3, 4, 5], 2))
+- cycle_length(make_list([1, 2, 3, 4, 5], 0))
+- cycle_length(make_list([1, 2, 3, 4, 5], -1))
+- cycle_length(make_list([7], 0))
+- cycle_length(make_list([], -1))
+- cycle_length(make_list([1, 2, 3, 4, 5, 6], 4))
+forbid[set(]: Don't store the nodes: walk round the loop and count instead.
+forbid[dict(]: Don't store the nodes: walk round the loop and count instead.
+forbid[.append(]: Don't store the nodes: walk round the loop and count instead.
+fail[1]: The loop is 3 → 4 → 5 → back to 3: 3 nodes.
+fail[2]: The last node links to the first, so all 5 nodes are in the loop.
+fail[4]: A single node that links to itself is a loop of 1.
+fail[6]: The loop is 5 → 6 → back to 5: 2 nodes.
+error[AttributeError]: Check `fast is not None and fast.next is not None` before each double step.
+hint: Run the usual cycle check; if fast reaches the end, return 0.
+hint: When `slow is fast`, both are inside the loop. Walk a third pointer from `slow.next` until it's back at slow, counting.
+hint: Start the count at 1, for the step from slow to `slow.next`.
+right: Finding the meeting point is O(n), and one lap of the loop is at most n more steps: O(n) time with O(1) extra space.
+wrong: Find where fast and slow meet; that node is inside the loop. Then step round the loop from it, counting nodes, until you're back at the same node.
+
+=== task: code hard
+title: Where does the loop start?
+prompt: Write `cycle_start(head)` that returns the **value** of the node where the loop begins, or None if there's no loop. Use Floyd's second phase: find a meeting point with fast and slow; then put a new pointer, `finder`, at the head, and move `finder` and `slow` one node per step. They meet at the start of the loop. `Node` and `make_list` are given, as before.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def make_list(values, loop_to=-1):
+    nodes = [Node(v) for v in values]
+    for i in range(len(nodes) - 1):
+        nodes[i].next = nodes[i + 1]
+    if not nodes:
+        return None
+    if loop_to >= 0:
+        nodes[-1].next = nodes[loop_to]
+    return nodes[0]
+
+def cycle_start(head):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def make_list(values, loop_to=-1):
+    nodes = [Node(v) for v in values]
+    for i in range(len(nodes) - 1):
+        nodes[i].next = nodes[i + 1]
+    if not nodes:
+        return None
+    if loop_to >= 0:
+        nodes[-1].next = nodes[loop_to]
+    return nodes[0]
+
+def cycle_start(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            finder = head
+            while finder is not slow:
+                finder = finder.next
+                slow = slow.next
+            return finder.val
+    return None
+```
+tests:
+- cycle_start(make_list([1, 2, 3, 4, 5], 2))
+- cycle_start(make_list([1, 2, 3, 4, 5], 0))
+- cycle_start(make_list([1, 2, 3, 4, 5], -1))
+- cycle_start(make_list([7], 0))
+- cycle_start(make_list([1, 2, 3, 4, 5, 6], 4))
+- cycle_start(make_list([], -1))
+fail[1]: The loop 3 → 4 → 5 → 3 starts at 3.
+fail[2]: The last node links back to the head, so the loop starts at 1.
+fail[5]: The loop 5 → 6 → 5 starts at 5.
+error[AttributeError]: Check `fast is not None and fast.next is not None` before each double step.
+hint: First find the meeting point, exactly as `has_cycle` does.
+hint: Then set `finder = head`, and move `finder` and `slow` one node at a time until `finder is slow`.
+hint: Return `finder.val`. If fast reached the end, return None.
+right: Two phases of at most O(n) steps each, with three pointers: O(n) time and O(1) extra space.
+wrong: Phase one: fast and slow meet inside the loop. Phase two: a pointer from the head and slow move in step, one node at a time; the node where they meet is the start of the loop.
+
+=== task: code hard
+title: The k-th node from the end
+prompt: Write `kth_from_end(head, k)` that returns the value of the k-th node from the end of a linked list (k = 1 is the last node), or None if the list has fewer than k nodes. Use two pointers with a gap: move `fast` k nodes ahead first, then move both one node at a time until `fast` falls off the end.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def kth_from_end(head, k):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def kth_from_end(head, k):
+    fast = head
+    for _ in range(k):
+        if fast is None:
+            return None
+        fast = fast.next
+    slow = head
+    while fast is not None:
+        slow = slow.next
+        fast = fast.next
+    return slow.val
+```
+tests:
+- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 2)
+- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 1)
+- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 5)
+- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 6)
+- kth_from_end(None, 1)
+- kth_from_end(Node(8), 1)
+fail[1]: The last two nodes are 4 and 5, so the 2nd from the end is 4.
+fail[3]: In a list of 5, the 5th from the end is the head.
+fail[4]: The list has only 5 nodes: return None.
+error[AttributeError]: Check that fast isn't None before each of its first k moves.
+hint: Move fast k nodes ahead, returning None if it runs out first.
+hint: Then start slow at the head and move both one node at a time until fast is None.
+hint: slow stays exactly k nodes behind fast, so it ends on the k-th node from the end.
+right: One pass with a fixed gap of k between the pointers: when fast falls off the end, slow is k nodes behind it. O(n), with no need to count the list first.
+wrong: Give fast a head start of k nodes. Then move both together until fast is None: the gap stays k, so slow ends on the k-th node from the end.
+
+=== task: predict hard
+title: Small loops
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def has_cycle(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+x = Node(1)
+x.next = x
+y = Node(1, Node(2))
+y.next.next = y
+z = Node(1, Node(2))
+print(has_cycle(x), has_cycle(y), has_cycle(z))
+```
+wrong[False True False]: A node linking to itself is a loop of 1: after one step, slow and fast are both on it.
+wrong[True False False]: 1 → 2 → 1 is a loop of 2: after two steps both pointers are back on node 1.
+wrong[True True True]: z ends with node 2, whose next is None, so fast falls off the end.
+hint: x is a node whose next is itself.
+hint: y goes 1 → 2 → back to 1; z goes 1 → 2 → None.
+right: `True True False`: the two tiny loops are caught in one and two steps, and z ends at None.
+wrong: x: slow and fast both move onto x itself. y: after one step slow is on 2 and fast on 1; after two, both are on 1. z: fast jumps from 1 to None.
+
+=== task: predict hard
+title: Dedupe on unsorted data
+code:
+```python
+def dedupe(nums):
+    if not nums:
+        return nums
+    slow = 0
+    for fast in range(1, len(nums)):
+        if nums[fast] != nums[slow]:
+            slow += 1
+            nums[slow] = nums[fast]
+    del nums[slow + 1:]
+    return nums
+
+print(dedupe([1, 2, 1, 1, 3, 2]))
+```
+wrong[[1, 2, 3]]: dedupe only compares each item with the last one kept, so it only removes copies that sit next to each other. The list isn't sorted, so 1 and 2 come back.
+wrong[[1, 2, 1, 1, 3, 2]]: The two 1s at indexes 2 and 3 sit next to each other, so one of them goes.
+wrong[[1, 2, 3, 2]]: The 1 at index 2 differs from the last value kept, 2, so it's kept.
+hint: Compare each item only with the last value kept.
+hint: Which equal items are next to each other here?
+right: `[1, 2, 1, 3, 2]`: only the second of the two neighbouring 1s is removed. dedupe needs sorted data, where all copies of a value sit together.
+wrong: 2 differs from 1 (kept), 1 differs from 2 (kept), the next 1 equals 1 (skipped), 3 and 2 are new (kept). Copies that aren't neighbours are never compared.
+
+=== task: cells hard
+title: Steps until they meet
+prompt: `has_cycle` runs on each list. After how many steps (moves of both pointers) are slow and fast on the same node?
+labels: 5 nodes, the last links to node 3 | 5 nodes, the last links to node 1 | 1 node linking to itself | 2 nodes, the second links to node 1
+answer: 3 | 5 | 1 | 2
+wrong[3 | 3 | 1 | 2]: With the loop going back to node 1, slow is on 4 and fast on 2 after three steps; they meet on node 1 after five.
+wrong[3 | 5 | 0 | 2]: The check moves first and compares after: after one step, slow and fast are both on the single node.
+wrong[3 | 5 | 1 | 1]: After one step slow is on node 2 and fast back on node 1. They meet on node 1 after two steps.
+hint: Write down where each pointer is after every step.
+hint: fast goes round the loop; slow moves one node at a time.
+right: 3, 5, 1 and 2: fast catches slow within one lap of the loop, a bigger loop taking more steps.
+wrong: 5 nodes, loop to 3: they meet on 4 after 3 steps. Loop to 1: slow 2, 3, 4, 5, 1 and fast 3, 5, 2, 4, 1: 5 steps. One node: 1 step. Two nodes: slow 2, 1 and fast 1, 1: 2 steps.
+
+=== task: multi hard
+title: Changes that break has_cycle
+prompt: Each change is made to `has_cycle` from this lesson. Choose **every** change that makes it give a wrong answer, or crash, for some linked list.
+* `while fast.next is not None:`, without checking fast :: Right. In a list with an even number of nodes, fast becomes None, and `None.next` crashes.
+* `fast = fast.next` instead of `fast = fast.next.next` :: Right. Both pointers then move one node per step from the head, so `slow is fast` is True after the first step, loop or no loop.
+* Checking `slow is fast` before moving the pointers :: Right. Both start at the head, so it says True for every list.
+* Comparing `slow.val == fast.val` instead of `slow is fast` :: Right. Different nodes can hold equal values: in 1 → 5 → 9 → 5 → 9 → 0, slow and fast both reach a 9 after two steps, with no loop.
+- `while fast and fast.next:` :: A node counts as True and None as False, so this is the same test.
+- Moving fast before slow inside the loop :: The two moves don't depend on each other.
+hint: Try each change on a short list with no loop.
+hint: Which changes compare the wrong thing, or compare too early?
+right: Missing the None check, moving fast one step, comparing before moving, and comparing values all break it. Testing `fast and fast.next`, or swapping the two moves, does the same as before.
+wrong: The check needs both None tests, a double step for fast, a comparison after the moves, and `is` to compare nodes. The truthiness test and the order of the two moves don't matter.
+
+=== task: fill hard
+title: A fixed gap
+prompt: Fill in the blanks so that `kth_from_end` keeps a gap of k nodes between the pointers, and the program prints:
+
+```output
+4 1
+```
+code:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def kth_from_end(head, k):
+    fast = head
+    for _ in range(??):
+        if fast is None:
+            return None
+        fast = fast.next
+    slow = head
+    while ?? is not None:
+        slow = slow.next
+        fast = fast.next
+    return slow.val
+
+lst = Node(1, Node(2, Node(3, Node(4, Node(5)))))
+print(kth_from_end(lst, 2), kth_from_end(lst, 5))
+```
+answer: k | fast
+wrong[k - 1 | fast]: A gap of k − 1 finds the (k − 1)-th node from the end: 5 for k = 2, and 2 for k = 5.
+wrong[k | slow]: Waiting for slow to reach None runs fast off the end first, and then `fast.next` is read from None: an AttributeError.
+hint: fast needs a head start of exactly k nodes.
+hint: The walk stops when the pointer that's ahead falls off the end.
+right: With a head start of k, slow is k nodes behind fast; when fast is None, slow is on the k-th node from the end: 4 for k = 2, the head, 1, for k = 5.
+wrong: Move fast k nodes ahead, then move both until fast is None. slow is then k nodes from the end.
+
+=== task: parsons hard
+title: Happy numbers
+prompt: Replace a number by the sum of the squares of its digits, again and again: 19 → 1 + 81 = 82 → 64 + 4 = 68 → 36 + 64 = 100 → 1, and 1 then stays 1. A number is **happy** if it reaches 1; otherwise it gets stuck in a loop that never contains 1. The numbers work like a linked list, with `step(n)` as the "next" of n. Arrange the lines so that `is_happy` uses fast and slow pointers to find out, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def step(n):
+    total = 0
+    while n > 0:
+        total += (n % 10) * (n % 10)
+        n = n // 10
+    return total
+
+def is_happy(n):
+    slow = n
+    fast = step(n)
+    while fast != 1 and slow != fast:
+        slow = step(slow)
+        fast = step(step(fast))
+    return fast == 1
+
+print(is_happy(19), is_happy(4))
+```
+distractors:
+```python
+    fast = n
+    return slow == 1
+```
+hint: `step` adds up the squares of the digits, taking the last digit with `% 10` each time.
+hint: fast starts one step ahead and moves two steps at a time; stop when fast reaches 1 or meets slow.
+right: For 19, fast reaches 1: happy. For 4, the numbers go 4, 16, 37, 58, 89, 145, 42, 20 and back to 4, so fast meets slow without ever reaching 1.
+wrong: `step` sums the squared digits. `is_happy` starts slow at n and fast at step(n), moves them one and two steps at a time until fast is 1 or they meet, and returns whether fast is 1.
