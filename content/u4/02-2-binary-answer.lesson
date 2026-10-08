@@ -1,0 +1,1220 @@
+=== lesson
+id: algo-binary-answer
+title: Binary search on the answer
+summary: Binary search doesn't need a list. When the answer is a number in a range and you can test any guess with a yes/no question, binary search can find the smallest or largest guess that passes. You'll use it for whole-number square roots, the slowest reading speed that finishes in time and the smallest van that ships the boxes, and learn when the yes/no test makes it safe.
+
+=== learn
+### When the answer is a number in a range
+So far, binary search has looked for an item in a sorted list. It can also look for an **answer**: a number somewhere in a range, when you can't work it out directly but you can **test** any guess. Take this question: what is the smallest whole number whose square is at least 50? You can test a guess g by asking "is g × g at least 50?":
+
+| g | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| g × g | 1 | 4 | 9 | 16 | 25 | 36 | 49 | 64 | 81 | 100 |
+| at least 50? | no | no | no | no | no | no | no | yes | yes | yes |
+
+The answers are "no" up to 7 and "yes" from 8 on. Once a guess passes, every bigger guess passes too, so the row of answers is sorted, like a list of False values followed by True values. Binary search can find the first "yes": test the middle guess; if it passes, the answer is that guess or one to its left, and if it fails, the answer is to its right.
+
+### The smallest guess that passes
+This function searches the guesses from `lo` to `hi` for the smallest one that passes `test`:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(smallest_passing(1, 100, lambda g: g * g >= 50))
+print(smallest_passing(1, 100, lambda g: g * g >= 5000))
+print(smallest_passing(1, 100, lambda g: g * g >= 99999))
+```
+```output
+8
+71
+None
+```
+It's `first_index` from the last lesson with `test(mid)` in place of `items[mid] == target`. A passing guess is remembered in `answer`, and the search carries on to the left in case a smaller guess passes too. A failing guess sends it right. `lambda g: g * g >= 50` is a small test function, like the ones in the linear search lesson. No guess up to 100 has a square of 99,999 or more, so `answer` stays None. The search for 50:
+
+| check | lo | hi | mid | mid × mid ≥ 50? | then |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 100 | 50 | yes, 2500 | answer = 50, hi = 49 |
+| 2 | 1 | 49 | 25 | yes, 625 | answer = 25, hi = 24 |
+| 3 | 1 | 24 | 12 | yes, 144 | answer = 12, hi = 11 |
+| 4 | 1 | 11 | 6 | no, 36 | lo = 7 |
+| 5 | 7 | 11 | 9 | yes, 81 | answer = 9, hi = 8 |
+| 6 | 7 | 8 | 7 | no, 49 | lo = 8 |
+| 7 | 8 | 8 | 8 | yes, 64 | answer = 8, hi = 7 |
+
+### The largest guess that passes: square roots
+Some questions want the **largest** guess that passes. The whole-number square root of n is the largest r with r × r ≤ n. Now the passes come first and the fails after, so on a pass the search remembers the guess and looks **right**:
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(int_sqrt(50), int_sqrt(49), int_sqrt(1000000), int_sqrt(0))
+```
+```output
+7 7 1000 0
+```
+7 × 7 = 49 is at most 50, and 8 × 8 = 64 isn't, so the root of 50 is 7. The range 0 to n is safe: the root of n is never bigger than n. For a million, that range holds a million and one guesses, but the search tests only about 20 of them. Trying every guess from 0 upwards would take 1,001 tries. Animation 1 finds the root of 10.
+
+### The test must be monotonic
+Binary search on the answer only works when the test is **monotonic**: all the fails come before all the passes, or the other way round, with no switching back. "Is g × g at least 50?" is monotonic, because a bigger g always has a bigger square. "Is g a multiple of 7?" isn't: it passes at 7, fails from 8 to 13, and passes again at 14. Searching for the smallest multiple of 7 from 1 to 20 goes wrong:
+```python
+print(smallest_passing(1, 20, lambda g: g % 7 == 0))
+```
+```output
+None
+```
+The first test, at 10, fails, so the search drops 1 to 10, which is where 7 is. Then 15, 18, 19 and 20 fail too, and nothing is left. Before you use binary search on an answer, ask: if a guess passes, does every bigger guess pass too?
+
+### Setting lo and hi
+The range from `lo` to `hi` must hold the answer. Choose `lo` as the smallest answer that could possibly work, and `hi` as one that's sure to work:
+
+| question | lo | hi | why |
+| --- | --- | --- | --- |
+| whole-number square root of n | 0 | n | the root is never bigger than n |
+| slowest reading speed (next step) | 1 page a day | the longest chapter | at that speed, each chapter takes one day |
+| smallest van that delivers the boxes in time (example 1) | the heaviest box | all the boxes together | every box must fit, and one trip can take everything |
+
+If even `hi` fails the test, there's no answer at all, and the search returns whatever `answer` started as, such as None. Check for that before you use the result.
+
+### The slowest speed that finishes in time
+A student has chapters of 30, 11, 23, 4 and 20 pages to read in 6 days. Each day she reads up to `speed` pages, all from one chapter. What's the slowest speed that finishes in time? A chapter of p pages takes p ÷ speed days, rounded up: 30 pages at 23 a day take 2 days. `(p + speed - 1) // speed` does that rounding up with whole numbers.
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    lo = 1
+    hi = max(chapters)
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if days_needed(chapters, mid) <= limit:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+chapters = [30, 11, 23, 4, 20]
+print(days_needed(chapters, 23), days_needed(chapters, 22))
+print(slowest_speed(chapters, 6), slowest_speed(chapters, 5), slowest_speed(chapters, 10))
+```
+```output
+6 7
+23 30 11
+```
+Reading faster never takes more days, so "finishes within the limit" is a monotonic test. At 23 pages a day she needs exactly 6 days; at 22, the 23-page chapter takes 2 days, which makes 7. Animation 2 runs a smaller case.
+
+> This assumes `limit` is at least the number of chapters. With fewer days than chapters, no speed works.
+
+### Searching decimals
+With decimals there's no "next number", so `mid + 1` makes no sense. Instead, the loop runs a fixed number of times and moves `lo` or `hi` onto `mid`. Each turn halves the interval, so 50 turns shrink it by a factor of 2⁵⁰, about a thousand million million:
+```python
+def sqrt_approx(n):
+    lo = 0.0
+    hi = max(1.0, n)
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if mid * mid <= n:
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+print(round(sqrt_approx(2), 6), round(sqrt_approx(50), 6))
+```
+```output
+1.414214 7.071068
+```
+`_` is the usual name for a loop variable that isn't used. `hi` starts at `max(1.0, n)` because the square root of a number below 1 is bigger than the number: the root of 0.25 is 0.5. Here `lo = mid` is safe, unlike in the last two lessons, because the loop runs exactly 50 times instead of running until `lo` passes `hi`.
+
+### How fast is it?
+The search makes about log₂(hi − lo + 1) tests, and each test has its own cost. For the reading plan, one test is a pass over the n chapters, and the range holds m speeds, up to the longest chapter. So the search costs O(n log m).
+
+| method | tests | 1,000 chapters, the longest 1,000,000 pages |
+| --- | --- | --- |
+| try every speed from 1 up | up to m | up to 1,000,000 tests × 1,000 chapters = 10⁹ steps |
+| binary search on the speed | about log₂ m | about 20 tests × 1,000 chapters = 20,000 steps |
+
+The same holds for any binary search on the answer: count the tests, about log₂ of the size of the range, and multiply by the cost of one test.
+
+=== keypoints
+- Binary search can search a range of possible answers. Instead of a sorted list, it uses a yes/no test on each guess.
+- The test must be monotonic: once a guess passes, every bigger guess passes too (or every smaller one). Otherwise the search can drop the half that holds the answer.
+- Smallest guess that passes: on a pass, remember it and look left (`hi = mid - 1`); on a fail, `lo = mid + 1`. Largest guess that passes: on a pass, remember it and look right (`lo = mid + 1`).
+- Pick `lo` as the smallest possible answer and `hi` as one that surely passes. If `hi` fails, there's no answer.
+- The cost is about log₂(range size) tests times the cost of one test: O(n log m) for the reading plan, instead of O(n × m) for trying every speed.
+- With decimals, loop a fixed number of times and set `lo = mid` or `hi = mid`; each turn halves the interval.
+
+=== example: The smallest van
+intro: Boxes go onto a van in a fixed order. Each trip takes boxes until the next one doesn't fit. What's the smallest van capacity that delivers everything in a given number of trips? The trip count only goes down as the van gets bigger, so binary search finds the smallest capacity that works.
+```python
+def trips_needed(boxes, capacity):
+    trips = 1
+    load = 0
+    for w in boxes:
+        if load + w > capacity:
+            trips += 1
+            load = 0
+        load += w
+    return trips
+
+def smallest_van(boxes, max_trips):
+    lo = max(boxes)
+    hi = sum(boxes)
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if trips_needed(boxes, mid) <= max_trips:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+boxes = [4, 8, 3, 7, 6, 2, 5]
+for limit in [2, 3, 7]:
+    size = smallest_van(boxes, limit)
+    print(f"{limit} trips allowed: smallest van {size} kg, {trips_needed(boxes, size)} trips needed")
+```
+1-9: The test's helper: load the boxes in order, and start a new trip whenever the next box would overflow the van.
+12-14: The van must hold the heaviest box, 8 kg, so that's `lo`. A van for all 35 kg makes one trip, so `hi` = 35 always works.
+15-22: The smallest capacity that passes: remember a pass and look left for a smaller van.
+24-27: A 20 kg van makes two trips: 4 + 8 + 3 = 15 kg, then 7 + 6 + 2 + 5 = 20 kg. With 7 trips allowed, the answer can't go below the heaviest box, 8 kg, and that van needs only 6 trips.
+
+=== example: Which version broke it?
+intro: A program worked in version 1 and is broken in version 10,000. Testing a version takes a while, so the program tests as few as possible. "Is this version broken?" is monotonic: once a version is broken, every later one is too, until someone fixes it. Version-control tools use this search to find the change that broke a program.
+```python
+first_bad = 3717
+
+def is_broken(version):
+    return version >= first_bad
+
+def find_first_broken(newest):
+    lo = 1
+    hi = newest
+    answer = None
+    tests = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        tests += 1
+        if is_broken(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer, tests
+
+version, tests = find_first_broken(10000)
+print("first broken version:", version, "found with", tests, "tests")
+```
+1-4: In real life you'd run the program to test a version. Here the test pretends that every version from 3717 on is broken.
+6-19: The smallest version that passes the "broken" test, counting the tests.
+21-22: 13 tests out of 10,000 versions. Testing every version in turn could take 3,717 tests.
+
+=== animation: Square root by search
+view: array guesses ptr=lo,mid,hi range=lo:hi hit=answer
+vars n lo hi mid answer
+intro: Finding the whole-number square root of 10: the largest guess whose square is at most 10. The shaded cells are the guesses still possible; the highlighted cell is the best answer so far.
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+guesses = list(range(11))
+print(int_sqrt(10))
+```
+1: Defines int_sqrt. Nothing runs yet.
+2: The smallest possible root is 0.
+3: The root of {n} is at most {n}, so hi starts at {n}.
+4: 0 always passes, since 0 × 0 is at most n, so it's the answer until something bigger passes.
+5: Any guesses left? lo = {lo}, hi = {hi}: {lo <= hi}.
+6: The middle guess of {lo} to {hi} is {(lo + hi) // 2}.
+7: Test it: {mid} × {mid} = {mid * mid}. Is that at most {n}? {mid * mid <= n}.
+8: {mid} passes: remember it.
+9: A bigger guess might pass too, so look right: lo moves to {mid + 1}.
+11: {mid} fails, and so does every bigger guess: hi moves to {mid - 1}.
+12: No guesses left. The largest guess that passed is {answer}: {answer} × {answer} = {answer * answer}, at most {n}, but {answer + 1} × {answer + 1} = {(answer + 1) * (answer + 1)}.
+14: The guesses 0 to 10, listed so the animation can show them.
+15: Find the whole-number square root of 10.
+
+=== animation: The slowest reading speed
+view: array speeds ptr=lo,mid,hi range=lo:hi hit=answer
+vars limit lo hi mid answer speed days
+intro: Three chapters of 9, 4 and 7 pages, to read in at most 4 days. Each test runs `days_needed` for the middle speed. Watch the range of speeds shrink until only the answer is left.
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    lo = 1
+    hi = max(chapters)
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if days_needed(chapters, mid) <= limit:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+speeds = list(range(10))
+print(slowest_speed([9, 4, 7], 4))
+```
+1: Defines days_needed: how many days the chapters take at a given speed.
+2: Count the days at {speed} pages a day.
+3: Take each chapter in turn.
+4: Days for {pages} pages at {speed} a day, rounded up: {(pages + speed - 1) // speed}.
+5: At {speed} pages a day, the chapters take {days} days in total.
+7: Defines slowest_speed.
+8: The slowest possible speed is 1 page a day.
+9: At {max(chapters)} pages a day, every chapter takes one day, so that speed surely works.
+10: Until a guess passes, the best known answer is hi, {hi}.
+11: Any speeds left? lo = {lo}, hi = {hi}: {lo <= hi}.
+12: The middle speed of {lo} to {hi} is {(lo + hi) // 2}.
+13: Test it: does {mid} pages a day finish in {limit} days or fewer?
+14: Yes: {mid} works. Remember it.
+15: A slower speed might work too, so look left: hi moves to {mid - 1}.
+17: No: {mid} is too slow, and so is every slower speed. lo moves to {mid + 1}.
+18: No speeds left. The slowest speed that works is {answer} pages a day.
+20: The speeds 0 to 9, listed so the animation can show them. Speed 0 is never tried.
+21: Find the slowest speed for chapters of 9, 4 and 7 pages in 4 days.
+
+=== task: predict easy
+title: Two tests
+code:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(smallest_passing(1, 50, lambda g: 3 * g >= 20), smallest_passing(1, 50, lambda g: g * g > 30))
+```
+wrong[6 5]: Those are the last guesses that fail. The function returns the smallest guess that passes: 3 × 7 = 21 and 6 × 6 = 36.
+wrong[7 5]: 5 × 5 = 25 isn't more than 30. The first square above 30 is 36, at 6.
+wrong[50 50]: The answer is the **smallest** guess that passes, not the biggest in the range.
+hint: Find the first g that makes each test True.
+hint: 3 × 6 = 18 and 3 × 7 = 21; 5 × 5 = 25 and 6 × 6 = 36.
+right: `7 6`: 7 is the smallest g with 3 × g at least 20, and 6 the smallest with g × g over 30.
+wrong: For the first test, 3 × 6 = 18 fails and 3 × 7 = 21 passes: 7. For the second, 5 × 5 = 25 fails and 6 × 6 = 36 passes: 6.
+
+=== task: mcq easy
+title: What the test needs
+prompt: Binary search on the answer tests guesses with a yes/no function. What must be true of that test?
+* Once a guess passes, every bigger guess passes too (or every smaller one) :: Right. Then all the fails are on one side and all the passes on the other, so half the guesses can be dropped after each test.
+- It must pass for exactly one guess :: Many guesses can pass: the search finds the smallest, or the largest, of them.
+- It must take O(1) time :: Any test works. Its cost is multiplied by the number of tests.
+- The guesses must come from a sorted list :: There's no list: the guesses are the numbers from lo to hi.
+hint: What lets the search throw away half the guesses after one test?
+hint: Think of the answers in a row: no, no, no, yes, yes.
+right: The test must be monotonic: some no's, then only yes's. That's what makes dropping half the range safe.
+wrong: The search drops half the range after each test, which is only safe if the passes and fails don't mix: once a guess passes, every bigger guess must pass too.
+
+=== task: cells easy
+title: Whole-number square roots
+prompt: `int_sqrt(n)` returns the largest whole number r with r × r ≤ n. Fill in its results.
+labels: int_sqrt(15) | int_sqrt(16) | int_sqrt(17) | int_sqrt(1) | int_sqrt(99)
+answer: 3 | 4 | 4 | 1 | 9
+wrong[4 | 4 | 4 | 1 | 10]: 4 × 4 = 16 is more than 15, so `int_sqrt(15)` is 3. And 10 × 10 = 100 is more than 99, so `int_sqrt(99)` is 9.
+wrong[3 | 4 | 5 | 1 | 9]: 5 × 5 = 25 is more than 17, so the root of 17 rounds down to 4.
+wrong[3 | 4 | 4 | 0 | 9]: 1 × 1 = 1 is at most 1, so `int_sqrt(1)` is 1.
+hint: The answer is rounded down: the largest r whose square doesn't go over n.
+hint: The squares near these numbers: 9, 16, 25, 81 and 100.
+right: 3, 4, 4, 1, 9: each is the largest whole number whose square is at most n.
+wrong: 3 × 3 = 9 is at most 15, but 4 × 4 = 16 isn't: 3. 16 is exactly 4 × 4. 17 is between 16 and 25: 4. 1 is 1 × 1. 99 is between 81 and 100: 9.
+
+=== task: code easy
+title: Write int_sqrt
+prompt: Write `int_sqrt(n)` that returns the largest whole number r with r × r ≤ n, for n ≥ 0, using binary search on the guesses 0 to n. Don't use `**`, `pow` or any module: the point is the search. The speed check uses huge numbers, so counting up from 0 is too slow.
+starter:
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    # your code here
+    return answer
+```
+solution:
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+```
+tests:
+- int_sqrt(50)
+- int_sqrt(49)
+- int_sqrt(0)
+- int_sqrt(1)
+- int_sqrt(1000000)
+- int_sqrt(99)
+speed: setup=big = n * n + 5 | call=int_sqrt(big) | target=O(log n)
+slow:
+```python
+def int_sqrt(n):
+    r = 0
+    while (r + 1) * (r + 1) <= n:
+        r += 1
+    return r
+```
+forbid[**]: Multiply `mid * mid` instead of using `**`.
+forbid[pow(]: Multiply `mid * mid` instead of using `pow`.
+forbid[import]: Write the search yourself, without importing a module.
+fail[1]: 7 × 7 = 49 is at most 50, and 8 × 8 = 64 isn't: 7.
+fail[4]: 1 × 1 = 1 is at most 1, so the answer is 1.
+fail[5]: 1,000 × 1,000 is exactly 1,000,000.
+hint: Loop while `lo <= hi`, with `mid = (lo + hi) // 2`.
+hint: If `mid * mid <= n`, mid passes: set `answer = mid` and `lo = mid + 1` to look for a bigger one.
+hint: Otherwise set `hi = mid - 1`.
+right: About log₂ n tests instead of counting up to √n: for n around a million million, 40 tests instead of a million.
+wrong: Binary search the guesses 0 to n: when `mid * mid <= n`, remember mid and look right; otherwise look left. Return the last guess that passed.
+
+=== task: fill easy
+title: Writing the test
+prompt: Fill in the blanks in the two tests, so that the program prints the smallest g with g × g at least 49, and the smallest g with 4 × g at least 30:
+
+```output
+7 8
+```
+code:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(smallest_passing(1, 100, lambda g: g * g ?? 49), smallest_passing(1, 100, lambda g: g ?? 4 >= 30))
+```
+answer: >= | *
+wrong[> | *]: `g * g > 49` fails at 7, because 49 isn't more than 49, so the answer becomes 8. "At least" is `>=`.
+wrong[<= | *]: `g * g <= 49` passes only for the small guesses, 1 to 7. The first test, at 50, fails, so the search moves right, finds nothing that passes, and returns None.
+wrong[>= | +]: `g + 4 >= 30` first passes at 26. The question is about 4 × g.
+hint: "At least" includes the value itself.
+hint: "4 × g" is a multiplication.
+right: `g * g >= 49` first passes at 7, and `g * 4 >= 30` first passes at 8, since 4 × 7 = 28 is too small.
+wrong: Use `>=` for "at least" and `*` for "4 × g". 7 × 7 = 49 passes; 4 × 8 = 32 is the first multiple of 4 that reaches 30.
+
+=== task: multi easy
+title: Which tests are monotonic?
+prompt: Each test is tried on the guesses 1 to 100. Choose **every** test that is monotonic: once it passes, it passes for every bigger guess.
+* `g * g >= 50` :: Right. Squares only grow, so from 8 on it always passes.
+* `g >= 37` :: Right. It fails up to 36 and passes from 37 on.
+* `days_needed(chapters, g) <= 6`, with `days_needed` from this lesson :: Right. Reading faster never takes more days.
+- `g % 7 == 0` :: It passes at 7, fails from 8 to 13, and passes again at 14.
+- `g * g == 49` :: It passes only at 7, and fails again from 8 on.
+- `abs(g - 50) < 10` :: It passes from 41 to 59, then fails again.
+hint: For each test: does a "yes" ever turn back into a "no" as g grows?
+hint: A test that passes at only one guess, or in a band, isn't monotonic.
+right: The squares test, `g >= 37` and the days test never switch back from yes to no. The other three do, so binary search could drop the half that holds their answer.
+wrong: A test is monotonic if its answers for 1, 2, 3 and upwards are some no's followed only by yes's. `g % 7 == 0`, `g * g == 49` and `abs(g - 50) < 10` all switch back to no.
+
+=== task: parsons easy
+title: The smallest guess that passes
+prompt: Arrange the lines so that `smallest_passing` returns the smallest guess that passes the test, or None, and the program prints:
+
+```output
+8 None
+```
+
+Not every line is needed.
+lines:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(smallest_passing(1, 100, lambda g: g * g >= 50), smallest_passing(1, 5, lambda g: g > 9))
+```
+distractors:
+```python
+            return mid
+    answer = 0
+```
+hint: A pass is remembered, then the search looks left for a smaller one.
+hint: A fail sends the search right.
+right: A passing guess is stored in answer and the search carries on to the left; a failing guess sends it right. Nothing from 1 to 5 is over 9, so the second search returns None.
+wrong: Start with `answer = None`. In the loop, on a pass set `answer = mid` and `hi = mid - 1`; on a fail set `lo = mid + 1`. Return answer.
+
+=== task: order easy
+title: The square root of 20
+prompt: `int_sqrt(20)` searches the guesses 0 to 20. Put its steps in order.
+items:
+- Test 10: 100 is more than 20, so hi = 9
+- Test 4: 16 is at most 20, so answer = 4 and lo = 5
+- Test 7: 49 is more than 20, so hi = 6
+- Test 5: 25 is more than 20, so hi = 4
+- lo has passed hi: return 4
+hint: The first middle is (0 + 20) // 2 = 10.
+hint: After hi = 9, the middle of 0 to 9 is 4.
+right: Tests at 10, 4, 7 and 5: only 4 passes, so the root of 20 is 4.
+wrong: 10 fails (hi = 9), 4 passes (lo = 5), 7 fails (hi = 6), 5 fails (hi = 4). Now lo > hi, and the last guess that passed is 4.
+
+=== task: predict easy
+title: Around a square
+code:
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(int_sqrt(24), int_sqrt(25), int_sqrt(26))
+```
+wrong[5 5 5]: 5 × 5 = 25 is more than 24, so the root of 24 rounds down to 4.
+wrong[4 5 6]: 6 × 6 = 36 is more than 26: the root of 26 is 5.
+wrong[4 4 5]: 25 is exactly 5 × 5, and the test is `<=`, so 5 passes.
+hint: Find the largest r with r × r at most n.
+hint: 4 × 4 = 16, 5 × 5 = 25, 6 × 6 = 36.
+right: `4 5 5`: 24 is below 25, so its root rounds down to 4; 25 is 5 × 5; 26 is between 25 and 36.
+wrong: The largest square at most 24 is 16 = 4 × 4. 25 = 5 × 5 counts, since the test is `<=`. For 26, 5 × 5 = 25 fits but 6 × 6 = 36 doesn't.
+
+=== task: mcq easy
+title: How many tests?
+prompt: The longest chapter has 1,000 pages, so the slowest-speed search tries speeds from 1 to 1,000. About how many speeds does it test?
+* About 10 :: Right. Each test halves the speeds left: about log₂ 1,000, which is about 10.
+- About 500 :: That's half the range: the average for trying speeds one by one.
+- 1,000 :: That's trying every speed.
+- About 100 :: Binary search halves the range; it doesn't divide it by 10.
+hint: Each test halves the speeds still possible.
+hint: 2 multiplied by itself 10 times is 1,024.
+right: About 10: 1,000 → 500 → 250 → 125 → 62 → 31 → 15 → 7 → 3 → 1.
+wrong: Halving 1,000 until one speed is left takes about 10 steps, so the search makes about 10 tests.
+
+=== task: code medium
+title: Write smallest_passing
+prompt: Write `smallest_passing(lo, hi, test)` that returns the smallest whole number g from `lo` to `hi` for which `test(g)` is True, or None if there isn't one. `test` is monotonic: once it passes, it passes for every bigger g. The speed check uses a huge range, so testing every number in turn is too slow.
+starter:
+```python
+def smallest_passing(lo, hi, test):
+    # your code here
+    return None
+```
+solution:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+```
+tests:
+- smallest_passing(1, 100, lambda g: g * g >= 50)
+- smallest_passing(1, 100, lambda g: g >= 1)
+- smallest_passing(1, 100, lambda g: g >= 100)
+- smallest_passing(1, 100, lambda g: g > 100)
+- smallest_passing(-50, 50, lambda g: 2 * g >= -7)
+- smallest_passing(5, 4, lambda g: True)
+speed: setup=limit = n * n // 3 | call=smallest_passing(1, n * n, lambda g: g >= limit) | target=O(log n)
+slow:
+```python
+def smallest_passing(lo, hi, test):
+    for g in range(lo, hi + 1):
+        if test(g):
+            return g
+    return None
+```
+fail[1]: 7 × 7 = 49 fails and 8 × 8 = 64 passes: 8.
+fail[3]: Only 100 passes. The search must still test it when lo and hi meet.
+fail[5]: Negative numbers work the same way: 2 × (−3) = −6 is at least −7, but 2 × (−4) = −8 isn't.
+hint: Start with `answer = None`, and loop while `lo <= hi` with `mid = (lo + hi) // 2`.
+hint: If `test(mid)` is True, set `answer = mid` and `hi = mid - 1`.
+hint: Otherwise set `lo = mid + 1`. Return answer after the loop.
+right: About log₂(hi − lo + 1) tests, however big the range: about 40 tests for a million million numbers.
+wrong: Remember each passing guess and look left for a smaller one; after a failing guess, look right. answer stays None if nothing passes.
+
+=== task: code medium
+title: Write slowest_speed
+prompt: Write `slowest_speed(chapters, limit)`: the slowest whole number of pages a day that reads all the chapters in at most `limit` days, using `days_needed` (given). `limit` is at least the number of chapters. The speed check uses many long chapters, so trying every speed from 1 up is too slow.
+starter:
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    # your code here
+    return max(chapters)
+```
+solution:
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    lo = 1
+    hi = max(chapters)
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if days_needed(chapters, mid) <= limit:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+```
+tests:
+- slowest_speed([30, 11, 23, 4, 20], 6)
+- slowest_speed([30, 11, 23, 4, 20], 5)
+- slowest_speed([30, 11, 23, 4, 20], 10)
+- slowest_speed([12], 4)
+- slowest_speed([7, 7, 7], 21)
+- slowest_speed([100, 1], 3)
+speed: setup=chapters = list(range(1, n + 1)); limit = 2 * n | call=slowest_speed(chapters, limit) | target=O(n log n)
+slow:
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    speed = 1
+    while days_needed(chapters, speed) > limit:
+        speed += 1
+    return speed
+```
+fail[1]: At 23 pages a day she needs 6 days; at 22, 7.
+fail[3]: At 11 pages a day: 3 + 1 + 3 + 1 + 2 = 10 days. At 10 pages a day: 11.
+fail[4]: One chapter of 12 pages in 4 days: 3 pages a day.
+fail[6]: At 50 pages a day the chapters take 2 + 1 = 3 days; at 49, 3 + 1 = 4.
+hint: Search the speeds from `lo = 1` to `hi = max(chapters)`, starting with `answer = hi`.
+hint: A speed passes if `days_needed(chapters, mid) <= limit`: remember it and look left.
+hint: If it fails, the speed is too slow: `lo = mid + 1`.
+right: About log₂ m tests, each one pass over the n chapters: O(n log m) instead of O(n × m) for trying every speed.
+wrong: Binary search the speeds from 1 to the longest chapter. When a speed finishes in time, remember it and look for a slower one; when it doesn't, look faster.
+
+=== task: predict medium
+title: A test that switches back
+code:
+```python
+def smallest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(smallest_passing(1, 20, lambda g: g % 6 == 0), smallest_passing(1, 20, lambda g: g >= 6))
+```
+wrong[6 6]: 6 is the smallest multiple of 6, but the first search never tests it: the first test, at 10, fails, so it drops everything from 1 to 10.
+wrong[None 6]: 18 passes when the search tests it, so answer isn't None.
+wrong[12 6]: The first search tests 10, 15, 18, 16 and 17. It never tests 12.
+hint: Follow the tests of the first call: 10, then the middle of 11 to 20.
+hint: `g % 6 == 0` isn't monotonic: it passes at 6, 12 and 18 only.
+right: `18 6`: after 10 fails, the first search drops 1 to 10, so it can only find 18. With the monotonic test `g >= 6`, the search finds the right answer.
+wrong: For `g % 6 == 0` the search tests 10 (fail), 15 (fail), 18 (pass), 16 and 17 (fail), and returns 18, the smallest pass it saw. `g >= 6` is monotonic, so that search finds 6.
+
+=== task: cells medium
+title: Tracing the guesses
+prompt: `smallest_passing(1, 10, lambda g: g * g >= 30)` runs. Fill in the trace.
+labels: first mid | second mid | third mid | tests made | result
+answer: 5 | 8 | 6 | 3 | 6
+wrong[5 | 8 | 7 | 3 | 7]: After 8 passes, hi = 7, so the third middle is (6 + 7) // 2 = 6, not 7.
+wrong[5 | 8 | 6 | 4 | 6]: After 6 passes, hi = 5 and lo = 6, so the loop stops: three tests.
+wrong[5 | 7 | 6 | 3 | 6]: After 5 fails, lo = 6 and hi = 10, so the second middle is (6 + 10) // 2 = 8.
+hint: The first middle is (1 + 10) // 2.
+hint: 5 × 5 = 25 fails, so lo moves to 6.
+right: 5 fails (lo = 6), 8 passes (hi = 7), 6 passes (hi = 5), and the loop stops after 3 tests with the answer 6.
+wrong: Tests: 5 (25, fails, lo = 6), 8 (64, passes, hi = 7), 6 (36, passes, hi = 5). Now lo > hi, so the answer is 6.
+
+=== task: fill medium
+title: Setting the range
+prompt: Fill in `lo` and `hi` for the slowest-speed search, so that the program prints:
+
+```output
+23 1
+```
+code:
+```python
+def days_needed(chapters, speed):
+    days = 0
+    for pages in chapters:
+        days += (pages + speed - 1) // speed
+    return days
+
+def slowest_speed(chapters, limit):
+    lo = ??
+    hi = ??
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if days_needed(chapters, mid) <= limit:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+
+print(slowest_speed([30, 11, 23, 4, 20], 6), slowest_speed([30, 11, 23, 4, 20], 100))
+```
+answer: 1 | max(chapters)
+wrong[0 | max(chapters)]: Speed 0 can't read anything: when the second search tests it, `// 0` raises a ZeroDivisionError. The slowest real speed is 1.
+wrong[1 | min(chapters)]: At 4 pages a day, the 30-page chapter alone takes 8 days. hi must be a speed that surely works, like the longest chapter, where every chapter takes one day.
+hint: What's the slowest speed that makes sense?
+hint: Which speed reads every chapter in a single day?
+right: `lo = 1`, the slowest real speed, and `hi = max(chapters)`, where every chapter takes one day, so the answer is between them. With 100 days, even 1 page a day is enough.
+wrong: Start at 1 page a day, and end at the longest chapter: the speed that finishes every chapter in one day.
+
+=== task: mcq medium
+title: Too few days
+prompt: `slowest_speed([8, 8, 8], 2)` runs, using the code from this lesson: three chapters in 2 days, which is impossible because each day covers only one chapter. What does it return?
+* 8, which doesn't actually work :: Right. `answer` starts at hi, 8, and no speed passes, so 8 comes back, though at 8 pages a day she needs 3 days.
+- None :: This version starts `answer` at hi, not None.
+- 1 :: At 1 page a day she needs 24 days: speed 1 fails the test.
+- It loops forever :: Every test moves lo or hi, so the loop always ends.
+hint: What is answer before any guess passes?
+hint: Can any speed finish 3 chapters in 2 days?
+right: It returns 8: no speed passes, so answer keeps its starting value, hi. Check `limit >= len(chapters)` first, or start answer at None.
+wrong: Every test fails, because 3 chapters need at least 3 days. answer was set to hi, 8, before the loop, and nothing changes it.
+
+=== task: predict medium
+title: Halving decimals
+code:
+```python
+lo = 0.0
+hi = 8.0
+for _ in range(3):
+    mid = (lo + hi) / 2
+    if mid * mid <= 10:
+        lo = mid
+    else:
+        hi = mid
+    print(lo, hi)
+```
+wrong[0.0 4.0\n2.0 4.0\n2.0 3.0]: 3 × 3 = 9 is at most 10, so 3.0 passes and becomes lo.
+wrong[4.0 8.0\n4.0 6.0\n4.0 5.0]: 4 × 4 = 16 is more than 10, so 4.0 fails and becomes hi.
+wrong[0.0 4.0\n2.0 4.0\n3.0 4.0\n3.0 3.5]: The loop runs exactly 3 times, so it prints 3 lines.
+hint: Each turn tests the middle of lo and hi, then moves one of them onto it.
+hint: 4 × 4 = 16, 2 × 2 = 4, 3 × 3 = 9.
+right: The interval goes from 0–8 to 0–4, 2–4 and 3–4: it halves every turn, closing in on the root of 10, about 3.16.
+wrong: Turn 1: mid 4.0, and 16 > 10, so hi = 4.0. Turn 2: mid 2.0, and 4 ≤ 10, so lo = 2.0. Turn 3: mid 3.0, and 9 ≤ 10, so lo = 3.0.
+
+=== task: multi medium
+title: Problems for binary search on the answer
+prompt: Choose **every** question that binary search on the answer can solve, because it has a monotonic yes/no test.
+* The smallest van capacity that delivers the boxes in k trips :: Right. A bigger van never needs more trips.
+* The largest whole number whose cube is at most n :: Right. Cubes only grow.
+* The first broken version of a program, when every later version stays broken :: Right. Once a version is broken, every later one is too.
+* The fewest hours a machine needs to make 100 parts :: Right. More hours never make fewer parts.
+- The most common word in a book :: There's no range of guesses with a yes/no test that changes only once.
+- The smallest number in an unsorted list :: That needs a look at every item: O(n). There's no monotonic test to search with.
+hint: For each question: can you test a guess with yes or no?
+hint: Then: once the answer is yes, does it stay yes for bigger guesses?
+right: Van capacity, cube roots, the first broken version and the hours for 100 parts all have monotonic tests. The other two don't have a yes/no test over a range.
+wrong: Binary search on the answer needs a range of guesses and a test that switches from no to yes once. Capacity, cube roots, broken versions and machine hours have that; the most common word and the smallest item don't.
+
+=== task: parsons medium
+title: Arrange int_sqrt
+prompt: Arrange the lines so that `int_sqrt` returns the largest whole number whose square is at most n, and the program prints:
+
+```output
+5 6
+```
+
+Not every line is needed.
+lines:
+```python
+def int_sqrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(int_sqrt(30), int_sqrt(36))
+```
+distractors:
+```python
+        if mid * mid >= n:
+    return mid
+```
+hint: A guess passes when its square is at most n.
+hint: Return the last guess that passed, not the last guess tested.
+right: Passing guesses move lo to the right and are remembered in answer, so answer ends as the largest guess whose square fits: 5 for 30 (25 ≤ 30 < 36), and 6 for 36.
+wrong: Test `mid * mid <= n`. On a pass set `answer = mid` and `lo = mid + 1`; on a fail set `hi = mid - 1`. Return answer, which isn't always the last mid tested.
+
+=== task: order medium
+title: Which version broke it?
+prompt: Versions 1 to 16 of a program exist, and every version from 11 on is broken. A binary search for the first broken version runs. Put its steps in order.
+items:
+- Test version 8: it works, so lo = 9
+- Test version 12: broken, so answer = 12 and hi = 11
+- Test version 10: it works, so lo = 11
+- Test version 11: broken, so answer = 11 and hi = 10
+- lo has passed hi: version 11 is the first broken one
+hint: The first middle is (1 + 16) // 2 = 8.
+hint: After lo = 9, the middle of 9 to 16 is 12.
+right: Four tests out of 16 versions: 8 works, 12 is broken, 10 works, 11 is broken. So 11 is the first broken version.
+wrong: Middles 8 (works, lo = 9), 12 (broken, hi = 11), 10 (works, lo = 11) and 11 (broken, hi = 10). Then lo > hi, and the smallest broken version seen is 11.
+
+=== task: code hard
+title: The smallest van
+prompt: Boxes go onto a van in the given order, and each trip takes boxes until the next one doesn't fit. Write `smallest_van(boxes, max_trips)`: the smallest capacity that delivers every box in at most `max_trips` trips, using `trips_needed` (given). The speed check uses many boxes, so trying every capacity in turn is too slow.
+starter:
+```python
+def trips_needed(boxes, capacity):
+    trips = 1
+    load = 0
+    for w in boxes:
+        if load + w > capacity:
+            trips += 1
+            load = 0
+        load += w
+    return trips
+
+def smallest_van(boxes, max_trips):
+    # your code here
+    return sum(boxes)
+```
+solution:
+```python
+def trips_needed(boxes, capacity):
+    trips = 1
+    load = 0
+    for w in boxes:
+        if load + w > capacity:
+            trips += 1
+            load = 0
+        load += w
+    return trips
+
+def smallest_van(boxes, max_trips):
+    lo = max(boxes)
+    hi = sum(boxes)
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if trips_needed(boxes, mid) <= max_trips:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+```
+tests:
+- smallest_van([4, 8, 3, 7, 6, 2, 5], 3)
+- smallest_van([4, 8, 3, 7, 6, 2, 5], 2)
+- smallest_van([4, 8, 3, 7, 6, 2, 5], 1)
+- smallest_van([4, 8, 3, 7, 6, 2, 5], 7)
+- smallest_van([10, 10, 10, 10], 2)
+- smallest_van([1, 2, 3, 4, 5], 5)
+speed: setup=boxes = list(range(1, n + 1)) | call=smallest_van(boxes, 10) | target=O(n log n)
+slow:
+```python
+def trips_needed(boxes, capacity):
+    trips = 1
+    load = 0
+    for w in boxes:
+        if load + w > capacity:
+            trips += 1
+            load = 0
+        load += w
+    return trips
+
+def smallest_van(boxes, max_trips):
+    capacity = max(boxes)
+    while trips_needed(boxes, capacity) > max_trips:
+        capacity += 1
+    return capacity
+```
+fail[1]: A 12 kg van needs 4 trips; 13 kg needs 3.
+fail[2]: 20 kg: 4 + 8 + 3, then 7 + 6 + 2 + 5. A 19 kg van needs 3 trips.
+fail[4]: Every box must fit, so the van can't be smaller than the 8 kg box, and at 8 kg it needs only 6 trips.
+fail[5]: Two trips of 20 kg: 10 + 10, twice.
+hint: The capacity can't be below `max(boxes)`, and `sum(boxes)` always needs one trip: search between them.
+hint: A capacity passes if `trips_needed(boxes, mid) <= max_trips`: remember it and look left.
+hint: Otherwise the van is too small: `lo = mid + 1`.
+right: The search tests about log₂(total weight) capacities, each with one pass over the n boxes: O(n log S) for a total weight S.
+wrong: Binary search the capacities from the heaviest box to the total weight, and keep the smallest one whose trip count is within the limit.
+
+=== task: code hard
+title: Whole-number cube root
+prompt: Write `int_cbrt(n)` that returns the largest whole number r with r × r × r ≤ n, for n ≥ 0. Use binary search, and don't use `**`, `pow` or any module. The speed check uses huge numbers.
+starter:
+```python
+def int_cbrt(n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def int_cbrt(n):
+    lo = 0
+    hi = n
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+```
+tests:
+- int_cbrt(27)
+- int_cbrt(26)
+- int_cbrt(28)
+- int_cbrt(0)
+- int_cbrt(1)
+- int_cbrt(1000000)
+- int_cbrt(999999)
+speed: setup=big = n * n * n + 7 | call=int_cbrt(big) | target=O(log n)
+slow:
+```python
+def int_cbrt(n):
+    r = 0
+    while (r + 1) * (r + 1) * (r + 1) <= n:
+        r += 1
+    return r
+```
+forbid[**]: Multiply `mid * mid * mid` instead of using `**`.
+forbid[pow(]: Multiply `mid * mid * mid` instead of using `pow`.
+forbid[import]: Write the search yourself, without importing a module.
+fail[2]: 3 × 3 × 3 = 27 is more than 26: the answer is 2.
+fail[5]: 1 × 1 × 1 = 1 is at most 1: the answer is 1.
+fail[7]: 100 × 100 × 100 = 1,000,000 is more than 999,999: the answer is 99.
+hint: Search the guesses 0 to n, like `int_sqrt`.
+hint: A guess passes if `mid * mid * mid <= n`: remember it and look right.
+hint: Otherwise `hi = mid - 1`. Return the last guess that passed.
+right: The largest passing guess, found in about log₂ n tests: about 60 tests for n near a billion billion, where counting up would take a million.
+wrong: The same as `int_sqrt` with a cube: when `mid * mid * mid <= n`, remember mid and look right; otherwise look left.
+
+=== task: code hard
+title: A staircase of coins
+prompt: A staircase of k rows has 1 coin in the first row, 2 in the second, and k in the last: `k * (k + 1) // 2` coins in all. Write `full_rows(coins)` that returns the largest k whose staircase needs at most `coins` coins. Use binary search: the speed check uses huge numbers of coins.
+starter:
+```python
+def full_rows(coins):
+    # your code here
+    return 0
+```
+solution:
+```python
+def full_rows(coins):
+    lo = 0
+    hi = coins
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * (mid + 1) // 2 <= coins:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+```
+tests:
+- full_rows(5)
+- full_rows(6)
+- full_rows(8)
+- full_rows(0)
+- full_rows(1)
+- full_rows(1000000)
+speed: setup=coins = n * n | call=full_rows(coins) | target=O(log n)
+slow:
+```python
+def full_rows(coins):
+    k = 0
+    while (k + 1) * (k + 2) // 2 <= coins:
+        k += 1
+    return k
+```
+fail[1]: 2 rows use 3 coins; 3 rows would need 6.
+fail[3]: 3 rows use 6 coins; 4 rows would need 10.
+fail[6]: 1,413 rows use 998,991 coins; 1,414 rows would need 1,000,405.
+hint: Search k from 0 to `coins`: k rows need `k * (k + 1) // 2` coins.
+hint: If that's at most `coins`, k passes: remember it and look right.
+hint: Otherwise look left. Return the largest k that passed.
+right: The coins needed grow with k, so the test is monotonic, and the largest passing k takes about log₂(coins) tests.
+wrong: Binary search k: when `k * (k + 1) // 2 <= coins`, k rows fit, so remember k and try more rows; otherwise try fewer.
+
+=== task: code hard
+title: Machines making parts
+prompt: Several machines work at the same time. `times` lists, for each machine, how many minutes it takes to make one part, so in T minutes a machine with time t makes `T // t` parts. Write `min_time(times, parts)`: the fewest whole minutes for the machines to make at least `parts` parts together (`parts` is at least 1). The speed check uses many machines.
+starter:
+```python
+def min_time(times, parts):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_time(times, parts):
+    lo = 1
+    hi = min(times) * parts
+    answer = hi
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        made = 0
+        for t in times:
+            made += mid // t
+        if made >= parts:
+            answer = mid
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    return answer
+```
+tests:
+- min_time([2, 3, 7], 10)
+- min_time([5], 3)
+- min_time([1, 1], 4)
+- min_time([4, 6], 1)
+- min_time([3, 4], 7)
+- min_time([10, 1], 5)
+speed: setup=times = list(range(1, n + 1)) | call=min_time(times, n) | target=O(n log n)
+slow:
+```python
+def min_time(times, parts):
+    t = 1
+    while True:
+        made = 0
+        for m in times:
+            made += t // m
+        if made >= parts:
+            return t
+        t += 1
+```
+fail[1]: In 12 minutes the machines make 6 + 4 + 1 = 11 parts; in 11 minutes, 5 + 3 + 1 = 9.
+fail[2]: One machine making a part every 5 minutes needs 15 minutes for 3 parts.
+fail[5]: In 12 minutes: 4 + 3 = 7 parts. In 11 minutes: 3 + 2 = 5.
+hint: Search T from 1 to `min(times) * parts`: by then the fastest machine alone has made enough.
+hint: T passes if the machines make at least `parts` parts: add up `T // t` for every machine.
+hint: Remember a passing T and look left; otherwise look right.
+right: More minutes never make fewer parts, so the test is monotonic. About log₂(min(times) × parts) tests, each a pass over the n machines.
+wrong: Binary search the minutes from 1 to `min(times) * parts`. A guess passes when the parts made, the sum of `T // t`, reach `parts`; keep the smallest passing guess.
+
+=== task: predict hard
+title: When hi is too small
+code:
+```python
+def root(n):
+    lo = 0
+    hi = n // 2
+    answer = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid * mid <= n:
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(root(1), root(2), root(16), root(3))
+```
+wrong[1 1 4 1]: For n = 1, hi = 1 // 2 = 0, so the guess 1 is never tested, and the answer stays 0.
+wrong[0 1 4 2]: 2 × 2 = 4 is more than 3: the root of 3 is 1.
+wrong[0 1 8 1]: The search returns the largest guess whose square is at most 16: 4, not hi.
+hint: Work out hi = n // 2 for each n.
+hint: Is the real root of n always between 0 and n // 2?
+right: `0 1 4 1`: n // 2 is a safe upper end from n = 2 on, but for n = 1 it's 0, smaller than the root, 1. The range must contain the answer.
+wrong: For n = 1, the range is 0 to 0, so 1 is never tried and the answer stays 0. For 2, 16 and 3 the root is inside the range, and the search finds 1, 4 and 1.
+
+=== task: predict hard
+title: Decimals and the range
+code:
+```python
+def root(n, hi):
+    lo = 0.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if mid * mid <= n:
+            lo = mid
+        else:
+            hi = mid
+    return round(lo, 3)
+
+print(root(9, 9.0), root(0.25, 1.0), root(0.25, 0.25))
+```
+wrong[3.0 0.5 0.5]: With hi = 0.25, the range 0 to 0.25 doesn't contain 0.5. Every guess passes, so lo creeps up to 0.25 and stops there.
+wrong[3.0 0.25 0.25]: With hi = 1.0 the range contains 0.5, and the search closes in on it: 0.5 × 0.5 = 0.25.
+wrong[2.999 0.5 0.25]: After 40 halvings, lo is within a hundred-millionth of 3, so rounding to 3 places gives 3.0.
+hint: The search can only find an answer between lo and hi.
+hint: The square root of 0.25 is 0.5, which is bigger than 0.25.
+right: `3.0 0.5 0.25`: the first two ranges contain the roots, 3 and 0.5. The third range, 0 to 0.25, doesn't contain 0.5, so the search ends at its top, 0.25.
+wrong: The root of 9 is between 0 and 9: 3.0. The root of 0.25 is between 0 and 1: 0.5. With hi = 0.25 every guess passes, so lo climbs to the top of the range, 0.25: a wrong answer, without any error.
+
+=== task: cells hard
+title: Trips for different vans
+prompt: The boxes `[4, 8, 3, 7, 6, 2, 5]` go onto a van in this order, and a new trip starts when the next box doesn't fit. Fill in the trips each capacity needs, and the smallest capacity for at most 3 trips.
+labels: trips at 8 kg | trips at 10 kg | trips at 15 kg | trips at 20 kg | smallest van for 3 trips
+answer: 6 | 5 | 3 | 2 | 13
+wrong[6 | 5 | 3 | 2 | 15]: 15 kg works, but so does 13 kg: 4 + 8, then 3 + 7, then 6 + 2 + 5. A 12 kg van needs 4 trips.
+wrong[7 | 5 | 3 | 2 | 13]: At 8 kg: 4, then 8, then 3, then 7, then 6 + 2, then 5. That's 6 trips, because 6 and 2 share one.
+wrong[6 | 4 | 3 | 2 | 13]: At 10 kg: 4, then 8, then 3 + 7, then 6 + 2, then 5: 5 trips.
+hint: Load the boxes in order, and start a new trip when the next box would go over.
+hint: For the last value, find the smallest capacity whose trip count is at most 3.
+right: 6, 5, 3, 2 and 13: bigger vans need fewer trips, and 13 kg is the smallest that manages 3; 12 kg needs 4.
+wrong: 8 kg: [4] [8] [3] [7] [6, 2] [5]. 10 kg: [4] [8] [3, 7] [6, 2] [5]. 15 kg: [4, 8, 3] [7, 6, 2] [5]. 20 kg: [4, 8, 3] [7, 6, 2, 5]. 13 kg gives [4, 8] [3, 7] [6, 2, 5], and 12 kg needs a fourth trip.
+
+=== task: multi hard
+title: True about binary search on the answer
+prompt: Choose **every** true statement.
+* The number of tests depends on the size of the range of guesses :: Right. About log₂(hi − lo + 1) tests.
+* For the reading plan it costs O(n log m), for n chapters and a longest chapter of m pages :: Right. About log₂ m tests, each a pass over the n chapters.
+* With a test that isn't monotonic, it can return a wrong answer without any error :: Right. It drops halves that may hold the answer, and nothing warns you.
+- It needs the chapters, or the boxes, to be sorted :: The guesses are what must be in order, and the numbers from lo to hi always are. The chapters can be in any order.
+- It always returns a guess that passes the test :: If nothing in the range passes, it returns answer's starting value, such as None or hi.
+- Making hi much bigger than needed gives wrong answers :: A bigger range only adds a few tests: doubling it adds one.
+hint: What is actually in sorted order here?
+hint: What happens when no guess passes?
+right: The cost is the number of tests, about log₂ of the range size, times the cost of one test, and a test that isn't monotonic fails silently. The data needn't be sorted, nothing guarantees a pass, and a generous hi costs only a few extra tests.
+wrong: Binary search on the answer searches the range of guesses, which is always in order; the input can be in any order. If no guess passes, the result is answer's starting value. A bigger hi adds about one test for each doubling.
+
+=== task: fill hard
+title: Decimal square roots
+prompt: Fill in the blanks so that the decimal search closes in on the square root, and the program prints:
+
+```output
+1.414214 0.5
+```
+code:
+```python
+def sqrt_approx(n):
+    lo = 0.0
+    hi = max(1.0, n)
+    for _ in range(50):
+        mid = (lo + hi) ?? 2
+        if mid * mid <= n:
+            lo = ??
+        else:
+            hi = ??
+    return lo
+
+print(round(sqrt_approx(2), 6), round(sqrt_approx(0.25), 6))
+```
+answer: / | mid | mid
+wrong[// | mid | mid]: `//` rounds down to a whole number, so mid gets stuck at 1.0 for n = 2 and at 0.0 for n = 0.25: the search never looks between whole numbers.
+wrong[/ | mid + 1 | mid - 1]: With decimals there's no "next number": adding or taking away 1 jumps far past the answer. Move lo or hi onto mid itself.
+hint: The middle of two decimals is their sum divided by 2, without rounding.
+hint: Each turn moves lo or hi exactly onto mid; the fixed number of turns ends the loop.
+right: `(lo + hi) / 2` is the exact middle, and moving lo or hi onto it halves the interval every turn: after 50 turns, lo is the root to many decimal places.
+wrong: Use `/` for the middle, `lo = mid` when mid passes and `hi = mid` when it fails. The loop runs 50 times, so it ends even though lo never passes hi.
+
+=== task: parsons hard
+title: The largest guess that passes
+prompt: Arrange the lines so that `largest_passing` returns the largest guess from `lo` to `hi` that passes the test, or None, and the program prints:
+
+```output
+7 None
+```
+
+Not every line is needed.
+lines:
+```python
+def largest_passing(lo, hi, test):
+    answer = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if test(mid):
+            answer = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(largest_passing(0, 100, lambda g: g * g <= 50), largest_passing(1, 100, lambda g: 3 * g <= 2))
+```
+distractors:
+```python
+        if not test(mid):
+    answer = 0
+```
+hint: This time the passes come first and the fails after.
+hint: On a pass, remember mid and look right for a bigger guess that passes.
+right: A pass is remembered and sends the search right; a fail sends it left. 7 × 7 = 49 is the largest square at most 50, and no guess from 1 up has 3 × g at most 2, so the second search returns None.
+wrong: Start with `answer = None`. On a pass set `answer = mid` and `lo = mid + 1`; on a fail set `hi = mid - 1`. Return answer.
