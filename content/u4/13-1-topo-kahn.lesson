@@ -1,0 +1,1302 @@
+=== lesson
+id: algo-topo-kahn
+title: Kahn's algorithm
+summary: Kahn's algorithm finds a topological order in O(V + E) time. It counts how many unfinished prerequisites each job has, keeps a queue of the jobs whose count is 0, and every time it finishes a job, lowers the counts of the jobs waiting for it. Jobs that never reach 0 mean a cycle. You'll write it, trace its counts and queue, detect cycles from the leftovers, choose a particular order with a heap, and group jobs into rounds that can run at the same time.
+
+=== learn
+### Counting what's left
+The simple method in the last lesson searched all the jobs, every round, for one whose prerequisites were all done. Kahn's algorithm avoids the searching by keeping a count for every job: its **in-degree**, the number of its prerequisites that aren't finished yet.
+
+At the start, nothing is finished, so each count is the number of edges coming into the job. One pass over the edges finds them all:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+
+def in_degrees(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    return indeg
+
+print(in_degrees(dinner))
+```
+```output
+{'buy': 0, 'chop': 1, 'boil': 0, 'cook': 2, 'table': 0, 'serve': 2}
+```
+A count of 0 means a job is free. The other counts say how many jobs are still in its way: cook waits for 2, chop and boil.
+
+### A queue of free jobs
+The free jobs go into a queue. Take a job from the front and finish it: append it to the order. Every job waiting for it now has one prerequisite fewer, so lower each of their counts by 1. A count that reaches 0 means that job's last prerequisite is now finished, so it joins the back of the queue.
+```python
+from collections import deque
+
+def kahn(graph):
+    indeg = in_degrees(graph)
+    queue = deque([v for v in graph if indeg[v] == 0])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    if len(order) < len(graph):
+        return None
+    return order
+
+print(kahn(dinner))
+```
+```output
+['buy', 'boil', 'table', 'chop', 'cook', 'serve']
+```
+buy, boil and table start in the queue. Finishing buy brings chop's count to 0. Finishing boil brings cook's count from 2 down to 1, and finishing table does the same for serve. Then chop brings cook to 0, and cook brings serve to 0. Animation 1 runs Kahn's algorithm with its counts and queue.
+
+### Why the order is right
+A job joins the queue only when its count reaches 0, which is the moment its last prerequisite is finished. So every job in the queue is free, and every job is appended to the order after all its prerequisites. That's exactly what a topological order needs.
+
+Each count goes down once for each prerequisite, so a job's count reaches 0 exactly once, and it joins the queue exactly once. Nothing is ever appended twice.
+
+### Leftovers mean a cycle
+If the graph has a cycle, the jobs on it wait for each other, so their counts never reach 0 and they never join the queue. The queue empties with jobs left over:
+```python
+loop = {"a": ["b"], "b": ["c"], "c": ["a"], "d": ["a"]}
+print(kahn(loop))
+```
+```output
+None
+```
+d is finished first, which brings a's count from 2 down to 1, and then the queue is empty. `len(order) < len(graph)` spots that a, b and c are missing. The jobs whose counts are still above 0 are the stuck ones: those on a cycle, and any job that waits, directly or not, for one of them. Animation 2 shows the counts getting stuck.
+
+### O(V + E)
+Counting the in-degrees looks at every edge once. Each job joins and leaves the queue at most once: O(V). When a job leaves, each of its outgoing edges lowers one count, so over the whole run every edge is used once more: O(E). In all, **O(V + E)**, the same as BFS and DFS, instead of the simple method's O(V × (V + E)).
+
+### Choosing which free job goes next
+When several jobs are free at once, the queue takes them in the order they became free, which gives a ring-by-ring order like BFS. Any container of free jobs works: a stack gives a different, equally valid order. A heap from `heapq` always takes the smallest name first, which gives the **alphabetically smallest** topological order, a single predictable answer:
+```python
+import heapq
+
+def kahn_smallest(graph):
+    indeg = in_degrees(graph)
+    heap = [v for v in graph if indeg[v] == 0]
+    heapq.heapify(heap)
+    order = []
+    while heap:
+        u = heapq.heappop(heap)
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                heapq.heappush(heap, v)
+    if len(order) < len(graph):
+        return None
+    return order
+
+print(kahn_smallest(dinner))
+```
+```output
+['boil', 'buy', 'chop', 'cook', 'table', 'serve']
+```
+Each heap operation costs O(log V), so this version is O(V log V + E).
+
+### Rounds that can run together
+If jobs can happen at the same time, all the jobs that are free together can go in one round. Process the free jobs a whole batch at a time: the jobs that reach 0 while a batch is being finished make up the next batch.
+```python
+def rounds(graph):
+    indeg = in_degrees(graph)
+    current = [v for v in graph if indeg[v] == 0]
+    plan = []
+    while current:
+        plan.append(current)
+        upcoming = []
+        for u in current:
+            for v in graph[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    upcoming.append(v)
+        current = upcoming
+    return plan
+
+print(rounds(dinner))
+```
+```output
+[['buy', 'boil', 'table'], ['chop'], ['cook'], ['serve']]
+```
+The number of rounds is the fewest steps the jobs can be done in, however many people help: it's the number of jobs on the longest chain of dependencies, here buy, chop, cook, serve. This is how a university can work out the fewest terms a degree takes. (If the rounds don't cover every job, there's a cycle, as before.)
+
+=== keypoints
+- Kahn's algorithm keeps each job's count of unfinished prerequisites, starting from its in-degree.
+- Start a queue with every job whose count is 0. Take one, add it to the order, and lower the counts of the jobs it points to; a count that hits 0 joins the queue.
+- Every job enters the queue once, right after its last prerequisite is finished, so the order is topological.
+- If the queue empties before every job is in the order, the leftovers are on a cycle or wait for one.
+- O(V + E). A heap instead of a queue gives the alphabetically smallest order, in O(V log V + E).
+- Taking the free jobs a whole batch at a time gives rounds of jobs that can run together; the number of rounds is the longest chain.
+
+=== example: A degree plan
+intro: Each module lists the modules that need it first. Kahn's algorithm finds an order to take them in, or reports that the prerequisites go round in a circle.
+```python
+from collections import deque
+
+unlocks = {
+    "maths": ["stats", "algo"],
+    "python": ["algo", "web"],
+    "stats": ["ml"],
+    "algo": ["ml"],
+    "web": [],
+    "ml": [],
+}
+
+indeg = {m: 0 for m in unlocks}
+for m in unlocks:
+    for later in unlocks[m]:
+        indeg[later] += 1
+
+queue = deque([m for m in unlocks if indeg[m] == 0])
+order = []
+while queue:
+    m = queue.popleft()
+    order.append(m)
+    for later in unlocks[m]:
+        indeg[later] -= 1
+        if indeg[later] == 0:
+            queue.append(later)
+
+print(order if len(order) == len(unlocks) else "impossible")
+```
+3-10: maths opens stats and algo; python opens algo and web; stats and algo both lead to ml.
+12-15: Count each module's prerequisites.
+17-25: Kahn's algorithm: start with the modules that need nothing, and release each module when its last prerequisite is taken.
+27: Every module fits, so the plan is printed. algo waits for both maths and python, so it comes only after python.
+
+=== example: Terms of study
+intro: Taking the free modules a whole batch at a time shows which modules can share a term, and the fewest terms the degree needs.
+```python
+unlocks = {
+    "maths": ["stats", "algo"],
+    "python": ["algo", "web"],
+    "stats": ["ml"],
+    "algo": ["ml"],
+    "web": [],
+    "ml": [],
+}
+
+indeg = {m: 0 for m in unlocks}
+for m in unlocks:
+    for later in unlocks[m]:
+        indeg[later] += 1
+
+term = [m for m in unlocks if indeg[m] == 0]
+number = 1
+while term:
+    print("term " + str(number) + ": " + ", ".join(term))
+    upcoming = []
+    for m in term:
+        for later in unlocks[m]:
+            indeg[later] -= 1
+            if indeg[later] == 0:
+                upcoming.append(later)
+    term = upcoming
+    number += 1
+```
+1-8: The same modules.
+10-13: Count each module's prerequisites.
+15-16: The first term holds every module with no prerequisites.
+17-25: Print a term, then finish all its modules at once, collecting the modules they release into the next term.
+26: Three terms: the longest chain, maths then algo then ml, can't be squeezed into fewer.
+
+=== animation: Counts and the queue
+view: graph g pos=A:60,40;B:60,160;C:180,100;D:300,40;E:300,160 directed=1 visited=order current=u vlabel=in_the_order
+dict indeg
+queue queue
+vars order
+intro: The counts under `indeg` are each job's unfinished prerequisites. Green jobs are already in the order; the yellow one has been taken from the queue. Watch each count drop as the jobs before it are finished.
+```python
+from collections import deque
+
+g = {"A": ["C"], "B": ["C", "E"], "C": ["D", "E"], "D": [], "E": []}
+indeg = {"A": 0, "B": 0, "C": 2, "D": 1, "E": 2}
+
+queue = deque(["A", "B"])
+order = []
+while queue:
+    u = queue.popleft()
+    order.append(u)
+    for v in g[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            queue.append(v)
+```
+1: deque makes the queue.
+3: A and B lead to C; B and C lead to E; C leads to D.
+4: Each job's count of prerequisites: C and E have 2, D has 1.
+6: The jobs with count 0, A and B, start in the queue.
+7: The order starts empty.
+8: {'Free jobs are waiting: keep going.' if queue else 'The queue is empty: every job is in the order.'}
+9: Take the free job at the front: {queue[0]}.
+10: Finish {u}: add it to the order.
+11: Next job that waits for {u}. When there are none left, go back to the queue.
+12: {v} has one prerequisite fewer: {indeg[v]} becomes {indeg[v] - 1}.
+13: {'Count of ' + str(v) + ' is 0: its last prerequisite is done.' if indeg[v] == 0 else str(v) + ' still waits for ' + str(indeg[v]) + ' more.'}
+14: {v} is free now: it joins the back of the queue.
+
+=== animation: Stuck counts
+view: graph g pos=A:60,100;B:180,40;C:180,160;D:300,100 directed=1 visited=order current=u vlabel=in_the_order
+dict indeg
+queue queue
+vars order
+intro: B and C each wait for the other, and D waits for C. Only A ever reaches 0. When the queue runs dry, the counts above 0 show which jobs are stuck.
+```python
+from collections import deque
+
+g = {"A": ["B"], "B": ["C"], "C": ["B", "D"], "D": []}
+indeg = {"A": 0, "B": 2, "C": 1, "D": 1}
+
+queue = deque(["A"])
+order = []
+while queue:
+    u = queue.popleft()
+    order.append(u)
+    for v in g[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            queue.append(v)
+print(order, len(order) < len(g))
+```
+1: deque makes the queue.
+3: A leads to B; B and C lead to each other; C also leads to D.
+4: B waits for A and C, C waits for B, and D waits for C.
+6: Only A has count 0.
+7: The order starts empty.
+8: {'Free jobs are waiting: keep going.' if queue else 'The queue is empty, but jobs are left: ' + ', '.join(v for v in g if v not in order) + '.'}
+9: Take the free job at the front: {queue[0]}.
+10: Finish {u}: add it to the order.
+11: Next job that waits for {u}. When there are none left, go back to the queue.
+12: {v} has one prerequisite fewer: {indeg[v]} becomes {indeg[v] - 1}.
+13: {'Count of ' + str(v) + ' is 0.' if indeg[v] == 0 else str(v) + ' still waits for ' + str(indeg[v]) + ' more: it stays out of the queue.'}
+14: {v} is free now: it joins the back of the queue.
+15: Only {len(order)} of the 4 jobs got into the order: there's a cycle.
+
+=== task: predict easy
+title: Freed later, queued later
+code:
+```python
+from collections import deque
+
+morning = {"wake": ["shower", "coffee"], "shower": ["dress"], "dress": [],
+           "coffee": [], "radio": []}
+
+indeg = {v: 0 for v in morning}
+for u in morning:
+    for v in morning[u]:
+        indeg[v] += 1
+
+queue = deque([v for v in morning if indeg[v] == 0])
+order = []
+while queue:
+    u = queue.popleft()
+    order.append(u)
+    for v in morning[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            queue.append(v)
+print(order)
+```
+wrong[['wake', 'shower', 'dress', 'coffee', 'radio']]: radio has no prerequisites, so it's in the queue from the start, ahead of shower and coffee, which only join when wake is finished.
+wrong[['wake', 'radio', 'shower', 'dress', 'coffee']]: wake releases shower and coffee together, so both join the queue then, before dress, which waits for shower.
+wrong[['radio', 'wake', 'shower', 'coffee', 'dress']]: The first queue lists the free jobs in the dictionary's order: wake comes before radio.
+hint: Which jobs have a count of 0 at the start?
+hint: Finishing wake brings shower and coffee to 0; they join behind radio.
+right: `['wake', 'radio', 'shower', 'coffee', 'dress']`. The queue holds jobs in the order they became free: wake and radio at the start, shower and coffee when wake is done, and dress last.
+wrong: The queue starts as wake, radio. wake is taken and shower and coffee join: radio, shower, coffee. radio is taken, then shower, which releases dress. Then coffee and dress.
+
+=== task: mcq easy
+title: Who starts in the queue?
+prompt: At the start of Kahn's algorithm, which jobs go into the queue?
+* Every job whose count of prerequisites is 0 :: Right. Those jobs wait for nothing, so they're free straight away.
+- Only the first job in the dictionary :: Every free job goes in, not one. Jobs with a count above 0 are left out, wherever they're listed.
+- Every job, in the dictionary's order :: Jobs with prerequisites must wait until their count reaches 0.
+- The jobs that no other job waits for :: Those are the jobs at the end of the order, with no outgoing edges. The queue starts with the jobs with no incoming edges.
+hint: A job in the queue must be free.
+hint: What does a count of 0 mean?
+right: The queue only ever holds free jobs. At the start, those are the jobs with in-degree 0; later ones join as their counts reach 0.
+wrong: The starting queue is every job with an in-degree of 0: nothing has to happen before them.
+
+=== task: cells easy
+title: Counts going down
+prompt: Kahn's algorithm runs on this graph. What is each job's count after A and B have both been finished?
+code:
+```python
+graph = {"A": ["C", "D"], "B": ["D", "E"], "C": ["E"], "D": ["E"], "E": []}
+```
+labels: C | D | E
+answer: 0 | 0 | 2
+wrong[1 | 2 | 3]: Those are the starting counts. Finishing A lowers C and D by 1; finishing B lowers D and E by 1.
+wrong[0 | 0 | 0]: E also waits for C and D, which haven't been finished yet: only B's edge into E has been used.
+wrong[0 | 1 | 2]: D waits for A and B, and both are finished: 2 − 2 = 0.
+hint: Start with each job's number of incoming edges: C 1, D 2, E 3.
+hint: Each finished job lowers the counts of the jobs in its list by 1.
+right: 0, 0 and 2. C and D are free now and would be in the queue; E still waits for C and D.
+wrong: Starting counts: C 1, D 2, E 3. A lowers C and D: 0 and 1. B lowers D and E: D 0, E 2.
+
+=== task: code easy
+title: Kahn's algorithm
+prompt: Write `kahn(graph)` that returns a topological order using Kahn's algorithm, or None if there's a cycle. Count each job's incoming edges, start a `deque` with the jobs whose count is 0 (in the dictionary's order), and repeatedly take one from the front, add it to the order, and lower the counts of the jobs in its list, queuing any that reach 0. The speed check uses a chain of n jobs.
+starter:
+```python
+from collections import deque
+
+def kahn(graph):
+    indeg = {v: 0 for v in graph}
+    # your code here
+    return None
+```
+solution:
+```python
+from collections import deque
+
+def kahn(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    if len(order) < len(graph):
+        return None
+    return order
+```
+tests:
+- kahn({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- kahn({0: [3, 1], 1: [2], 2: [], 3: [2]})
+- kahn({"a": ["b"], "b": ["a"]})
+- kahn({"x": []})
+- kahn({})
+fail[1]: ['buy', 'boil', 'table', 'chop', 'cook', 'serve']: the three free jobs first, then each job as its last prerequisite is finished.
+fail[2]: 0 releases 3 and 1, in that order; 2 waits for both: [0, 3, 1, 2].
+fail[3]: A cycle: the queue starts empty and nothing gets done, so None.
+fail[4]: One job: ['x'].
+fail[5]: No jobs: an empty order, [].
+speed: setup=graph = {i: [i + 1] for i in range(n - 1)}; graph[n - 1] = [] | call=kahn(graph) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def kahn(graph):
+    queue = deque([v for v in graph if all([v not in graph[u] for u in graph])])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in graph[u]:
+            if all([w in order for w in graph if v in graph[w]]):
+                queue.append(v)
+    if len(order) < len(graph):
+        return None
+    return order
+```
+hint: Count first: for each edge u → v, `indeg[v] += 1`.
+hint: In the loop, `u = queue.popleft()`, append it, then for each v in `graph[u]`, lower `indeg[v]` and append v to the queue if it's now 0.
+hint: If the order ends up shorter than the graph, return None. Checking a job's prerequisites by searching the whole graph every time, instead of keeping counts, would be O(V²) on the speed check's chain.
+right: Each job joins the queue once, when its last prerequisite is finished, and each edge lowers one count once, so the whole thing is O(V + E).
+wrong: Count in-degrees, queue the zeros, then repeatedly pop, record, and release the jobs whose counts drop to 0. A short order means a cycle.
+
+=== task: fill easy
+title: Counting the edges in
+prompt: Fill in the blanks so that `in_degrees` counts, for each job, how many edges come into it, and the program prints:
+
+```output
+{'A': 0, 'B': 0, 'C': 1, 'D': 2, 'E': 3}
+```
+code:
+```python
+graph = {"A": ["C", "D"], "B": ["D", "E"], "C": ["E"], "D": ["E"], "E": []}
+
+def in_degrees(graph):
+    indeg = {v: ?? for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[??] += 1
+    return indeg
+
+print(in_degrees(graph))
+```
+answer: 0 | v
+wrong[1 | v]: Every count would be one too high: a job with no incoming edges must start at 0.
+wrong[0 | u]: That counts the edges going **out** of each job: A would get 2, and E, which leads nowhere, 0.
+hint: Before any edge is counted, every job has 0.
+hint: The edge u → v comes **into** v.
+right: Starting every count at 0 and adding 1 to v for each edge u → v gives each job's number of prerequisites.
+wrong: Initialise with 0 and increase `indeg[v]`, the job at the end of the edge.
+
+=== task: multi easy
+title: True of Kahn's algorithm
+prompt: Choose **every** true statement about Kahn's algorithm.
+* A job joins the queue at the moment its last prerequisite is finished :: Right. That's when its count reaches 0.
+* Each job joins the queue at most once :: Right. Its count reaches 0 only once, since counts only go down.
+* If some jobs never join the queue, the graph has a cycle :: Right. Their counts stay above 0 because jobs in a cycle wait for each other.
+- Its order is always the same as the simple method's from the last lesson :: Both give valid orders, but Kahn's takes free jobs in the order they became free, which can differ.
+- It needs the jobs to be listed in a topological order already :: It works for jobs listed in any order; the counts do the work.
+- A job's count can go below 0 :: Each count goes down once per incoming edge, so it stops at 0.
+hint: When exactly does a count reach 0?
+hint: What happens to jobs on a cycle?
+right: Kahn's algorithm releases each job exactly once, right after its last prerequisite, and jobs that are never released reveal a cycle. Its order is one of the valid ones, not necessarily the simple method's.
+wrong: Counts only go down, by exactly the number of incoming edges, so each job is queued once, when it becomes free; jobs on a cycle never are.
+
+=== task: parsons easy
+title: Is there a cycle?
+prompt: Arrange the lines so that `has_cycle` runs Kahn's algorithm, counting how many jobs get finished instead of recording them, and returns True if some jobs never do. The program prints:
+
+```output
+False True
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def has_cycle(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    finished = 0
+    while queue:
+        u = queue.popleft()
+        finished += 1
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return finished < len(graph)
+```
+distractors:
+```python
+    return finished == len(graph)
+            if indeg[v] == 1:
+```
+after:
+```python
+print(has_cycle({"a": ["b"], "b": ["c"], "c": []}), has_cycle({"a": ["b"], "b": ["c"], "c": ["b"]}))
+```
+hint: Kahn's algorithm finishes every job exactly when there's no cycle.
+hint: A job is released when its count drops to 0.
+right: Jobs on a cycle never reach a count of 0, so fewer jobs are finished than exist. Counting is enough; the order itself isn't needed.
+wrong: Count the in-degrees, queue the zeros, and count each job you take out, releasing the jobs whose counts drop to 0. A cycle exists if the count ends below the number of jobs.
+
+=== task: order easy
+title: The queue over time
+prompt: Kahn's algorithm runs on this graph:
+
+```python
+graph = {"A": ["C"], "B": ["C", "D"], "C": ["E"],
+         "D": ["E"], "E": []}
+```
+
+The queue starts as `[A, B]`. Put its contents in order, each one as it is right after a job has been finished and its waiting jobs updated. The queue ends empty.
+items:
+- `[B]`
+- `[C, D]`
+- `[D]`
+- `[E]`
+hint: Finishing A brings C's count from 2 to 1, which isn't 0 yet.
+hint: Finishing B brings both C and D to 0.
+right: `[B]`, `[C, D]`, `[D]` and `[E]`. A frees nothing on its own; B frees C and D; C lowers E to 1; D frees E.
+wrong: A is taken: C drops to 1, so only B is left. B is taken: C and D drop to 0 and join. C is taken: E drops to 1. D is taken: E drops to 0 and joins. Then E is taken.
+
+=== task: predict easy
+title: A queue that runs dry
+code:
+```python
+from collections import deque
+
+graph = {"A": ["B"], "B": ["C"], "C": ["D"], "D": ["B"], "E": ["C"]}
+
+indeg = {v: 0 for v in graph}
+for u in graph:
+    for v in graph[u]:
+        indeg[v] += 1
+
+queue = deque([v for v in graph if indeg[v] == 0])
+order = []
+while queue:
+    u = queue.popleft()
+    order.append(u)
+    for v in graph[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            queue.append(v)
+print(order, len(order) < len(graph))
+```
+wrong[['A', 'E', 'B', 'C', 'D'] False]: B, C and D form a cycle: B waits for D, which waits for C, which waits for B. Their counts never reach 0.
+wrong[['A', 'E'] False]: The order has 2 jobs and the graph has 5, so `len(order) < len(graph)` is True.
+wrong[['A', 'E', 'B'] True]: B waits for A and also for D. Finishing A lowers B's count from 2 to 1, not 0.
+hint: Which jobs have a count of 0 at the start? What happens to B's count when A is finished?
+hint: Look for a loop among B, C and D.
+right: `['A', 'E'] True`. A and E are free, but finishing them only lowers B and C by 1 each. B, C and D wait for each other in a cycle, so the queue runs dry with 3 jobs left.
+wrong: Counts: B 2 (A, D), C 2 (B, E), D 1 (C). A and E are queued and finished, leaving B at 1 and C at 1. Nothing else reaches 0, so only 2 of 5 jobs are in the order.
+
+=== task: mcq easy
+title: How fast?
+prompt: A build system has 50,000 files (V) and 400,000 "imports" edges (E). About how many steps does Kahn's algorithm take?
+* About a million: a few steps for each file and each edge :: Right. O(V + E): counting the edges, queuing each file once, and lowering one count per edge.
+- About 2.5 billion: V × V :: That's the simple method's worst case, searching every file every round. Kahn's never searches.
+- About 20 billion: V × E :: Each edge is used a fixed number of times, not once per file.
+- About 50,000: one step per file :: Each edge has to be counted and used to lower a count, too.
+hint: How many times is each edge looked at?
+hint: How many times does each file join the queue?
+right: Every edge is looked at twice (once to count, once to lower a count) and every file joins and leaves the queue once: O(V + E), about a million steps here.
+wrong: Kahn's algorithm is O(V + E): 50,000 + 400,000 = 450,000, times a small constant.
+
+=== task: code medium
+title: Course order
+prompt: There are n courses, numbered 0 to n − 1. Each pair `[course, before]` in `pairs` means `before` must be taken before `course`. Write `course_order(n, pairs)` that returns an order to take all the courses in, using Kahn's algorithm with the free courses taken in the order they become free (start with the free ones in increasing number), or `[]` if it's impossible. Build the graph first: an edge from `before` to `course`.
+starter:
+```python
+from collections import deque
+
+def course_order(n, pairs):
+    graph = {c: [] for c in range(n)}
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+def course_order(n, pairs):
+    graph = {c: [] for c in range(n)}
+    for course, before in pairs:
+        graph[before].append(course)
+    indeg = {c: 0 for c in range(n)}
+    for c in graph:
+        for nxt in graph[c]:
+            indeg[nxt] += 1
+    queue = deque([c for c in range(n) if indeg[c] == 0])
+    order = []
+    while queue:
+        c = queue.popleft()
+        order.append(c)
+        for nxt in graph[c]:
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                queue.append(nxt)
+    if len(order) < n:
+        return []
+    return order
+```
+tests:
+- course_order(2, [[1, 0]])
+- course_order(4, [[1, 0], [2, 0], [3, 1], [3, 2]])
+- course_order(2, [[0, 1], [1, 0]])
+- course_order(1, [])
+- course_order(3, [])
+fail[1]: Course 0 comes before course 1: [0, 1]. Watch the direction: in [1, 0], 0 is the prerequisite.
+fail[2]: 0 first, then 1 and 2, then 3: [0, 1, 2, 3].
+fail[3]: Each course needs the other: impossible, [].
+fail[4]: One course: [0].
+fail[5]: No prerequisites: [0, 1, 2].
+hint: For each pair `[course, before]`, add an edge `before → course`.
+hint: Then run Kahn's algorithm and return [] if some courses never got into the order.
+right: Turning each pair into an edge from the earlier course to the later one makes this a plain topological sort, and Kahn's algorithm either finds an order or shows that the prerequisites go round in a circle.
+wrong: Build `graph[before].append(course)` for each pair, count in-degrees, run the queue, and return the order, or [] if it's shorter than n.
+
+=== task: code medium
+title: Alphabetically first
+prompt: Write `smallest_order(graph)` that returns the alphabetically smallest topological order, or None if there's a cycle: Kahn's algorithm with a heap from `heapq` instead of a queue, so the smallest free job is always taken next.
+starter:
+```python
+import heapq
+
+def smallest_order(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    # your code here
+    return None
+```
+solution:
+```python
+import heapq
+
+def smallest_order(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    heap = [v for v in graph if indeg[v] == 0]
+    heapq.heapify(heap)
+    order = []
+    while heap:
+        u = heapq.heappop(heap)
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                heapq.heappush(heap, v)
+    if len(order) < len(graph):
+        return None
+    return order
+```
+tests:
+- smallest_order({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- smallest_order({"c": ["a"], "b": ["a"], "a": []})
+- smallest_order({"z": [], "y": ["x"], "x": []})
+- smallest_order({"a": ["b"], "b": ["a"]})
+fail[1]: ['boil', 'buy', 'chop', 'cook', 'table', 'serve']: boil and buy are both free at the start, and boil is smaller.
+fail[2]: a waits for b and c: ['b', 'c', 'a'].
+fail[3]: y and z are free; y is smaller and releases x, which is smaller than z: ['y', 'x', 'z'].
+fail[4]: A cycle: None.
+hint: `heapq.heapify(heap)` turns the list of free jobs into a heap; `heappop` takes the smallest.
+hint: Push newly free jobs with `heapq.heappush(heap, v)`.
+right: At every step the heap hands out the smallest job that's free, so no earlier position could hold a smaller name: the whole order is the alphabetically smallest. It costs O(log V) per job.
+wrong: Same as Kahn's algorithm, but keep the free jobs in a heap: heapify the starting list, `heappop` the next job, `heappush` newly freed ones.
+
+=== task: predict medium
+title: A stack instead
+prompt: This version keeps the free jobs in a list and takes the **last** one each time. What does it print?
+code:
+```python
+graph = {"A": ["C"], "B": ["C"], "C": ["D", "E"], "D": [], "E": []}
+
+indeg = {v: 0 for v in graph}
+for u in graph:
+    for v in graph[u]:
+        indeg[v] += 1
+
+free = [v for v in graph if indeg[v] == 0]
+order = []
+while free:
+    u = free.pop()
+    order.append(u)
+    for v in graph[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            free.append(v)
+print(order)
+```
+wrong[['A', 'B', 'C', 'D', 'E']]: That's the queue's order. `pop()` takes the newest free job: B, added after A, comes off first.
+wrong[['B', 'A', 'C', 'D', 'E']]: C releases D and then E, so E is on top and is taken before D.
+wrong[['B', 'C', 'A', 'E', 'D']]: C still waits for A after B is finished: its count is 1, so it can't be taken yet.
+hint: The starting list is [A, B]. Which one does `pop()` take?
+hint: When C is finished, D is appended and then E.
+right: `['B', 'A', 'C', 'E', 'D']`. Any container of free jobs gives a valid order; a stack takes the newest one first.
+wrong: B is popped first, lowering C to 1. A is popped, bringing C to 0. C is popped and releases D, then E. E, the newest, comes off before D.
+
+=== task: cells medium
+title: Rounds by hand
+prompt: Each round finishes **all** the jobs that are free at the start of the round. Fill in the boxes for this graph.
+code:
+```python
+graph = {"a": ["c", "d"], "b": ["d"], "c": ["e"], "d": ["e", "f"],
+         "e": [], "f": ["g"], "g": []}
+```
+labels: number of rounds | jobs in round 1 | jobs in round 2 | the job in the last round
+answer: 4 | 2 | 2 | g
+wrong[3 | 2 | 2 | e]: g waits for f, which waits for d, so g can't finish before round 4. e is done in round 3.
+wrong[4 | 2 | 1 | g]: Round 2 holds both c (freed by a) and d (freed by a and b).
+wrong[5 | 2 | 2 | g]: e and f are both freed in round 2, so they share round 3.
+hint: Round 1 is the jobs with no prerequisites.
+hint: The number of rounds is the number of jobs on the longest chain: count a → d → f → g.
+right: 4, 2, 2 and g: [a, b], [c, d], [e, f], [g]. The longest chain, a → d → f → g, decides the number of rounds.
+wrong: Round 1: a and b. Round 2: c and d. Round 3: e (waiting for c and d) and f (waiting for d). Round 4: g.
+
+=== task: fill medium
+title: One round at a time
+prompt: Fill in the blanks so that `rounds` collects, round by round, the jobs that can be done together, and the program prints:
+
+```output
+[['p', 'q'], ['r', 's'], ['t']]
+```
+code:
+```python
+graph = {"p": ["r"], "q": ["r", "s"], "r": ["t"], "s": ["t"], "t": []}
+
+def rounds(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    current = [v for v in graph if indeg[v] == 0]
+    plan = []
+    while current:
+        plan.append(current)
+        upcoming = []
+        for u in current:
+            for v in graph[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    ??.append(v)
+        current = ??
+    return plan
+
+print(rounds(graph))
+```
+answer: upcoming | upcoming
+wrong[current | upcoming]: Freed jobs would be added to the round that's being finished, so they'd be done in the same round as their prerequisites: one round holding every job.
+wrong[plan | upcoming]: Freed jobs would go into the plan one at a time instead of into the next round. `upcoming` would stay empty, so the loop would stop after one round.
+hint: Jobs freed during this round belong to the next round.
+hint: When the round is over, the next round becomes the current one.
+right: Freed jobs are collected separately, so a round holds only jobs that were free when it started. Then `current = upcoming` moves on.
+wrong: Append each freed job to `upcoming`, and after the round, set `current = upcoming`.
+
+=== task: mcq medium
+title: Why wait for 0?
+prompt: In Kahn's algorithm, why does a job join the queue only when its count reaches 0, rather than as soon as its count goes down?
+* Because only a count of 0 means all its prerequisites are finished; joining earlier could put it before a prerequisite :: Right. A job with a count of 1 still waits for something.
+- To keep the queue short, though joining earlier would give the same order :: Joining earlier gives wrong orders: a job could be taken before one of its prerequisites.
+- Because counts can only change once :: A job's count drops once for every prerequisite, so it can change several times.
+- Because a job with a count of 1 is part of a cycle :: A count of 1 only means one prerequisite is unfinished, which is normal.
+hint: What does a count of 1 mean?
+hint: What would go wrong if cook joined the queue when only boil was finished?
+right: The count is the number of unfinished prerequisites. Only 0 means "free", so joining at 0 is what keeps every job after all its prerequisites.
+wrong: A job whose count has dropped but isn't 0 still has unfinished prerequisites. Queuing it then would let it be done too early.
+
+=== task: predict medium
+title: The same edge twice
+prompt: In this graph, x lists y twice: the same dependency written two times. What does it print?
+code:
+```python
+from collections import deque
+
+graph = {"x": ["y", "y"], "y": ["z"], "z": []}
+
+indeg = {v: 0 for v in graph}
+for u in graph:
+    for v in graph[u]:
+        indeg[v] += 1
+print(indeg)
+
+queue = deque([v for v in graph if indeg[v] == 0])
+order = []
+while queue:
+    u = queue.popleft()
+    order.append(u)
+    for v in graph[u]:
+        indeg[v] -= 1
+        if indeg[v] == 0:
+            queue.append(v)
+print(order)
+```
+wrong[{'x': 0, 'y': 1, 'z': 1}\n['x', 'y', 'z']]: Each copy of the edge adds 1, so y's count starts at 2.
+wrong[{'x': 0, 'y': 2, 'z': 1}\n['x']]: Finishing x goes through its list, which has y twice, so y's count drops twice, from 2 to 0.
+wrong[{'x': 0, 'y': 2, 'z': 1}\n['x', 'y', 'y', 'z']]: y's count reaches 0 only on the second drop, so it joins the queue once.
+hint: How many times is `indeg["y"] += 1` run?
+hint: When x is finished, how many times does y's count go down?
+right: `{'x': 0, 'y': 2, 'z': 1}`, then `['x', 'y', 'z']`. The duplicate edge is counted twice and used twice, so the counts still balance and the order is fine.
+wrong: y's count is 2, one for each copy of the edge. Finishing x lowers it twice, to 0, so y joins once. Then y frees z.
+
+=== task: multi medium
+title: Holding the free jobs
+prompt: Choose **every** container that can hold Kahn's free jobs and still give a valid topological order.
+* A `deque`, taking from the front :: Right. The usual choice: jobs come out in the order they became free.
+* A list used as a stack, taking from the end :: Right. Any free job may go next; this takes the newest.
+* A heap, taking the smallest :: Right. That gives the alphabetically smallest order.
+- A list that's sorted once at the start and never changes :: Newly freed jobs have to be added, or they'll never be taken.
+- A set of all the jobs, taking any one :: Jobs that aren't free yet could be taken too early.
+- A queue holding every job whose count has gone down at least once :: A count that has dropped may not be 0 yet, so some of those jobs still have unfinished prerequisites.
+hint: The only rule is: take only free jobs, and add each job when it becomes free.
+hint: Does the order among free jobs matter for validity?
+right: Any container works as long as it holds exactly the free jobs: which free job comes out next only chooses among valid orders. Holding jobs that aren't free, or never adding new ones, breaks it.
+wrong: Free jobs are interchangeable, so a queue, a stack or a heap all work. The container must gain each job when its count reaches 0, and must never hold a job before then.
+
+=== task: parsons medium
+title: Exactly one order?
+prompt: A graph has exactly one topological order when Kahn's algorithm never has a choice: every time it takes a job, that job is the **only** free one. Arrange the lines so that `only_one_order` checks this, and the program prints:
+
+```output
+True False False
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def only_one_order(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    taken = 0
+    while queue:
+        if len(queue) > 1:
+            return False
+        u = queue.popleft()
+        taken += 1
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return taken == len(graph)
+```
+distractors:
+```python
+        if len(queue) > 0:
+    return True
+```
+after:
+```python
+print(only_one_order({"a": ["b"], "b": ["c"], "c": []}),
+      only_one_order({"a": ["c"], "b": ["c"], "c": []}),
+      only_one_order({"a": ["b"], "b": ["a"]}))
+```
+hint: Two jobs in the queue at once could be done in either order.
+hint: A cycle has no order at all, so check that every job was taken.
+right: A choice between two free jobs means two different orders, and a cycle means none, so "exactly one" needs a single free job every time and every job taken in the end.
+wrong: Run Kahn's algorithm; before each take, return False if more than one job is free. At the end, return whether every job was taken.
+
+=== task: order medium
+title: Kahn's algorithm, step by step
+prompt: Put the steps of Kahn's algorithm in order.
+items:
+- Count the edges coming into each job.
+- Put every job with a count of 0 in the queue.
+- Take the job at the front of the queue and add it to the order.
+- Lower the count of every job it points to, queuing any that reach 0.
+- When the queue is empty, report a cycle if the order is missing any jobs.
+hint: The queue can't be filled until the counts are known.
+hint: The cycle check comes after the loop.
+right: Count, queue the zeros, then repeatedly take a job and release the ones it frees, and finally compare the order's length with the number of jobs.
+wrong: First the in-degrees, then the starting queue. Each turn takes a job and lowers its successors' counts. When nothing is left to take, a short order means a cycle.
+
+=== task: code hard
+title: Which jobs are stuck?
+prompt: Write `stuck_jobs(graph)` that returns, in sorted order, every job Kahn's algorithm can never finish: the jobs on a cycle, and every job waiting for one of them, directly or not. Run Kahn's algorithm, then return the jobs whose count never reached 0.
+starter:
+```python
+from collections import deque
+
+def stuck_jobs(graph):
+    indeg = {v: 0 for v in graph}
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+def stuck_jobs(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    while queue:
+        u = queue.popleft()
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return sorted(v for v in graph if indeg[v] > 0)
+```
+tests:
+- stuck_jobs({"a": ["b"], "b": ["c"], "c": ["b", "d"], "d": []})
+- stuck_jobs({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- stuck_jobs({"x": ["x"]})
+- stuck_jobs({"a": ["b"], "b": ["a"], "c": []})
+fail[1]: b and c wait for each other, and d waits for c: ['b', 'c', 'd'].
+fail[2]: No cycle, so nothing is stuck: [].
+fail[3]: x waits for itself: ['x'].
+fail[4]: a and b form a cycle; c is free: ['a', 'b'].
+hint: Run Kahn's algorithm without recording the order.
+hint: Any job whose count is still above 0 at the end was never released.
+right: A job's count stays above 0 exactly when one of its prerequisites is never finished, which happens to the jobs on a cycle and everything downstream of them.
+wrong: Count, queue the zeros, release jobs until the queue is empty, and return the sorted jobs with counts above 0.
+
+=== task: code hard
+title: When is dinner ready?
+prompt: Each job takes some minutes, given in `minutes`, and any number of jobs can run at the same time, but a job can only start when all its prerequisites have finished. Write `ready_time(graph, minutes)` that returns the earliest time every job can be finished. Run Kahn's algorithm; keep each job's earliest start, 0 at first. When a job u is taken, its finish is its start plus `minutes[u]`, and each job v it points to can't start before that: `start[v] = max(start[v], finish)`. The graph has no cycle.
+starter:
+```python
+from collections import deque
+
+def ready_time(graph, minutes):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    start = {v: 0 for v in graph}
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+def ready_time(graph, minutes):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    start = {v: 0 for v in graph}
+    queue = deque([v for v in graph if indeg[v] == 0])
+    latest = 0
+    while queue:
+        u = queue.popleft()
+        finish = start[u] + minutes[u]
+        latest = max(latest, finish)
+        for v in graph[u]:
+            start[v] = max(start[v], finish)
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return latest
+```
+tests:
+- ready_time({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []}, {"buy": 20, "chop": 10, "boil": 5, "cook": 15, "table": 5, "serve": 2})
+- ready_time({"a": ["c"], "b": ["c"], "c": []}, {"a": 3, "b": 7, "c": 1})
+- ready_time({"x": []}, {"x": 4})
+- ready_time({"a": [], "b": []}, {"a": 5, "b": 9})
+fail[1]: buy (20) then chop (10) then cook (15) then serve (2): 47 minutes. Boiling and setting the table happen alongside.
+fail[2]: c starts when the slower of a and b finishes, at 7, and takes 1: 8.
+fail[3]: One job: 4.
+fail[4]: Two jobs at once: the longer one decides, 9.
+hint: A job can start only when its **last** prerequisite finishes: take the max over its prerequisites' finish times.
+hint: Kahn's order guarantees a job's start is final before the job is taken.
+right: Processing jobs in a topological order means each job's earliest start is known before it's needed. The answer is the longest chain, measured in minutes: the "critical path".
+wrong: In the loop, work out the taken job's finish, push each successor's start up to at least that finish, and release it when its count hits 0. Return the largest finish.
+
+=== task: code hard
+title: Only so many hands
+prompt: Each round, at most `k` jobs can be done, and only jobs that were free at the start of the round. Write `schedule(graph, k)` that returns the rounds as lists: each round takes the `k` alphabetically smallest free jobs (or all of them, if there are fewer), and jobs freed during a round can start in the next round at the earliest. The graph has no cycle.
+starter:
+```python
+def schedule(graph, k):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    free = sorted(v for v in graph if indeg[v] == 0)
+    rounds = []
+    # your code here
+    return rounds
+```
+solution:
+```python
+def schedule(graph, k):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    free = sorted(v for v in graph if indeg[v] == 0)
+    rounds = []
+    while free:
+        today = free[:k]
+        free = free[k:]
+        rounds.append(today)
+        for u in today:
+            for v in graph[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    free.append(v)
+        free.sort()
+    return rounds
+```
+tests:
+- schedule({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []}, 2)
+- schedule({"a": [], "b": [], "c": [], "d": []}, 3)
+- schedule({"a": ["d"], "b": ["d"], "c": ["d"], "d": []}, 2)
+- schedule({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []}, 1)
+fail[1]: [['boil', 'buy'], ['chop', 'table'], ['cook'], ['serve']]: table waits for a free pair of hands until round 2.
+fail[2]: Three jobs, then the fourth: [['a', 'b', 'c'], ['d']].
+fail[3]: a and b first, then c, and only then d: [['a', 'b'], ['c'], ['d']].
+fail[4]: One job at a time, always the smallest free one.
+hint: Take `free[:k]` as today's jobs and keep `free[k:]` for later.
+hint: Jobs freed today go into `free` after today's list is fixed; sort `free` before the next round.
+right: Taking today's jobs before releasing anything makes sure a job never shares a round with its prerequisite, and sorting keeps the choice predictable. With few hands, the rounds stretch beyond the longest chain.
+wrong: Each round: slice off up to k of the sorted free jobs, record them, release the jobs whose counts drop to 0 into `free`, and sort `free` again.
+
+=== task: code hard
+title: An alien alphabet
+prompt: A list of words is sorted in an unknown alphabet. Write `alien_order(words)` that returns the alphabet's letters as a string, using only the letters in the words. Compare each word with the next: the first position where they differ says that the first word's letter comes before the second's, which is an edge. If a word is followed by a shorter word that it starts with, like "abc" before "ab", the list can't be sorted: return "". Then find the alphabetically smallest topological order with Kahn's algorithm and a heap, returning "" if there's a cycle.
+starter:
+```python
+import heapq
+
+def alien_order(words):
+    letters = {}
+    for w in words:
+        for ch in w:
+            letters[ch] = []
+    # your code here
+    return ""
+```
+solution:
+```python
+import heapq
+
+def alien_order(words):
+    letters = {}
+    for w in words:
+        for ch in w:
+            letters[ch] = []
+    for i in range(len(words) - 1):
+        a, b = words[i], words[i + 1]
+        found = False
+        for x, y in zip(a, b):
+            if x != y:
+                if y not in letters[x]:
+                    letters[x].append(y)
+                found = True
+                break
+        if not found and len(a) > len(b):
+            return ""
+    indeg = {ch: 0 for ch in letters}
+    for ch in letters:
+        for nxt in letters[ch]:
+            indeg[nxt] += 1
+    heap = [ch for ch in letters if indeg[ch] == 0]
+    heapq.heapify(heap)
+    order = []
+    while heap:
+        ch = heapq.heappop(heap)
+        order.append(ch)
+        for nxt in letters[ch]:
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                heapq.heappush(heap, nxt)
+    if len(order) < len(letters):
+        return ""
+    return "".join(order)
+```
+tests:
+- alien_order(["wrt", "wrf", "er", "ett", "rftt"])
+- alien_order(["z", "x"])
+- alien_order(["z", "x", "z"])
+- alien_order(["abc", "ab"])
+- alien_order(["ba", "bc", "ac", "cab"])
+fail[1]: t before f, w before e, r before t, e before r: 'wertf'.
+fail[2]: z before x: 'zx'.
+fail[3]: z before x and x before z: a cycle, so "".
+fail[4]: A longer word before its own beginning can't be sorted: "".
+fail[5]: a before c and b before a: 'bac'.
+hint: Only the first differing position of each neighbouring pair tells you anything.
+hint: Don't add the same edge twice, or a count will be too high to reach 0.
+right: Each neighbouring pair gives at most one rule, and the rules form a dependency graph between letters. A topological order of it is an alphabet that sorts the list, and a cycle means the list contradicts itself.
+wrong: For each pair of neighbouring words, find the first position where they differ and add an edge from the first word's letter to the second's (or return "" for a word followed by its own shorter beginning). Then run Kahn's algorithm with a heap and join the letters.
+
+=== task: predict hard
+title: How long does the queue get?
+prompt: `widest` reports the largest number of free jobs waiting in the queue at once. What does it print?
+code:
+```python
+from collections import deque
+
+def widest(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    biggest = len(queue)
+    while queue:
+        u = queue.popleft()
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+        biggest = max(biggest, len(queue))
+    return biggest
+
+fan_out = {"s": ["a", "b", "c", "d"], "a": [], "b": [], "c": [], "d": []}
+chain = {"a": ["b"], "b": ["c"], "c": ["d"], "d": []}
+fan_in = {"a": ["t"], "b": ["t"], "c": ["t"], "t": []}
+print(widest(fan_out), widest(chain), widest(fan_in))
+```
+wrong[1 1 1]: In the fan out, s releases all four jobs at once; in the fan in, a, b and c are all free from the start.
+wrong[4 1 1]: The fan in starts with a, b and c in the queue together: 3.
+wrong[5 1 4]: The queue only holds free jobs: s leaves before its four jobs join, and t only joins after a, b and c have left.
+hint: How many jobs are free at the very start of each graph?
+hint: How many jobs does finishing s release at once?
+right: `4 1 3`. The queue holds the jobs that could run in parallel right now, so a fan out widens it after one step, a fan in starts wide, and a chain never has more than one free job.
+wrong: Fan out: s alone, then a, b, c and d together, 4. Chain: one job at a time. Fan in: a, b and c are free at the start, 3, and t only joins at the end.
+
+=== task: predict hard
+title: The graph turned round
+prompt: `rev` has every edge of `dinner` turned round. What does it print?
+code:
+```python
+from collections import deque
+
+def kahn(graph):
+    indeg = {v: 0 for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            indeg[v] += 1
+    queue = deque([v for v in graph if indeg[v] == 0])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return order
+
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+rev = {v: [] for v in dinner}
+for u in dinner:
+    for v in dinner[u]:
+        rev[v].append(u)
+
+forward = kahn(dinner)
+backward = kahn(rev)
+print(backward)
+print(backward == forward[::-1])
+```
+wrong[['serve', 'cook', 'chop', 'table', 'boil', 'buy']\nTrue]: That's the forward order reversed. But Kahn's algorithm on `rev` takes table as soon as serve releases it, before cook has released chop.
+wrong[['serve', 'table', 'cook', 'chop', 'boil', 'buy']\nFalse]: `rev["serve"]` is `["cook", "table"]`, so finishing serve releases cook first, then table.
+wrong[['serve', 'cook', 'table', 'chop', 'boil', 'buy']\nTrue]: The forward order is buy, boil, table, chop, cook, serve; reversed, chop comes before table, which isn't this order.
+hint: In `rev`, serve is the only job with no prerequisites. What does finishing it release?
+hint: Work out `forward` too: buy, boil, table, chop, cook, serve.
+right: `['serve', 'cook', 'table', 'chop', 'boil', 'buy']`, then `False`. Turning the edges round turns valid orders round, but Kahn's algorithm picks its own order on each graph, so its two answers needn't be exact reverses of each other.
+wrong: In `rev`: serve releases cook and table; cook releases chop and boil; then table, chop (which releases buy), boil and buy. The forward order reversed would put chop before table.
+
+=== task: cells hard
+title: Stuck at what count?
+prompt: Kahn's algorithm runs on this graph until its queue is empty. What are the final counts of the jobs that never got finished?
+code:
+```python
+graph = {"A": ["B"], "B": ["C"], "C": ["B", "D", "E"], "D": ["E"],
+         "E": [], "F": ["D", "E"]}
+```
+labels: B | C | D | E
+answer: 1 | 1 | 1 | 2
+wrong[2 | 1 | 2 | 3]: Those are the starting counts. A and F are free and get finished: A lowers B, and F lowers D and E.
+wrong[0 | 0 | 0 | 0]: B and C wait for each other, so neither is ever finished; D and E wait for C.
+wrong[1 | 1 | 1 | 1]: E starts with 3 prerequisites, C, D and F. Only F is finished, so 2 are left.
+hint: Starting counts: B 2, C 1, D 2, E 3. Which jobs are free?
+hint: A and F are finished. Which counts do they lower?
+right: 1, 1, 1 and 2. A and F are the only jobs ever finished; what's left in each count is the number of stuck prerequisites, all leading back to the cycle between B and C.
+wrong: A lowers B to 1, F lowers D to 1 and E to 2. B waits for C, C waits for B, so the queue is empty and those counts stay.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the lesson's `kahn`. Choose **every** change that can make it give a wrong answer: an invalid order, a repeated job, a missed cycle, or a cycle that isn't there.
+code:
+```python
+def kahn(graph):
+    indeg = in_degrees(graph)
+    queue = deque([v for v in graph if indeg[v] == 0])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    if len(order) < len(graph):
+        return None
+    return order
+```
+* Queuing v whenever its count goes down, instead of when it reaches 0 :: Right. A job with two prerequisites would be queued after the first one, too early, and queued again after the second.
+* Returning `order` without checking its length :: Right. A graph with a cycle would get a partial order back, as if it were complete.
+* Counting the edges out of each job instead of into it :: Right. Only the jobs that lead nowhere would start in the queue, and finishing them lowers no counts, so any graph with an edge would come back as None, a cycle that isn't there.
+- Using `queue.pop()` instead of `popleft()` :: That takes the newest free job, a different but valid order.
+- Starting the queue with the free jobs sorted :: Only the tie-breaking changes; the order is still valid.
+- Stopping the loop as soon as `order` holds every job :: When every job is in the order the queue is empty anyway.
+hint: Which changes let a job in before its count is 0, or hide leftovers?
+hint: Which changes only decide which free job goes next?
+right: Queuing before 0, skipping the length check, and counting the wrong edges all break it. How the free jobs are ordered, or stopping once everything is placed, doesn't.
+wrong: A job may be queued only when its count reaches 0, the counts must be of incoming edges, and a short order must be reported as a cycle. Choosing among free jobs is always allowed.
+
+=== task: fill hard
+title: Given only the prerequisites
+prompt: Sometimes the input lists, for each job, the jobs it **needs**, rather than the jobs it unlocks. Then a job's starting count is the length of its list, but Kahn's algorithm still has to find the jobs each finished job unlocks. Fill in the blanks so that the program prints:
+
+```output
+['buy', 'boil', 'table', 'chop', 'cook', 'serve']
+```
+code:
+```python
+from collections import deque
+
+needs = {"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"],
+         "table": [], "serve": ["cook", "table"]}
+
+def order_from_needs(needs):
+    unlocks = {v: [] for v in needs}
+    for v in needs:
+        for u in needs[v]:
+            unlocks[??].append(v)
+    indeg = {v: ?? for v in needs}
+    queue = deque([v for v in needs if indeg[v] == 0])
+    order = []
+    while queue:
+        u = queue.popleft()
+        order.append(u)
+        for v in unlocks[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    return order
+
+print(order_from_needs(needs))
+```
+answer: u | len(needs[v])
+wrong[v | len(needs[v])]: Each job would unlock itself, not the jobs that need it, so finishing buy would never release chop: only the three free jobs are finished.
+wrong[u | 0]: Every count would start at 0, so every job would be queued at the start, prerequisites or not: the order would be the dictionary's order.
+hint: If v needs u, then finishing u unlocks v.
+hint: A job's count is the number of jobs it still needs.
+right: Turning each "v needs u" round gives `unlocks[u]`, and a job's starting count is how many jobs it needs. Then Kahn's algorithm runs as usual.
+wrong: Append v to `unlocks[u]`, and start each count at `len(needs[v])`.
+
+=== task: parsons hard
+title: Safe from cycles
+prompt: In a directed graph, a vertex is **safe** if every path from it ends at a vertex with no outgoing edges, so no path from it can go round a cycle. Kahn's algorithm can find them backwards: a vertex with no outgoing edges is safe; and once every vertex a vertex points to is known to be safe, it's safe too. Count each vertex's **outgoing** edges, and use the reversed graph to lower the counts. Arrange the lines so that the program prints:
+
+```output
+['d', 'e']
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def safe_vertices(graph):
+    back = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            back[v].append(u)
+    left = {v: len(graph[v]) for v in graph}
+    queue = deque([v for v in graph if left[v] == 0])
+    safe = []
+    while queue:
+        v = queue.popleft()
+        safe.append(v)
+        for u in back[v]:
+            left[u] -= 1
+            if left[u] == 0:
+                queue.append(u)
+    return sorted(safe)
+```
+distractors:
+```python
+    left = {v: 0 for v in graph}
+        for u in graph[v]:
+```
+after:
+```python
+graph = {"a": ["b", "d"], "b": ["c"], "c": ["a"], "d": ["e"], "e": []}
+print(safe_vertices(graph))
+```
+hint: A vertex is ready to be marked safe when the count of its outgoing edges to unconfirmed vertices reaches 0.
+hint: When v is confirmed safe, the vertices pointing to v, found in `back[v]`, each have one fewer unconfirmed edge.
+right: It's Kahn's algorithm on the reversed graph: dead ends are released first, and a vertex is released only when everything it points to is safe. a, b and c point into the cycle a → b → c → a, so they never are.
+wrong: Build `back`, the reversed graph; start each count at the number of outgoing edges; queue the dead ends; and each time a vertex is confirmed, lower the counts of the vertices pointing to it, queuing any that reach 0.
