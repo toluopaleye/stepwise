@@ -1,0 +1,1721 @@
+=== lesson
+id: ds-trav-level
+title: Level-order traversal
+summary: Level order visits a tree one level at a time, nearest the root first, with a queue holding the nodes that are waiting. You'll write it with a deque, handle a whole level per round to get level sums, averages and the rightmost node of each level, carry depths in the queue, stop early at the nearest leaf, check whether a tree is complete, and see why a deque, not a list, keeps it O(n).
+
+=== learn
+### Level by level
+**Level order** visits a tree's nodes in order of depth. A node's **depth** is the number of edges from the root down to it. Level order visits the root (depth 0) first, then every node at depth 1, then every node at depth 2, one level at a time down to the deepest. Within each level it goes from left to right. This lesson uses this tree:
+```text
+          5
+        /   \
+       3     8
+      / \     \
+     1   4     9
+        / \
+       6   2
+```
+| level (depth) | nodes, left to right |
+| --- | --- |
+| 0 | 5 |
+| 1 | 3, 8 |
+| 2 | 1, 4, 9 |
+| 3 | 6, 2 |
+
+Reading the table row by row gives the level order: 5 3 8 1 4 9 6 2. Notice two things:
+- Left to right means across the **whole** level. 9 is 8's child, but it comes after 1 and 4, which are 3's children, because they sit further left.
+- The values don't matter, only where the nodes sit. Level order is not sorted order.
+
+Level order is also called **breadth-first** order: it covers the whole width (breadth) of one level before it goes any deeper.
+
+### A queue keeps the levels in order
+To go level by level, the walk has to remember the nodes it has found but not visited yet, and hand them out oldest first. That's a queue: first in, first out. A `deque` makes a fast one: `append` adds at the back and `popleft` takes from the front, both O(1).
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9)))
+
+def level_order(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        out.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return out
+
+print(level_order(root))
+```
+```output
+[5, 3, 8, 1, 4, 9, 6, 2]
+```
+Here's the queue after each visit, front on the left. At the start it holds only the root, 5:
+
+| take | its children join the back | queue afterwards |
+| --- | --- | --- |
+| 5 | 3, 8 | 3 8 |
+| 3 | 1, 4 | 8 1 4 |
+| 8 | 9 | 1 4 9 |
+| 1 | none | 4 9 |
+| 4 | 6, 2 | 9 6 2 |
+| 9 | none | 6 2 |
+| 6 | none | 2 |
+| 2 | none | empty |
+
+Children always join **behind** everything already waiting. When 3 adds 1 and 4, 8 is still ahead of them, so 8 is visited first. Then 8's child 9 joins behind 1 and 4. That's why a whole level always comes out before any node of the next one.
+
+### One level at a time
+The loop above visits in the right order, but it can't tell where one level ends: after 3 is visited, the queue holds 8 from level 1 and 1, 4 from level 2. Look at the table again, though. Right after the **last** node of a level is taken (5, then 8, then 9), the queue holds exactly the next level: 3 8, then 1 4 9, then 6 2.
+
+So work in **rounds**. At the start of a round, the queue holds one whole level. Save its length in `size`, then take exactly `size` nodes. Their children join the back as before, and when the round ends, the queue holds exactly the next level:
+```python
+def levels(root):
+    out = []
+    if root is None:
+        return out
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        level = []
+        for i in range(size):
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        out.append(level)
+    return out
+
+print(levels(root))
+print(levels(None))
+```
+```output
+[[5], [3, 8], [1, 4, 9], [6, 2]]
+[]
+```
+Each pass of the `while` loop is one level. `size` is read **once**, before the round takes anything, so the children that join during the round wait for the next round. Animation 1 runs this loop round by round.
+> Check for an empty tree first. Otherwise `deque([None])` puts None in the queue, and `node.val` fails with an AttributeError.
+
+### Level sums, averages and printing
+Rounds give you a place for answers about each level: set a variable at the start of the round, update it for every node the round takes, and save it when the round ends. Here `total` adds up one level's values:
+```python
+def level_sums(root):
+    sums = []
+    if root is None:
+        return sums
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        total = 0
+        for i in range(size):
+            node = queue.popleft()
+            total += node.val
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        sums.append(total)
+    return sums
+
+sums = level_sums(root)
+print(sums)
+print(max(sums), sums.index(max(sums)))
+for depth, level in enumerate(levels(root)):
+    print(f"depth {depth}: {level}, average {sum(level) / len(level):.2f}")
+```
+```output
+[5, 11, 14, 8]
+14 2
+depth 0: [5], average 5.00
+depth 1: [3, 8], average 5.50
+depth 2: [1, 4, 9], average 4.67
+depth 3: [6, 2], average 4.00
+```
+`total` goes back to 0 at the start of every round, so each sum covers one level only: 3 + 8 = 11, 1 + 4 + 9 = 14, 6 + 2 = 8. The list holds one sum per level, in order, so `sums.index(14)` gives the depth of the biggest level sum: 2. The last loop prints the tree by levels: `enumerate` numbers the levels from 0, which is each level's depth, and a level's average is its sum divided by how many nodes it has.
+
+### The rightmost node of each level
+Imagine standing to the right of the tree and looking at it side-on. On each level you'd see only the rightmost node; the others hide behind it. Those nodes make up the tree's **right side view**. A round takes its nodes from left to right, so the rightmost one is the last, taken when `i == size - 1`:
+```python
+def right_view(root):
+    view = []
+    if root is None:
+        return view
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        for i in range(size):
+            node = queue.popleft()
+            if i == size - 1:
+                view.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+    return view
+
+def right_edge(node):
+    out = []
+    while node is not None:
+        out.append(node.val)
+        node = node.right
+    return out
+
+print(right_view(root))
+print(right_edge(root))
+```
+```output
+[5, 8, 9, 2]
+[5, 8, 9]
+```
+The last value, 2, may surprise you: it hangs below 4, in the root's **left** subtree. The right subtree stops at depth 2, so on level 3 nothing hides 2 from view. `right_edge` only follows right links down from the root, so it misses 2.
+> The right side view is not the right edge of the tree. Take the last node of every level.
+
+With `i == 0` instead, the same loop gives the **left side view**, the first node of each level: 5, 3, 1, 6. Animation 2 builds a right side view.
+
+### Carrying the depth in the queue
+Rounds are one way to know a node's level. Another is to put each node's depth into the queue along with it. Every item is then a pair `(node, depth)`: the root goes in with depth 0, and each child goes in with its parent's depth + 1. `depth_of` uses pairs to find how deep a value sits:
+```python
+def depth_of(root, target):
+    queue = deque([(root, 0)])
+    while queue:
+        node, depth = queue.popleft()
+        if node.val == target:
+            return depth
+        if node.left is not None:
+            queue.append((node.left, depth + 1))
+        if node.right is not None:
+            queue.append((node.right, depth + 1))
+    return -1
+
+print([depth_of(root, v) for v in [5, 9, 6, 7]])
+```
+```output
+[0, 2, 3, -1]
+```
+`node, depth = queue.popleft()` takes the pair at the front and unpacks it into two variables. There are no rounds and no `size`, because every node carries its own depth. 7 isn't in the tree, so the queue runs empty and the function returns -1.
+
+The same idea works for anything else a node needs to know from above it. Queue `(node, parent)` pairs, for example, and every node you take out knows its parent.
+
+### Nearest first: stopping early
+Level order meets the nodes in order of depth. So when you want the node **nearest the root** that passes some test, the first one it meets is the answer, and the walk can stop right there.
+
+The **minimum depth** of a tree is the depth of its shallowest leaf:
+```python
+def min_depth(root):
+    queue = deque([(root, 0)])
+    while queue:
+        node, depth = queue.popleft()
+        if node.left is None and node.right is None:
+            return depth
+        if node.left is not None:
+            queue.append((node.left, depth + 1))
+        if node.right is not None:
+            queue.append((node.right, depth + 1))
+
+print(min_depth(root))
+print(min_depth(Node(1, Node(2, Node(3, Node(4))), Node(5))))
+```
+```output
+2
+1
+```
+In the lesson's tree, the first leaf to come out is 1, at depth 2. In the second tree, the walk takes 1, then 2, then 5, a leaf at depth 1, and returns straight away: 3 joined the queue but was never taken, and 4 never even joined. (`min_depth` expects a non-empty tree. A non-empty tree always has a leaf, so the function always returns inside the loop.)
+
+A depth-first walk can't stop early like this. The first leaf it reaches may be deep on the left while a shallower one waits on the right, so it has to check every leaf. Example 2 counts the difference.
+
+### Checking a tree is complete
+The Kinds of binary trees lesson defined a **complete** tree: every level full except possibly the last, whose nodes are packed in from the left with no gaps. Level order gives a neat test. Put **both** children of every node into the queue, even the missing ones, which are None. In a complete tree, all the real nodes come out first and all the gaps come at the end. So once a gap has come out, any real node after it means the tree isn't complete:
+```python
+def is_complete(root):
+    queue = deque([root])
+    seen_gap = False
+    while queue:
+        node = queue.popleft()
+        if node is None:
+            seen_gap = True
+        elif seen_gap:
+            return False
+        else:
+            queue.append(node.left)
+            queue.append(node.right)
+    return True
+
+good = Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6)))
+gap = Node(1, Node(2, Node(4)), Node(3, Node(6)))
+print(is_complete(good), is_complete(gap), is_complete(root))
+```
+```output
+True False False
+```
+In `gap`, the None where 2's right child should be comes out before 6, a real node, so the test fails. In the lesson's tree, 8 has no left child, and that gap comes out before 9. This loop puts None into the queue on purpose, so it checks `node is None` before it touches `node.left`.
+
+### What level order costs
+Each node joins the queue once and leaves it once, and `append` and `popleft` are O(1), so level order takes **O(n)** time, like the other traversals. Its memory is the queue, which can hold a whole level at once. The last level of a perfect tree holds about half of all the nodes, so a bushy tree needs O(n) memory, while a tall, thin tree only ever has a node or two waiting.
+
+Use a deque, not a list. A list's `pop(0)` shifts every item behind the front one place left, so each visit costs as much as the queue is long. This counts those shifts on perfect trees:
+```python
+def perfect(h):
+    if h < 0:
+        return None
+    return Node(0, perfect(h - 1), perfect(h - 1))
+
+def list_shifts(root):
+    shifts = 0
+    queue = [root]
+    while queue:
+        node = queue.pop(0)
+        shifts += len(queue)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return shifts
+
+for h in [4, 6, 8]:
+    print(2 ** (h + 1) - 1, list_shifts(perfect(h)))
+```
+```output
+31 225
+127 3969
+511 65025
+```
+| nodes n | shifts with a list and `pop(0)` | shifts with a deque and `popleft` |
+| --- | --- | --- |
+| 31 | 225 | 0 |
+| 127 | 3,969 | 0 |
+| 511 | 65,025 | 0 |
+
+Each time n grows about 4 times, the shifts grow about 16 times: that's O(n²). (For a perfect tree the count is exactly ((n − 1) / 2)², about n²/4.) A deque never shifts anything, so level order with a deque stays O(n).
+
+### When to choose level order
+Choose level order when the job is about levels, or about what's nearest the root:
+
+| job | why level order fits |
+| --- | --- |
+| answers per level: sums, averages, counts, printing by level | each round of the loop is one level |
+| side views: the first or last node of each level | a round takes a level's nodes from left to right |
+| the nearest node that passes a test, like the shallowest leaf | nodes come out in order of depth, so the first match is the nearest |
+| checking a tree is complete | a real node after a gap shows up in level order |
+
+For jobs that need every node but don't care about levels, the depth-first orders do the same O(n) work and use less memory on bushy trees. In Unit 4, **breadth-first search** runs this same queue loop on graphs to find the shortest routes.
+
+=== keypoints
+- Level order visits depth 0, then depth 1, then depth 2, each level from left to right. A queue does it: take a node from the front with `popleft`, visit it, and add its children to the back.
+- To work one level at a time, read `size = len(queue)` at the start of each round and take exactly `size` nodes. The children they add are exactly the next level.
+- Answers per level use a variable per round: a level's sum, its average (sum divided by the number of nodes), its last node (`i == size - 1`) or its first node (`i == 0`).
+- The right side view is the last node of every level. It can come from the root's left subtree, so following right links from the root is wrong.
+- Queue `(node, depth)` pairs to carry depths: the root has depth 0, and a child has its parent's depth + 1.
+- Level order meets the nodes nearest the root first, so it can stop at the first match, like the shallowest leaf. Putting None gaps into the queue checks whether a tree is complete.
+- O(n) time with a deque; the queue can hold a whole level, about n/2 nodes for a perfect tree. A list with `pop(0)` makes it O(n²).
+
+=== example: An org chart by levels
+intro: A company's chain of command is an n-ary tree: each person keeps a list of the people who report to them. Level order prints everyone by how many steps they are below the head of the company.
+```python
+from collections import deque
+
+class Person:
+    def __init__(self, name, reports=None):
+        self.name = name
+        if reports is None:
+            reports = []
+        self.reports = reports
+
+def by_level(boss):
+    queue = deque([boss])
+    depth = 0
+    while queue:
+        size = len(queue)
+        names = []
+        for i in range(size):
+            person = queue.popleft()
+            names.append(person.name)
+            for r in person.reports:
+                queue.append(r)
+        line = ", ".join(names)
+        print(f"level {depth}: {line}")
+        depth += 1
+
+ceo = Person("Ada", [
+    Person("Ben", [Person("Eve"), Person("Fay")]),
+    Person("Cal"),
+    Person("Dee", [Person("Gus", [Person("Hal")])]),
+])
+by_level(ceo)
+```
+3-8: A person has a name and a list of the people who report to them, empty for someone with no reports.
+10-12: The queue starts with the boss, on level 0.
+13-15: Each pass of the `while` loop is one round: `size` is how many people are on this level.
+16-20: Take exactly `size` people from the front. Each name goes into `names`, and everyone who reports to that person joins the back of the queue. A person can have any number of reports, so a `for` loop adds them all.
+21-23: The round is over: print the level's names, then move one level down.
+25-29: Ada leads Ben, Cal and Dee. Ben leads Eve and Fay, and Dee leads Gus, who leads Hal.
+30: Gus is on level 2 with Eve and Fay, although his boss Dee comes last on level 1: a level runs across the whole company.
+
+=== example: Stopping at the nearest leaf
+intro: Both functions find the depth of the shallowest leaf in a tree of 1,025 nodes, and count the nodes they look at. The root's right child is a leaf, but its left child starts a perfect tree of height 9.
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def bfs_min_depth(root):
+    looked = 0
+    queue = deque([(root, 0)])
+    while queue:
+        node, depth = queue.popleft()
+        looked += 1
+        if node.left is None and node.right is None:
+            return depth, looked
+        for child in [node.left, node.right]:
+            if child is not None:
+                queue.append((child, depth + 1))
+
+def dfs_min_depth(node):
+    if node.left is None and node.right is None:
+        return 0, 1
+    best = None
+    looked = 1
+    for child in [node.left, node.right]:
+        if child is not None:
+            depth, n = dfs_min_depth(child)
+            looked += n
+            if best is None or depth + 1 < best:
+                best = depth + 1
+    return best, looked
+
+def perfect(h):
+    if h < 0:
+        return None
+    return Node(0, perfect(h - 1), perfect(h - 1))
+
+tree = Node(0, perfect(9), Node(0))
+depth, looked = bfs_min_depth(tree)
+print("level order: depth", depth, "after", looked, "nodes")
+depth, looked = dfs_min_depth(tree)
+print("depth-first: depth", depth, "after", looked, "nodes")
+```
+9-19: Level order with `(node, depth)` pairs, counting every node it takes out. The first leaf to come out is the shallowest, so it returns at once with the depth and the count.
+21-23: Depth-first: a leaf is 0 steps above its shallowest leaf (itself), and it has looked at 1 node.
+24-32: Otherwise it asks each child for its answer, keeps the smallest depth + 1, and adds up the nodes the children looked at. It can't stop early: a shallower leaf could always be waiting in the next child.
+34-37: A perfect tree of height h: 2^(h+1) − 1 nodes, with every leaf at depth h.
+39: The root has a perfect tree of 1,023 nodes on its left and a single leaf on its right: 1,025 nodes.
+40-41: Level order takes the root, then its left child, then the leaf on the right: 3 nodes, and it stops.
+42-43: Depth-first finds the same depth, 1, but only after looking at all 1,025 nodes.
+
+=== animation: One level at a time
+view: tree root ptr=node
+queue queue
+vars size i level out
+intro: The level-by-level loop on a tree of 5 nodes. At the start of each round, `size` counts the nodes waiting in the queue, which is one whole level. Watch the round take exactly that many while their children line up behind them.
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(7, Node(2, Node(9)), Node(4, None, Node(1)))
+out = []
+queue = deque([root])
+while queue:
+    size = len(queue)
+    level = []
+    for i in range(size):
+        node = queue.popleft()
+        level.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    out.append(level)
+print(out)
+```
+1: Python's deque: a queue that's fast at both ends.
+3: The binary tree node class.
+5: A new node {val}.
+6: Its left child: {left.val if left is not None else 'None'}.
+7: Its right child: {right.val if right is not None else 'None'}.
+9: 7 at the root; 2 and 4 on level 1; 9 and 1 on level 2.
+10: `out` will hold one list per level.
+11: The queue starts with only the root: level 0.
+12: Is anything still waiting in the queue? {len(queue) > 0}.
+13: A new round. The queue holds exactly one level, so size becomes {len(queue)}.
+14: An empty list for this level's values.
+15: This round takes {size} {'node' if size == 1 else 'nodes'} from the front, no more.
+16: Take {queue[0].val} from the front of the queue.
+17: {node.val} belongs to this level.
+18: Does {node.val} have a left child? {node.left is not None}.
+19: {node.left.val} joins the back of the queue. It's on the next level, so this round won't take it.
+20: Does {node.val} have a right child? {node.right is not None}.
+21: {node.right.val} joins the back of the queue, ready for the next round.
+22: The round took {size} {'node' if size == 1 else 'nodes'}: level {len(out)} is {level}.
+23: One list per level: [[7], [2, 4], [9, 1]].
+
+=== animation: A right side view
+view: tree root ptr=node visited=view
+queue queue
+vars size i view
+intro: The right side view keeps the last node of every round. Here the rightmost node of the last level, 5, hangs in the root's left subtree. Green nodes are in the view so far.
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(1, Node(2, Node(4), Node(5)), Node(3))
+view = []
+queue = deque([root])
+while queue:
+    size = len(queue)
+    for i in range(size):
+        node = queue.popleft()
+        if i == size - 1:
+            view.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+print(view)
+```
+1: Python's deque: a queue that's fast at both ends.
+3: The binary tree node class.
+5: A new node {val}.
+6: Its left child: {left.val if left is not None else 'None'}.
+7: Its right child: {right.val if right is not None else 'None'}.
+9: 1 at the root; 2 and 3 on level 1; 4 and 5 on level 2, both below 2.
+10: `view` will hold the value seen from the right on each level.
+11: The queue starts with only the root.
+12: Is anything still waiting in the queue? {len(queue) > 0}.
+13: A new round. The queue holds exactly one level, so size becomes {len(queue)}.
+14: This round takes {size} {'node' if size == 1 else 'nodes'}, one at a time.
+15: Take {queue[0].val}: node {i + 1} of {size} on this level.
+16: Is {node.val} the last node of its level? i is {i} and size - 1 is {size - 1}: {i == size - 1}.
+17: Yes: from the right, you see {node.val} on this level.
+18: Does {node.val} have a left child? {node.left is not None}.
+19: {node.left.val} joins the back of the queue.
+20: Does {node.val} have a right child? {node.right is not None}.
+21: {node.right.val} joins the back of the queue.
+22: [1, 3, 5]: 5 is in the left subtree, but nothing on the right reaches level 2 to hide it.
+
+=== task: predict easy
+title: Level order of a tree
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def level_order(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        out.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    return out
+
+t = Node(4, Node(9, Node(1), Node(6)), Node(2, None, Node(8)))
+print(level_order(t))
+```
+wrong[[4, 9, 1, 6, 2, 8]]: That's preorder: it finishes 9's subtree before it visits 2. Level order visits 2, at depth 1, before 1 and 6, at depth 2.
+wrong[[1, 9, 6, 4, 2, 8]]: That's inorder. Level order starts at the root.
+wrong[[4, 2, 9, 8, 6, 1]]: Each node adds its left child first, so every level comes out from left to right.
+wrong[[1, 2, 4, 6, 8, 9]]: Level order goes by where the nodes sit, not by their values.
+hint: The queue hands out the nodes in the order they joined it.
+hint: Depth 0 holds 4. Depth 1 holds 9 and 2. Depth 2 holds 1, 6 and 8.
+right: `[4, 9, 2, 1, 6, 8]`: the root, then depth 1 from left to right, then depth 2 from left to right.
+wrong: Level order lists depth 0 (4), then depth 1 (9, 2), then depth 2 (1, 6, 8), each level from left to right.
+
+=== task: mcq easy
+title: How many does a round take?
+prompt: In the level-by-level loop, a round starts with the queue holding the nodes 3 and 8. During the round, 3 adds its children 1 and 4 to the back of the queue, and 8 adds its child 9. How many nodes does this round take out of the queue?
+* 2 :: Right. `size` was 2 when the round started, so the round takes exactly 2 nodes: 3 and 8.
+- 5 :: The 3 children joined during the round. They wait for the next round, because `size` was read before they arrived.
+- 3 :: That's how many children joined. They make up the next level, which the next round takes.
+- 1 :: The round takes every node that was waiting when it started: both 3 and 8.
+hint: `size = len(queue)` is read once, at the start of the round.
+hint: How many nodes were waiting when the round started?
+right: 2: `size` is fixed at the start of the round, so the 3 children that join during it are left for the next round.
+wrong: `size` is the queue's length at the start of the round: 2. The round takes exactly 2 nodes, 3 and 8. Their children 1, 4 and 9 are the next round's level.
+
+=== task: cells easy
+title: The levels of a tree
+prompt: Which nodes are on each level of this tree? List each level from left to right, with commas between the letters.
+
+```text
+         A
+       /   \
+      B     C
+       \   / \
+        D E   F
+       /
+      G
+```
+labels: level 0 | level 1 | level 2 | level 3
+answer: A | B, C | D, E, F | G
+wrong[A | B, C | E, F, D | G]: Go from left to right across the whole level. D hangs below B, which is to the left of C, so D comes before E and F.
+wrong[A | C, B | F, E, D | G]: Each level goes from left to right, not right to left.
+wrong[A | B, C | D, E, F, G | G]: G is 3 edges below A, so it's on level 3 only.
+hint: A node's level is its depth: how many edges it is below the root.
+hint: D is B's child, and E and F are C's children: all three are 2 edges below A.
+right: A; B, C; D, E, F; G. D is on level 2 with E and F, and G is the only node 3 edges down.
+wrong: Count the edges down from A: B and C are 1 edge down; D, E and F are 2; G is 3. List each level from left to right.
+
+=== task: code easy
+title: Count the levels
+prompt: Write `count_levels(root)` that returns how many levels a binary tree has: 0 for an empty tree, 1 for a single node. Use the level-by-level loop, and count one for every round.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count_levels(root):
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def count_levels(root):
+    if root is None:
+        return 0
+    count = 0
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        for i in range(size):
+            node = queue.popleft()
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        count += 1
+    return count
+```
+tests:
+- count_levels(None)
+- count_levels(Node(1))
+- count_levels(Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9))))
+- count_levels(Node(1, None, Node(2, None, Node(3))))
+- count_levels(Node(1, Node(2), Node(3)))
+fail[2]: A single node is one level: 1.
+fail[3]: The lesson's tree has the levels [5], [3, 8], [1, 4, 9] and [6, 2]: 4.
+fail[4]: A line of 3 nodes has one node on each of 3 levels.
+fail[5]: The root, then 2 and 3 together on one level: 2 levels.
+error[AttributeError]: Return 0 for an empty tree before putting anything into the queue.
+hint: Return 0 straight away if the tree is empty.
+hint: Run the level-by-level loop: read `size = len(queue)`, then take `size` nodes, adding their children.
+hint: Add 1 to a counter after each round, and return the counter once the queue is empty.
+right: Each round handles exactly one level, so the number of rounds is the number of levels: the tree's height + 1. O(n).
+wrong: Return 0 for None. Otherwise run rounds: in each one, take `size` nodes and queue their children, and count the rounds.
+
+=== task: fill easy
+title: The last node of a round
+prompt: Fill in the blank so that the loop keeps the last node of every level, and the program prints:
+
+```output
+[6, 1, 5]
+```
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(6, Node(2, Node(7), Node(5)), Node(1))
+view = []
+queue = deque([root])
+while queue:
+    size = len(queue)
+    for i in range(size):
+        node = queue.popleft()
+        if i == ??:
+            view.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+print(view)
+```
+answer: size - 1
+wrong[size]: `i` stops at `size - 1`, so it never equals `size`, and nothing is kept: `[]`.
+wrong[0]: `i == 0` keeps the first node of each level, the leftmost: `[6, 2, 7]`.
+wrong[1]: The root's level has only `i = 0`, so it's skipped: `[1, 5]`.
+hint: `i` numbers the nodes of a round, starting from 0.
+hint: A round takes `size` nodes, so what number does the last one get?
+right: `size - 1` is the number of the last node in the round, the rightmost on its level. 5 is in the root's left subtree, but it's the rightmost node on level 2.
+wrong: `i` runs from 0 to `size - 1`, and the nodes come out from left to right, so the last one, `i == size - 1`, is the rightmost.
+
+=== task: multi easy
+title: The queue in level order
+prompt: Choose **every** statement that is true about the queue in the level-order loop.
+* Each node joins the queue once and leaves it once :: Right. That's why level order takes O(n) time.
+* Children join at the back, behind every node already waiting :: Right. That's what keeps the levels in order.
+* At the start of each round of the level-by-level loop, the queue holds exactly one whole level :: Right. The round before took the old level and added all of the next one.
+- Children join at the front, so they're visited next :: That's a stack's order, which goes deep first. In a queue, new items wait at the back.
+- The queue never holds more than 2 nodes :: The queue can hold a whole level: about half the nodes of a perfect tree.
+- Nodes come out in order of their values, smallest first :: A queue hands nodes out in the order they joined, whatever their values.
+hint: First in, first out: where does a new item wait?
+hint: How many nodes can one level hold?
+right: Every node goes through the queue once; children wait at the back; and each round starts with exactly one level waiting.
+wrong: A queue is first in, first out: children wait behind everything already there, so a whole level comes out before the next. Each node joins once and leaves once, and the queue can hold a whole level.
+
+=== task: parsons easy
+title: Level by level
+prompt: Arrange the lines so that `levels` returns a list of the tree's levels, and the program prints:
+
+```output
+[[1], [2, 3], [4, 5]]
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def levels(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        level = []
+        for i in range(size):
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        out.append(level)
+    return out
+
+print(levels(Node(1, Node(2, Node(4)), Node(3, None, Node(5)))))
+```
+distractors:
+```python
+            node = queue.pop()
+    return level
+```
+hint: Each pass of the `while` loop is one level: read `size` first and start an empty list.
+hint: Inside the `for` loop: take a node from the front, record its value, and queue its children.
+right: Each round reads `size`, takes exactly that many nodes from the front, and saves their values as one level, while their children wait for the next round.
+wrong: Start the queue with the root. In each round, read `size = len(queue)`, start an empty `level`, take `size` nodes with `popleft`, record each value and queue its children, then add `level` to `out`.
+
+=== task: order easy
+title: Level order by hand
+prompt: Put the nodes of this tree in the order a level-order traversal visits them.
+
+```text
+          K
+        /   \
+       M     P
+      /     / \
+     R     S   T
+      \
+       W
+```
+items:
+- K
+- M
+- P
+- R
+- S
+- T
+- W
+hint: The root first, then the whole of the next level, from left to right.
+hint: Level 2 holds R, S and T. W is the only node on level 3.
+right: K; M, P; R, S, T; W: one level at a time, each from left to right.
+wrong: Level order goes by depth: K, then M and P, then R, S and T, then W. R is M's child, so it comes before P's children S and T.
+
+=== task: predict easy
+title: Level sums
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def level_sums(root):
+    sums = []
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        total = 0
+        for i in range(size):
+            node = queue.popleft()
+            total += node.val
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        sums.append(total)
+    return sums
+
+print(level_sums(Node(10, Node(4, Node(1), Node(6)), Node(7, Node(3)))))
+```
+wrong[[31]]: `total` goes back to 0 at the start of every round, so there's one sum per level.
+wrong[[10, 4, 7, 1, 6, 3]]: Each round adds up its whole level before it saves anything.
+wrong[[10, 11, 7]]: 3 is on level 2 too: it's 7's child, at the same depth as 1 and 6.
+wrong[[10, 14, 24]]: The sums don't carry over: `total` restarts at 0 in each round.
+hint: `total` restarts at 0 in every round.
+hint: Level 1 holds 4 and 7; level 2 holds 1, 6 and 3.
+right: `[10, 11, 10]`: 10; 4 + 7 = 11; 1 + 6 + 3 = 10.
+wrong: Each round adds up one level: 10, then 4 + 7 = 11, then 1 + 6 + 3 = 10.
+
+=== task: mcq easy
+title: Without the size
+prompt: The level-by-level loop reads `size = len(queue)` and takes exactly `size` nodes per round. Suppose instead that each round kept taking nodes until the queue was empty. What would `levels` return for the lesson's tree?
+* `[[5, 3, 8, 1, 4, 9, 6, 2]]`, one level holding every node :: Right. Children keep joining while the first round runs, so it doesn't end until every node is taken.
+- `[[5], [3, 8], [1, 4, 9], [6, 2]]`, the same as before :: Without `size`, nothing marks where a level ends, so the first round runs on into the next levels.
+- `[[5]]`, only the root :: The root's children join the queue during the round, so the round doesn't stop after the root.
+- `[]`, nothing :: The round keeps taking nodes while the queue isn't empty, and it starts with the root in it.
+hint: When do the root's children join the queue?
+hint: If a round only stops when the queue is empty, how many rounds are there?
+right: One round would take every node, because each node's children join while the round is still going. `size` is what stops a round at the end of its level.
+wrong: Reading `size` at the start fixes how many nodes a round takes. Without it, the first round keeps going as children join, and every node lands in one list.
+
+=== task: code medium
+title: Level sums
+prompt: Write `level_sums(root)` that returns a list with the sum of each level's values, from the root's level down. An empty tree gives an empty list. Use a deque: the speed check runs your function on big balanced trees made by `build`, and a list with `pop(0)` is too slow for them.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def level_sums(root):
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def level_sums(root):
+    sums = []
+    if root is None:
+        return sums
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        total = 0
+        for i in range(size):
+            node = queue.popleft()
+            total += node.val
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        sums.append(total)
+    return sums
+```
+tests:
+- level_sums(None)
+- level_sums(Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9))))
+- level_sums(Node(-2, Node(7), Node(-7)))
+- level_sums(Node(1, Node(2, Node(3, Node(4)))))
+- level_sums(build([1, 2, 3, 4, 5, 6, 7]))
+speed: setup=root = build(list(range(n))) | call=level_sums(root) | target=O(n)
+slow:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def level_sums(root):
+    sums = []
+    if root is None:
+        return sums
+    queue = [root]
+    while queue:
+        size = len(queue)
+        total = 0
+        for i in range(size):
+            node = queue.pop(0)
+            total += node.val
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        sums.append(total)
+    return sums
+```
+fail[2]: The lesson's tree: 5; 3 + 8 = 11; 1 + 4 + 9 = 14; 6 + 2 = 8.
+fail[3]: 7 + (−7) = 0: a level's sum can be 0.
+fail[4]: A line: one node, so one value, per level.
+fail[5]: `build` puts 4 at the root, 2 and 6 below it, then 1, 3, 5 and 7: [4, 8, 16].
+error[AttributeError]: Return [] for an empty tree before putting it into the queue.
+hint: Use the level-by-level loop with `size = len(queue)`.
+hint: Set `total = 0` at the start of each round and add each node's value to it.
+hint: After the round's `for` loop, append `total`. Take nodes from a deque with `popleft()`.
+right: One total per round, reset at the start of each round. With a deque, each node costs O(1), so the whole thing is O(n).
+wrong: In each round: set `total = 0`, take `size` nodes adding their values and queueing their children, then append `total`. Return [] for an empty tree. A list's `pop(0)` shifts every waiting node, which makes bushy trees O(n²).
+
+=== task: code medium
+title: The right side view
+prompt: Write `right_view(root)` that returns the value of the rightmost node on each level, from the top level down: what you'd see looking at the tree from its right side. An empty tree gives an empty list.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def right_view(root):
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def right_view(root):
+    view = []
+    if root is None:
+        return view
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        for i in range(size):
+            node = queue.popleft()
+            if i == size - 1:
+                view.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+    return view
+```
+tests:
+- right_view(None)
+- right_view(Node(1, Node(2, None, Node(5)), Node(3, None, Node(4))))
+- right_view(Node(1, Node(2, Node(4), Node(5)), Node(3)))
+- right_view(Node(1, Node(2, Node(3, Node(4)))))
+- right_view(Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9))))
+fail[2]: Level 2 holds 5 and 4, and 4 is further right.
+fail[3]: 5 is the rightmost node on level 2, even though it's in the root's left subtree.
+fail[4]: Every level of this line has one node, so you see all of them: [1, 2, 3, 4].
+fail[5]: The lesson's tree: 5, 8, 9, then 2 from the left subtree.
+error[AttributeError]: Return [] for an empty tree, and only queue children that exist.
+hint: Use rounds: read `size = len(queue)` and number the nodes with `for i in range(size)`.
+hint: The rightmost node is the last one the round takes.
+hint: Append `node.val` when `i == size - 1`.
+right: A round takes its level from left to right, so the last node, `i == size - 1`, is the one you see from the right, wherever it hangs. O(n).
+wrong: Following right links from the root misses nodes that stick out further down on the left. Run the level loop and keep the last node of every round.
+
+=== task: predict medium
+title: Where each level starts
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node("A", Node("B", None, Node("D", Node("F"))), Node("C", Node("E")))
+queue = deque([(root, 0)])
+last_depth = -1
+while queue:
+    node, depth = queue.popleft()
+    if depth != last_depth:
+        print("level", depth, "starts with", node.val)
+        last_depth = depth
+    if node.left is not None:
+        queue.append((node.left, depth + 1))
+    if node.right is not None:
+        queue.append((node.right, depth + 1))
+```
+wrong[level 0 starts with A\nlevel 1 starts with B]: Level order reaches every level, not only the ones along the left edge: D is on level 2 and F on level 3.
+wrong[level 0 starts with A\nlevel 1 starts with B\nlevel 2 starts with E\nlevel 3 starts with F]: D hangs below B, which is left of C, so D comes out before E on level 2.
+wrong[level 0 starts with A\nlevel 1 starts with C\nlevel 2 starts with E\nlevel 3 starts with F]: Every node queues its left child first, so each level starts with its leftmost node.
+wrong[A 0\nB 1\nC 1\nD 2\nE 2\nF 3]: A line is printed only when the depth changes, the first time a new level's node comes out.
+hint: A line is printed only when a node's depth differs from the one before it.
+hint: The levels are A; B, C; D, E; F. D is B's right child.
+right: Each line is the first node of a new level, the leftmost one: A, B, D, F. That's the left side view, worked out from depths instead of rounds.
+wrong: The levels in order are A; B, C; D, E; F. A line is printed at the first node of each level: A, B, D and F.
+
+=== task: cells medium
+title: Answers per level
+prompt: Work out each answer for this tree. Levels are numbered from 0 at the root.
+
+```text
+          6
+        /   \
+       2     9
+      / \     \
+     7   1     4
+        /
+       8
+```
+labels: sum of level 1 | sum of level 2 | rightmost on level 2 | leftmost on level 3 | level with the biggest sum
+answer: 11 | 12 | 4 | 8 | 2
+wrong[11 | 12 | 1 | 8 | 2]: 4 is further right than 1 on level 2: it's 9's child, and 9 is right of 2.
+wrong[11 | 12 | 4 | 8 | 12]: The last box asks which level, not its sum. The sum 12 belongs to level 2.
+wrong[11 | 8 | 4 | 8 | 1]: Level 2 is 7, 1 and 4: 12. 4 is 9's child, so it's on level 2 too.
+hint: Level 1 holds 2 and 9; level 2 holds 7, 1 and 4; level 3 holds 8.
+hint: The level sums are 6, 11, 12 and 8.
+right: 11, 12, 4, 8 and level 2: the sums are 6, 11, 12, 8, so level 2's is the biggest.
+wrong: The levels are [6], [2, 9], [7, 1, 4] and [8]. Their sums are 6, 11, 12 and 8. Level 2's rightmost node is 4, level 3's leftmost is 8, and the biggest sum, 12, is on level 2.
+
+=== task: fill medium
+title: A child's depth
+prompt: Fill in the blanks so that every node is printed with its depth, and the program prints:
+
+```output
+3 0
+5 1
+1 1
+8 2
+```
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(3, Node(5), Node(1, Node(8)))
+queue = deque([(root, ??)])
+while queue:
+    node, depth = queue.popleft()
+    print(node.val, depth)
+    for child in [node.left, node.right]:
+        if child is not None:
+            queue.append((child, ??))
+```
+answer: 0 | depth + 1
+wrong[1 | depth + 1]: Every depth comes out 1 too big. The root is 0 edges below itself.
+wrong[0 | depth]: Every node gets depth 0. A child is one edge further down than its parent.
+wrong[0 | 1]: Every child gets depth 1, but 8 is 2 edges down. A child's depth comes from its parent's.
+hint: The root is 0 edges below itself.
+hint: A child is one edge further down than its parent.
+right: The root starts at 0, and each child goes in with `depth + 1`: its parent's depth plus one edge.
+wrong: The root has depth 0. Each child joins the queue with its parent's depth + 1.
+
+=== task: mcq medium
+title: A line of left children
+prompt: A tree is a line where every node has only a left child: 1 at the root, 2 below it, then 3, then 4. What is its right side view?
+* `[1, 2, 3, 4]` :: Right. Every level holds a single node, which is both the leftmost and the rightmost, so nothing hides it.
+- `[1]` :: That follows right links from the root, and the root has no right child. Looking from the right, you see a node on every level.
+- `[4]` :: The view has one node from every level, not only from the deepest.
+- `[]` :: Every level has a node, so every level shows one.
+hint: How many nodes are on each level?
+hint: If a level has only one node, is anything in front of it?
+right: `[1, 2, 3, 4]`: one node per level, so each one is the rightmost on its level.
+wrong: The right side view takes the last node of each level. Here each level has exactly one node, so all four are seen.
+
+=== task: predict medium
+title: Zigzag
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def levels(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        level = []
+        for i in range(size):
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        out.append(level)
+    return out
+
+root = Node(1, Node(2, Node(4, Node(8)), Node(5)), Node(3, None, Node(6, Node(9), Node(7))))
+for depth, level in enumerate(levels(root)):
+    if depth % 2 == 1:
+        level.reverse()
+    print(level)
+```
+wrong[[1]\n[2, 3]\n[6, 5, 4]\n[8, 9, 7]]: `depth % 2 == 1` is True for the odd depths, 1 and 3, so those levels are the ones reversed.
+wrong[[1]\n[3, 2]\n[4, 5, 6]\n[8, 9, 7]]: Depth 3 is odd too, so the last level is reversed as well.
+wrong[[1]\n[2, 3]\n[4, 5, 6]\n[8, 9, 7]]: `reverse()` turns the list round in place, and the reversed list is what's printed.
+wrong[[1]\n[3, 2]\n[4, 5, 6]\n[9, 8, 7]]: The last level is 8, 9, 7 from left to right (8 is below 4, while 9 and 7 are below 6), so reversed it's 7, 9, 8.
+hint: `depth % 2 == 1` is True on levels 1 and 3.
+hint: First work out the levels: [1], [2, 3], [4, 5, 6], [8, 9, 7].
+right: Levels 1 and 3 are reversed. This is called **zigzag** order: left to right, then right to left, taking turns.
+wrong: The levels are [1], [2, 3], [4, 5, 6] and [8, 9, 7]. Depths 1 and 3 are odd, so those two are reversed: [3, 2] and [7, 9, 8].
+
+=== task: multi medium
+title: Jobs for level order
+prompt: Choose **every** job that level order fits best.
+* Print a tree with each level on its own line :: Right. Each round of the level loop is one line.
+* Find the leaf nearest the root without looking at the whole tree :: Right. Nodes come out in order of depth, so the first leaf is the nearest, and the walk can stop there.
+* List the value you'd see on each level, looking at the tree from the right :: Right. That's the last node of each round.
+* Find which level has the biggest total :: Right. One total per round.
+- List the values of a binary search tree in sorted order :: That's inorder: left subtree, node, right subtree.
+- Work out the value of an expression tree :: That's postorder: each operator needs its two parts first.
+hint: Which jobs are about levels, or about being near the root?
+hint: The other jobs need each node's subtrees handled in a particular order.
+right: Level order fits jobs about levels, or about what's nearest the root. Sorted order and expression values come from inorder and postorder.
+wrong: Level order suits answers per level (printing by level, level totals, side views) and searches for the nearest match. Sorted output needs inorder; evaluating needs postorder.
+
+=== task: parsons medium
+title: Level averages
+prompt: Arrange the lines so that `averages` returns the average of each level, rounded to 2 decimal places, and the program prints:
+
+```output
+[4.0, 4.5, 5.33]
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def averages(root):
+    out = []
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        total = 0
+        for i in range(size):
+            node = queue.popleft()
+            total += node.val
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        out.append(round(total / size, 2))
+    return out
+
+print(averages(Node(4, Node(7, Node(1), Node(6)), Node(2, None, Node(9)))))
+```
+distractors:
+```python
+        out.append(round(total / len(queue), 2))
+            total = node.val
+```
+hint: Keep a `total` for each round, and divide it by how many nodes the round took.
+hint: The round took `size` nodes. By the end of the round, `len(queue)` counts the next level instead.
+right: Each round adds up its level and divides by `size`, the number of nodes on it: 4, (7 + 2) / 2 = 4.5, and (1 + 6 + 9) / 3 = 5.33.
+wrong: In each round: set `total = 0`, add every node's value and queue its children, then append `round(total / size, 2)`.
+
+=== task: order medium
+title: The queue, step by step
+prompt: The basic level-order loop runs on this tree. Each time it visits a node, it takes the node from the front of the queue and adds the node's children to the back. Put the queue's contents in the order they appear, each one right after a visit (front on the left).
+
+```text
+        A
+      /   \
+     B     C
+    /     / \
+   D     E   F
+```
+items:
+- B C
+- C D
+- D E F
+- E F
+- F
+- empty
+hint: The queue starts as A. Visiting A takes it out and adds B and C.
+hint: Visiting B adds its child D behind C.
+right: A leaves B C; B leaves C D; C adds E and F behind D; then D, E and F leave one by one.
+wrong: Each visit takes the front node out and adds its children at the back: B C, then C D, then D E F, then E F, then F, then nothing.
+
+=== task: code hard
+title: Zigzag order
+prompt: Write `zigzag(root)` that returns the levels of a binary tree as a list of lists, where level 0 goes left to right, level 1 right to left, level 2 left to right again, taking turns all the way down. An empty tree gives an empty list.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def zigzag(root):
+    # your code here
+    return []
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def zigzag(root):
+    out = []
+    if root is None:
+        return out
+    queue = deque([root])
+    while queue:
+        size = len(queue)
+        level = []
+        for i in range(size):
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        if len(out) % 2 == 1:
+            level.reverse()
+        out.append(level)
+    return out
+```
+tests:
+- zigzag(None)
+- zigzag(Node(1))
+- zigzag(Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6), Node(7))))
+- zigzag(Node(1, Node(2, Node(4, Node(8)), Node(5)), Node(3, None, Node(6, Node(9), Node(7)))))
+- zigzag(Node(1, Node(2, Node(3, Node(4)))))
+fail[2]: A single node: [[1]].
+fail[3]: Level 1 goes right to left, [3, 2], and level 2 left to right again, [4, 5, 6, 7].
+fail[4]: Levels 1 and 3 are reversed: [3, 2] and [7, 9, 8].
+fail[5]: A level with one node looks the same either way: [[1], [2], [3], [4]].
+error[AttributeError]: Return [] for an empty tree, and only queue children that exist.
+hint: Collect each level with the usual level-by-level loop.
+hint: The level about to be saved has depth `len(out)`: 0 for the first, 1 for the second.
+hint: Reverse the level's list before saving it when its depth is odd: `if len(out) % 2 == 1: level.reverse()`.
+right: The queue still runs from left to right; only the saved list is reversed on odd levels. Reversing a level costs as much as the level is long, so it's O(n) overall.
+wrong: Build each level with the usual loop, then reverse its list on the odd depths (1, 3, 5...) before adding it to the result.
+
+=== task: code hard
+title: Stop at the nearest leaf
+prompt: Write `min_depth(root)` that returns the depth of the shallowest leaf: the number of edges from the root down to the nearest node with no children. The tree is never empty. Stop as soon as you know the answer: the speed check uses big trees whose root has a leaf as its right child, so a walk that looks at every node is too slow.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def min_depth(root):
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def min_depth(root):
+    queue = deque([(root, 0)])
+    while queue:
+        node, depth = queue.popleft()
+        if node.left is None and node.right is None:
+            return depth
+        if node.left is not None:
+            queue.append((node.left, depth + 1))
+        if node.right is not None:
+            queue.append((node.right, depth + 1))
+```
+tests:
+- min_depth(Node(1))
+- min_depth(Node(1, Node(2), Node(3, Node(4))))
+- min_depth(Node(1, Node(2, Node(3, Node(4)))))
+- min_depth(Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9))))
+- min_depth(Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6, Node(7)))))
+- min_depth(Node(0, build(list(range(1, 64))), Node(-1)))
+speed: setup=root = Node(-1, build(list(range(n))), Node(-2)) | call=min_depth(root) | target=O(log n)
+slow:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def min_depth(root):
+    if root.left is None and root.right is None:
+        return 0
+    best = None
+    for child in [root.left, root.right]:
+        if child is not None:
+            d = 1 + min_depth(child)
+            if best is None or d < best:
+                best = d
+    return best
+```
+fail[1]: A single node is a leaf at depth 0.
+fail[2]: 2 is a leaf at depth 1.
+fail[3]: In a line, the only leaf is 4, at depth 3. A node with one child isn't a leaf.
+fail[4]: The lesson's tree: the shallowest leaves, 1 and 9, are at depth 2.
+fail[5]: 4 and 5 are leaves at depth 2; 3 has a child, so it isn't a leaf.
+fail[6]: The root's right child is a leaf: depth 1.
+error[AttributeError]: Only queue children that exist.
+hint: Queue `(node, depth)` pairs, starting with `(root, 0)`.
+hint: When the node you take out has no children, return its depth straight away.
+hint: Otherwise queue each existing child with `depth + 1`.
+right: Level order takes nodes in order of depth, so the first leaf it takes out is the shallowest, and it stops right there. On the speed-check trees it looks at 3 nodes, however big the tree is.
+wrong: Use level order with (node, depth) pairs and return the depth of the first node that has no children. A depth-first walk has to check every leaf, so it's O(n) even when a leaf sits right below the root.
+
+=== task: code hard
+title: Is it complete?
+prompt: Write `is_complete(root)` that returns True if a binary tree is complete: every level full except possibly the last, and the last level's nodes packed in from the left with no gaps. An empty tree counts as complete. Use level order, and put both children of every node into the queue, even when they're None.
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def is_complete(root):
+    # your code here
+    return True
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def is_complete(root):
+    queue = deque([root])
+    seen_gap = False
+    while queue:
+        node = queue.popleft()
+        if node is None:
+            seen_gap = True
+        elif seen_gap:
+            return False
+        else:
+            queue.append(node.left)
+            queue.append(node.right)
+    return True
+```
+tests:
+- is_complete(None)
+- is_complete(Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6))))
+- is_complete(Node(1, Node(2, None, Node(5)), Node(3)))
+- is_complete(Node(1, Node(2), Node(3, Node(6))))
+- is_complete(Node(1, Node(2, Node(4))))
+- is_complete(Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6), Node(7))))
+- is_complete(Node(1, Node(2)))
+fail[2]: The last level, 4 5 6, is packed in from the left: complete.
+fail[3]: 2's left child is missing, but 5 comes after that gap.
+fail[4]: 2 has no children, yet 6 comes after those gaps on the last level.
+fail[5]: Level 1 isn't full (3 is missing), but there's another level below it.
+fail[6]: A perfect tree is complete.
+fail[7]: 2 sits at the left end of the last level: complete.
+error[AttributeError]: Check `node is None` before you use `node.left`.
+hint: Start the queue with the root, and a flag `seen_gap = False`.
+hint: Take items from the front. A None sets the flag; a real node that comes out after the flag is set means the tree isn't complete.
+hint: For a real node, append both `node.left` and `node.right`, even if they're None.
+right: In level order, a complete tree's real nodes all come out before its gaps, so the first real node after a gap proves it isn't complete. O(n).
+wrong: Queue both children of every node, None included. Once a None has come out, any real node after it means a gap in the middle: return False. If the queue runs out, return True.
+
+=== task: code hard
+title: Cousins
+prompt: Two nodes are **cousins** if they're on the same level but have different parents. Write `cousins(root, x, y)` that returns True if the nodes holding the values x and y are cousins. The values in the tree are all different, and x and y are both in it. `make()` builds this tree for the tests:
+
+```text
+        1
+      /   \
+     2     3
+    / \   / \
+   4   5 6   7
+```
+starter:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6), Node(7)))
+
+def cousins(root, x, y):
+    # your code here
+    return False
+```
+solution:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def make():
+    return Node(1, Node(2, Node(4), Node(5)), Node(3, Node(6), Node(7)))
+
+def cousins(root, x, y):
+    queue = deque([(root, None)])
+    while queue:
+        size = len(queue)
+        parents = {}
+        for i in range(size):
+            node, parent = queue.popleft()
+            parents[node.val] = parent
+            for child in [node.left, node.right]:
+                if child is not None:
+                    queue.append((child, node.val))
+        if x in parents and y in parents:
+            return parents[x] != parents[y]
+        if x in parents or y in parents:
+            return False
+    return False
+```
+tests:
+- cousins(make(), 4, 6)
+- cousins(make(), 4, 5)
+- cousins(make(), 2, 6)
+- cousins(make(), 2, 3)
+- cousins(Node(1, Node(2, None, Node(4)), Node(3, None, Node(5))), 4, 5)
+- cousins(Node(1, Node(2, Node(4, Node(8))), Node(3, None, Node(5, Node(9)))), 8, 9)
+- cousins(Node(1, Node(2, Node(4, Node(8))), Node(3, None, Node(5, Node(9)))), 4, 9)
+fail[1]: 4 and 6 are both on level 2, with the parents 2 and 3: cousins.
+fail[2]: 4 and 5 share the parent 2: they're siblings, not cousins.
+fail[3]: 2 is on level 1 and 6 is on level 2.
+fail[4]: 2 and 3 share the parent 1: siblings.
+fail[5]: 4 and 5 are on level 2, below 2 and 3.
+fail[6]: 8 and 9 are on level 3, below 4 and 5.
+fail[7]: 4 is on level 2 and 9 is on level 3.
+error[AttributeError]: Only queue children that exist.
+hint: Queue `(node, parent)` pairs, starting with `(root, None)`, and work one level at a time.
+hint: In each round, record every node's parent, for example in a dict from value to parent value.
+hint: After the round: if x and y were both on this level, they're cousins when their parents differ; if only one of them was, they can't be cousins.
+right: A round shows which nodes share a level, and the pairs tell you each node's parent: cousins need the same round but different parents. O(n).
+wrong: Work level by level with (node, parent) pairs. When both values turn up in the same round, compare their parents; if they turn up in different rounds, they aren't cousins.
+
+=== task: predict hard
+title: Taking from the wrong end
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(5, Node(3, Node(1), Node(4, Node(6), Node(2))), Node(8, None, Node(9)))
+out = []
+queue = deque([root])
+while queue:
+    size = len(queue)
+    level = []
+    for i in range(size):
+        node = queue.pop()
+        level.append(node.val)
+        if node.left is not None:
+            queue.append(node.left)
+        if node.right is not None:
+            queue.append(node.right)
+    out.append(level)
+print(out)
+```
+wrong[[[5], [3, 8], [1, 4, 9], [6, 2]]]: That's what `popleft()` gives. `pop()` takes from the back, where the newest children are waiting.
+wrong[[[5], [8, 3], [9, 4, 1], [2, 6]]]: Taking from the back doesn't only reverse each level: it can take a child that joined during the same round.
+wrong[[[5], [8, 9], [3, 4], [2, 6, 1]]]: Round 3 has `size` 1, because only 3 is waiting when it starts, so it takes only 3.
+hint: `pop()` takes the newest item, from the back.
+hint: In round 2, after 8 is taken, its child 9 joins the back. What does the next `pop()` take?
+right: `[[5], [8, 9], [3], [4, 2], [6, 1]]`: taking from the back, a round can take a child that joined during it (9 comes out right after its parent 8), so the levels get mixed up.
+wrong: Trace the deque. Round 1 takes 5 and adds 3, 8. Round 2 pops 8 (adding 9), then pops 9. Round 3 pops 3 (adding 1, 4). Round 4 pops 4 (adding 6, 2), then 2. Round 5 pops 6, then 1.
+
+=== task: predict hard
+title: The biggest on each level
+code:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(3, Node(9, Node(2), Node(7)), Node(4, Node(11), Node(-1, None, Node(5))))
+best = {}
+queue = deque([(root, 0)])
+while queue:
+    node, depth = queue.popleft()
+    if depth not in best or node.val > best[depth]:
+        best[depth] = node.val
+    if node.left is not None:
+        queue.append((node.left, depth + 1))
+    if node.right is not None:
+        queue.append((node.right, depth + 1))
+print(best)
+```
+wrong[{0: 3, 1: 4, 2: -1, 3: 5}]: That keeps the last node of each level. A value is replaced only by a bigger one.
+wrong[{0: 3, 1: 9, 2: 7, 3: 5}]: 11 is 4's left child, so it's on level 2 too, and it's bigger than 7.
+wrong[{0: 3, 1: 9, 2: 11}]: 5 is the right child of -1, so it's on level 3.
+wrong[{3: 0, 9: 1, 11: 2, 5: 3}]: The keys are the depths, and the values are the biggest values on those levels.
+hint: The dict maps each depth to the biggest value seen at that depth so far.
+hint: Level 2 holds 2, 7, 11 and -1; level 3 holds only 5.
+right: `{0: 3, 1: 9, 2: 11, 3: 5}`: each depth's entry is set by the first node at that depth, and replaced only by bigger values.
+wrong: Depth 0: 3. Depth 1: 9 and 4, so 9. Depth 2: 2, 7, 11 and -1, so 11. Depth 3: 5.
+
+=== task: cells hard
+title: How long is the queue?
+prompt: The basic level-order loop runs on this tree. How many nodes are waiting in the queue right after each node is visited and its children have joined?
+
+```text
+          A
+        /   \
+       B     C
+      / \   / \
+     D   E F   G
+          \
+           H
+```
+labels: after A | after B | after C | after D | after E | after F | after G | after H
+answer: 2 | 3 | 4 | 3 | 3 | 2 | 1 | 0
+wrong[2 | 3 | 4 | 3 | 2 | 1 | 0 | 0]: E's child H joins the queue when E is visited, so the count stays at 3 after E.
+wrong[1 | 2 | 3 | 4 | 5 | 6 | 7 | 8]: That counts the nodes visited. The question asks how many are still waiting.
+wrong[2 | 2 | 2 | 0 | 1 | 0 | 0 | 0]: Count everything that's waiting, not only the children that have joined.
+hint: Visiting a node takes it out of the queue (one fewer) and adds its children (that many more).
+hint: After A: B, C. After B: C, D, E. After C: D, E, F, G.
+right: 2, 3, 4, 3, 3, 2, 1, 0: the queue peaks at 4, when the whole of level 2 is waiting.
+wrong: Track the queue: [B, C], [C, D, E], [D, E, F, G], [E, F, G], [F, G, H], [G, H], [H], then empty.
+
+=== task: multi hard
+title: Changes that keep the result
+prompt: `levels` from the lesson returns `[[5], [3, 8], [1, 4, 9], [6, 2]]` for the lesson's tree. Choose **every** change that would still give exactly that result.
+* Write `for i in range(len(queue)):` instead of saving `size` first :: Right. `range(len(queue))` is worked out once, when the `for` loop starts, so it still counts only the current level.
+* Use a list with `pop(0)` instead of a deque with `popleft()` :: Right. It still takes from the front, so the result is the same. It's only slower: O(n²) on bushy trees.
+- Use `queue.pop()` instead of `queue.popleft()` :: That takes from the back, so children that join during a round get taken in the same round.
+- Add the right child before the left child :: Then each level comes out right to left: `[[5], [8, 3], [9, 4, 1], [2, 6]]`.
+- Append both children every time, without the `is not None` checks :: Then None comes out of the queue, and `node.val` raises an AttributeError.
+- Move `level = []` up, above the `while` loop :: Then one list collects every node, and that same list is added to `out` once per round.
+hint: When does `range(...)` work out its argument?
+hint: Which changes alter the order the nodes come out, or crash?
+right: Both changes keep the order of the nodes and the size of each round: `range(len(queue))` is worked out once, at the start of the loop, and `pop(0)` takes from the front like `popleft()`, only more slowly.
+wrong: Grouping by level needs a fixed count per round and first-in, first-out order. `range(len(queue))` fixes the count once, and `pop(0)` keeps the order. Taking from the back, queueing the right child first, queueing None, or sharing one `level` list all change the result.
+
+=== task: fill hard
+title: Folders level by level
+prompt: Each folder keeps a list of the folders inside it. Fill in the blanks so that the program prints the folders level by level:
+
+```output
+['home']
+['docs', 'music']
+['cv', 'old', 'rock']
+```
+code:
+```python
+from collections import deque
+
+class Folder:
+    def __init__(self, name, inside=None):
+        self.name = name
+        if inside is None:
+            inside = []
+        self.inside = inside
+
+home = Folder("home", [Folder("docs", [Folder("cv"), Folder("old")]), Folder("music", [Folder("rock")])])
+queue = deque([home])
+while queue:
+    size = len(queue)
+    names = []
+    for i in range(??):
+        folder = queue.popleft()
+        names.append(folder.name)
+        queue.??(folder.inside)
+    print(names)
+```
+answer: size | extend
+wrong[size | append]: `append` adds the whole list as one item. The next `popleft()` then takes a list, and a list has no `name`: AttributeError.
+wrong[1 | extend]: Each round then takes one folder, so every folder gets a line of its own.
+hint: How many folders does one round take?
+hint: `append` adds one item. Which deque method adds every item of a list, one after another?
+right: Each round takes `size` folders, and `extend` adds all of a folder's subfolders to the back at once, in order. A tree whose nodes keep a list of children works like a binary one.
+wrong: The round takes `size` folders, and each folder's whole `inside` list joins the back with `queue.extend(folder.inside)`.
+
+=== task: parsons hard
+title: The bottom-left value
+prompt: Arrange the lines so that `bottom_left` returns the leftmost value on the deepest level, and the program prints:
+
+```output
+7
+```
+
+The trick: run level order with the **right** child queued before the left one. Each level then comes out from right to left, so the very last node taken is the leftmost node on the deepest level. Not every line is needed.
+lines:
+```python
+from collections import deque
+
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def bottom_left(root):
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        if node.right is not None:
+            queue.append(node.right)
+        if node.left is not None:
+            queue.append(node.left)
+    return node.val
+
+print(bottom_left(Node(1, Node(2, Node(4)), Node(3, Node(5, Node(7), Node(8)), Node(6, None, Node(9))))))
+```
+distractors:
+```python
+        node = queue.pop()
+    return queue[0].val
+```
+hint: The last node level order takes is on the deepest level.
+hint: Which child must join the queue first, so that each level comes out from right to left?
+right: With right children queued first, every level comes out right to left, so the last node taken, 7, is the leftmost on the deepest level, even though it's in the root's right subtree.
+wrong: Queue the right child before the left one. Then the last node out of the queue is the deepest level's leftmost node, and `node` still holds it when the loop ends.
