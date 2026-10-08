@@ -1,0 +1,1234 @@
+=== lesson
+id: algo-quick
+title: Quicksort
+summary: Quicksort picks one item, the pivot, moves the smaller items in front of it and the rest behind it, and then sorts the two sides the same way. You'll partition a list in place, write the recursive sort, see why it averages O(n log n) but can take O(n²) with bad pivots, how to choose better pivots, and why it isn't stable.
+
+=== learn
+### Pick a pivot, split around it
+Merge sort does its work after the recursive calls, when it merges. **Quicksort** does its work before them. It picks one item, the **pivot**, and **partitions** the list around it: every item smaller than the pivot goes in front of it, and every other item behind it. Here the pivot is the last item, 5:
+
+| list | pivot | smaller items | bigger items |
+| --- | --- | --- | --- |
+| [7, 2, 9, 4, 3, 8, 5] | 5 | 2, 4, 3 | 7, 9, 8 |
+
+After partitioning, the pivot is in its **final place**: three items are smaller, so in the sorted list 5 belongs at index 3, and that's where partitioning puts it. The two sides aren't sorted yet, but they never need to mix again: everything on the left stays left of 5. So quicksort sorts each side the same way, with a pivot of its own, until every side has at most one item.
+
+### The idea in code
+List comprehensions show the idea in a few lines. This version builds new lists, so it isn't the real quicksort yet, but it makes the same choices:
+```python
+def quicksort_simple(items):
+    if len(items) <= 1:
+        return items
+    pivot = items[-1]
+    smaller = [x for x in items[:-1] if x < pivot]
+    rest = [x for x in items[:-1] if x >= pivot]
+    return quicksort_simple(smaller) + [pivot] + quicksort_simple(rest)
+
+print(quicksort_simple([7, 2, 9, 4, 3, 8, 5]), quicksort_simple([3, 3, 1]), quicksort_simple([]))
+```
+```output
+[2, 3, 4, 5, 7, 8, 9] [1, 3, 3] []
+```
+`items[:-1]` is every item except the pivot. Items equal to the pivot go into `rest`, so nothing is lost. The real quicksort does the same partitioning inside the list itself, with swaps, and needs no new lists.
+
+### Partitioning in place
+The usual in-place method, **Lomuto partitioning**, uses two indexes. `j` scans the items from `lo` up to the one before the pivot. `i` marks where the next small item should go: everything in front of `i` is smaller than the pivot. When `items[j]` is smaller, it's swapped to `i` and `i` moves on. Here's `[7, 2, 9, 4, 3, 8, 5]`:
+
+| j | item | smaller than 5? | list after | i after |
+| --- | --- | --- | --- | --- |
+| 0 | 7 | no | [7, 2, 9, 4, 3, 8, 5] | 0 |
+| 1 | 2 | yes: swap indexes 0 and 1 | [2, 7, 9, 4, 3, 8, 5] | 1 |
+| 2 | 9 | no | [2, 7, 9, 4, 3, 8, 5] | 1 |
+| 3 | 4 | yes: swap indexes 1 and 3 | [2, 4, 9, 7, 3, 8, 5] | 2 |
+| 4 | 3 | yes: swap indexes 2 and 4 | [2, 4, 3, 7, 9, 8, 5] | 3 |
+| 5 | 8 | no | [2, 4, 3, 7, 9, 8, 5] | 3 |
+
+Finally the pivot swaps with the item at `i`: `[2, 4, 3, 5, 9, 8, 7]`, with 5 at index 3.
+
+### The code
+`partition` works on the part of the list from `lo` to `hi`, and returns the pivot's final index. `quicksort` partitions, then sorts the two sides:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+def quicksort(items, lo, hi):
+    if lo < hi:
+        p = partition(items, lo, hi)
+        quicksort(items, lo, p - 1)
+        quicksort(items, p + 1, hi)
+
+nums = [7, 2, 9, 4, 3, 8, 5]
+quicksort(nums, 0, len(nums) - 1)
+print(nums)
+```
+```output
+[2, 3, 4, 5, 7, 8, 9]
+```
+The two sides are `lo` to `p - 1` and `p + 1` to `hi`: the pivot at `p` is already in place, so it's left out. `if lo < hi` stops at parts with fewer than two items. Quicksort sorts **in place**: the list itself is rearranged. Animation 1 partitions this list, and animation 2 runs the whole sort.
+
+### Good and bad pivots
+Partitioning compares each item of the part with the pivot once: O(n) work per level of recursion. How many levels there are depends on the pivots. If each pivot lands near the middle, the parts halve each time, giving about log₂ n levels: **O(n log n)**. On average, with the items in random order, that's what happens. But if each pivot is the biggest or smallest item of its part, one side is empty and the other has all the rest, so there are n levels: n × (n − 1) / 2 comparisons, **O(n²)**. With the last item as pivot, a list that's already sorted does exactly that:
+```python
+def comparisons(items, lo, hi):
+    if lo >= hi:
+        return 0
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return (hi - lo) + comparisons(items, lo, i - 1) + comparisons(items, i + 1, hi)
+
+print(comparisons(list(range(8)), 0, 7), comparisons([3, 7, 0, 5, 2, 6, 1, 4], 0, 7))
+```
+```output
+28 14
+```
+Each partition makes `hi - lo` comparisons. The sorted list needs all 28; the shuffled one only 14.
+
+### Choosing the pivot
+The last item is a bad pivot for data that's already sorted, or nearly sorted, which is common. Two fixes are used in practice:
+
+1. A **random pivot**: pick a random index from `lo` to `hi` and swap that item to `hi`, then partition as before. No input is bad every time: the expected work is O(n log n) for every list, and O(n²) becomes extremely unlikely.
+2. The **median of three**: look at the first, middle and last items of the part, and use the middle value of the three as the pivot, again swapped to `hi` first. On a sorted list that's the middle item, a perfect pivot.
+
+Lists with many equal items are another trap: with the code above, a list where every item is the same takes O(n²) too. A **three-way partition** fixes that by gathering all the items equal to the pivot in the middle, so they're never sorted again.
+
+### In place, but not stable
+Quicksort needs no extra lists. Its only extra space is the call stack: O(log n) calls deep on average, O(n) in the worst case. But its swaps move items over other items, so equal items can change order: quicksort is **not stable**.
+```python
+cards = [("x", 3), ("y", 3), ("z", 1)]
+pivot = cards[2][1]
+i = 0
+for j in range(2):
+    if cards[j][1] < pivot:
+        cards[i], cards[j] = cards[j], cards[i]
+        i += 1
+cards[i], cards[2] = cards[2], cards[i]
+print(cards)
+```
+```output
+[('z', 1), ('y', 3), ('x', 3)]
+```
+Neither 3 is smaller than the pivot, 1, so the final swap moves `("x", 3)` from the front to the end, past `("y", 3)`. The two 3s have swapped order.
+
+### Quicksort or merge sort?
+| measure | merge sort | quicksort |
+| --- | --- | --- |
+| time, average | O(n log n) | O(n log n) |
+| time, worst case | O(n log n) | O(n²), made very unlikely by good pivots |
+| extra space | O(n) | O(log n) on average, for the calls |
+| stable | yes | no |
+
+Quicksort is often the fastest sort in practice for a list in memory: it moves items few times and works inside one list. Many languages use it, combined with tricks against the worst case. Python's `sorted()` uses Timsort instead, a merge sort, because it's stable. That's the end of sorting: the next lessons cover backtracking and graph search.
+
+=== keypoints
+- Quicksort picks a pivot and partitions the list: smaller items in front of the pivot, the rest behind it. The pivot ends up in its final place, and each side is then sorted the same way.
+- Lomuto partition, with the last item as pivot: `i` marks where the next smaller item goes; j scans from lo to hi − 1, swapping smaller items to i; finally the pivot swaps with `items[i]`.
+- `quicksort(items, lo, hi)`: if `lo < hi`, `p = partition(items, lo, hi)`, then sort `lo` to `p - 1` and `p + 1` to `hi`. It works in place.
+- Average O(n log n). Worst case O(n²), when each pivot is the smallest or biggest item, like a sorted list with the last item as pivot.
+- A random pivot, or the median of three, makes the worst case very unlikely.
+- O(log n) extra space on average, for the calls. Not stable.
+
+=== example: Partitioning step by step
+intro: One partition of seven numbers around the last one, 5. Each time an item smaller than the pivot is found, it's swapped to the front part, and the program prints the list. At the end the pivot moves into place.
+```python
+items = [7, 2, 9, 4, 3, 8, 5]
+pivot = items[-1]
+i = 0
+for j in range(len(items) - 1):
+    if items[j] < pivot:
+        items[i], items[j] = items[j], items[i]
+        i += 1
+        print("moved", items[i - 1], "to the front part:", items)
+items[i], items[-1] = items[-1], items[i]
+print("pivot", pivot, "goes to index", i, items)
+```
+1-3: The pivot is the last item, 5. `i` starts at 0: the front part, of items smaller than 5, is empty.
+4-5: j visits every item except the pivot.
+6-8: A smaller item is swapped to index i, the end of the front part, and the front part grows by one.
+9: The pivot swaps with the first item that isn't in the front part.
+10: Everything before index 3 is smaller than 5, and everything after it is bigger.
+
+=== example: Sorted input, the worst case
+intro: This quicksort counts its comparisons. It sorts lists of 100 numbers, once already in order and once shuffled, and prints the counts next to n × (n − 1) / 2.
+```python
+def quicksort(items, lo, hi):
+    if lo >= hi:
+        return 0
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return (hi - lo) + quicksort(items, lo, i - 1) + quicksort(items, i + 1, hi)
+
+ordered = list(range(100))
+shuffled = [(i * 37) % 101 for i in range(1, 101)]
+print("sorted:", quicksort(ordered, 0, 99))
+print("shuffled:", quicksort(shuffled, 0, 99))
+print("n × (n − 1) / 2:", 100 * 99 // 2)
+```
+1-11: The usual quicksort, returning the number of comparisons: `hi - lo` for this partition, plus the counts of the two sides.
+13: In a sorted list, the last item is always the biggest of its part, so one side is always empty.
+14: `(i * 37) % 101` for i from 1 to 100 gives the numbers 1 to 100 in a scrambled order.
+15-17: The sorted list costs the full n × (n − 1) / 2 comparisons, about nine times as many as the shuffled one.
+
+=== animation: Partitioning around the pivot
+view: bars items ptr=i,j hit=hi
+vars pivot i j
+intro: The yellow bar is the pivot, the last item. `j` scans the other items. Everything in front of `i` is smaller than the pivot, so each smaller item `j` finds is swapped to `i`. At the end, the pivot swaps into place at `i`.
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+partition([7, 2, 9, 4, 3, 8, 5], 0, 6)
+```
+1: Defines partition. Nothing runs yet.
+2: The pivot is the last item, {items[hi]}.
+3: Nothing is in the front part yet, so i starts at {lo}.
+4: j moves to the next item. When it reaches the pivot, the scan is over.
+5: Is {items[j]} smaller than the pivot, {pivot}? {items[j] < pivot}.
+6: Swap {items[j]} to index {i}, the end of the front part.
+7: The front part is one item longer.
+8: Swap the pivot into place at index {i}.
+9: The pivot, {pivot}, is at index {i}: smaller items in front, bigger behind.
+11: Partition seven numbers.
+
+=== animation: The whole sort
+view: bars items ptr=lo,hi range=lo:hi
+callstack
+intro: Each call of quicksort works on the bars from lo to hi; the dim bars belong to other calls. A call partitions its part, then makes two calls for the two sides. Parts with fewer than two items stop at once.
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+def quicksort(items, lo, hi):
+    if lo < hi:
+        p = partition(items, lo, hi)
+        quicksort(items, lo, p - 1)
+        quicksort(items, p + 1, hi)
+
+quicksort([4, 1, 5, 2, 3], 0, 4)
+```
+1: Defines partition. Nothing runs yet.
+2: The pivot is {items[hi]}.
+3: i starts at {lo}.
+4: Next item, until j reaches the pivot.
+5: Is {items[j]} smaller than {pivot}? {items[j] < pivot}.
+6: Swap {items[j]} to index {i}.
+7: Move i on.
+8: Swap the pivot into place at index {i}.
+9: The pivot is in its final place, at index {i}.
+11: Defines quicksort. Nothing runs yet.
+12: {'Indexes ' + str(lo) + ' to ' + str(hi) + ': partition them.' if lo < hi else 'Fewer than two items: nothing to do.'}
+13: Partition indexes {lo} to {hi}.
+14: {'Sort the left side: indexes ' + str(lo) + ' to ' + str(p - 1) + '.' if lo <= p - 1 else 'The left side is empty.'}
+15: {'Sort the right side: indexes ' + str(p + 1) + ' to ' + str(hi) + '.' if p + 1 <= hi else 'The right side is empty.'}
+17: Sort five numbers.
+
+=== task: predict easy
+title: One partition
+code:
+```python
+items = [6, 3, 8, 1, 5]
+pivot = items[-1]
+i = 0
+for j in range(len(items) - 1):
+    if items[j] < pivot:
+        items[i], items[j] = items[j], items[i]
+        i += 1
+items[i], items[-1] = items[-1], items[i]
+print(items, i)
+```
+wrong[[1, 3, 5, 6, 8] 2]: Partitioning doesn't sort the sides. The smaller items stay in the order the swaps left them: 3, then 1.
+wrong[[3, 1, 8, 6, 5] 2]: The last swap moves the pivot to index i: [3, 1, 5, 6, 8].
+wrong[[3, 1, 5, 6, 8] 3]: i counts the items smaller than the pivot, 3 and 1, so it ends at 2.
+hint: Only 3 and 1 are smaller than 5. Each one is swapped to index i, and then i moves on.
+hint: At the end, the pivot swaps with the item at index i.
+right: 3 is swapped to index 0 and 1 to index 1, then the pivot swaps with the 8 at index 2: `[3, 1, 5, 6, 8] 2`.
+wrong: j = 1 finds 3: swap it to index 0, i = 1. j = 3 finds 1: swap it with the 6 at index 1, i = 2. Then the pivot swaps with the 8 at index 2.
+
+=== task: mcq easy
+title: After partitioning
+prompt: Lomuto partitioning runs on `[9, 4, 7, 1, 6]`, with the last item, 6, as the pivot. What's true afterwards?
+* 6 is at the index it will have in the sorted list :: Right. Two items are smaller than 6, so it ends at index 2, its sorted place.
+- The whole list is sorted :: Only the pivot is in its final place. Each side still needs sorting.
+- 6 is still at the end :: The final swap moves the pivot to index i.
+- The items in front of 6 are in sorted order :: They're all smaller than 6, but in whatever order the swaps left them: [4, 1].
+hint: How many items are smaller than 6?
+hint: Partitioning puts the smaller items in front of the pivot, without sorting them.
+right: The list becomes [4, 1, 6, 9, 7]: 6 is at index 2, where it belongs, with the smaller items in front and the bigger ones behind, each side unsorted.
+wrong: Partitioning only promises that the pivot is in its final place, with smaller items in front and the others behind. The result is [4, 1, 6, 9, 7].
+
+=== task: cells easy
+title: Where the pivot lands
+prompt: Lomuto partitioning runs on each list, with its last item as the pivot. Fill in the index where the pivot ends up.
+labels: [5, 1, 4, 3] | [1, 2, 3, 4] | [4, 3, 2, 1] | [2, 9, 7, 5]
+answer: 1 | 3 | 0 | 1
+wrong[1 | 0 | 3 | 1]: The pivot of [1, 2, 3, 4] is 4, and three items are smaller: index 3. The pivot of [4, 3, 2, 1] is 1, and none are smaller: index 0.
+wrong[3 | 3 | 3 | 3]: The pivot doesn't stay at the end: it moves to the index equal to the number of smaller items.
+wrong[2 | 3 | 0 | 1]: In [5, 1, 4, 3], only 1 is smaller than the pivot, 3.
+hint: The pivot's final index is the number of items smaller than it.
+hint: Count the items smaller than the last one.
+right: The pivot lands at the index equal to the number of items smaller than it: 1, 3, 0 and 1.
+wrong: Count the smaller items: [5, 1, 4, 3] has one (1), [1, 2, 3, 4] has three, [4, 3, 2, 1] has none, and [2, 9, 7, 5] has one (2).
+
+=== task: code easy
+title: Write partition
+prompt: Write `partition(items, lo, hi)` that partitions the part of the list from index `lo` to index `hi` with Lomuto partitioning, and returns the pivot's final index. The pivot is `items[hi]`. Scan j from `lo` up to `hi - 1`, swapping each item **smaller** than the pivot to index i, then swap the pivot to index i. The speed check partitions longer and longer lists.
+starter:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    # your code here
+    return i
+```
+solution:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+```
+tests:
+- (lambda a: (partition(a, 0, len(a) - 1), a))([7, 2, 9, 4, 3, 8, 5])
+- (lambda a: (partition(a, 0, len(a) - 1), a))([1, 2, 3])
+- (lambda a: (partition(a, 0, len(a) - 1), a))([3, 2, 1])
+- (lambda a: (partition(a, 2, 4), a))([9, 8, 6, 1, 4])
+- (lambda a: (partition(a, 0, len(a) - 1), a))([3, 5, 3, 1, 3])
+speed: setup=items = list(range(n)) | call=partition(items, 0, len(items) - 1) | target=O(n)
+slow:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            i = lo
+            for k in range(lo, j):
+                if items[k] < pivot:
+                    i += 1
+            items[i], items[j] = items[j], items[i]
+    i = lo
+    for k in range(lo, hi):
+        if items[k] < pivot:
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+```
+fail[1]: The pivot 5 ends at index 3: (3, [2, 4, 3, 5, 9, 8, 7]).
+fail[2]: Every item is smaller than 3, so each swaps with itself and 3 stays at index 2.
+fail[3]: Nothing is smaller than 1, so it swaps with the 3 at index 0: (0, [1, 2, 3]).
+fail[4]: Only indexes 2 to 4 are partitioned. The pivot 4 is bigger than 1 only: (3, [9, 8, 1, 4, 6]).
+fail[5]: Only 1 is strictly smaller than the pivot 3, so the pivot goes to index 1: (1, [1, 3, 3, 3, 5]). Items equal to the pivot stay behind it.
+hint: `for j in range(lo, hi):` visits every item except the pivot.
+hint: When `items[j] < pivot`, swap `items[i]` and `items[j]`, then `i += 1`.
+hint: After the loop, swap `items[i]` and `items[hi]`, and return i.
+right: One scan, with a swap for each smaller item and one more for the pivot: O(n).
+wrong: Keep i at the end of the front part of smaller items. Scan j over the part, swapping smaller items to i. Finally swap the pivot into index i and return i.
+
+=== task: fill easy
+title: The two sides
+prompt: Fill in the blanks so that `quicksort` sorts the two sides of the pivot, leaving out the pivot itself, and the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+code:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+def quicksort(items, lo, hi):
+    if lo < hi:
+        p = partition(items, lo, hi)
+        quicksort(items, lo, ??)
+        quicksort(items, ??, hi)
+
+nums = [4, 6, 2, 5, 1, 3]
+quicksort(nums, 0, len(nums) - 1)
+print(nums)
+```
+answer: p - 1 | p + 1
+wrong[p | p + 1]: The left side then includes the pivot. When the pivot is the biggest item of the part, that side is the whole part again, so the calls never end: a RecursionError.
+wrong[p - 1 | p - 1]: The right side would start at p − 1, so it includes the pivot and the item before it. A part can then come back no smaller than before, and the calls never end: a RecursionError.
+hint: The pivot is already in its final place, at index p.
+hint: The left side ends one place before p, and the right side starts one place after it.
+right: `p - 1` and `p + 1` leave the pivot out of both sides, so every call works on a strictly smaller part.
+wrong: Sort `lo` to `p - 1` and `p + 1` to `hi`: the pivot at p is done.
+
+=== task: multi easy
+title: True of quicksort
+prompt: Choose **every** true statement about quicksort.
+* After a partition, the pivot is in its final sorted place :: Right. Everything in front of it is smaller, and everything behind it isn't.
+* It sorts the list in place, without building new lists :: Right. Partitioning only swaps items inside the list.
+* Its average time is O(n log n) :: Right. Pivots near the middle give about log₂ n levels of O(n) work.
+- It's O(n log n) on every input :: With bad pivots, such as the last item of a sorted list, it's O(n²).
+- It's stable :: Partitioning swaps items over others, so equal items can change order.
+- It merges two sorted halves at the end :: That's merge sort. Quicksort does its work before the recursive calls, when it partitions.
+hint: What can go wrong with the pivot?
+hint: Where does quicksort do its work: before or after the recursive calls?
+right: Quicksort partitions in place, puts each pivot in its final place, and averages O(n log n), but isn't stable and has an O(n²) worst case.
+wrong: Partitioning puts the pivot in place and works inside the list. The time depends on the pivots: O(n log n) on average, O(n²) at worst. The swaps can reorder equal items.
+
+=== task: parsons easy
+title: The idea in a few lines
+prompt: Arrange the lines so that `quicksort_simple` sorts with list comprehensions, as in the lesson, and the program prints:
+
+```output
+[1, 2, 3, 3, 5]
+```
+
+Not every line is needed.
+lines:
+```python
+def quicksort_simple(items):
+    if len(items) <= 1:
+        return items
+    pivot = items[-1]
+    smaller = [x for x in items[:-1] if x < pivot]
+    rest = [x for x in items[:-1] if x >= pivot]
+    return quicksort_simple(smaller) + [pivot] + quicksort_simple(rest)
+
+print(quicksort_simple([3, 5, 1, 3, 2]))
+```
+distractors:
+```python
+    rest = [x for x in items if x >= pivot]
+    return quicksort_simple(rest) + [pivot] + quicksort_simple(smaller)
+```
+hint: Leave the pivot out of both lists: `items[:-1]`.
+hint: Smaller items go in front of the pivot.
+right: The smaller items, sorted, then the pivot, then the rest, sorted. Items equal to the pivot go into `rest`, so the two 3s are both kept.
+wrong: Base case first. Then take the last item as the pivot, split the other items into `smaller` and `rest`, and return the sorted smaller items, the pivot and the sorted rest.
+
+=== task: order easy
+title: Sorting four items
+prompt: Quicksort, with Lomuto partitioning, sorts `[3, 1, 4, 2]`. Put the steps in order.
+items:
+- Partition the whole list around 2: [1, 2, 4, 3]
+- The left side, [1], has one item: nothing to do
+- Partition the right side, [4, 3], around 3: [1, 2, 3, 4]
+- The sides of 3 have at most one item each: done
+hint: The first pivot is the last item, 2.
+hint: The left side is sorted before the right side.
+right: The first partition puts 2 in place. Its left side needs nothing, and its right side is partitioned around 3, which finishes the sort.
+wrong: Partition around 2, giving [1, 2, 4, 3]. Then the call for the left side ([1]) returns at once, and the call for the right side partitions [4, 3] around 3.
+
+=== task: predict easy
+title: Counting comparisons
+code:
+```python
+def comparisons(items, lo, hi):
+    if lo >= hi:
+        return 0
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return (hi - lo) + comparisons(items, lo, i - 1) + comparisons(items, i + 1, hi)
+
+print(comparisons([1, 2, 3, 4, 5], 0, 4), comparisons([2, 1, 4, 5, 3], 0, 4))
+```
+wrong[4 4]: Each part is partitioned too, not only the whole list: the sorted list costs 4 + 3 + 2 + 1.
+wrong[10 10]: The pivot 3 splits [2, 1, 4, 5, 3] into two parts of two items: 4 + 1 + 1 = 6.
+wrong[15 6]: A partition of k items makes k − 1 comparisons: the pivot isn't compared with itself.
+hint: A partition from lo to hi makes `hi - lo` comparisons.
+hint: In the sorted list, every pivot is the biggest item of its part.
+right: `10 6`: the sorted list peels off one item per level (4 + 3 + 2 + 1), while 3 splits the other list into two pairs (4 + 1 + 1).
+wrong: Sorted: the pivot is always the biggest, so the parts shrink by one: 4 + 3 + 2 + 1 = 10. [2, 1, 4, 5, 3]: 4 comparisons put 3 in the middle, then each pair needs 1.
+
+=== task: mcq easy
+title: The worst case
+prompt: Why is a list that's already sorted the worst case for quicksort with the last item as pivot?
+* Each pivot is the biggest item of its part, so one side is empty and the other has everything else :: Right. The parts shrink by one item per level, giving n levels and n × (n − 1) / 2 comparisons.
+- Sorted lists need more swaps :: The work that hurts is the comparisons: each level only removes one item.
+- The partition can't tell the list is sorted, so it sorts it again :: Every list is partitioned the same way. The problem is where the pivots land.
+- Python handles sorted lists more slowly :: It's the algorithm's choice of pivot, not Python.
+hint: Where does the last item of a sorted part end up after partitioning?
+hint: How big are the two sides then?
+right: The last item of a sorted part is its biggest, so the pivot stays at the end and the left side is the whole part minus one item. That gives n levels instead of about log₂ n.
+wrong: With the biggest item as every pivot, each partition only takes one item off the part. Instead of halving, the parts shrink by one: O(n²).
+
+=== task: code medium
+title: Biggest first
+prompt: Write `quicksort_desc(items)` that sorts the list from **biggest to smallest** in place with quicksort, and returns it. Use a helper `sort_part(items, lo, hi)` with Lomuto partitioning, moving the **bigger** items in front of the pivot. The speed check uses shuffled lists. Don't use `sorted`, `.sort()` or any reversing.
+starter:
+```python
+def sort_part(items, lo, hi):
+    if lo < hi:
+        # partition, then sort both sides
+        pass
+
+def quicksort_desc(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+solution:
+```python
+def sort_part(items, lo, hi):
+    if lo < hi:
+        pivot = items[hi]
+        i = lo
+        for j in range(lo, hi):
+            if items[j] > pivot:
+                items[i], items[j] = items[j], items[i]
+                i += 1
+        items[i], items[hi] = items[hi], items[i]
+        sort_part(items, lo, i - 1)
+        sort_part(items, i + 1, hi)
+
+def quicksort_desc(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+tests:
+- quicksort_desc([7, 2, 9, 4, 3, 8, 5])
+- quicksort_desc([])
+- quicksort_desc([1])
+- quicksort_desc([2, 2, 1])
+- quicksort_desc([-1, 3, 0])
+speed: setup=items = [(i * 7919) % 10007 for i in range(n)] | call=quicksort_desc(items) | target=O(n log n)
+slow:
+```python
+def sort_part(items, lo, hi):
+    for end in range(hi, lo, -1):
+        for i in range(lo, end):
+            if items[i] < items[i + 1]:
+                items[i], items[i + 1] = items[i + 1], items[i]
+
+def quicksort_desc(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+forbid[sorted(]: Write the quicksort yourself.
+forbid[.sort(]: Write the quicksort yourself.
+forbid[reverse]: Sort biggest first directly, instead of reversing.
+forbid[[::-1]]: Sort biggest first directly, instead of reversing.
+fail[1]: [9, 8, 7, 5, 4, 3, 2].
+fail[4]: [2, 2, 1].
+fail[5]: [3, 0, -1].
+hint: Partition with `items[j] > pivot`, so the bigger items go in front.
+hint: Then sort both sides with recursive calls, leaving out the pivot at index i.
+hint: A simpler O(n²) sort would be too slow for the speed check.
+right: Flipping the partition's comparison puts bigger items first, and on shuffled data quicksort stays O(n log n).
+wrong: In `sort_part`, partition with `>` instead of `<`, put the pivot at i, and recurse on `lo` to `i - 1` and `i + 1` to `hi`.
+
+=== task: code medium
+title: Many equal items
+prompt: The simple quicksort is slow when many items are equal: they all land in `rest`, and each call only removes one of them. Write `quicksort3(items)` that returns a new sorted list, splitting into three lists instead: items smaller than the pivot, items **equal** to it, and items bigger than it. Only the smaller and bigger lists need sorting. The speed check uses lists with only three different values. Don't use `sorted` or `.sort()`.
+starter:
+```python
+def quicksort3(items):
+    if len(items) <= 1:
+        return items
+    pivot = items[-1]
+    # your code here
+```
+solution:
+```python
+def quicksort3(items):
+    if len(items) <= 1:
+        return items
+    pivot = items[-1]
+    smaller = [x for x in items if x < pivot]
+    equal = [x for x in items if x == pivot]
+    bigger = [x for x in items if x > pivot]
+    return quicksort3(smaller) + equal + quicksort3(bigger)
+```
+tests:
+- quicksort3([3, 1, 2, 3, 1])
+- quicksort3([])
+- quicksort3([5, 5, 5])
+- quicksort3([2, 1])
+- quicksort3([4, 1, 4, 1, 4])
+speed: setup=items = [i % 3 for i in range(n)] | call=quicksort3(items) | target=O(n log n) | sizes=50,100,200,400
+slow:
+```python
+def quicksort3(items):
+    if len(items) <= 1:
+        return items
+    pivot = items[-1]
+    smaller = [x for x in items[:-1] if x < pivot]
+    rest = [x for x in items[:-1] if x >= pivot]
+    return quicksort3(smaller) + [pivot] + quicksort3(rest)
+```
+forbid[sorted(]: Split into three lists yourself.
+forbid[.sort(]: Split into three lists yourself.
+fail[1]: [1, 1, 2, 3, 3].
+fail[3]: All equal: [5, 5, 5].
+fail[5]: [1, 1, 4, 4, 4].
+hint: Three comprehensions: `x < pivot`, `x == pivot` and `x > pivot`. The equal list includes the pivot itself.
+hint: Return `quicksort3(smaller) + equal + quicksort3(bigger)`.
+hint: The equal items are already in place relative to each other, so they need no sorting.
+right: All the items equal to the pivot are finished in one step, so a list with a few distinct values needs only a few levels.
+wrong: Split the list into smaller, equal and bigger items, sort only the smaller and bigger lists, and join the three.
+
+=== task: predict medium
+title: Equal items change order
+code:
+```python
+cards = [("a", 2), ("b", 1), ("c", 2), ("d", 1), ("e", 2)]
+pivot = cards[-1][1]
+i = 0
+for j in range(len(cards) - 1):
+    if cards[j][1] < pivot:
+        cards[i], cards[j] = cards[j], cards[i]
+        i += 1
+cards[i], cards[-1] = cards[-1], cards[i]
+print([name for name, n in cards])
+```
+wrong[['b', 'd', 'a', 'c', 'e']]: That's the stable order. The swaps move a to the back part early, and the final swap puts e in front of it.
+wrong[['b', 'd', 'e', 'c', 'a']]: The swap with d moves a from index 1 to index 3, and then the pivot e swaps with the c at index 2: e, a, c.
+wrong[['d', 'b', 'e', 'a', 'c']]: b is found first and goes to index 0; d goes to index 1.
+hint: The 1s (b and d) are swapped to the front, one at a time.
+hint: Each swap sends the item at index i to where the smaller item was.
+right: `['b', 'd', 'e', 'a', 'c']`: one partition already scrambles the 2s. They were a, c, e, and now they're e, a, c.
+wrong: b swaps with a: [b, a, c, d, e]. d swaps with a: [b, d, c, a, e]. The pivot e swaps with c: [b, d, e, a, c].
+
+=== task: cells medium
+title: One partition, in detail
+prompt: Lomuto partitioning runs on `[5, 9, 2, 7, 1, 6]`, with the last item, 6, as the pivot. Fill in the list afterwards, the pivot's index, and the two sides quicksort will sort next.
+labels: the list after partitioning | the pivot's index | the left side | the right side
+answer: [5, 2, 1, 6, 9, 7] | 3 | [5, 2, 1] | [9, 7]
+wrong[[1, 2, 5, 6, 7, 9] | 3 | [1, 2, 5] | [7, 9]]: Partitioning doesn't sort the sides: they stay in the order the swaps left them.
+wrong[[5, 2, 1, 6, 9, 7] | 3 | [5, 2, 1, 6] | [9, 7]]: The pivot is in its final place, so it belongs to neither side.
+wrong[[5, 2, 1, 9, 7, 6] | 5 | [5, 2, 1, 9, 7] | []]: The last step swaps the pivot with the item at index i, 3.
+hint: The smaller items are 5, 2 and 1. Each is swapped to index i in turn.
+hint: The pivot then swaps with the item at index 3.
+right: 5 swaps with itself, 2 goes to index 1 and 1 to index 2, then 6 swaps with the 7 at index 3. The sides are indexes 0 to 2 and 4 to 5.
+wrong: Trace i: 5 (swap with itself, i = 1), 2 (swap with 9, i = 2), 1 (swap with 9 again, i = 3). Then swap the pivot with the 7 at index 3: [5, 2, 1, 6, 9, 7].
+
+=== task: fill medium
+title: A random pivot
+prompt: This quicksort picks a random pivot: a random index r from `lo` to `hi`, whose item is swapped to the end so that `partition` can use it as usual. Fill in the blanks so that the program prints:
+
+```output
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+code:
+```python
+import random
+
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+def quicksort(items, lo, hi):
+    if lo < hi:
+        r = random.randint(lo, ??)
+        items[r], items[??] = items[hi], items[r]
+        p = partition(items, lo, hi)
+        quicksort(items, lo, p - 1)
+        quicksort(items, p + 1, hi)
+
+random.seed(1)
+nums = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+quicksort(nums, 0, len(nums) - 1)
+print(nums)
+```
+answer: hi | hi
+wrong[hi | lo]: The swap has to exchange `items[r]` and `items[hi]`. With `items[lo]` on the left, the item at hi is copied over the item at lo, which is lost.
+wrong[len(items) - 1 | hi]: r must stay inside this part, from lo to hi. Picking from the whole list can swap in an item from another part, or one that's already in its final place.
+hint: `random.randint(a, b)` includes both a and b.
+hint: The pivot has to end up at index hi, where `partition` looks for it.
+right: `randint(lo, hi)` picks any item of the part, and swapping it with `items[hi]` makes it the pivot that `partition` expects.
+wrong: Pick `r = random.randint(lo, hi)`, then swap `items[r]` and `items[hi]` so the random item is the last one.
+
+=== task: mcq medium
+title: A random pivot on sorted data
+prompt: Quicksort with a random pivot sorts a list of 1,000,000 items that's already sorted. About how many comparisons does it make?
+* Tens of millions, about n × log₂ n times a small number :: Right. A random pivot doesn't care how the list is ordered: on average it lands near the middle.
+- About 500 billion, n × (n − 1) / 2 :: That's the last-item pivot on sorted data. A random pivot is very unlikely to be the biggest or smallest every time.
+- About 1,000,000 :: One pass can't sort the list: each level of the recursion compares every item once.
+- About 20 :: That's the number of levels, roughly. Each level compares about n items.
+hint: How likely is a random pivot to be the biggest item of its part, again and again?
+hint: log₂ 1,000,000 is about 20.
+right: With random pivots the expected number of comparisons is about 1.4 × n × log₂ n, roughly 28 million for a million items, whatever the input order.
+wrong: Random pivots split parts unevenly sometimes, but on average they're close to the middle, giving about log₂ n levels of n comparisons: tens of millions, not hundreds of billions.
+
+=== task: predict medium
+title: Pivot by pivot
+code:
+```python
+pivots = []
+
+def partition(items, lo, hi):
+    pivot = items[hi]
+    pivots.append(pivot)
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+def quicksort(items, lo, hi):
+    if lo < hi:
+        p = partition(items, lo, hi)
+        quicksort(items, lo, p - 1)
+        quicksort(items, p + 1, hi)
+
+nums = [3, 7, 1, 6, 4]
+quicksort(nums, 0, 4)
+print(pivots, nums)
+```
+wrong[[4, 6, 1] [1, 3, 4, 6, 7]]: After the first partition the list is [3, 1, 4, 6, 7], so the right side is [6, 7], whose pivot is its last item, 7. And the left side is sorted first.
+wrong[[4, 1, 7, 3, 6] [1, 3, 4, 6, 7]]: Parts with one item don't call partition: `if lo < hi` stops them.
+wrong[[4, 7, 1] [1, 3, 4, 6, 7]]: The left side, indexes 0 to 1, is sorted before the right side.
+hint: The first partition gives [3, 1, 4, 6, 7].
+hint: Then the left side [3, 1] is partitioned, then the right side [6, 7].
+right: `[4, 1, 7] [1, 3, 4, 6, 7]`: 4 first, then the left side's pivot 1, then the right side's pivot 7. Single items need no partition.
+wrong: Partition around 4: [3, 1, 4, 6, 7]. The left side [3, 1] has pivot 1, and the right side [6, 7] has pivot 7. After that, every part has one item.
+
+=== task: multi medium
+title: Good pivot choices
+prompt: Quicksort sorts a list that's already sorted. Choose **every** pivot choice that avoids the O(n²) worst case on that list.
+* A random item of the part :: Right. On average it lands near the middle, whatever the order.
+* The median of the first, middle and last items :: Right. On sorted data that's the middle item, a perfect split.
+* The middle item of the part :: Right. On sorted data the middle item is the median.
+- The last item :: On sorted data it's always the biggest: n levels.
+- The first item :: On sorted data it's always the smallest: n levels.
+- The smallest item of the part :: The smallest item always gives an empty side, on any data.
+hint: For each choice, where does the pivot land in a sorted part?
+hint: A good pivot splits the part into two sides of similar size.
+right: Random, middle and median-of-three pivots all split a sorted part near its middle. The first, last or smallest item splits off one item at a time.
+wrong: On sorted data, the first and last items are the smallest and biggest, and the smallest item is always the worst. The middle item, the median of three, and a random item split the part well.
+
+=== task: parsons medium
+title: The first item as pivot
+prompt: This version of Lomuto partitioning uses the **first** item as the pivot. Smaller items are swapped to the front part right after it, and finally the pivot swaps with the last of them. Arrange the lines so that the program prints:
+
+```output
+2 [3, 1, 4, 6, 7]
+```
+
+Not every line is needed.
+lines:
+```python
+def partition_first(items, lo, hi):
+    pivot = items[lo]
+    i = lo + 1
+    for j in range(lo + 1, hi + 1):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[lo], items[i - 1] = items[i - 1], items[lo]
+    return i - 1
+
+nums = [4, 7, 1, 6, 3]
+print(partition_first(nums, 0, 4), nums)
+```
+distractors:
+```python
+    for j in range(lo + 1, hi):
+    items[lo], items[i] = items[i], items[lo]
+```
+hint: The scan runs from the item after the pivot up to and including hi.
+hint: After the scan, the last smaller item is at index i − 1, and that's where the pivot goes.
+right: 1 and 3 are smaller than 4, so they're swapped to indexes 1 and 2, and then the pivot swaps with the 3 at index 2: [3, 1, 4, 6, 7].
+wrong: Take `items[lo]` as the pivot, start i at lo + 1, scan j from lo + 1 to hi swapping smaller items to i, then swap the pivot with `items[i - 1]` and return i − 1.
+
+=== task: order medium
+title: The median of three
+prompt: Put the steps of choosing a median-of-three pivot, and partitioning with it, in order.
+items:
+- Look at the items at lo, at the middle index `(lo + hi) // 2`, and at hi
+- Find which of the three has the middle value
+- Swap that item to index hi
+- Partition as usual, with `items[hi]` as the pivot
+hint: The usual partition expects its pivot at hi.
+hint: You need the three values before you can pick the middle one.
+right: Look at three items, take the one in the middle by value, move it to hi, and partition as before.
+wrong: Read the first, middle and last items, pick their median, swap it to the end, and then run the normal Lomuto partition.
+
+=== task: code hard
+title: The k-th smallest, quickly
+prompt: **Quickselect** finds the k-th smallest item without sorting everything. Partition, then look at where the pivot landed: if it's at index k − 1, it's the answer; otherwise only the side that contains index k − 1 needs searching. Write `kth_smallest(items, k)` (k = 1 is the smallest) that works on a copy of the list with Lomuto partitioning and a loop over the part `lo` to `hi`. The speed check finds the middle item of longer and longer shuffled lists.
+starter:
+```python
+def kth_smallest(items, k):
+    a = items[:]
+    lo = 0
+    hi = len(a) - 1
+    # your code here
+```
+solution:
+```python
+def kth_smallest(items, k):
+    a = items[:]
+    lo = 0
+    hi = len(a) - 1
+    while True:
+        pivot = a[hi]
+        i = lo
+        for j in range(lo, hi):
+            if a[j] < pivot:
+                a[i], a[j] = a[j], a[i]
+                i += 1
+        a[i], a[hi] = a[hi], a[i]
+        if i == k - 1:
+            return a[i]
+        if i < k - 1:
+            lo = i + 1
+        else:
+            hi = i - 1
+```
+tests:
+- kth_smallest([7, 2, 9, 4, 3, 8, 5], 1)
+- kth_smallest([7, 2, 9, 4, 3, 8, 5], 4)
+- kth_smallest([7, 2, 9, 4, 3, 8, 5], 7)
+- kth_smallest([5], 1)
+- kth_smallest([2, 2, 1], 2)
+- (lambda a: (kth_smallest(a, 2), a))([3, 1, 2])
+speed: setup=items = [(i * 7919) % n for i in range(n)] | call=kth_smallest(items, n // 2) | target=O(n log n)
+slow:
+```python
+def kth_smallest(items, k):
+    rest = items[:]
+    for _ in range(k - 1):
+        smallest = 0
+        for i in range(1, len(rest)):
+            if rest[i] < rest[smallest]:
+                smallest = i
+        rest.pop(smallest)
+    smallest = 0
+    for i in range(1, len(rest)):
+        if rest[i] < rest[smallest]:
+            smallest = i
+    return rest[smallest]
+```
+forbid[sorted(]: Find it with partitions instead of sorting.
+forbid[.sort(]: Find it with partitions instead of sorting.
+fail[1]: The smallest is 2.
+fail[2]: The 4th smallest of 2, 3, 4, 5, 7, 8, 9 is 5.
+fail[3]: The 7th smallest is the biggest, 9.
+fail[5]: Sorted, the list is [1, 2, 2], so the 2nd smallest is 2.
+fail[6]: The answer is 2, and the list passed in must stay [3, 1, 2]: work on the copy.
+hint: Partition `a[lo:hi + 1]` as usual; the pivot ends at index i.
+hint: If i == k − 1, return `a[i]`. If i < k − 1, the answer is on the right: `lo = i + 1`. Otherwise `hi = i - 1`.
+hint: Sorting the whole list first, or removing the smallest item k − 1 times, does far more work than needed.
+right: Each partition throws away one side, so on average the parts halve: n + n/2 + n/4 + … ≈ 2n steps, O(n) on average.
+wrong: Repeatedly partition the current part, then keep only the side where index k − 1 lies, until the pivot itself lands at index k − 1.
+
+=== task: code hard
+title: Median-of-three quicksort
+prompt: Write `quicksort_m3(items)` that sorts the list in place and returns it, using quicksort with a median-of-three pivot: before each partition of `lo` to `hi`, look at the items at lo, at `mid = (lo + hi) // 2` and at hi, find the index of the one with the middle value, and swap that item to hi. Then partition as usual. The speed check uses lists that are already sorted, which would make a last-item pivot O(n²).
+starter:
+```python
+def median_index(items, lo, hi):
+    mid = (lo + hi) // 2
+    # return the index (lo, mid or hi) of the middle value
+
+def sort_part(items, lo, hi):
+    if lo < hi:
+        # move the median to hi, partition, sort both sides
+        pass
+
+def quicksort_m3(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+solution:
+```python
+def median_index(items, lo, hi):
+    mid = (lo + hi) // 2
+    a = items[lo]
+    b = items[mid]
+    c = items[hi]
+    if (a <= b <= c) or (c <= b <= a):
+        return mid
+    if (b <= a <= c) or (c <= a <= b):
+        return lo
+    return hi
+
+def sort_part(items, lo, hi):
+    if lo < hi:
+        m = median_index(items, lo, hi)
+        items[m], items[hi] = items[hi], items[m]
+        pivot = items[hi]
+        i = lo
+        for j in range(lo, hi):
+            if items[j] < pivot:
+                items[i], items[j] = items[j], items[i]
+                i += 1
+        items[i], items[hi] = items[hi], items[i]
+        sort_part(items, lo, i - 1)
+        sort_part(items, i + 1, hi)
+
+def quicksort_m3(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+tests:
+- quicksort_m3([7, 2, 9, 4, 3, 8, 5])
+- quicksort_m3([])
+- quicksort_m3([2, 1])
+- quicksort_m3([1, 2, 3, 4, 5, 6])
+- quicksort_m3([3, 3, 1, 2])
+- median_index([5, 1, 9], 0, 2)
+- median_index([1, 7, 4], 0, 2)
+speed: setup=items = list(range(n)) | call=quicksort_m3(items) | target=O(n log n) | sizes=50,100,200,400
+slow:
+```python
+def median_index(items, lo, hi):
+    mid = (lo + hi) // 2
+    a = items[lo]
+    b = items[mid]
+    c = items[hi]
+    if (a <= b <= c) or (c <= b <= a):
+        return mid
+    if (b <= a <= c) or (c <= a <= b):
+        return lo
+    return hi
+
+def sort_part(items, lo, hi):
+    if lo < hi:
+        pivot = items[hi]
+        i = lo
+        for j in range(lo, hi):
+            if items[j] < pivot:
+                items[i], items[j] = items[j], items[i]
+                i += 1
+        items[i], items[hi] = items[hi], items[i]
+        sort_part(items, lo, i - 1)
+        sort_part(items, i + 1, hi)
+
+def quicksort_m3(items):
+    sort_part(items, 0, len(items) - 1)
+    return items
+```
+forbid[sorted(]: Write the quicksort yourself.
+forbid[.sort(]: Write the quicksort yourself.
+fail[1]: [2, 3, 4, 5, 7, 8, 9].
+fail[4]: Already sorted lists must come out the same.
+fail[6]: Of 5, 1 and 9, the middle value is 5, at index 0.
+fail[7]: Of 1, 7 and 4, the middle value is 4, at index 2.
+hint: The middle value b satisfies `a <= b <= c` or `c <= b <= a`; check each of the three in turn.
+hint: In sort_part, swap `items[m]` and `items[hi]` before partitioning.
+hint: Without the median step, a sorted list makes every pivot the biggest item: n levels of recursion and O(n²) time.
+right: On sorted data the median of three is the middle item, so every part splits in half: O(n log n) instead of O(n²), and only O(log n) calls deep.
+wrong: Find the index of the median of `items[lo]`, `items[mid]` and `items[hi]`, swap it to hi, then partition and recurse as usual.
+
+=== task: code hard
+title: Three colours
+prompt: A list holds only the numbers 0, 1 and 2. Write `sort_colors(items)` that sorts it in place in **one pass** with a three-way partition around 1, and returns it. Keep three indexes: `low` (everything before it is 0), `mid` (the item being looked at) and `high` (everything after it is 2). A 0 is swapped to `low`, a 2 is swapped to `high`, and a 1 stays where it is. The speed check uses longer and longer lists. Don't use `sorted`, `.sort()` or `count`.
+starter:
+```python
+def sort_colors(items):
+    low = 0
+    mid = 0
+    high = len(items) - 1
+    # your code here
+    return items
+```
+solution:
+```python
+def sort_colors(items):
+    low = 0
+    mid = 0
+    high = len(items) - 1
+    while mid <= high:
+        if items[mid] == 0:
+            items[low], items[mid] = items[mid], items[low]
+            low += 1
+            mid += 1
+        elif items[mid] == 2:
+            items[mid], items[high] = items[high], items[mid]
+            high -= 1
+        else:
+            mid += 1
+    return items
+```
+tests:
+- sort_colors([2, 0, 1, 2, 1, 0])
+- sort_colors([])
+- sort_colors([1, 1, 1])
+- sort_colors([2, 2, 0, 0])
+- sort_colors([0, 1, 2])
+- sort_colors([2, 1, 0, 2, 0, 1, 1])
+speed: setup=items = [2 - (i % 3) for i in range(n)] | call=sort_colors(items) | target=O(n)
+slow:
+```python
+def sort_colors(items):
+    for i in range(1, len(items)):
+        key = items[i]
+        j = i - 1
+        while j >= 0 and items[j] > key:
+            items[j + 1] = items[j]
+            j -= 1
+        items[j + 1] = key
+    return items
+```
+forbid[sorted(]: Partition in one pass instead.
+forbid[.sort(]: Partition in one pass instead.
+forbid[count(]: Partition in one pass instead of counting.
+fail[1]: [0, 0, 1, 1, 2, 2].
+fail[4]: [0, 0, 2, 2].
+fail[6]: [0, 0, 1, 1, 1, 2, 2].
+hint: Loop while `mid <= high`.
+hint: After swapping a 2 to high, don't move mid on: the item that came back from high hasn't been looked at yet.
+hint: After swapping a 0 to low, move both low and mid on: the item that came back from low has already been looked at.
+right: Each step either moves mid on or moves high back, so one pass of at most n steps sorts the list: O(n), with all the 1s gathered in the middle, like a three-way partition.
+wrong: Look at `items[mid]`: a 0 swaps to low (low and mid move on), a 2 swaps to high (high moves back), and a 1 lets mid move on. Stop when mid passes high.
+
+=== task: code hard
+title: Quicksort without recursion
+prompt: Write `quicksort_stack(items)` that sorts the list in place and returns it, using a **stack** of parts to sort instead of recursive calls. Start with the part (0, n − 1) on the stack. Repeatedly pop a part (lo, hi); if it has at least two items, partition it and push its two sides. Don't use `sorted` or `.sort()`.
+starter:
+```python
+def quicksort_stack(items):
+    stack = [(0, len(items) - 1)]
+    # your code here
+    return items
+```
+solution:
+```python
+def quicksort_stack(items):
+    stack = [(0, len(items) - 1)]
+    while stack:
+        lo, hi = stack.pop()
+        if lo < hi:
+            pivot = items[hi]
+            i = lo
+            for j in range(lo, hi):
+                if items[j] < pivot:
+                    items[i], items[j] = items[j], items[i]
+                    i += 1
+            items[i], items[hi] = items[hi], items[i]
+            stack.append((lo, i - 1))
+            stack.append((i + 1, hi))
+    return items
+```
+tests:
+- quicksort_stack([7, 2, 9, 4, 3, 8, 5])
+- quicksort_stack([])
+- quicksort_stack([1])
+- quicksort_stack([3, 3, 1])
+- quicksort_stack([5, 4, 3, 2, 1])
+- quicksort_stack([2, -1, 0])
+forbid[sorted(]: Sort with the stack of parts.
+forbid[.sort(]: Sort with the stack of parts.
+forbid[quicksort_stack(items, ]: Use the stack instead of recursive calls.
+fail[1]: [2, 3, 4, 5, 7, 8, 9].
+fail[4]: [1, 3, 3].
+fail[5]: [1, 2, 3, 4, 5].
+hint: `while stack:` pop `lo, hi = stack.pop()`, and skip parts with `lo >= hi`.
+hint: Partition the part, then push `(lo, i - 1)` and `(i + 1, hi)`.
+hint: The order of the two pushes doesn't matter: every part is sorted on its own.
+right: The stack holds the parts still waiting to be sorted, which is what the call stack held in the recursive version.
+wrong: Keep a list of (lo, hi) parts. Pop one, partition it if it has two or more items, and push its two sides, until the stack is empty.
+
+=== task: predict hard
+title: All the same
+code:
+```python
+def comparisons(items, lo, hi):
+    if lo >= hi:
+        return 0
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return (hi - lo) + comparisons(items, lo, i - 1) + comparisons(items, i + 1, hi)
+
+print(comparisons([5, 5, 5, 5, 5], 0, 4), comparisons([2, 1, 2, 1, 2], 0, 4))
+```
+wrong[4 4]: Each side is partitioned too. With all items equal, nothing is smaller than the pivot, so the pivot goes to the front and the right side has all the others: 4 + 3 + 2 + 1.
+wrong[10 4]: After the first partition, [1, 1, 2, 2, 2] still has to sort its sides: [1, 1] costs 1 more, and [2, 2] costs 1 more.
+wrong[0 6]: Equal items are still compared with the pivot; nothing skips them.
+hint: With `<`, an item equal to the pivot isn't moved to the front.
+hint: For [2, 1, 2, 1, 2], the first pivot 2 has two smaller items, the 1s.
+right: `10 6`: equal items are never smaller than the pivot, so a list of five 5s peels off one item per level, like a sorted list: 4 + 3 + 2 + 1. A three-way partition avoids that.
+wrong: Five equal items: the pivot always goes to the front of its part, so the parts shrink by one: 10. [2, 1, 2, 1, 2]: 4 comparisons give [1, 1, 2, 2, 2] with the pivot at index 2, then 1 for [1, 1] and 1 for [2, 2]: 6.
+
+=== task: predict hard
+title: Smaller, or smaller or equal?
+code:
+```python
+def partition(items, strict):
+    hi = len(items) - 1
+    pivot = items[hi]
+    i = 0
+    for j in range(hi):
+        if items[j] < pivot or (not strict and items[j] == pivot):
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i, items
+
+print(partition([3, 5, 3, 1, 3], True))
+print(partition([3, 5, 3, 1, 3], False))
+```
+wrong[(1, [1, 3, 3, 3, 5])\n(1, [1, 3, 3, 3, 5])]: With `<=`, the two 3s in front are moved to the front part too, so the pivot ends up after them, at index 3.
+wrong[(3, [3, 3, 1, 3, 5])\n(1, [1, 3, 3, 3, 5])]: The first call is the strict one: only 1 is strictly smaller than 3.
+wrong[(1, [1, 3, 3, 3, 5])\n(3, [1, 3, 3, 3, 5])]: The swaps with `<=` happen in scan order: 3 (stays), 3 (to index 1), then 1 (to index 2): [3, 3, 1, 3, 5].
+hint: Strict: only the 1 moves to the front, and the pivot lands at index 1.
+hint: Not strict: the 3 at index 0, the 3 at index 2 and the 1 all move to the front part, in that order.
+right: With `<` the pivot lands before the other 3s, at index 1; with `<=` it lands after them, at index 3. Either way the pivot's sides are correct, but the equal items end up in different places.
+wrong: Strict: only 1 < 3, so it swaps to index 0 and the pivot to index 1: [1, 3, 3, 3, 5]. Not strict: 3, 3 and 1 go to indexes 0, 1 and 2, and the pivot to index 3: [3, 3, 1, 3, 5].
+
+=== task: cells hard
+title: Three pivots on a sorted list
+prompt: Quicksort sorts the sorted list `[1, 2, 3, 4, 5, 6, 7]` with Lomuto partitioning. Before each partition, a different item of the part is swapped to hi to be the pivot. Fill in the total number of comparisons for each choice. (A partition from lo to hi makes hi − lo comparisons.)
+labels: the last item | the first item | the middle item, at (lo + hi) // 2
+answer: 21 | 21 | 10
+wrong[21 | 10 | 10]: On sorted data, the first item is the smallest of its part, which is as bad as the biggest: one side is always empty.
+wrong[21 | 21 | 12]: The middle item splits 7 items into 3 and 3, and each 3 into 1 and 1: 6 + 2 + 2 = 10.
+wrong[28 | 28 | 10]: A partition of 7 items makes 6 comparisons, not 7: 6 + 5 + 4 + 3 + 2 + 1 = 21.
+hint: With the last or the first item, each partition removes only the pivot from the part.
+hint: With the middle item, 7 items split into 3 and 3.
+right: The last and first items are the biggest and smallest of their parts, so the parts shrink by one: 21 comparisons. The middle item halves them: 10.
+wrong: Last or first: 6 + 5 + 4 + 3 + 2 + 1 = 21. Middle: 6 for the whole list, then 2 for each side of 3 items, and nothing for single items: 10.
+
+=== task: multi hard
+title: Changes that break quicksort
+prompt: Each change is made to the quicksort and partition from this lesson. Choose **every** change that makes it fail for some list of numbers, by giving a wrong result or never finishing.
+* `quicksort(items, lo, p)` instead of `quicksort(items, lo, p - 1)` :: Right. When the pivot is the biggest item of the part, p is hi, so the call gets the same part again, forever.
+* Leaving out the final swap, but still returning i :: Right. The pivot stays at hi, and the item at i is wrongly treated as being in its final place.
+* `i = 0` instead of `i = lo` in partition :: Right. For a part that doesn't start at 0, smaller items get swapped out of the part, into another one.
+- `for j in range(lo, hi + 1):` :: With `<`, the pivot isn't smaller than itself, so the extra step does nothing.
+- `if lo <= hi:` in quicksort :: A part with one item is partitioned against itself, which changes nothing.
+- `if items[j] <= pivot:` :: Items equal to the pivot go in front instead of behind. Numbers still come out sorted.
+hint: Try [1, 2] and [2, 1], and think about a part that starts at index 3.
+hint: Which changes break the promise that the pivot is in its final place, or keep a part from shrinking?
+right: A side that includes the pivot can repeat forever, a missing final swap leaves the pivot out of place, and `i = 0` mixes parts. The other three changes add a harmless step or move equal items.
+wrong: Every call must work on a strictly smaller part, the pivot must really end at index i, and partition must stay inside lo to hi. Scanning the pivot itself, partitioning single items, and `<=` keep all of that.
+
+=== task: fill hard
+title: Two pointers from both ends
+prompt: **Hoare-style partitioning** uses the middle item's value as the pivot and two indexes moving towards each other. `i` skips items smaller than the pivot, `j` skips items bigger than it, and then the two items they stop at swap. When the indexes cross, everything from `lo` to `j` is at most the pivot and everything from `i` to `hi` is at least the pivot. Fill in the blanks so that the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6, 7, 8]
+```
+code:
+```python
+def quicksort(items, lo, hi):
+    if lo >= hi:
+        return
+    pivot = items[(lo + hi) // 2]
+    i = lo
+    j = hi
+    while i <= j:
+        while items[i] < pivot:
+            i += 1
+        while items[j] > pivot:
+            j -= 1
+        if i <= j:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+            j -= 1
+    quicksort(items, lo, ??)
+    quicksort(items, ??, hi)
+
+nums = [5, 8, 1, 7, 3, 6, 2, 4]
+quicksort(nums, 0, len(nums) - 1)
+print(nums)
+```
+answer: j | i
+wrong[j - 1 | i + 1]: The item at j and the item at i can still be out of order with their own sides. Leaving them out of both calls leaves them unsorted.
+wrong[hi | lo]: Each call would get the whole part again, so it never gets smaller: a RecursionError.
+hint: When the loop ends, j < i.
+hint: The left side ends at j and the right side starts at i.
+right: When the indexes cross, lo to j holds the items no bigger than the pivot and i to hi the items no smaller, so those two ranges are the sides.
+wrong: Sort `lo` to `j` and `i` to `hi`. Unlike Lomuto, the pivot isn't fixed in place, so the sides end at j and start at i.
+
+=== task: parsons hard
+title: Keeping the stack short
+prompt: With bad pivots, quicksort's recursion can go n calls deep. This version only recurses into the **smaller** side, and handles the bigger side by looping, which keeps the depth at O(log n). Arrange the lines so that the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+
+`partition` is defined after it, below. Not every line is needed.
+lines:
+```python
+def quicksort(items, lo, hi):
+    while lo < hi:
+        p = partition(items, lo, hi)
+        if p - lo < hi - p:
+            quicksort(items, lo, p - 1)
+            lo = p + 1
+        else:
+            quicksort(items, p + 1, hi)
+            hi = p - 1
+```
+distractors:
+```python
+            hi = p
+            lo = p + 2
+```
+after:
+```python
+def partition(items, lo, hi):
+    pivot = items[hi]
+    i = lo
+    for j in range(lo, hi):
+        if items[j] < pivot:
+            items[i], items[j] = items[j], items[i]
+            i += 1
+    items[i], items[hi] = items[hi], items[i]
+    return i
+
+nums = [6, 5, 4, 3, 2, 1]
+quicksort(nums, 0, len(nums) - 1)
+print(nums)
+```
+hint: `p - lo` is the size of the left side and `hi - p` the size of the right side.
+hint: After recursing into the smaller side, shrink the range to the bigger side and loop.
+right: Each recursive call gets at most half of its part, so calls are at most O(log n) deep, even when the pivots are bad. The bigger side is handled by the loop.
+wrong: Loop while lo < hi: partition, recurse into the smaller side, then move lo or hi past the pivot so the loop continues with the bigger side.
