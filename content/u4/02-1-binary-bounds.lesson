@@ -1,0 +1,1231 @@
+=== lesson
+id: algo-binary-bounds
+title: First and last position
+summary: When a sorted list holds several copies of a value, plain binary search returns whichever copy it meets first. You'll change the search so it finds the first copy or the last copy, count copies in O(log n), find insertion points, and see how `bisect_left` and `bisect_right` answer all of these questions in one line each.
+
+=== learn
+### Which copy does binary search find?
+A sorted list can hold the same value several times. The binary search from the last lesson stops at the first copy a middle lands on, which can be any of them:
+```python
+def binary_search(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+
+nums = [1, 3, 3, 3, 3, 5, 8]
+print(binary_search(nums, 3))
+```
+```output
+3
+```
+| index | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| item | 1 | 3 | 3 | 3 | 3 | 5 | 8 |
+
+The 3s fill indexes 1 to 4, and the search returned 3, a copy in the middle, because the very first middle, (0 + 6) // 2 = 3, held a 3. Many questions need one particular copy: the first time a sorted log mentions an error, the last order before a deadline, or how many copies there are. The fix is a small change: when the middle item matches, **remember it and keep searching** on one side.
+
+### The first copy: keep looking left
+To find the **first** copy, a match isn't the end: there might be an earlier copy to its left. So the search remembers the match in `answer` and carries on in the left half:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(first_index(nums, 3), first_index(nums, 8), first_index(nums, 4))
+```
+```output
+1 6 -1
+```
+Searching for 3:
+
+| check | lo | hi | mid | item | then |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0 | 6 | 3 | 3 | a match: answer = 3, look left: hi = 2 |
+| 2 | 0 | 2 | 1 | 3 | a match: answer = 1, look left: hi = 0 |
+| 3 | 0 | 0 | 0 | 1 | too small: lo = 1 |
+| none | 1 | 0 | | | lo > hi: stop and return answer, 1 |
+
+The loop doesn't stop at a match, so it always runs until `lo` passes `hi`, and `answer` ends up at the leftmost match. 4 isn't in the list, so `answer` stays −1. Animation 1 runs this search.
+
+### The last copy: keep looking right
+The **last** copy is the mirror image: on a match, remember it and carry on in the right half, with `lo = mid + 1`:
+```python
+def last_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            lo = mid + 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(last_index(nums, 3), last_index(nums, 1), last_index(nums, 4))
+```
+```output
+4 0 -1
+```
+Searching for 3:
+
+| check | lo | hi | mid | item | then |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0 | 6 | 3 | 3 | a match: answer = 3, look right: lo = 4 |
+| 2 | 4 | 6 | 5 | 5 | too big: hi = 4 |
+| 3 | 4 | 4 | 4 | 3 | a match: answer = 4, look right: lo = 5 |
+| none | 5 | 4 | | | lo > hi: stop and return answer, 4 |
+
+The only difference from `first_index` is the line after a match: `hi = mid - 1` looks left for an earlier copy, and `lo = mid + 1` looks right for a later one.
+
+### Counting copies in O(log n)
+In a sorted list, the copies of a value sit next to each other, from the first copy to the last. So the number of copies is `last - first + 1`:
+```python
+def count_copies(items, target):
+    first = first_index(items, target)
+    if first == -1:
+        return 0
+    return last_index(items, target) - first + 1
+
+print(count_copies(nums, 3), count_copies(nums, 8), count_copies(nums, 4))
+```
+```output
+4 1 0
+```
+The 3s run from index 1 to index 4: 4 − 1 + 1 = 4 copies. The `+ 1` counts both ends: indexes 1, 2, 3 and 4 are four places, not three. When the first search finds nothing, there are no copies, and the second search isn't needed.
+
+Each search makes about log₂ n checks, so counting is O(log n). `nums.count(3)` gives the same answer, but it checks every item: O(n). For a sorted list of a million items, that's about 40 checks against a million.
+
+### Insertion points
+An **insertion point** is a position where a value could be inserted while keeping the list sorted. When the list already has copies of the value, there are two natural places: before all the copies, or after all of them. In `nums = [1, 3, 3, 3, 3, 5, 8]`:
+
+| x | left insertion point: before any copies | right insertion point: after any copies |
+| --- | --- | --- |
+| 0 | 0 | 0 |
+| 1 | 0 | 1 |
+| 3 | 1 | 5 |
+| 4 | 5 | 5 |
+| 8 | 6 | 7 |
+| 9 | 7 | 7 |
+
+The left insertion point of x is the number of items **smaller than** x. The right insertion point is the number of items **smaller than or equal to** x. When x isn't in the list, the two are the same, like 5 and 5 for x = 4. When it is, they differ by the number of copies: 5 − 1 = 4 copies of 3.
+
+### Finding insertion points
+Both insertion points come from a binary search that never stops early. It moves `lo` past every middle item that belongs before the insertion point, and moves `hi` below every other one. When `lo` passes `hi`, `lo` is the answer:
+```python
+def left_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+def right_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] <= x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+print(left_place(nums, 3), right_place(nums, 3), left_place(nums, 4), right_place(nums, 4))
+```
+```output
+1 5 5 5
+```
+The only difference is `<` against `<=`. With `<`, a copy of x doesn't count as coming before the place, so the search ends before the copies. With `<=`, a copy does count, so the search ends after them. Animation 2 runs both on the same list.
+
+### bisect_left and bisect_right
+Python's `bisect` module has both: `bisect_left(items, x)` is the left insertion point and `bisect_right(items, x)` the right one. (`bisect(items, x)` is another name for `bisect_right`.)
+```python
+from bisect import bisect_left, bisect_right
+
+print(bisect_left(nums, 3), bisect_right(nums, 3))
+print(bisect_right(nums, 3) - bisect_left(nums, 3))
+print(bisect_left(nums, 4), bisect_right(nums, 4))
+```
+```output
+1 5
+4
+5 5
+```
+Each question from this lesson becomes one line:
+
+| question | with bisect |
+| --- | --- |
+| where is the first copy of x? | `i = bisect_left(items, x)`, if `i < len(items)` and `items[i] == x` |
+| where is the last copy of x? | `j = bisect_right(items, x) - 1`, if `j >= 0` and `items[j] == x` |
+| how many copies of x are there? | `bisect_right(items, x) - bisect_left(items, x)` |
+| how many items are smaller than x? | `bisect_left(items, x)` |
+| how many items are at most x? | `bisect_right(items, x)` |
+
+All of them are O(log n).
+
+### Counting a range
+Two insertion points also count the items in a range. The items from `a` to `b`, both included, start at `bisect_left(items, a)` and end right before `bisect_right(items, b)`:
+```python
+scores = [35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95]
+start = bisect_left(scores, 50)
+end = bisect_right(scores, 80)
+print(start, end, end - start)
+print(scores[start:end])
+```
+```output
+2 9 7
+[50, 50, 58, 61, 67, 73, 80]
+```
+Seven scores are between 50 and 80. Using `bisect_left` at the low end includes both copies of 50, and `bisect_right` at the high end includes 80. Two O(log n) searches answer the question however many scores there are. Printing the scores themselves costs more: the slice copies all k of them, O(k).
+
+=== keypoints
+- Plain binary search returns whichever copy of the target it meets first; with repeats, that can be any of them.
+- For the first copy, remember a match in `answer` and keep searching left (`hi = mid - 1`). For the last copy, keep searching right (`lo = mid + 1`). Either way the loop runs until `lo` passes `hi`.
+- The copies sit together, so their count is `last - first + 1`: two O(log n) searches instead of an O(n) `.count()`.
+- The left insertion point of x is the number of items smaller than x; the right insertion point is the number of items smaller than or equal to x. They differ by the number of copies.
+- A search that never stops early finds them: move `lo` past middle items that are `< x` (left) or `<= x` (right), and return `lo`.
+- `bisect_left` and `bisect_right` give the two insertion points. Copies of x: `bisect_right(items, x) - bisect_left(items, x)`. Items from a to b: `bisect_right(items, b) - bisect_left(items, a)`.
+
+=== example: Turning scores into grades
+intro: Four cut-off scores split the marks into five grades. `bisect_right` counts how many cut-offs a score has reached, and that count picks the letter.
+```python
+from bisect import bisect_right
+
+cutoffs = [60, 70, 80, 90]
+grades = "FDCBA"
+
+def grade(score):
+    return grades[bisect_right(cutoffs, score)]
+
+for s in [45, 60, 69, 70, 85, 90, 100]:
+    print(s, grade(s))
+```
+3-4: Below 60 is an F, 60 to 69 a D, 70 to 79 a C, 80 to 89 a B, and 90 or more an A.
+6-7: `bisect_right(cutoffs, score)` is the number of cut-offs at or below the score: 0 for 45, 1 for 60 and 69, 4 for 90 and 100. That number is the index of the letter in "FDCBA".
+9-10: A score exactly on a cut-off, like 60 or 90, gets the higher grade, because `bisect_right` counts a cut-off equal to the score as reached. `bisect_left` would give 60 an F.
+
+=== example: Orders in a time window
+intro: A shop logs the time of each order in minutes after midnight, so the list is already sorted. Insertion points count the orders in a window and find the first order after a given time, without looking at every order.
+```python
+from bisect import bisect_left, bisect_right
+
+times = [545, 610, 702, 720, 720, 745, 801, 839, 840, 905, 1083, 1110]
+
+def count_between(times, start, end):
+    return bisect_right(times, end) - bisect_left(times, start)
+
+def as_clock(m):
+    return f"{m // 60}:{m % 60:02d}"
+
+print("orders from 12:00 to 13:59:", count_between(times, 720, 839))
+i = bisect_left(times, 1080)
+print("first order from 18:00 on:", as_clock(times[i]))
+print("orders before 10:00:", bisect_left(times, 600))
+```
+3: 545 is 9:05 in the morning (9 × 60 + 5), and 1110 is 18:30.
+5-6: The orders from `start` to `end`, both included: everything up to `end`, minus everything before `start`.
+8-9: Turns minutes back into a clock time. `:02d` pads the minutes to two digits, so 3 minutes shows as 03.
+11: 12:00 is minute 720 and 13:59 is minute 839. Both orders at 720 count, and so does the one at 839: 5 orders.
+12-13: The first order at or after minute 1080 (18:00) is at index 10: minute 1083, which is 18:03.
+14: The number of orders before minute 600 (10:00) is the left insertion point of 600: only the one at 9:05.
+
+=== animation: Finding the first copy
+view: array nums ptr=lo,mid,hi range=lo:hi hit=answer
+vars target lo hi mid answer
+intro: Searching for the first 3 in a list with four of them. Every match is remembered, and the search keeps going to the left. The highlighted cell is the best answer so far.
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+nums = [1, 3, 3, 3, 3, 5, 8]
+print(first_index(nums, 3))
+```
+1: Defines first_index. Nothing runs yet.
+2: lo starts at 0.
+3: hi starts at the last index, {len(items) - 1}.
+4: No copy found yet, so answer is −1.
+5: Anything left to search? lo = {lo}, hi = {hi}: {lo <= hi}.
+6: The middle of {lo} to {hi} is {(lo + hi) // 2}.
+7: Is the middle item, {items[mid]}, equal to {target}? {items[mid] == target}.
+8: A copy of {target} at index {mid}: remember it.
+9: An earlier copy may be to the left, so keep searching there: hi moves to {mid - 1}.
+10: Is {items[mid]} smaller than {target}? {items[mid] < target}.
+11: Too small: the first copy is to the right. lo moves to {mid + 1}.
+13: Too big: hi moves to {mid - 1}.
+14: Nothing is left to search. The leftmost copy is at index {answer}.
+16: Four 3s, at indexes 1 to 4.
+17: Find the first 3.
+
+=== animation: Left and right insertion points
+view: array nums ptr=lo,mid,hi range=lo:hi
+vars x lo hi mid
+intro: The two insertion points of 3 in the same list. The searches differ in one character, `<` against `<=`, and end on either side of the 3s.
+```python
+def left_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+def right_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] <= x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+nums = [1, 3, 3, 3, 3, 5, 8]
+print(left_place(nums, 3), right_place(nums, 3))
+```
+1: left_place finds where x would go before any copies.
+2: lo starts at 0.
+3: hi starts at {len(items) - 1}.
+4: Anything left? lo = {lo}, hi = {hi}: {lo <= hi}.
+5: The middle of {lo} to {hi} is {(lo + hi) // 2}.
+6: Is {items[mid]} smaller than {x}? {items[mid] < x}. Only smaller items come before the left insertion point.
+7: Yes: the place is to the right of index {mid}, so lo moves to {mid + 1}.
+9: No: the place is at index {mid} or to its left, so hi moves to {mid - 1}.
+10: lo has passed hi. The left insertion point is {lo}: the number of items smaller than {x}.
+12: right_place finds where x would go after any copies.
+13: lo starts at 0.
+14: hi starts at {len(items) - 1}.
+15: Anything left? lo = {lo}, hi = {hi}: {lo <= hi}.
+16: The middle of {lo} to {hi} is {(lo + hi) // 2}.
+17: Is {items[mid]} at most {x}? {items[mid] <= x}. Now copies of x count as coming before the place.
+18: Yes: the place is to the right of index {mid}, so lo moves to {mid + 1}.
+20: No: the place is at index {mid} or to its left, so hi moves to {mid - 1}.
+21: lo has passed hi. The right insertion point is {lo}: the number of items at most {x}.
+23: Seven sorted numbers, with four 3s.
+24: Both insertion points of 3. The 3s sit between them.
+
+=== task: predict easy
+title: Left and right
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+nums = [10, 20, 20, 20, 30]
+print(bisect_left(nums, 20), bisect_right(nums, 20), bisect_left(nums, 25), bisect_right(nums, 25))
+```
+wrong[1 3 4 4]: `bisect_right` gives the place **after** the last copy. The last 20 is at index 3, so the place after it is 4.
+wrong[1 4 -1 -1]: `bisect` never returns -1: 25 would go at position 4, between the 20s and 30.
+wrong[1 4 3 4]: 25 goes after all three 20s, so both of its insertion points are 4.
+hint: `bisect_left` is the place before any copies; `bisect_right` the place after them.
+hint: 25 isn't in the list, so both give the same place.
+right: `1 4 4 4`: the 20s fill indexes 1 to 3, so the left place is 1 and the right place is 4. 25 isn't there; it would go at 4 either way.
+wrong: Before the 20s is position 1, after them position 4. 25 has no copies, so its left and right insertion points are both 4, between the last 20 and 30.
+
+=== task: mcq easy
+title: All the same
+prompt: Plain binary search, which returns at the first match, looks for 5 in `[5, 5, 5, 5, 5]`. Which index does it return?
+* 2 :: Right. The first middle is (0 + 4) // 2 = 2, and it already holds a 5.
+- 0 :: That's the first copy, but plain binary search doesn't look for it: it stops at the first middle that matches.
+- 4 :: That's the last copy. Plain binary search stops at the first match it meets.
+- -1 :: 5 is in the list, five times.
+hint: Where is the first middle of indexes 0 to 4?
+hint: Does it hold a 5?
+right: 2: plain binary search stops at its first match, which here is the first middle. To get index 0 or 4, you need the first-copy or last-copy search.
+wrong: The first middle is index 2, which holds a 5, so the search returns 2 at once. It has no reason to look further.
+
+=== task: cells easy
+title: Copies and places
+prompt: The list is `[2, 4, 4, 4, 7, 9]`. Fill in each value.
+labels: first copy of 4 | last copy of 4 | copies of 4 | items smaller than 7 | items at most 7
+answer: 1 | 3 | 3 | 4 | 5
+wrong[1 | 3 | 2 | 4 | 5]: From index 1 to index 3 is 3 − 1 + 1 = 3 copies: count both ends.
+wrong[1 | 3 | 3 | 4 | 4]: 7 itself is at most 7, so it counts: 2, 4, 4, 4 and 7 make 5.
+wrong[0 | 3 | 3 | 4 | 5]: Index 0 holds 2. The first 4 is at index 1.
+hint: Indexes start at 0.
+hint: "Smaller than 7" leaves 7 out; "at most 7" includes it.
+right: 1, 3, 3, 4, 5: the 4s are at indexes 1 to 3, three copies; four items are smaller than 7, and five are at most 7.
+wrong: The 4s fill indexes 1, 2 and 3: first 1, last 3, three copies. 2, 4, 4 and 4 are smaller than 7; adding 7 itself makes 5 items that are at most 7.
+
+=== task: code easy
+title: Write first_index
+prompt: Write `first_index(items, target)` for a sorted list: return the index of the **first** copy of `target`, or -1. When the middle item matches, remember it and keep searching to the left. The speed check uses a list with thousands of copies, so finding any copy and then stepping left one item at a time is too slow.
+starter:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    # your code here
+    return answer
+```
+solution:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+```
+tests:
+- first_index([1, 3, 3, 3, 3, 5, 8], 3)
+- first_index([3, 3, 3], 3)
+- first_index([1, 2, 3], 4)
+- first_index([], 1)
+- first_index([5, 7, 7, 7, 7, 7, 9], 7)
+- first_index([1, 1, 2], 2)
+speed: setup=items = [0] + [1] * n | call=first_index(items, 1) | target=O(log n)
+slow:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            while mid > 0 and items[mid - 1] == target:
+                mid -= 1
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+```
+fail[1]: The first 3 is at index 1. A plain binary search returns 3, the first middle.
+fail[2]: All three items are 3s: the first is at index 0.
+fail[5]: The 7s fill indexes 1 to 5: the first is at index 1.
+hint: Loop while `lo <= hi`, with `mid = (lo + hi) // 2`.
+hint: On a match, set `answer = mid` and `hi = mid - 1` to keep looking left.
+hint: Otherwise move lo or hi past mid as usual, and return answer after the loop.
+right: Each match sends the search into the left half, so the loop still halves the part every time: O(log n), even when almost every item is a copy.
+wrong: Don't return at a match: record it in answer and search the left half. When lo passes hi, answer holds the leftmost match, or -1.
+
+=== task: fill easy
+title: Counting with two places
+prompt: Fill in the blanks so that the program prints how many 3s the list holds:
+
+```output
+4
+```
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+nums = [1, 3, 3, 3, 3, 5, 8]
+print(bisect_??(nums, 3) - bisect_??(nums, 3))
+```
+answer: right | left
+wrong[left | right]: That's 1 − 5 = −4: the place before the copies minus the place after them. Subtract the other way round.
+wrong[left | left]: Both give 1, so the difference is 0. One of the places must be after the copies.
+wrong[right | right]: Both give 5, so the difference is 0. One of the places must be before the copies.
+hint: One place is after all the 3s, the other before them.
+hint: The bigger place minus the smaller place counts the items between them.
+right: `bisect_right(nums, 3) - bisect_left(nums, 3)` is 5 − 1 = 4: the 3s sit between the two places.
+wrong: `bisect_right` gives 5, the place after the 3s, and `bisect_left` gives 1, the place before them. 5 − 1 = 4 copies.
+
+=== task: multi easy
+title: Facts about bisect
+prompt: `items` is sorted. Choose **every** true statement.
+* `bisect_left(items, x)` is the number of items smaller than x :: Right. They're exactly the items before the left insertion point.
+* `bisect_right(items, x)` is the number of items smaller than or equal to x :: Right. Copies of x come before the right insertion point.
+* If x isn't in the list, `bisect_left` and `bisect_right` give the same number :: Right. With no copies, there's only one place for x.
+- `bisect_left` returns -1 when x isn't in the list :: `bisect` never returns -1: it gives the place where x would go.
+- `bisect_right(items, x)` is the index of the last copy of x :: It's one place **after** the last copy: subtract 1 to get the last copy.
+- `bisect_left` is a linear search from the left :: It's a binary search: O(log n).
+hint: "Left" and "right" are the two sides of the copies of x.
+hint: What do they give for a value that isn't there?
+right: Both are binary searches that return a place: before the copies, which is the count of smaller items, or after them, the count of items at most x. Without copies, the two places are the same.
+wrong: `bisect_left` counts the items smaller than x and `bisect_right` those at most x. They never return -1, and `bisect_right` is one place past the last copy.
+
+=== task: parsons easy
+title: The first copy
+prompt: Arrange the lines so that `first_index` returns the first copy of the target, and the program prints:
+
+```output
+1 -1
+```
+
+Not every line is needed.
+lines:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(first_index([4, 6, 6, 6, 9], 6), first_index([4, 6, 6, 6, 9], 5))
+```
+distractors:
+```python
+            return mid
+    answer = 0
+```
+hint: Start answer at -1, meaning no copy found yet.
+hint: On a match: remember mid, then move hi to look left.
+right: Each match is remembered and the search carries on to the left, so the last match it records is the first copy. 5 is never matched, so answer stays -1.
+wrong: Set lo, hi and `answer = -1`. Loop while lo <= hi; on a match set `answer = mid` and `hi = mid - 1`; otherwise move lo or hi past mid. Return answer.
+
+=== task: order easy
+title: Looking for the last 6
+prompt: `last_index` looks for 6 in `[4, 6, 6, 6, 9]`. Put the steps in order.
+items:
+- Check index 2: a 6, so answer = 2 and lo = 3
+- Check index 3: a 6, so answer = 3 and lo = 4
+- Check index 4: 9 is too big, so hi = 3
+- lo has passed hi: return 3
+hint: The first middle is (0 + 4) // 2 = 2.
+hint: After a match, last_index keeps looking to the right.
+right: Two matches move lo to the right, 9 sends hi back to 3, and with lo past hi the last match recorded, index 3, is the answer.
+wrong: Index 2 matches (lo = 3), index 3 matches (lo = 4), index 4 holds 9, too big (hi = 3). Then lo > hi, and answer is 3.
+
+=== task: predict easy
+title: Counting ages
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+ages = [12, 15, 15, 18, 18, 18, 21]
+print(bisect_right(ages, 18) - bisect_left(ages, 18), bisect_left(ages, 18), bisect_right(ages, 14))
+```
+wrong[2 3 1]: `bisect_right(ages, 18)` is 6 and `bisect_left(ages, 18)` is 3: 6 − 3 = 3 copies.
+wrong[3 4 1]: `bisect_left` counts the items smaller than 18: 12, 15 and 15. That's 3.
+wrong[3 3 2]: Only 12 is at most 14: 15 is bigger.
+hint: The 18s fill indexes 3 to 5.
+hint: `bisect_right(ages, 14)` counts the ages that are at most 14.
+right: `3 3 1`: three 18s, three ages below 18, and one age at most 14.
+wrong: The place after the 18s is 6 and the place before them is 3, so there are 3 of them. Three ages are smaller than 18. Only 12 is at most 14.
+
+=== task: mcq easy
+title: From two places to a count
+prompt: In a sorted list, `bisect_left(items, 7)` is 3 and `bisect_right(items, 7)` is 8. How many 7s are in the list?
+* 5 :: Right. The 7s sit between the two places: 8 − 3 = 5.
+- 6 :: The right place is already one past the last 7, so no + 1 is needed: 8 − 3 = 5.
+- 8 :: That's the number of items at most 7, including the three smaller ones.
+- 3 :: That's the number of items smaller than 7.
+hint: The 7s start at index 3.
+hint: The right insertion point is one place past the last 7.
+right: 5: the 7s fill indexes 3 to 7, and that's `bisect_right − bisect_left` = 8 − 3.
+wrong: The first 7 is at index 3 and the place after the last 7 is 8, so the 7s fill indexes 3, 4, 5, 6 and 7: five of them.
+
+=== task: code medium
+title: Write last_index
+prompt: Write `last_index(items, target)` for a sorted list: return the index of the **last** copy of `target`, or -1. The speed check uses thousands of copies, so stepping right one item at a time after finding a copy is too slow.
+starter:
+```python
+def last_index(items, target):
+    # your code here
+    return -1
+```
+solution:
+```python
+def last_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            lo = mid + 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+```
+tests:
+- last_index([1, 3, 3, 3, 3, 5, 8], 3)
+- last_index([1, 3, 3, 3, 3, 5, 8], 1)
+- last_index([1, 3, 3, 3, 3, 5, 8], 8)
+- last_index([1, 3, 3, 3, 3, 5, 8], 4)
+- last_index([], 2)
+- last_index([6, 6], 6)
+speed: setup=items = [1] * n + [2] | call=last_index(items, 1) | target=O(log n)
+slow:
+```python
+def last_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            while mid < len(items) - 1 and items[mid + 1] == target:
+                mid += 1
+            return mid
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+```
+fail[1]: The last 3 is at index 4.
+fail[3]: 8 is the last item: index 6.
+fail[6]: Both items are 6s: the last is at index 1.
+hint: Like first_index, but on a match keep looking to the right.
+hint: On a match: `answer = mid`, then `lo = mid + 1`.
+hint: Start with `answer = -1` and return it after the loop.
+right: Each match sends the search into the right half, so the loop keeps halving: O(log n), however many copies there are.
+wrong: Record each match in answer and move lo past it, to look for a later copy. When lo passes hi, answer holds the rightmost match, or -1.
+
+=== task: code medium
+title: Count the copies
+prompt: Write `count_copies(items, target)` for a sorted list: return how many times `target` appears. The speed check uses a long list, so `items.count(target)` and loops over the items are too slow. Use `bisect_left` and `bisect_right`.
+starter:
+```python
+from bisect import bisect_left, bisect_right
+
+def count_copies(items, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+from bisect import bisect_left, bisect_right
+
+def count_copies(items, target):
+    return bisect_right(items, target) - bisect_left(items, target)
+```
+tests:
+- count_copies([1, 3, 3, 3, 3, 5, 8], 3)
+- count_copies([1, 3, 3, 3, 3, 5, 8], 8)
+- count_copies([1, 3, 3, 3, 3, 5, 8], 4)
+- count_copies([], 4)
+- count_copies([2, 2, 2], 2)
+speed: setup=items = sorted(list(range(n)) * 2) | call=count_copies(items, n // 2) | target=O(log n)
+slow:
+```python
+def count_copies(items, target):
+    return items.count(target)
+```
+forbid[.count(]: Count with two insertion points instead of `.count`, which checks every item.
+fail[1]: The 3s fill indexes 1 to 4: 4 copies.
+fail[2]: There's one 8.
+fail[5]: Every item is a 2: 3 copies.
+hint: `bisect_left(items, target)` is the place before the copies.
+hint: `bisect_right(items, target)` is the place after them.
+hint: The difference is the number of copies, and it's 0 when there are none.
+right: Two O(log n) searches and a subtraction: the copies sit between the left and right insertion points.
+wrong: Return `bisect_right(items, target) - bisect_left(items, target)`: the place after the copies minus the place before them.
+
+=== task: predict medium
+title: Places for 20, 5 and 35
+code:
+```python
+def left_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+def right_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] <= x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+nums = [10, 20, 20, 30]
+print(left_place(nums, 20), right_place(nums, 20), left_place(nums, 5), right_place(nums, 35))
+```
+wrong[1 2 0 4]: `right_place` goes past both 20s: 10, 20 and 20 are at most 20, so the place is 3.
+wrong[1 3 -1 4]: No item is smaller than 5, so its place is 0, the front of the list. These functions never return -1.
+wrong[1 3 0 3]: 35 is bigger than everything, so its place is the end: 4, the length of the list.
+hint: `left_place` counts the items smaller than x; `right_place` counts those at most x.
+hint: A value bigger than everything goes at the end, position `len(nums)`.
+right: `1 3 0 4`: one item is below 20 and three are at most 20; nothing is below 5; all four are at most 35.
+wrong: Count instead of tracing: one item (10) is smaller than 20, three (10, 20, 20) are at most 20, none is smaller than 5, and all four are at most 35.
+
+=== task: cells medium
+title: A table of places
+prompt: `nums = [5, 8, 8, 12, 15, 15, 15, 20]`. Fill in what each call returns.
+labels: bisect_left(nums, 8) | bisect_right(nums, 8) | bisect_left(nums, 15) | bisect_right(nums, 15) | bisect_left(nums, 13) | bisect_right(nums, 21)
+answer: 1 | 3 | 4 | 7 | 4 | 8
+wrong[1 | 2 | 4 | 6 | 4 | 8]: `bisect_right` is one place after the last copy: the last 8 is at index 2, so 3, and the last 15 at index 6, so 7.
+wrong[1 | 3 | 4 | 7 | 3 | 8]: 13 goes after 12, which is at index 3, so its place is 4.
+wrong[1 | 3 | 4 | 7 | 4 | -1]: 21 is bigger than everything: its place is the end, 8.
+hint: `bisect_left(nums, x)` counts the items smaller than x.
+hint: `bisect_right(nums, x)` counts the items smaller than or equal to x.
+right: 1, 3, 4, 7, 4, 8: each is a count of items, smaller than x for `bisect_left` and at most x for `bisect_right`.
+wrong: Count: one item is smaller than 8, three are at most 8; four are smaller than 15, seven are at most 15; four are smaller than 13; all eight are at most 21.
+
+=== task: fill medium
+title: One character apart
+prompt: Fill in the blanks so that `left_place` and `right_place` give the two insertion points, and the program prints:
+
+```output
+1 4
+```
+code:
+```python
+def left_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] ?? x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+def right_place(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] ?? x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return lo
+
+nums = [2, 6, 6, 6, 9]
+print(left_place(nums, 6), right_place(nums, 6))
+```
+answer: < | <=
+wrong[<= | <]: Swapped: `<=` moves lo past the copies too, so `left_place` gives the right place, 4, and `right_place` the left one, 1.
+wrong[< | <]: Both give the left place, 1. `right_place` must also move lo past copies of x: `<=`.
+wrong[<= | <=]: Both give the right place, 4. `left_place` must stop before the copies: `<`.
+hint: The left place has only the smaller items before it.
+hint: The right place has the copies of x before it too.
+right: `<` moves lo past smaller items only, ending before the 6s at 1; `<=` also moves it past the 6s, ending at 4.
+wrong: Use `<` in `left_place`, so copies of x stay to the right of the place, and `<=` in `right_place`, so they end up to its left.
+
+=== task: mcq medium
+title: The best price within budget
+prompt: `prices = [4, 9, 12, 20, 35]` is sorted. What does `prices[bisect_right(prices, 15) - 1]` give?
+* 12, the highest price that's at most 15 :: Right. `bisect_right` gives 3, the place after every price at most 15; one place back is 12.
+- 20 :: 20 is above 15. `bisect_right(prices, 15)` is 3, and index 2 holds 12.
+- 15 :: 15 isn't in the list. The expression reads an item from the list.
+- An IndexError :: Index 2 is valid. (Only a budget below every price would go wrong: index −1 quietly reads the last item.)
+hint: How many prices are at most 15?
+hint: Subtract 1 to step back to the last of them.
+right: 12: `bisect_right(prices, 15) - 1` is the index of the last item at most 15, the best price within a budget of 15.
+wrong: Three prices (4, 9 and 12) are at most 15, so `bisect_right` gives 3, and index 3 − 1 = 2 holds 12.
+
+=== task: predict medium
+title: Temperatures in a range
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+temps = [-4, -1, 0, 0, 3, 7, 7, 12, 18]
+print(bisect_right(temps, 7) - bisect_left(temps, 0))
+print(bisect_left(temps, 0))
+print(len(temps) - bisect_right(temps, 7))
+```
+wrong[4\n2\n2]: Both 7s count: `bisect_right(temps, 7)` is 7, past both of them, so 7 − 2 = 5.
+wrong[5\n4\n2]: `bisect_left(temps, 0)` counts only the items smaller than 0: −4 and −1.
+wrong[5\n2\n3]: Two temperatures are above 7: 12 and 18. 9 − 7 = 2.
+hint: `bisect_left(temps, 0)` is the number of temperatures below 0.
+hint: `bisect_right(temps, 7)` is the number at most 7.
+right: `5`, `2`, `2`: five temperatures are from 0 to 7, two are below 0, and two are above 7.
+wrong: `bisect_right(temps, 7)` is 7 and `bisect_left(temps, 0)` is 2, so 5 temperatures are from 0 to 7. 2 are below 0. 9 − 7 = 2 are above 7.
+
+=== task: multi medium
+title: Ways to count copies
+prompt: `items` is sorted. Choose **every** expression that gives the number of copies of `x`, including 0 when x isn't there.
+* `bisect_right(items, x) - bisect_left(items, x)` :: Right. The copies sit between the two places; with no copies, the places are equal.
+* `items.count(x)` :: Right, but it checks every item: O(n) instead of O(log n).
+* `len([v for v in items if v == x])` :: Right, but it also looks at every item: O(n).
+- `bisect_right(items, x) - bisect_left(items, x) + 1` :: The right place is already one past the last copy, so this counts one too many.
+- `last_index(items, x) - first_index(items, x) + 1`, with the functions from this lesson :: When x is missing, both are −1, and this gives −1 − (−1) + 1 = 1. It needs a check for −1 first.
+- `bisect_left(items, x)` :: That's the number of items smaller than x.
+hint: Try each one on a list that doesn't contain x.
+hint: The right place is one past the last copy.
+right: Two insertion points give the count in O(log n). `.count` and the comprehension are also right, but look at every item.
+wrong: `bisect_right - bisect_left` is the count, with no + 1. `.count` and the comprehension are correct but O(n). The first/last version says a missing value appears once unless you check for −1.
+
+=== task: parsons medium
+title: Orders in a window
+prompt: Arrange the lines so that `count_between` counts the orders from `start` to `end`, both included, and the program prints:
+
+```output
+5 0
+```
+
+Not every line is needed.
+lines:
+```python
+from bisect import bisect_left, bisect_right
+
+def count_between(times, start, end):
+    first = bisect_left(times, start)
+    after = bisect_right(times, end)
+    return after - first
+
+times = [545, 610, 702, 720, 720, 745, 801, 839, 840]
+print(count_between(times, 720, 839), count_between(times, 900, 1000))
+```
+distractors:
+```python
+    first = bisect_right(times, start)
+    after = bisect_left(times, end)
+```
+hint: The window starts before any orders at exactly `start`.
+hint: It ends after any orders at exactly `end`.
+right: `bisect_left` at the start includes both orders at 720, and `bisect_right` at the end includes the one at 839: 5 orders. Nothing is between 900 and 1000.
+wrong: Use `bisect_left` for the start, so orders exactly at `start` count, and `bisect_right` for the end, so orders exactly at `end` count. Return the difference.
+
+=== task: order medium
+title: From smallest to largest
+prompt: `nums = [1, 3, 3, 3, 3, 5, 8]`. Put these calls in order of the number they return, smallest first.
+items:
+- `bisect_left(nums, 0)`
+- `bisect_left(nums, 3)`
+- `bisect_left(nums, 5)`
+- `bisect_right(nums, 5)`
+- `bisect_right(nums, 9)`
+hint: Each result is a count: items smaller than x for `bisect_left`, items at most x for `bisect_right`.
+hint: `bisect_left(nums, 5)` counts 1 and the four 3s.
+right: 0, 1, 5, 6 and 7: nothing is below 0; one item is below 3; five are below 5; six are at most 5; all seven are at most 9.
+wrong: Turn each call into a count of items: smaller than 0 (0), smaller than 3 (1), smaller than 5 (5), at most 5 (6), at most 9 (7).
+
+=== task: code hard
+title: The first item at least x
+prompt: Write `first_at_least(items, x)` for a sorted list: return the index of the first item that is **at least** `x`, or -1 if every item is smaller. Write the binary search yourself, without the `bisect` module.
+starter:
+```python
+def first_at_least(items, x):
+    # your code here
+    return -1
+```
+solution:
+```python
+def first_at_least(items, x):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    if lo == len(items):
+        return -1
+    return lo
+```
+tests:
+- first_at_least([3, 8, 8, 12, 20], 8)
+- first_at_least([3, 8, 8, 12, 20], 9)
+- first_at_least([3, 8, 8, 12, 20], 1)
+- first_at_least([3, 8, 8, 12, 20], 21)
+- first_at_least([3, 8, 8, 12, 20], 20)
+- first_at_least([], 5)
+speed: setup=items = list(range(n)) | call=first_at_least(items, n - 1) | target=O(log n)
+slow:
+```python
+def first_at_least(items, x):
+    for i in range(len(items)):
+        if items[i] >= x:
+            return i
+    return -1
+```
+forbid[bisect]: Write the binary search yourself, without the `bisect` module.
+fail[1]: The first item at least 8 is the first 8, at index 1.
+fail[2]: There's no 9: the first item at least 9 is 12, at index 3.
+fail[4]: Every item is smaller than 21: return -1.
+error[IndexError]: lo can end at `len(items)`, past the end, when every item is smaller than x. Check for that before using lo as an index.
+hint: This is the left insertion point: move lo past middle items that are smaller than x.
+hint: `if items[mid] < x: lo = mid + 1`, else `hi = mid - 1`. Don't stop at a match.
+hint: After the loop, lo is the answer, unless it equals `len(items)`: then return -1.
+right: The search never stops early, and it leaves lo at the first item that's at least x: the left insertion point, in O(log n).
+wrong: Binary search with `<`: move lo past smaller items and hi below the rest. When lo passes hi, lo is the first index whose item is at least x, or `len(items)` if there's none.
+
+=== task: code hard
+title: Count a range
+prompt: Write `count_in_range(items, a, b)` for a sorted list: return how many items are from `a` to `b`, both included. If `a > b`, the range is empty: return 0. Use `bisect_left` and `bisect_right`, because the speed check uses long lists.
+starter:
+```python
+from bisect import bisect_left, bisect_right
+
+def count_in_range(items, a, b):
+    # your code here
+    return 0
+```
+solution:
+```python
+from bisect import bisect_left, bisect_right
+
+def count_in_range(items, a, b):
+    if a > b:
+        return 0
+    return bisect_right(items, b) - bisect_left(items, a)
+```
+tests:
+- count_in_range([35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95], 50, 80)
+- count_in_range([35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95], 0, 100)
+- count_in_range([35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95], 81, 87)
+- count_in_range([35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95], 50, 50)
+- count_in_range([35, 42, 50, 50, 58, 61, 67, 73, 80, 88, 95], 80, 50)
+- count_in_range([], 1, 5)
+speed: setup=items = list(range(n)) | call=count_in_range(items, n // 4, n // 2) | target=O(log n)
+slow:
+```python
+def count_in_range(items, a, b):
+    count = 0
+    for x in items:
+        if a <= x <= b:
+            count += 1
+    return count
+```
+fail[1]: 50, 50, 58, 61, 67, 73 and 80: 7 scores.
+fail[4]: Both 50s count: the range from 50 to 50 holds 2 items.
+fail[5]: When a is bigger than b, the range is empty: 0, not a negative number.
+hint: The items from a to b start at `bisect_left(items, a)`.
+hint: They end right before `bisect_right(items, b)`.
+hint: Return the difference, but return 0 first when a > b.
+right: Two O(log n) searches count the range however many items it holds. The `a > b` check stops the difference from going negative.
+wrong: Return `bisect_right(items, b) - bisect_left(items, a)`, after returning 0 when a > b.
+
+=== task: code hard
+title: First and last together
+prompt: Write `first_and_last(items, target)` for a sorted list: return a tuple `(first, last)` with the indexes of the first and last copies of `target`, or `(-1, -1)` if it isn't there. The speed check uses a list made almost entirely of copies, so use two binary searches, or `bisect`.
+starter:
+```python
+def first_and_last(items, target):
+    # your code here
+    return (-1, -1)
+```
+solution:
+```python
+def first_and_last(items, target):
+    lo = 0
+    hi = len(items) - 1
+    first = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            first = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    if first == -1:
+        return (-1, -1)
+    lo = first
+    hi = len(items) - 1
+    last = first
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            last = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return (first, last)
+```
+tests:
+- first_and_last([1, 3, 3, 3, 3, 5, 8], 3)
+- first_and_last([1, 3, 3, 3, 3, 5, 8], 8)
+- first_and_last([1, 3, 3, 3, 3, 5, 8], 4)
+- first_and_last([], 4)
+- first_and_last([7, 7, 7, 7], 7)
+- first_and_last([1, 2, 2], 2)
+speed: setup=items = [0] + [1] * n + [2] | call=first_and_last(items, 1) | target=O(log n)
+slow:
+```python
+def first_and_last(items, target):
+    lo = 0
+    hi = len(items) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            first = mid
+            last = mid
+            while first > 0 and items[first - 1] == target:
+                first -= 1
+            while last < len(items) - 1 and items[last + 1] == target:
+                last += 1
+            return (first, last)
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return (-1, -1)
+```
+fail[1]: The 3s fill indexes 1 to 4: (1, 4).
+fail[2]: There's one 8, at index 6: first and last are both 6.
+fail[5]: Every item is a 7: (0, 3).
+hint: First search: on a match, remember mid and keep looking left (`hi = mid - 1`).
+hint: If nothing was found, return `(-1, -1)`. Otherwise run a second search that keeps looking right (`lo = mid + 1`) on a match.
+hint: Or use `bisect_left` for the first copy and `bisect_right(items, target) - 1` for the last.
+right: Two searches, each halving its part every time: O(log n) even when almost every item is a copy. Walking from one copy out to both ends would be O(n).
+wrong: Find the first copy with a search that keeps going left after a match, then the last copy with one that keeps going right. If the first search finds nothing, return (-1, -1).
+
+=== task: code hard
+title: Leaderboard rank
+prompt: `scores` is sorted from lowest to highest. A player's **rank** is 1 plus the number of scores **strictly higher** than theirs, so the best score has rank 1 and tied scores share a rank. Write `rank(scores, s)` in O(log n). `s` doesn't have to be in the list.
+starter:
+```python
+from bisect import bisect_right
+
+def rank(scores, s):
+    # your code here
+    return 1
+```
+solution:
+```python
+from bisect import bisect_right
+
+def rank(scores, s):
+    higher = len(scores) - bisect_right(scores, s)
+    return higher + 1
+```
+tests:
+- rank([40, 55, 55, 70, 90], 90)
+- rank([40, 55, 55, 70, 90], 55)
+- rank([40, 55, 55, 70, 90], 40)
+- rank([40, 55, 55, 70, 90], 60)
+- rank([40, 55, 55, 70, 90], 99)
+- rank([], 50)
+speed: setup=scores = list(range(n)) | call=rank(scores, n // 3) | target=O(log n)
+slow:
+```python
+def rank(scores, s):
+    higher = 0
+    for x in scores:
+        if x > s:
+            higher += 1
+    return higher + 1
+```
+fail[2]: Two scores are higher than 55 (70 and 90), so the rank is 3. Both 55s share it.
+fail[3]: 40 is the lowest score: four are higher, so its rank is 5.
+fail[4]: 60 isn't in the list, but 70 and 90 are higher: rank 3.
+hint: `bisect_right(scores, s)` counts the scores that are at most s.
+hint: The rest, `len(scores) - bisect_right(scores, s)`, are strictly higher.
+hint: Add 1.
+right: `bisect_right` puts every score tied with s on the lower side, so the scores left over are exactly the higher ones: O(log n).
+wrong: Count the scores higher than s as `len(scores) - bisect_right(scores, s)`, then add 1. `bisect_left` would count the ties as higher.
+
+=== task: predict hard
+title: Edge cases
+code:
+```python
+def first_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            hi = mid - 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+def last_index(items, target):
+    lo = 0
+    hi = len(items) - 1
+    answer = -1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if items[mid] == target:
+            answer = mid
+            lo = mid + 1
+        elif items[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return answer
+
+print(first_index([7, 7, 7, 7], 7), last_index([7, 7, 7, 7], 7))
+print(first_index([1, 2, 3], 2), last_index([1, 2, 3], 2))
+print(first_index([1, 2, 3], 0), last_index([1, 2, 3], 9))
+```
+wrong[1 2\n1 1\n-1 -1]: The searches keep going after each match: `first_index` goes all the way to index 0, and `last_index` to index 3.
+wrong[0 3\n1 1\n0 3]: 0 and 9 aren't in the list. No match is ever recorded, so answer stays -1.
+wrong[0 3\n-1 -1\n-1 -1]: 2 is in the list once, at index 1: its first and last copies are both index 1.
+hint: With every item a 7, the first copy is at the very start and the last at the very end.
+hint: answer only changes when a middle item matches.
+right: `0 3`, `1 1`, `-1 -1`: all 7s give the two ends; a single 2 is both first and last; missing values never set answer.
+wrong: In `[7, 7, 7, 7]` the first 7 is at 0 and the last at 3. The only 2 is at index 1, so first and last are both 1. 0 and 9 never match, so both searches return -1.
+
+=== task: predict hard
+title: Exactly on the cut-off
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+cutoffs = [60, 70, 80, 90]
+grades = "FDCBA"
+for s in [59, 60, 90]:
+    print(s, grades[bisect_right(cutoffs, s)], grades[bisect_left(cutoffs, s)])
+```
+wrong[59 F F\n60 D D\n90 A A]: `bisect_left` puts 60 before the cut-off of 60, so it counts 0 cut-offs as reached: F.
+wrong[59 F F\n60 F D\n90 B A]: The columns are swapped: `bisect_right` counts a cut-off equal to the score as reached, `bisect_left` doesn't.
+wrong[59 D D\n60 D F\n90 A B]: 59 is below every cut-off, so both give 0: F.
+hint: `bisect_right(cutoffs, s)` counts the cut-offs at most s; `bisect_left` those smaller than s.
+hint: They only differ when s equals a cut-off.
+right: `59 F F`, `60 D F`, `90 A B`: on a cut-off, `bisect_right` counts it as reached and `bisect_left` doesn't, so the grades differ by one letter.
+wrong: 59 reaches no cut-off either way: F. For 60, `bisect_right` gives 1 (D) and `bisect_left` 0 (F). For 90, `bisect_right` gives 4 (A) and `bisect_left` 3 (B).
+
+=== task: cells hard
+title: Places in long runs
+prompt: `nums = [0] * 100 + [1] * 50 + [2] * 25`: a sorted list of 100 zeros, then 50 ones, then 25 twos. Fill in each value.
+labels: bisect_left(nums, 1) | bisect_right(nums, 1) | copies of 1 | bisect_right(nums, 0) - 1 | bisect_left(nums, 3)
+answer: 100 | 150 | 50 | 99 | 175
+wrong[100 | 149 | 50 | 99 | 175]: `bisect_right` is one place after the last 1. The last 1 is at index 149, so it's 150.
+wrong[100 | 150 | 51 | 99 | 175]: 150 − 100 = 50. Subtracting two insertion points needs no + 1.
+wrong[100 | 150 | 50 | 100 | 175]: `bisect_right(nums, 0)` is 100, the place after the zeros. Minus 1 is 99, the last zero.
+wrong[100 | 150 | 50 | 99 | -1]: `bisect` never returns -1: 3 would go at the end, position 175.
+hint: The zeros fill indexes 0 to 99, the ones 100 to 149, and the twos 150 to 174.
+hint: `bisect_right` is one place past the last copy.
+right: 100, 150, 50, 99 and 175: the ones start at 100 and end right before 150, the last zero is at 99, and 3 would go at the very end.
+wrong: Zeros at 0 to 99, ones at 100 to 149, twos at 150 to 174. The left place of 1 is 100 and the right place 150, so there are 50 ones. The last zero is at 100 − 1 = 99. 3 goes after everything: 175.
+
+=== task: multi hard
+title: Changes that break first_index
+prompt: Each change is made to the `first_index` function from this lesson. Choose **every** change that makes it give a wrong answer for some sorted list.
+* `return mid` on a match, instead of `answer = mid` and `hi = mid - 1` :: Right. That's plain binary search: it can return any copy.
+* `lo = mid + 1` on a match, instead of `hi = mid - 1` :: Right. That keeps looking to the right, so it finds the last copy instead.
+* `answer = 0` at the start, instead of `answer = -1` :: Right. A missing target would give 0, which is a real index.
+* `while lo < hi:` :: Right. The last item left is never checked: `first_index([3], 3)` gives -1.
+- `else:` written as `elif items[mid] > target:` :: The same: after `==` and `<` have been ruled out, `>` is the only case left.
+- `mid = lo + (hi - lo) // 2` :: The same middle, written another way.
+hint: Which changes stop the search from looking left after a match?
+hint: Try a list with one item, and a target that isn't there.
+right: Returning at a match, looking right, starting answer at 0, and `lo < hi` all give wrong answers. The last two changes give the same answers as before.
+wrong: The search must remember a match and keep looking left, start answer at -1, and run while lo <= hi. Writing the else as `elif >`, or the middle as `lo + (hi - lo) // 2`, changes nothing.
+
+=== task: fill hard
+title: First and last with bisect
+prompt: Fill in the blanks so that `first_copy` and `last_copy` find the first and last copies with `bisect`, returning -1 when the value isn't there, and the program prints:
+
+```output
+1 4 -1 -1
+```
+code:
+```python
+from bisect import bisect_left, bisect_right
+
+def last_copy(items, x):
+    j = bisect_right(items, x) ?? 1
+    if j >= 0 and items[j] == x:
+        return j
+    return -1
+
+def first_copy(items, x):
+    i = bisect_??(items, x)
+    if i < len(items) and items[i] == x:
+        return i
+    return -1
+
+nums = [1, 3, 3, 3, 3, 5, 8]
+print(first_copy(nums, 3), last_copy(nums, 3), last_copy(nums, 4), first_copy(nums, 9))
+```
+answer: - | left
+wrong[+ | left]: `bisect_right` is already one past the last copy; adding 1 moves two past it, onto 8, so every `last_copy` gives -1.
+wrong[- | right]: `bisect_right(nums, 3)` is 5, one place past the 3s, where 5 is. `first_copy` needs the place before the copies: `bisect_left`.
+hint: `bisect_right` is the place right after the last copy.
+hint: Which bisect gives the place of the first copy?
+right: The last copy is one place before `bisect_right`, and the first copy is at `bisect_left`. The checks after each turn a place into an index or -1.
+wrong: Subtract 1 from `bisect_right` to step back onto the last copy, and use `bisect_left` for the first copy.
+
+=== task: parsons hard
+title: Autocomplete
+prompt: In a sorted list of words, all the words that start with a prefix sit together, starting at `bisect_left(words, prefix)`, because the prefix itself sorts right before them. Arrange the lines so that `starting_with` collects those words, and the program prints:
+
+```output
+['apple', 'apply'] ['bat', 'bath'] []
+```
+
+Not every line is needed.
+lines:
+```python
+from bisect import bisect_left
+
+def starting_with(words, prefix):
+    i = bisect_left(words, prefix)
+    found = []
+    while i < len(words) and words[i].startswith(prefix):
+        found.append(words[i])
+        i += 1
+    return found
+
+words = ["ant", "apple", "apply", "apron", "bat", "bath", "cat"]
+print(starting_with(words, "app"), starting_with(words, "ba"), starting_with(words, "dog"))
+```
+distractors:
+```python
+    while words[i].startswith(prefix):
+    if i < len(words) and words[i].startswith(prefix):
+```
+hint: Find the first place with `bisect_left`, then walk right.
+hint: Stop at the end of the list, or at the first word without the prefix.
+right: One O(log n) search finds where the matches start; the walk then visits only the k matching words and one more: O(log n + k).
+wrong: Start at `bisect_left(words, prefix)` and keep adding words while `i` is inside the list and the word starts with the prefix. Return the list.
