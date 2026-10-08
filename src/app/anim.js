@@ -322,7 +322,9 @@
     const st = frame.st || [];
     const idx = objIndex(frame);
     return '<div class="callstack">' + st.map((sf, i) => {
-      const vars = Object.keys(sf.vars || {}).filter((k) => !(sf.vars[k] && (sf.vars[k].$fn || sf.vars[k].$cls)));
+      // `callstack v w` shows only those arguments in each call; plain `callstack` shows the first four
+      const vars = Object.keys(sf.vars || {}).filter((k) => !(sf.vars[k] && (sf.vars[k].$fn || sf.vars[k].$cls)))
+        .filter((k) => !spec.vars || spec.vars.includes(k));
       const shown = vars.slice(0, 4).map((k) => k + '=' + briefRepr(sf.vars[k], idx)).join(', ');
       const name = sf.fn === '<module>' ? 'main program' : sf.fn + '(' + shown + ')';
       return `<div class="fr ${i === st.length - 1 ? 'ontop' : ''}"><b>${esc(name)}</b>${sf.line ? ' · line ' + sf.line : ''}</div>`;
@@ -565,8 +567,10 @@
     s += '</svg>';
     const leg = [];
     if (spec.current) leg.push('<span><i style="background:rgba(255,212,59,.6)"></i>current</span>');
-    if (spec.visited) leg.push('<span><i style="background:rgba(74,222,128,.5)"></i>visited</span>');
-    if (spec.frontier) leg.push('<span><i style="border:2px dashed #8AB4FF"></i>waiting</span>');
+    // vlabel= / flabel= rename the legend entries (underscores become spaces), e.g. flabel=on_the_path
+    const legName = (v, dflt) => esc(v ? v.replace(/_/g, ' ') : dflt);
+    if (spec.visited) leg.push(`<span><i style="background:rgba(74,222,128,.5)"></i>${legName(spec.vlabel, 'visited')}</span>`);
+    if (spec.frontier) leg.push(`<span><i style="border:2px dashed #8AB4FF"></i>${legName(spec.flabel, 'waiting')}</span>`);
     if (dist) leg.push('<span><i style="background:#FFCB6B"></i>distance</span>');
     if (leg.length) s += '<div class="legend">' + leg.join('') + '</div>';
     return s;

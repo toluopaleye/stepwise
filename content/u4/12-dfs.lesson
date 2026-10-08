@@ -1,0 +1,1179 @@
+=== lesson
+id: algo-dfs
+title: Depth-first search
+summary: Depth-first search (DFS) explores a graph by following one path as far as it can go, and backing up only when it's stuck. It fits recursion naturally: the paused calls remember the way back. You'll write DFS as a recursive function, see why vertices are marked as soon as they're visited, find a path, split a graph into its connected pieces, and compare DFS with BFS.
+
+=== learn
+### Deep first
+Here's the graph from the BFS lesson again, with each vertex's neighbours listed in the order the code below uses: A has B and C; B has D, A and E; C has A and F; D has B; E has B and F; F has C and E.
+```text
+    D
+    │
+    B ─── E
+    │     │
+    A     │
+    │     │
+    C ─── F
+```
+BFS explored it in rings: A, then B and C, then D, E and F. **Depth-first search** (DFS) does the opposite. It follows one path as far as it can, and only when it's stuck does it **back up** to the most recent vertex that still has a neighbour it hasn't seen:
+
+| at | what happens |
+| --- | --- |
+| A | Go to A's first neighbour, B. |
+| B | Go to B's first neighbour, D. |
+| D | D's only neighbour, B, has been seen: a dead end. Back up to B. |
+| B | B's next neighbour, A, has been seen, but E hasn't. Go to E. |
+| E | B has been seen. Go to F. |
+| F | Go to C. |
+| C | A and F have been seen. Back up to F, E, B and A in turn: none of them has anything new left. Done. |
+
+The visiting order is A, B, D, E, F, C. Like BFS, DFS reaches every vertex with a path from the start; only the order is different.
+
+### Recursive DFS
+Visiting a vertex means: mark it as seen, record it, then visit each neighbour that hasn't been seen yet. Visiting a neighbour is the same job again, one level deeper, so DFS is naturally a recursive function:
+```python
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def dfs(graph, v, seen, order):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+def dfs_order(graph, start):
+    seen = set()
+    order = []
+    dfs(graph, start, seen, order)
+    return order
+
+print(dfs_order(graph, "A"), dfs_order(graph, "F"))
+```
+```output
+['A', 'B', 'D', 'E', 'F', 'C'] ['F', 'C', 'A', 'B', 'D', 'E']
+```
+Every call gets the same `seen` set and `order` list, so they all share one record. `dfs` returns nothing: its work is the marking and recording it does along the way.
+
+### The way back
+When `dfs` for D finds nothing new, it returns, and Python carries on with the call that's paused underneath it: the one for B, part-way through its `for` loop, which moves on to B's next neighbour. That return is what backing up means.
+
+So the calls that are waiting are always the path from the start to the vertex being visited. When C is visited, the call stack holds:
+```text
+dfs(A) → dfs(B) → dfs(E) → dfs(F) → dfs(C)
+```
+That's the path A, B, E, F, C. BFS keeps its waiting vertices in a queue, first in, first out; DFS keeps them on the call stack, last in, first out, so it always carries on from the vertex it reached most recently. Animation 1 shows the call stack as the search goes.
+
+### Mark first
+`seen.add(v)` comes first, before any neighbour is visited. Without it, A would visit B, B would visit A, A would visit B again, and the calls would pile up until Python stopped them with a RecursionError.
+
+Marked on entry, each vertex gets exactly one call, however many edges lead to it: several neighbours may find it, but only the first one visits it. `seen` is a set, so each check is O(1).
+
+### Finding a path
+To find a path to a goal, each call reports back: the path from its vertex to the goal, or None if there isn't one from there. A call that gets a path from a neighbour puts its own vertex in front and passes it up:
+```python
+def find_path(graph, v, goal, seen):
+    if v == goal:
+        return [v]
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            rest = find_path(graph, w, goal, seen)
+            if rest is not None:
+                return [v] + rest
+    return None
+
+print(find_path(graph, "A", "C", set()))
+print(find_path(graph, "D", "F", set()))
+```
+```output
+['A', 'B', 'E', 'F', 'C']
+['D', 'B', 'A', 'C', 'F']
+```
+Those are paths, but roundabout ones: A and C are neighbours, and BFS found D, B, E, F, with 3 edges instead of 4. DFS takes the first route it stumbles on, so its paths are often longer than they need to be. When the fewest steps matter, use BFS. Animation 2 follows `find_path` from A to C, including the dead end at D.
+
+### Connected pieces
+One DFS reaches every vertex with a path from its start. Starting a new search from each vertex that no earlier search has reached splits the graph into its connected pieces:
+```python
+def count_pieces(graph):
+    seen = set()
+    pieces = 0
+    for v in graph:
+        if v not in seen:
+            pieces += 1
+            dfs(graph, v, seen, [])
+    return pieces
+
+islands = {1: [2], 2: [1, 3], 3: [2], 4: [5], 5: [4], 6: []}
+print(count_pieces(islands), count_pieces(graph))
+```
+```output
+3 1
+```
+The searches share one `seen` set, so every vertex is visited once in all: O(V + E), however many pieces there are. Example 2 lists the pieces themselves.
+
+### DFS or BFS?
+| | BFS | DFS |
+| --- | --- | --- |
+| waiting vertices are kept in | a queue: first in, first out | the call stack: last in, first out |
+| visiting order | rings of distance | one path as deep as it goes |
+| shortest paths, when every edge counts the same | yes | no |
+| extra memory | the queue: up to a whole ring | the call stack: up to the longest path |
+| good for | fewest steps, the nearest thing | everything reachable, pieces, exploring whole paths |
+
+Either one answers "what can be reached?" and "how many pieces?". DFS is short to write as recursion and goes deep cheaply, which suits problems that explore whole paths: backtracking, the topological sort later in this unit, and puzzles. BFS is the one for "how few steps?".
+
+### O(V + E), and how deep?
+Each vertex gets one call, and each call scans its neighbour list once, so DFS is O(V + E), like BFS. Its extra memory is the call stack, which is as deep as the longest path the search follows: O(V) in the worst case, a graph that's one long line.
+
+That depth is a real limit in Python, which stops runaway recursion at about 1,000 nested calls. On a line of 5,000 vertices, recursive DFS raises a RecursionError even though nothing is wrong. The next lesson writes DFS with a stack of its own, which can go as deep as memory allows.
+
+=== keypoints
+- DFS follows one path as far as it can, then backs up to the most recent vertex that still has an unseen neighbour.
+- Recursive DFS: mark v as seen, then call `dfs` on each neighbour that isn't seen. Every call shares the same `seen` set.
+- The waiting calls form the path from the start to the current vertex; returning from a call is backing up.
+- Mark a vertex as soon as its call starts, or a cycle makes the calls go on until a RecursionError.
+- DFS finds what can be reached and the connected pieces, and it can find a path, but not necessarily a shortest one.
+- O(V + E) time. The call stack can be as deep as the longest path, and Python allows about 1,000 nested calls.
+
+=== example: Folders inside folders
+intro: Folders hold other folders, and printing them with each level indented is a depth-first search: a folder's whole contents come out before the next folder beside it.
+```python
+folders = {
+    "home": ["docs", "photos"],
+    "docs": ["work", "school"],
+    "photos": ["2024"],
+    "work": [],
+    "school": ["maths"],
+    "maths": [],
+    "2024": [],
+}
+
+def show(folder, depth):
+    print("  " * depth + folder)
+    for sub in folders[folder]:
+        show(sub, depth + 1)
+
+show("home", 0)
+```
+1-9: Each folder lists the folders inside it. Every folder is inside exactly one other, so there are no cycles to go round, and no `seen` set is needed.
+11-12: Print the folder, indented by two spaces for each level it's down.
+13-14: Then show each folder inside it, one level deeper. Only when one is finished does the loop move on to the next.
+16: Start at the top, at depth 0. Everything inside docs, including maths, is printed before photos.
+
+=== example: Friend groups
+intro: In a group chat app, friends of friends form groups. One DFS from each person who isn't in a group yet collects a whole group.
+```python
+friends = {
+    "Ana": ["Ben"],
+    "Ben": ["Ana", "Cy"],
+    "Cy": ["Ben"],
+    "Dee": ["Eli"],
+    "Eli": ["Dee"],
+    "Fay": [],
+}
+
+def collect(v, seen, group):
+    seen.add(v)
+    group.append(v)
+    for w in friends[v]:
+        if w not in seen:
+            collect(w, seen, group)
+
+seen = set()
+groups = []
+for person in friends:
+    if person not in seen:
+        group = []
+        collect(person, seen, group)
+        groups.append(group)
+print(len(groups), groups)
+```
+1-8: Who's friends with whom, listed from both ends. Fay has no friends here yet.
+10-15: DFS that adds everyone it reaches to `group`.
+17-18: One `seen` set for all the searches, and the list of groups.
+19-23: Someone who isn't seen yet starts a new group, and the search collects everyone connected to them.
+24: Three groups: Ana, Ben and Cy; Dee and Eli; and Fay on her own.
+
+=== animation: Going deep, then backing up
+view: graph g pos=D:100,30;B:100,100;E:240,100;A:100,170;C:100,240;F:240,240 visited=seen current=v
+callstack v
+vars w order
+intro: Green vertices have been seen, and the yellow one is being visited. The call stack shows the waiting calls: they are the path from A to the current vertex, and each one carries on where it left off when the call above it returns.
+```python
+g = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def dfs(graph, v, seen, order):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+seen = set()
+order = []
+dfs(g, "A", seen, order)
+```
+1: The graph from the lesson.
+3: Defines dfs. Nothing runs yet.
+4: Visiting {v}: mark it as seen.
+5: Record {v} in the visiting order.
+6: Next neighbour of {v}. When there are none left, this call ends, and the search backs up to the call underneath.
+7: {'Has ' + str(w) + ' been seen? ' + ('Yes: skip it.' if w in seen else 'No: go deeper, to ' + str(w) + '.')}
+8: Visit {w}. A new call goes on top of the stack, and the call for {v} waits.
+10: Nothing has been seen yet.
+11: The visiting order starts empty.
+12: Start at A.
+
+=== animation: Finding a path
+view: graph g pos=D:100,30;B:100,100;E:240,100;A:100,170;C:100,240;F:240,240 visited=seen current=v
+callstack v
+vars w rest
+intro: The search for a path from A to C. A dead end reports None and the search backs up; when the goal is found, each waiting call puts its own vertex in front of the path and passes it down the stack.
+```python
+g = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def find_path(graph, v, goal, seen):
+    if v == goal:
+        return [v]
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            rest = find_path(graph, w, goal, seen)
+            if rest is not None:
+                return [v] + rest
+    return None
+
+path = find_path(g, "A", "C", set())
+```
+1: The same graph.
+3: Defines find_path. Nothing runs yet.
+4: {'Is ' + str(v) + ' the goal? ' + ('Yes.' if v == goal else 'No.')}
+5: Found it. The path from {v} to the goal is [{v}].
+6: Mark {v} as seen.
+7: Next neighbour of {v}. When there are none left, there's no path from {v}.
+8: {'Has ' + str(w) + ' been seen? ' + ('Yes: skip it.' if w in seen else 'No: look for a path from ' + str(w) + '.')}
+9: Ask {w} for a path to the goal. The call for {v} waits for the answer.
+10: {'The search from ' + str(w) + ' found ' + str(rest) + '.' if rest is not None else 'No path from ' + str(w) + ': try the next neighbour.'}
+11: Put {v} in front and pass the path back: {[v] + rest}.
+12: No neighbour of {v} leads to the goal: report None.
+14: Look for a path from A to C.
+
+=== task: predict easy
+title: Deep first
+code:
+```python
+graph = {"S": ["P", "Q"], "P": ["S", "R"], "Q": ["S", "R", "T"],
+         "R": ["P", "Q", "U"], "T": ["Q"], "U": ["R"]}
+
+def dfs(graph, v, seen, order):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+order = []
+dfs(graph, "S", set(), order)
+print(order)
+```
+wrong[['S', 'P', 'Q', 'R', 'T', 'U']]: That's BFS's ring order. DFS goes deep first: from P it carries straight on to R, before Q gets a turn.
+wrong[['S', 'P', 'R', 'U', 'Q', 'T']]: R's neighbours are tried in the order they're listed: P, then Q, then U. Q comes before U.
+wrong[['S', 'P', 'R', 'Q', 'U', 'T']]: When Q is visited, it carries on to its own unseen neighbour, T, before the search backs up to R and U.
+hint: Each call goes to the first neighbour that hasn't been seen, before looking at the others.
+hint: From S: P, then P's first unseen neighbour. Keep going until a vertex has nothing new.
+right: `['S', 'P', 'R', 'Q', 'T', 'U']`. Each call dives into its first unseen neighbour: S, P, R, Q, T. T is a dead end, and so is Q now, so the search backs up to R, which still has U.
+wrong: S goes to P, P to R, R to Q (P is seen), Q to T (S and R are seen). T has nothing new, Q has nothing more, so the search backs up to R and visits U.
+
+=== task: mcq easy
+title: A dead end
+prompt: DFS has arrived at a vertex whose neighbours have all been seen already. What happens next?
+* Its call returns, and the search carries on with the next neighbour of the vertex it came from :: Right. Returning is backing up: the waiting call underneath picks up its loop where it left off.
+- The whole search stops, because every vertex must have been found :: Other vertices further back along the path may still have unseen neighbours, and their calls are waiting.
+- The search starts again from the first vertex in the dictionary :: DFS never restarts by itself; it backs up one call at a time.
+- It jumps to the nearest unseen vertex anywhere in the graph :: DFS only moves along edges. It goes back to the vertex it came from and tries that vertex's next neighbour.
+hint: What's waiting underneath the current call?
+hint: The call that visited this vertex is paused part-way through its `for` loop.
+right: The dead end's call ends, Python goes back to the call that made it, and that call's loop moves on to its next neighbour.
+wrong: A call with nothing new to visit returns. The call below it on the stack, which made it, carries on with its own remaining neighbours.
+
+=== task: cells easy
+title: Counting the work
+prompt: DFS starts at A on this graph. Count how many times each line runs in the whole search.
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "C"], "C": ["A", "B", "D"],
+         "D": ["C"], "E": []}
+
+def dfs(graph, v, seen):
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen)
+
+dfs(graph, "A", set())
+```
+labels: seen.add(v) runs | the if test runs | calls made from the loop
+answer: 4 | 8 | 3
+wrong[5 | 8 | 4]: E has no edges, so nothing leads to it from A. Only A, B, C and D are visited.
+wrong[4 | 4 | 3]: Each of the 4 edges is looked at from both of its ends, once from each vertex's list: 2 + 2 + 3 + 1 = 8 checks.
+wrong[4 | 8 | 4]: The first call, for A, is made outside the loop. Inside it, only B, C and D are visited.
+hint: Each reached vertex gets exactly one call, and each call adds its vertex to `seen` once.
+hint: The `if` runs once for every name in the neighbour lists of the vertices that are visited.
+right: 4, 8 and 3. Each reachable vertex is visited once, and each edge is checked once from each end: that's where O(V + E) comes from.
+wrong: A, B, C and D are reached, so `seen.add` runs 4 times. Their lists hold 2 + 2 + 3 + 1 = 8 names, so the check runs 8 times. Apart from the first call, 3 calls are made from inside the loop.
+
+=== task: code easy
+title: Visiting order
+prompt: Write `dfs(graph, v, seen, order)`, which marks v as seen, appends it to `order`, and then visits each neighbour that hasn't been seen yet, in the order they're listed. `dfs_order` calls it for you. For example, with `{"A": ["B", "C"], "B": ["A"], "C": ["A"]}` and start `"A"`, the order is `['A', 'B', 'C']`.
+starter:
+```python
+def dfs(graph, v, seen, order):
+    # your code here
+    pass
+
+def dfs_order(graph, start):
+    seen = set()
+    order = []
+    dfs(graph, start, seen, order)
+    return order
+```
+solution:
+```python
+def dfs(graph, v, seen, order):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+def dfs_order(graph, start):
+    seen = set()
+    order = []
+    dfs(graph, start, seen, order)
+    return order
+```
+tests:
+- dfs_order({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "A")
+- dfs_order({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "C")
+- dfs_order({0: [3, 1], 1: [0, 2], 2: [1], 3: [0, 4], 4: [3]}, 0)
+- dfs_order({1: [2], 2: [1, 3], 3: [2], 4: []}, 1)
+- dfs_order({"x": []}, "x")
+- dfs_order({"a": ["a", "b"], "b": []}, "a")
+fail[1]: A square: A goes to B, B goes on to D, and D goes on to C: ['A', 'B', 'D', 'C'].
+fail[2]: From C: C, A, B, then D: ['C', 'A', 'B', 'D'].
+fail[3]: Deep first: 0, then 3 and 3's neighbour 4, and only then 1 and 2: [0, 3, 4, 1, 2]. That's not BFS's [0, 3, 1, 4, 2].
+fail[4]: 4 can't be reached from 1: [1, 2, 3].
+fail[5]: A vertex with no neighbours: ['x'].
+fail[6]: a lists itself. It's already seen when the loop gets to it, so it's visited once: ['a', 'b'].
+error[RecursionError]: The calls never stop. Mark v as seen at the very start of `dfs`, before visiting any neighbour, and only visit neighbours that aren't in `seen`.
+speed: setup=graph = {i: [0] for i in range(1, n)}; graph[0] = list(range(1, n)) | call=dfs_order(graph, 0) | target=O(n)
+slow:
+```python
+def dfs(graph, v, seen, order):
+    seen.append(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+def dfs_order(graph, start):
+    seen = []
+    order = []
+    dfs(graph, start, seen, order)
+    return order
+```
+hint: First `seen.add(v)` and `order.append(v)`.
+hint: Then loop over `graph[v]`, and call `dfs(graph, w, seen, order)` for each w that isn't in `seen`.
+hint: `seen` must stay a set: the speed check uses a star with n vertices, where a list would make each check slow.
+right: Marking first means each vertex gets one call, and passing the same `seen` and `order` down means every call adds to one shared record. The recursion does the backing up for you.
+wrong: Mark v, record it, then for each neighbour w in order: if w isn't seen, call `dfs` on it with the same `seen` and `order`.
+
+=== task: fill easy
+title: Counting what's reachable
+prompt: Fill in the blanks so that `reach_count` returns how many vertices can be reached from v, including v itself, and the program prints:
+
+```output
+4 2
+```
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A"], "D": ["B"],
+         "E": ["F"], "F": ["E"]}
+
+def reach_count(graph, v, seen):
+    seen.add(v)
+    total = ??
+    for w in graph[v]:
+        if w not in seen:
+            total += ??
+    return total
+
+print(reach_count(graph, "A", set()), reach_count(graph, "E", set()))
+```
+answer: 1 | reach_count(graph, w, seen)
+wrong[0 | reach_count(graph, w, seen)]: Every call would add up zeros: v itself must count as 1.
+wrong[1 | 1]: That counts only v and its direct neighbours. D is two steps from A, so A's count would miss it: 3 instead of 4.
+wrong[1 | reach_count(graph, w, set())]: A new, empty set for each call forgets what's been seen. B would visit A again, A would visit B again, and the calls would never end: a RecursionError.
+hint: v counts as 1.
+hint: Each unseen neighbour adds everything that can be reached from it, which is a smaller version of the same question.
+right: Each call counts its own vertex, plus the counts reported back by the calls it makes. Since every vertex gets one call, each one is counted exactly once.
+wrong: Start `total` at 1 for v, and add `reach_count(graph, w, seen)` for each unseen neighbour, passing the same `seen` set down.
+
+=== task: multi easy
+title: True of DFS
+prompt: Choose **every** true statement about depth-first search, written recursively as in this lesson.
+* It reaches exactly the vertices that BFS from the same start reaches :: Right. Both follow every edge from every vertex they reach; only the order differs.
+* Returning from a call is how it backs up :: Right. The call underneath carries on with its next neighbour.
+* Every vertex it reaches gets exactly one call :: Right. A vertex is marked as soon as its call starts, so no second call is made for it.
+- It visits all the start's neighbours before anything further away :: That's BFS. DFS goes deep along the first neighbour's path first.
+- It keeps the vertices it's about to visit in a queue :: The waiting calls are a stack: the most recent one carries on first.
+- It only works on graphs without cycles :: The `seen` set stops it going round a cycle.
+hint: Which search finishes the first ring before going further?
+hint: What stops DFS calling itself forever on a cycle?
+right: DFS reaches the same vertices as BFS, gives each one call, and backs up by returning. It goes deep rather than ring by ring, and its waiting calls form a stack.
+wrong: DFS dives along one path, backs up by returning, and marks each vertex as soon as its call starts. It reaches everything BFS would, in a different order, and it handles cycles thanks to `seen`.
+
+=== task: parsons easy
+title: Is there a path?
+prompt: Arrange the lines so that `has_path` returns True as soon as some call reaches the goal, and False if no path leads there. The program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def has_path(graph, v, goal, seen):
+    if v == goal:
+        return True
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen and has_path(graph, w, goal, seen):
+            return True
+    return False
+```
+distractors:
+```python
+        if w not in seen or has_path(graph, w, goal, seen):
+    seen.add(goal)
+```
+after:
+```python
+lanes = {"Bow": ["Cove"], "Cove": ["Bow", "Dale"], "Dale": ["Cove"], "Fen": []}
+print(has_path(lanes, "Bow", "Dale", set()), has_path(lanes, "Dale", "Fen", set()))
+```
+hint: A call that reaches the goal answers True straight away.
+hint: If any neighbour's call says True, pass True back. Only when every neighbour has been tried is the answer False.
+right: True travels back down the stack as soon as the goal is found, so the search stops early. False comes back only after a vertex has run out of neighbours to try.
+wrong: Check for the goal first, then mark v. For each unseen neighbour, if its call finds a path, return True. After the loop, return False.
+
+=== task: order easy
+title: Inside one call
+prompt: Put these steps of one call `dfs(graph, v, seen)` in the order they happen.
+items:
+- Add v to `seen`.
+- Take v's next neighbour, w.
+- If w isn't in `seen`, call `dfs` on w and wait for it to return.
+- When v has no neighbours left, return to the call that visited v.
+hint: A vertex is marked before anything else happens.
+hint: Returning is the last thing a call does.
+right: Mark, then go through the neighbours one at a time, diving into each unseen one, and return once they've all been tried.
+wrong: The call marks v first, so no other call visits it. Then it loops over the neighbours, making a call for each unseen one. When the loop ends, the call returns, and the search backs up.
+
+=== task: predict easy
+title: The long way round
+code:
+```python
+graph = {"S": ["A", "G"], "A": ["S", "B"], "B": ["A", "G"], "G": ["B", "S"]}
+
+def find_path(graph, v, goal, seen):
+    if v == goal:
+        return [v]
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            rest = find_path(graph, w, goal, seen)
+            if rest is not None:
+                return [v] + rest
+    return None
+
+print(find_path(graph, "S", "G", set()))
+```
+wrong[['S', 'G']]: That's the shortest path, which BFS would find. DFS tries S's first neighbour, A, and that path reaches G too, so G is never tried directly from S.
+wrong[['G', 'B', 'A', 'S']]: Each call puts its own vertex in front of the path it gets back, so the path runs from S to G.
+wrong[['S', 'A', 'B']]: The path ends with the goal: G's call returns `['G']`, and B puts itself in front of that.
+hint: S's first neighbour is A. Does the search from A find G?
+hint: Each call returns `[v] + rest`, so the path is built from the goal back towards S.
+right: `['S', 'A', 'B', 'G']`. DFS goes deep along A first, and that route works, so it's the one returned, though S and G are neighbours.
+wrong: S tries A first. A tries B (S is seen), and B tries G, the goal. The answers come back as `['G']`, `['B', 'G']`, `['A', 'B', 'G']` and `['S', 'A', 'B', 'G']`.
+
+=== task: mcq easy
+title: Too deep
+prompt: A graph is one long line of 5,000 vertices. Recursive DFS from one end raises a RecursionError, but the same code works on a star with 5,000 vertices. Why?
+* On the line, each call waits for the next one, so 5,000 calls pile up, more than Python allows at once :: Right. Python stops at about 1,000 nested calls. On the star, the calls are never more than 2 deep.
+- The line has more edges than the star :: Both have 4,999 edges. What differs is how deep the calls go.
+- The `seen` set gets too big on the line :: `seen` holds 5,000 vertices either way.
+- DFS can't handle graphs that are a single line :: It handles them fine when the line is short; the problem is only the depth.
+hint: How many calls are waiting at the moment the far end of the line is visited?
+hint: In the star, each outer vertex's call returns before the next one starts.
+right: The depth of the call stack follows the longest path DFS walks. A line makes it as deep as the whole graph, and Python's limit of about 1,000 nested calls is reached.
+wrong: Every vertex on the line is visited from inside the previous one's call, so the calls nest 5,000 deep. The star's calls go centre, then one outer vertex, then back: never more than 2.
+
+=== task: code medium
+title: Provinces
+prompt: Some cities are connected directly by roads, and cities connected directly or through others form a province. `matrix[i][j]` is 1 if cities i and j are connected directly, and 0 if not; each city is connected to itself. Write `provinces(matrix)` that returns the number of provinces. Use a helper `visit(matrix, i, seen)` that runs DFS from city i, where the neighbours of i are the cities j with `matrix[i][j] == 1`.
+starter:
+```python
+def visit(matrix, i, seen):
+    # your code here
+    pass
+
+def provinces(matrix):
+    # your code here
+    return 0
+```
+solution:
+```python
+def visit(matrix, i, seen):
+    seen.add(i)
+    for j in range(len(matrix)):
+        if matrix[i][j] == 1 and j not in seen:
+            visit(matrix, j, seen)
+
+def provinces(matrix):
+    seen = set()
+    count = 0
+    for i in range(len(matrix)):
+        if i not in seen:
+            count += 1
+            visit(matrix, i, seen)
+    return count
+```
+tests:
+- provinces([[1, 1, 0], [1, 1, 0], [0, 0, 1]])
+- provinces([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+- provinces([[1]])
+- provinces([[1, 0, 0, 1], [0, 1, 1, 0], [0, 1, 1, 1], [1, 0, 1, 1]])
+- provinces([[1, 0, 1], [0, 1, 0], [1, 0, 1]])
+fail[1]: Cities 0 and 1 are connected; city 2 is on its own: 2.
+fail[2]: No roads between different cities: 3 provinces of one city each.
+fail[3]: One city: 1.
+fail[4]: 0 connects to 3, 3 to 2, and 2 to 1, so all four are one province, though 0 and 1 aren't directly connected.
+fail[5]: Cities 0 and 2 are connected, and city 1 is alone: 2.
+hint: Row i of the matrix says who city i is connected to: j is a neighbour when `matrix[i][j] == 1`.
+hint: In `provinces`, loop over the cities; each one that isn't seen yet starts a new province, and `visit` marks the whole province.
+right: The matrix is another way to store the graph. DFS from each city that hasn't been reached marks its whole province, so the number of fresh starts is the number of provinces. Checking a whole row per city makes it O(n²) for n cities.
+wrong: In `visit`, mark i, then call `visit` on every j with `matrix[i][j] == 1` that isn't seen. In `provinces`, count the cities that aren't seen when the loop reaches them, visiting each one.
+
+=== task: code medium
+title: Keys to every room
+prompt: There are n rooms, numbered from 0. Only room 0 is unlocked. Each room holds keys to other rooms: `rooms[i]` is the list of room numbers whose keys are in room i. You may enter any room you have a key for. Write `all_rooms(rooms)` that returns True if you can get into every room, and False if not. Use DFS: entering a room means picking up its keys and entering each room they open that you haven't entered yet.
+starter:
+```python
+def enter(rooms, r, seen):
+    # your code here
+    pass
+
+def all_rooms(rooms):
+    seen = set()
+    enter(rooms, 0, seen)
+    # your code here
+    return True
+```
+solution:
+```python
+def enter(rooms, r, seen):
+    seen.add(r)
+    for key in rooms[r]:
+        if key not in seen:
+            enter(rooms, key, seen)
+
+def all_rooms(rooms):
+    seen = set()
+    enter(rooms, 0, seen)
+    return len(seen) == len(rooms)
+```
+tests:
+- all_rooms([[1], [2], [3], []])
+- all_rooms([[1, 3], [3, 0, 1], [2], [0]])
+- all_rooms([[]])
+- all_rooms([[2], [], [1]])
+- all_rooms([[], [0]])
+- all_rooms([[1], [0, 2], [1]])
+fail[1]: Each room holds the key to the next: True.
+fail[2]: The only key to room 2 is inside room 2: False.
+fail[3]: One room, already open: True.
+fail[4]: Room 0 opens room 2, and room 2 holds the key to room 1: True.
+fail[5]: Room 1 holds the key to room 0, but nothing opens room 1: False.
+fail[6]: Rooms 0, 1 and 2 open each other: True.
+hint: The rooms are vertices, and a key in room i is a one-way edge from i to the room it opens.
+hint: After the search, compare the number of rooms entered with `len(rooms)`.
+right: DFS from room 0 enters exactly the rooms you can reach by following keys. If that's all of them, every room can be entered.
+wrong: In `enter`, mark the room, then enter each room its keys open that isn't marked yet. After entering room 0, check whether every room was marked.
+
+=== task: predict medium
+title: No seen set
+prompt: This search has no `seen` set. The edges are one-way and there are no cycles, so it can't go round forever. What does it print?
+code:
+```python
+def visit(graph, v, order):
+    order.append(v)
+    for w in graph[v]:
+        visit(graph, w, order)
+
+dag = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": ["E"], "E": []}
+order = []
+visit(dag, "A", order)
+print(order)
+```
+wrong[['A', 'B', 'D', 'E', 'C']]: That's what a `seen` set gives. Without it, C visits D again, and D visits E again.
+wrong[['A', 'B', 'C', 'D', 'E']]: That's ring order, as BFS would give. DFS finishes everything below B before it moves on to C.
+wrong[['A', 'B', 'D', 'E', 'C', 'D']]: D's second visit runs its whole call again, including the call for E.
+hint: Nothing stops a vertex being visited twice. Which vertices can be reached from both B and C?
+hint: Each visit to D runs D's loop, which visits E.
+right: `['A', 'B', 'D', 'E', 'C', 'D', 'E']`. D and E are reached once through B and again through C. With many such joins, the repeats multiply, which is why DFS marks vertices.
+wrong: A visits B, which visits D, which visits E. Back in A's loop, C visits D again, and D visits E again. Every route to a vertex visits it once more.
+
+=== task: cells medium
+title: Who found whom?
+prompt: This DFS records, for each vertex, the vertex whose call visited it. After it runs, what is each vertex's parent?
+code:
+```python
+graph = {"S": ["A", "B"], "A": ["S", "C", "B"], "B": ["S", "A", "D"],
+         "C": ["A", "D"], "D": ["B", "C"]}
+
+def dfs(graph, v, parent):
+    for w in graph[v]:
+        if w not in parent:
+            parent[w] = v
+            dfs(graph, w, parent)
+
+parent = {"S": None}
+dfs(graph, "S", parent)
+```
+labels: A | B | C | D
+answer: S | D | A | C
+wrong[S | S | A | B]: That's BFS's answer. DFS dives from A to C and on to D before S's call ever reaches B, so D finds B first.
+wrong[S | A | A | C]: A's list has C before B, so A's call dives into C first, and from there to D, which finds B before A's loop gets to it.
+wrong[S | D | A | B]: D is found from C: S → A → C → D, before B has been visited at all.
+hint: Follow the calls: S visits A first. Which of A's neighbours does A's call visit first?
+hint: A vertex's parent is the vertex whose call got to it first.
+right: S, D, A and C. The search runs S, A, C, D, B in one long dive, so each vertex's parent is the one before it on that path.
+wrong: S's call visits A. A's call visits C (S is taken). C's call visits D. D's call visits B. By the time any call looks at B from S or A, it already has a parent.
+
+=== task: fill medium
+title: Size of each team
+prompt: In a company, `tree` lists the people who report directly to each person. A person's team is that person plus everyone below them. Fill in the blanks so that `team_size` records each person's team size in `sizes`, and the program prints:
+
+```output
+7 4 2 1
+```
+code:
+```python
+tree = {"ceo": ["cto", "cfo"], "cto": ["dev1", "dev2", "dev3"], "cfo": ["acct"],
+        "dev1": [], "dev2": [], "dev3": [], "acct": []}
+
+def team_size(tree, boss, sizes):
+    size = ??
+    for person in tree[boss]:
+        size += ??
+    sizes[boss] = size
+    return size
+
+sizes = {}
+team_size(tree, "ceo", sizes)
+print(sizes["ceo"], sizes["cto"], sizes["cfo"], sizes["dev1"])
+```
+answer: 1 | team_size(tree, person, sizes)
+wrong[0 | team_size(tree, person, sizes)]: The boss belongs to their own team, so every size would be 0 without that 1.
+wrong[1 | 1]: That counts only the people reporting directly. The ceo's team would be 3, missing the developers and the accountant.
+wrong[1 | sizes[person]]: A person's size isn't in `sizes` until their own call has run, so this raises a KeyError. Call `team_size` to work it out.
+hint: Start each team with the boss alone.
+hint: Each direct report brings their whole team, which is the same question one level down.
+right: Each call adds up the teams below it after they've been worked out, so sizes are finished from the bottom up: the developers first, then the cto, then the ceo.
+wrong: Start `size` at 1, add `team_size(tree, person, sizes)` for each direct report, record it, and return it.
+
+=== task: mcq medium
+title: A copy of seen
+prompt: In this version each call gets its own copy of `seen`: the recursive call is `dfs(graph, w, set(seen), order)`. What happens?
+* A vertex can be visited many times, once for each path that reaches it, so the work can grow exponentially :: Right. Each copy only remembers the path that led to this call, so other branches can't see what was already visited.
+- It goes round a cycle until a RecursionError :: The copy still holds every vertex on the current path, so a call never goes back to one of them. The repeats come from different paths, not from going round.
+- Nothing changes except that copying takes a little longer :: The order fills up with repeats: anything reachable along two paths is visited twice.
+- Only the start is ever visited :: The copy holds the vertices on the path so far, not the neighbours, so the search still goes deeper.
+hint: What does one branch's copy know about the vertices another branch visited?
+hint: Could a vertex on the current path be visited again?
+right: Sharing one `seen` set is what makes each vertex get one call. With copies, each branch only knows its own path, so the search explores every simple path: correct order is lost and the time can explode.
+wrong: Every call must add to the same set. A copy only carries the current path, so vertices reached in other branches are visited again, once per path.
+
+=== task: predict medium
+title: Lists the other way round
+prompt: `backwards` has the same edges as `graph`, with every neighbour list reversed. What does it print?
+code:
+```python
+def dfs(graph, v, seen, order):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs(graph, w, seen, order)
+
+graph = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}
+backwards = {v: graph[v][::-1] for v in graph}
+
+first, second = [], []
+dfs(graph, "A", set(), first)
+dfs(backwards, "A", set(), second)
+print(first, second, sorted(first) == sorted(second))
+```
+wrong[['A', 'B', 'D', 'C'] ['A', 'B', 'D', 'C'] True]: The lists are reversed, so A tries C first in `backwards`, and the dive goes A, C, D, B.
+wrong[['A', 'B', 'D', 'C'] ['C', 'D', 'B', 'A'] True]: The order isn't the first one reversed: both searches start at A. Only the choice at each vertex changes.
+wrong[['A', 'B', 'D', 'C'] ['A', 'C', 'D', 'B'] False]: Both searches reach the same four vertices, only in a different order, so the sorted lists are equal.
+hint: In `backwards`, A's list is `["C", "B"]` and C's list is `["D", "A"]`.
+hint: The order changes, but does the set of vertices reached?
+right: `['A', 'B', 'D', 'C'] ['A', 'C', 'D', 'B'] True`. The neighbour order decides which way each dive goes, so the visiting order changes, but the same vertices are reached either way.
+wrong: With `graph`: A, B, D, then C from D. With `backwards`: A, C (A's list starts with C), D, then B. Sorted, both are A, B, C, D.
+
+=== task: multi medium
+title: A job for DFS?
+prompt: Choose **every** question that the DFS in this lesson answers correctly.
+* Can every room in a building be reached from the entrance? :: Right. DFS from the entrance reaches exactly the rooms that can be reached.
+* How many separate friend groups do these people form? :: Right. Count the DFS searches started from people nobody has reached yet.
+* Is there any route at all between two towns? :: Right. DFS finds a path if one exists, even if it isn't the shortest.
+- What's the fewest number of flights between two airports? :: DFS finds a route, not the shortest one. Fewest steps needs BFS.
+- Which exit is nearest to each room? :: Nearest means fewest steps: that's BFS, starting from every exit at once.
+- What's the cheapest train journey, when tickets cost different amounts? :: Different costs need Dijkstra's algorithm.
+hint: Which questions only ask what can be reached, not how far it is?
+hint: DFS's first path is often a roundabout one.
+right: Reachability, pieces and "is there a path?" don't care about the order of visiting, so DFS answers them. Fewest steps needs BFS, and different costs need Dijkstra's algorithm.
+wrong: DFS is right whenever the answer depends only on what can be reached. Any question about the fewest steps or the lowest cost needs a different search.
+
+=== task: parsons medium
+title: How tall is the tree?
+prompt: The height of a tree is the number of edges on the longest path from the root down to a leaf. Arrange the lines so that `height` works it out by asking each child for its own height, and the program prints:
+
+```output
+3 0
+```
+
+Not every line is needed.
+lines:
+```python
+def height(tree, node):
+    best = 0
+    for child in tree[node]:
+        best = max(best, 1 + height(tree, child))
+    return best
+```
+distractors:
+```python
+        best = best + height(tree, child)
+    best = 1
+```
+after:
+```python
+tree = {"a": ["b", "c"], "b": ["d"], "c": [], "d": ["e"], "e": []}
+print(height(tree, "a"), height(tree, "c"))
+```
+hint: A leaf has no children, so its height is 0.
+hint: Going down to a child adds 1 edge, and only the tallest child matters.
+right: Each call returns its height after hearing from all its children, so the answer is built from the leaves up: e is 0, d is 1, b is 2 and a is 3.
+wrong: Start `best` at 0 for a leaf. For each child, compare `best` with 1 + the child's height and keep the larger. Return `best`.
+
+=== task: order medium
+title: Finishing order
+prompt: DFS starts at P on this graph, trying neighbours in the order listed:
+
+```python
+graph = {"P": ["Q", "S"], "Q": ["P", "R", "T"], "R": ["Q"],
+         "S": ["P", "T"], "T": ["Q", "S", "U"], "U": ["T"]}
+```
+
+A vertex is **finished** when its call returns. Put the vertices in the order they finish.
+items:
+- R
+- S
+- U
+- T
+- Q
+- P
+hint: The visiting order is P, Q, R, T, S, U. A call finishes only after all the calls it makes have finished.
+hint: R is a dead end, so it finishes first. Which call finishes next?
+right: R, S, U, T, Q and P. A vertex finishes after everything it visits, so the start, P, always finishes last.
+wrong: P visits Q, Q visits R (R finishes), then T, T visits S (S finishes), then U (U finishes), then T finishes, then Q, and finally P.
+
+=== task: code hard
+title: Every route
+prompt: `graph` is a directed graph with no cycles, given as the list of vertices each vertex leads to. Write `all_routes(graph, start, goal)` that returns every route from `start` to `goal`, each as a list of vertices, in the order a DFS that tries neighbours in list order finds them. No `seen` set is needed: with no cycles, a route can't come back to a vertex. Use a helper `routes_from(graph, v, goal, path, found)` that adds v to the path, records a copy if v is the goal, otherwise carries on to each neighbour, and then removes v again.
+starter:
+```python
+def routes_from(graph, v, goal, path, found):
+    # your code here
+    pass
+
+def all_routes(graph, start, goal):
+    found = []
+    routes_from(graph, start, goal, [], found)
+    return found
+```
+solution:
+```python
+def routes_from(graph, v, goal, path, found):
+    path.append(v)
+    if v == goal:
+        found.append(path[:])
+    else:
+        for w in graph[v]:
+            routes_from(graph, w, goal, path, found)
+    path.pop()
+
+def all_routes(graph, start, goal):
+    found = []
+    routes_from(graph, start, goal, [], found)
+    return found
+```
+tests:
+- all_routes({0: [1, 2], 1: [3], 2: [3], 3: []}, 0, 3)
+- all_routes({0: [4, 3, 1], 1: [3, 2, 4], 2: [3], 3: [4], 4: []}, 0, 4)
+- all_routes({"s": ["x", "y"], "x": ["t"], "y": ["x", "t"], "t": []}, "s", "t")
+- all_routes({"a": ["b"], "b": []}, "a", "a")
+- all_routes({"a": ["b"], "b": [], "c": ["a"]}, "a", "c")
+fail[1]: Two routes: [[0, 1, 3], [0, 2, 3]].
+fail[2]: Five routes, in DFS order: [[0, 4], [0, 3, 4], [0, 1, 3, 4], [0, 1, 2, 3, 4], [0, 1, 4]].
+fail[3]: x is on two routes, so a `seen` set would lose one: [['s', 'x', 't'], ['s', 'y', 'x', 't'], ['s', 'y', 't']].
+fail[4]: The start is the goal: one route of one vertex, [['a']].
+fail[5]: Nothing leads from a to c: [].
+hint: Record `path[:]`, a copy, because the path keeps changing after it's recorded.
+hint: Remove v with `path.pop()` before returning, whichever branch ran, so the path is right for the caller's next neighbour.
+hint: Unlike plain DFS, a vertex can be visited once for every route through it, so don't mark anything.
+right: The path holds the route from the start to the current call. Each call extends it, records it at the goal, and undoes its own step before returning: backtracking over a graph with no cycles.
+wrong: Append v. If it's the goal, record a copy of the path; otherwise call `routes_from` on each neighbour. Pop v at the end.
+
+=== task: code hard
+title: Measuring with two jugs
+prompt: You have two jugs that hold a and b litres, a tap, and a sink. A state is (x, y), the litres in each jug. From any state you can fill a jug to the top, empty a jug, or pour one jug into the other until the first is empty or the second is full. Starting from (0, 0), can you get exactly t litres in one of the jugs? Write `can_measure(a, b, t)`. The states form a graph with no list of edges: use a helper `pour(a, b, x, y, seen)` that runs DFS over the states, working out each state's six next states as it goes, and then check whether any state that was reached has t in a jug.
+starter:
+```python
+def pour(a, b, x, y, seen):
+    # your code here
+    pass
+
+def can_measure(a, b, t):
+    seen = set()
+    pour(a, b, 0, 0, seen)
+    # your code here
+    return False
+```
+solution:
+```python
+def pour(a, b, x, y, seen):
+    seen.add((x, y))
+    moves = [(a, y), (x, b), (0, y), (x, 0)]
+    amount = min(x, b - y)
+    moves.append((x - amount, y + amount))
+    amount = min(y, a - x)
+    moves.append((x + amount, y - amount))
+    for state in moves:
+        if state not in seen:
+            pour(a, b, state[0], state[1], seen)
+
+def can_measure(a, b, t):
+    seen = set()
+    pour(a, b, 0, 0, seen)
+    for x, y in seen:
+        if x == t or y == t:
+            return True
+    return False
+```
+tests:
+- can_measure(3, 5, 4)
+- can_measure(2, 6, 5)
+- can_measure(4, 6, 2)
+- can_measure(1, 2, 3)
+- can_measure(5, 3, 0)
+- can_measure(6, 9, 4)
+fail[1]: The classic puzzle: fill the 5, pour into the 3, empty the 3, pour the 2 across, fill the 5, top up the 3: 4 litres left. True.
+fail[2]: Both jugs hold even amounts, and every move keeps them even: 5 is impossible. False.
+fail[3]: Fill the 6, pour into the 4: 2 litres left. True.
+fail[4]: Neither jug can hold 3 litres: False.
+fail[5]: Both jugs start empty, so 0 is there from the start: True.
+fail[6]: Every amount you can make is a multiple of 3, the largest number that divides both 6 and 9: False.
+hint: The six moves from (x, y): fill a (a, y), fill b (x, b), empty a (0, y), empty b (x, 0), pour a into b, pour b into a.
+hint: Pouring a into b moves `min(x, b - y)` litres: either all of a, or as much as b has room for.
+hint: There are at most (a + 1) × (b + 1) states, and `seen` makes sure each is explored once.
+right: The puzzle is a reachability question on a graph of states, built only as the search reaches it. DFS explores every state once, so the answer comes after at most (a + 1) × (b + 1) calls.
+wrong: In `pour`, mark (x, y), build the six next states, and call `pour` on each unseen one. Then return True if some reached state has x == t or y == t.
+
+=== task: code hard
+title: Critical vertices
+prompt: A network starts in one piece. A vertex is **critical** if removing it, with its edges, would split the other vertices into more than one piece. Write `critical(graph)` that returns the critical vertices in sorted order. For each vertex, run a DFS that's not allowed to enter it, starting from any other vertex, and see whether the search reaches all the others. Use a helper `reach_without(graph, v, banned, seen)`.
+starter:
+```python
+def reach_without(graph, v, banned, seen):
+    # your code here
+    pass
+
+def critical(graph):
+    result = []
+    # your code here
+    return sorted(result)
+```
+solution:
+```python
+def reach_without(graph, v, banned, seen):
+    seen.add(v)
+    for w in graph[v]:
+        if w != banned and w not in seen:
+            reach_without(graph, w, banned, seen)
+
+def critical(graph):
+    result = []
+    for v in graph:
+        others = [u for u in graph if u != v]
+        if not others:
+            continue
+        seen = set()
+        reach_without(graph, others[0], v, seen)
+        if len(seen) < len(others):
+            result.append(v)
+    return sorted(result)
+```
+tests:
+- critical({1: [2], 2: [1, 3], 3: [2]})
+- critical({1: [2, 3], 2: [1, 3], 3: [1, 2]})
+- critical({0: [1, 2, 3], 1: [0], 2: [0], 3: [0]})
+- critical({"a": ["b", "c"], "b": ["a", "c"], "c": ["a", "b", "d", "e"], "d": ["c", "e"], "e": ["c", "d"]})
+- critical({1: []})
+- critical({1: [2], 2: [1]})
+fail[1]: In a line of three, removing the middle one leaves the ends apart: [2].
+fail[2]: In a triangle, any two vertices are still joined: [].
+fail[3]: Removing the centre of a star leaves three loose vertices: [0].
+fail[4]: Two triangles share c, so removing c splits them: ['c'].
+fail[5]: A single vertex: nothing left to split, [].
+fail[6]: Removing either vertex leaves one vertex, which is one piece: [].
+hint: In `reach_without`, it's ordinary DFS that never steps into `banned`.
+hint: In `critical`, for each v, start the search from any other vertex. If it reaches fewer than all the other vertices, v is critical.
+hint: That's one DFS per vertex: O(V × (V + E)). Faster methods exist, but this one only needs DFS.
+right: Removing a vertex is the same as forbidding the search to enter it. If the search from a remaining vertex misses some of the others, the vertex was holding the network together.
+wrong: For each vertex v, run DFS from another vertex, skipping v. Compare how many vertices it reached with the number of vertices other than v. Fewer means v is critical.
+
+=== task: code hard
+title: Is it a tree?
+prompt: A tree is a graph that's connected and has no cycles. Write `is_tree(n, edges)` for a graph with vertices 0 to n − 1 and a list of undirected edges, each a pair. A graph with n vertices is a tree exactly when it has n − 1 edges **and** is connected, so check the count, then build neighbour lists and use DFS from 0 to check that every vertex is reached.
+starter:
+```python
+def is_tree(n, edges):
+    # your code here
+    return False
+```
+solution:
+```python
+def visit(graph, v, seen):
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            visit(graph, w, seen)
+
+def is_tree(n, edges):
+    if len(edges) != n - 1:
+        return False
+    graph = {v: [] for v in range(n)}
+    for a, b in edges:
+        graph[a].append(b)
+        graph[b].append(a)
+    seen = set()
+    visit(graph, 0, seen)
+    return len(seen) == n
+```
+tests:
+- is_tree(5, [(0, 1), (0, 2), (0, 3), (1, 4)])
+- is_tree(5, [(0, 1), (1, 2), (2, 3), (1, 3), (1, 4)])
+- is_tree(4, [(0, 1), (2, 3)])
+- is_tree(1, [])
+- is_tree(4, [(0, 1), (1, 2), (2, 0)])
+- is_tree(2, [(0, 1)])
+fail[1]: 4 edges for 5 vertices, and everything is connected: True.
+fail[2]: 5 edges for 5 vertices is one too many: there's a cycle, 1, 2, 3. False.
+fail[3]: Two separate pieces: False.
+fail[4]: One vertex and no edges is a tree: True.
+fail[5]: The right number of edges, 3, but they make a triangle, and vertex 3 is left out. The count alone isn't enough: False.
+fail[6]: One edge joining two vertices: True.
+hint: Too many or too few edges rules out a tree straight away.
+hint: With exactly n − 1 edges, the graph is a tree if and only if DFS from 0 reaches all n vertices.
+right: n − 1 edges and connected together guarantee no cycles: a connected graph needs at least n − 1 edges, and any extra would close a cycle. The DFS checks the "connected" half.
+wrong: Return False unless there are exactly n − 1 edges. Build neighbour lists from both ends of each edge, run DFS from 0, and return whether all n vertices were reached.
+
+=== task: predict hard
+title: Made once
+prompt: Default values like `seen=set()` are made once, when the function is defined, and every call that leaves them out shares those same objects. What does this print?
+code:
+```python
+def dfs_order(graph, v, seen=set(), order=[]):
+    seen.add(v)
+    order.append(v)
+    for w in graph[v]:
+        if w not in seen:
+            dfs_order(graph, w, seen, order)
+    return order
+
+g = {"A": ["B"], "B": ["A"], "C": ["D"], "D": ["C"]}
+print(dfs_order(g, "A"))
+print(dfs_order(g, "C"))
+print(dfs_order(g, "A"))
+```
+wrong[['A', 'B']\n['C', 'D']\n['A', 'B']]: That's what fresh defaults would give. Here the second call adds to the same `order` list, which already holds A and B.
+wrong[['A', 'B']\n['A', 'B', 'C', 'D']\n['A', 'B', 'C', 'D']]: The third call still appends A to `order` before it looks at A's neighbours. It's B that's skipped, being in `seen` already.
+wrong[['A', 'B']\n['A', 'B', 'C', 'D']\n['A', 'B', 'C', 'D', 'A', 'B']]: B is still in the shared `seen` set from the first call, so the third call doesn't visit it again.
+hint: All three calls without `seen` and `order` share one set and one list.
+hint: `order.append(v)` runs before any neighbour is checked.
+right: `['A', 'B']`, then `['A', 'B', 'C', 'D']`, then `['A', 'B', 'C', 'D', 'A']`. The default set and list outlive each call, so every later search builds on the earlier ones. Pass a new `set()` and `[]` each time, as `dfs_order` does in the lesson.
+wrong: The first call fills the shared list with A, B. The second adds C, D to the same list. The third appends A again, then finds B already in the shared `seen` set and stops.
+
+=== task: predict hard
+title: Within two steps?
+prompt: This search tries to find everyone within 2 steps of A by stopping at depth 2. What does it print?
+code:
+```python
+def near(graph, v, depth, limit, seen):
+    seen.add(v)
+    if depth == limit:
+        return
+    for w in graph[v]:
+        if w not in seen:
+            near(graph, w, depth + 1, limit, seen)
+
+graph = {"A": ["B", "C"], "B": ["A", "C"], "C": ["A", "B", "D"],
+         "D": ["C", "E"], "E": ["D"]}
+seen = set()
+near(graph, "A", 0, 2, seen)
+print(sorted(seen))
+```
+wrong[['A', 'B', 'C', 'D']]: D is 2 steps from A, through C, but DFS reaches C the long way, through B, at depth 2, and stops there. When A's own loop gets to C, C is already seen, so D is never reached.
+wrong[['A', 'B', 'C', 'D', 'E']]: The limit stops the search at depth 2: E is 3 steps away and can't be reached.
+wrong[['A', 'B']]: B's call goes on to C at depth 2: C is marked, so it's in the list.
+hint: Follow the calls: A at depth 0, then its first neighbour B at depth 1. Where does B go?
+hint: Once C is marked at depth 2, can it be explored again from A at depth 1?
+right: `['A', 'B', 'C']`. DFS first reaches C at depth 2, by the long way, marks it and stops. D is really 2 steps away, but it's lost. "Within k steps" needs the true distances, which BFS gives.
+wrong: A (depth 0) visits B (depth 1), which visits C at depth 2 and stops there. Back in A's loop, C is seen. So only A, B and C are marked, though D is 2 steps away through C.
+
+=== task: cells hard
+title: How deep do the calls go?
+prompt: For each graph, recursive DFS starts at the given vertex. What's the largest number of `dfs` calls waiting on the call stack at once, counting the one that's running?
+
+| box | graph | start |
+| --- | --- | --- |
+| Line | 10 vertices in a row | one end |
+| Ring | 10 vertices in a circle, each joined to the next and the last to the first | any vertex |
+| Star | a centre joined to 10 outer vertices | the centre |
+| Tree | a full binary tree of 15 vertices, with 1, 2, 4 and 8 on its levels | the root |
+labels: Line | Ring | Star | Tree
+answer: 10 | 10 | 2 | 4
+wrong[10 | 6 | 2 | 4]: BFS would reach the far side of the ring in 5 steps, but DFS goes round one way, so the 10th vertex is visited 10 calls deep.
+wrong[10 | 10 | 11 | 4]: In the star, each outer vertex's call returns before the next one starts, so only the centre and one outer vertex are ever waiting: 2.
+wrong[10 | 10 | 2 | 8]: The calls follow one path from the root down to a leaf, so they're as deep as the tree has levels: 4. 8 is the widest level, which is what BFS's queue holds.
+wrong[9 | 9 | 1 | 3]: Count the running call too. On the line, the call for the far end is the 10th.
+hint: The calls waiting at once always form one path from the start.
+hint: In the ring, which way does DFS go, and when does it stop?
+right: 10, 10, 2 and 4. The call stack is as deep as the path DFS is following, so long thin graphs make it deep, and wide shallow ones keep it short: the opposite of BFS's queue.
+wrong: Line: one path through all 10. Ring: DFS goes all the way round one way, 10 deep. Star: the centre plus one outer vertex at a time. Tree: one call per level, 4.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to `find_path` from this lesson. Choose **every** change that can make it return a wrong answer, raise an error, or never finish.
+code:
+```python
+def find_path(graph, v, goal, seen):
+    if v == goal:
+        return [v]
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            rest = find_path(graph, w, goal, seen)
+            if rest is not None:
+                return [v] + rest
+    return None
+```
+* Returning `find_path(...)` for the first unseen neighbour, whatever it gives back :: Right. If that neighbour's search is a dead end, the call returns None at once, without trying the other neighbours.
+* Moving `seen.add(v)` to after the `for` loop :: Right. While v's neighbours are being searched, v isn't marked, so a neighbour can call back into v: on a cycle the calls never stop, until a RecursionError.
+* Returning `[v] + rest` without checking that `rest` isn't None :: Right. A dead end gives None, and `[v] + None` raises a TypeError.
+- Checking each neighbour against the goal first, and returning `[v, w]` straight away if it matches :: That still returns a path from v to the goal, only found one call sooner.
+- Building the answer with `rest.insert(0, v)` and returning `rest` :: The same list comes back, built by putting v at the front.
+- Trying the neighbours in reverse order :: It may find a different path, but it's still a path from v to the goal.
+hint: Which changes stop the search from trying every neighbour, or let it go round a cycle?
+hint: A different path to the goal isn't a wrong answer here.
+right: Giving up after the first neighbour, marking too late and adding None to a list all break it. Finding the goal a step early, building the list another way or another neighbour order still give a real path.
+wrong: Every neighbour must get a chance unless a path has already been found, v must be marked before its neighbours are searched, and None must never be added to a list.
+
+=== task: fill hard
+title: Back to where it came from
+prompt: In a graph whose edges go both ways, DFS finds a cycle when a neighbour has already been seen but isn't the vertex the current call came from. Fill in the blanks so that `has_cycle` checks every piece of the graph, and the program prints:
+
+```output
+False True
+```
+code:
+```python
+def loop_from(graph, v, parent, seen):
+    seen.add(v)
+    for w in graph[v]:
+        if w not in seen:
+            if loop_from(graph, w, ??, seen):
+                return True
+        elif w != ??:
+            return True
+    return False
+
+def has_cycle(graph):
+    seen = set()
+    for s in graph:
+        if s not in seen and loop_from(graph, s, None, seen):
+            return True
+    return False
+
+tree = {1: [2, 3], 2: [1], 3: [1, 4], 4: [3]}
+loop = {1: [2], 2: [1], 3: [4, 5], 4: [3, 5], 5: [3, 4]}
+print(has_cycle(tree), has_cycle(loop))
+```
+answer: v | parent
+wrong[w | parent]: Each call would think it came from itself. Then the edge back to its real parent looks like a second route, and even the tree reports a cycle.
+wrong[v | v]: w is a neighbour of v, so it's never v itself: every seen neighbour, including the parent, would count as a cycle, and the tree would get True.
+wrong[parent | parent]: The child would be told its grandparent is where it came from, so the edge back to its real parent would look like a cycle in the tree.
+hint: The vertex a call came from is the one that made the call.
+hint: Every vertex except a start has exactly one edge back to its parent, and that edge doesn't count.
+right: Passing v as the child's parent lets the child ignore the edge it arrived along. Any other edge to a vertex that's already been seen closes a loop.
+wrong: Call `loop_from(graph, w, v, seen)` so that w knows it came from v, and report a cycle when a seen neighbour isn't `parent`.
+
+=== task: parsons hard
+title: Flattening nested lists
+prompt: A list can hold numbers and other lists, nested to any depth. That's a tree: each list's children are its items. Arrange the lines so that `flatten` does a depth-first walk and collects the numbers in order. `isinstance(item, list)` is True when item is a list. The program prints:
+
+```output
+[1, 2, 3, 4, 5, 6]
+```
+
+Not every line is needed.
+lines:
+```python
+def flatten(item, out):
+    if isinstance(item, list):
+        for x in item:
+            flatten(x, out)
+    else:
+        out.append(item)
+```
+distractors:
+```python
+            out.append(x)
+        flatten(item, out)
+```
+after:
+```python
+out = []
+flatten([1, [2, [3, 4]], [], [[5]], 6], out)
+print(out)
+```
+hint: A number is a leaf: append it.
+hint: A list is a branch: walk into each of its items, in order, before moving on.
+right: Each list is explored completely, item by item, before the walk returns to the list around it, so the numbers come out in the order they're written, however deep they are.
+wrong: If the item is a list, call `flatten` on each of its items in turn; otherwise it's a number, so append it to `out`.
