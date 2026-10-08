@@ -1,0 +1,1088 @@
+=== lesson
+id: algo-backtracking
+title: Backtracking
+summary: Backtracking builds an answer one choice at a time. It follows each choice as deep as it goes, and when it has finished with a choice, or the choice leads nowhere, it undoes it and tries the next one. You'll see the tree of choices, write the choose–explore–undo pattern, avoid the classic bug of saving a list that later changes, cut off hopeless branches early, and see why the work grows so fast.
+
+=== learn
+### One choice at a time
+Some problems ask for every arrangement that fits a rule: every 3-digit code made of 1s and 2s, every way to climb a staircase, every way to place pieces on a board. There's no clever formula; you have to try the options. **Backtracking** tries them in an organised way. It makes one choice, then the next, building up a partial answer called the **path**. When the path is complete, it's recorded. Then the search goes back to the most recent choice it can change (it **backtracks**), changes it, and carries on from there.
+
+For codes of length 2 made of `a` and `b`, it chooses `a`, then `a` again: `aa` is complete. It goes back one step and chooses `b`: `ab`. Both options for the second letter are used up, so it goes back further, changes the first letter to `b`, and finds `ba` and `bb`.
+
+### The tree of choices
+The choices form a tree. The root is the empty path, each branch is one choice, and the leaves are the complete paths:
+```text
+              ""
+          /        \
+        "a"        "b"
+       /   \      /   \
+    "aa"  "ab"  "ba"  "bb"
+```
+Backtracking walks this tree **depth first**: it goes all the way down the leftmost branch, then back up one level and down the next branch, until every leaf has been visited. The tree is never stored: it only exists as the sequence of calls. At any moment, the path from the root to the current node is all the search needs to remember, which is why backtracking uses little memory: O(d) for paths of length d.
+
+### Choose, explore, undo
+The search is a recursive function. `path` is a list of the choices made so far, shared by every call:
+```python
+def build(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        path.append(ch)
+        build(path, n, results)
+        path.pop()
+
+results = []
+build([], 2, results)
+print(results)
+```
+```output
+['aa', 'ab', 'ba', 'bb']
+```
+Each call either records a complete path, or tries every option for the next position in three steps: **choose** (`path.append(ch)`), **explore** everything that follows from that choice (the recursive call), and **undo** the choice (`path.pop()`). The `for` loop decides the order of the options, so the results come out in that order too. Animation 1 runs this search.
+
+### Why undo?
+Every call works on the same `path` list. After the recursive call returns, the choice `ch` is still on the end of it. `path.pop()` removes it, so the next option starts from the same path the loop started with. Here's the start of the search above:
+
+| step | path after the step |
+| --- | --- |
+| choose a | [a] |
+| choose a | [a, a]: complete, record "aa" |
+| undo | [a] |
+| choose b | [a, b]: complete, record "ab" |
+| undo | [a] |
+| undo | [] |
+| choose b | [b] |
+
+Without `pop`, the second option would be added after the first one instead of replacing it: the path would grow to `[a, a, b]`, and the search would go wrong. A rule worth remembering: every `append` before a recursive call needs a `pop` after it.
+
+### Record a copy
+A complete path must be recorded as a **copy**. `results.append(path)` adds the list object itself, the same one the search keeps changing, so by the end every entry is that same emptied list:
+```python
+def build_lists(path, n, results, copy):
+    if len(path) == n:
+        results.append(path[:] if copy else path)
+        return
+    for ch in "ab":
+        path.append(ch)
+        build_lists(path, n, results, copy)
+        path.pop()
+
+good = []
+bad = []
+build_lists([], 2, good, True)
+build_lists([], 2, bad, False)
+print(good)
+print(bad)
+```
+```output
+[['a', 'a'], ['a', 'b'], ['b', 'a'], ['b', 'b']]
+[[], [], [], []]
+```
+`path[:]` makes a new list with the current items, which nothing changes later. `"".join(path)` in the first version also makes a new string, so it was safe.
+
+### Pruning: give up early
+Often a partial path can already break the rule, and then nothing that grows from it can be a solution. Checking before going deeper, and skipping that branch, is called **pruning**. Here the rule is that a code may never have two `b`s in a row:
+```python
+def no_bb(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        if ch == "b" and path and path[-1] == "b":
+            continue
+        path.append(ch)
+        no_bb(path, n, results)
+        path.pop()
+
+results = []
+no_bb([], 4, results)
+print(len(results), results)
+```
+```output
+8 ['aaaa', 'aaab', 'aaba', 'abaa', 'abab', 'baaa', 'baab', 'baba']
+```
+The check runs before the choice is made, so a path like `bb` is never built, and none of the 4 codes that start with it are ever looked at. Pruning removes whole branches of the tree at once. Animation 2 shows it.
+
+### How much work?
+If there are b options at each of d steps, the tree has b^d leaves, and the search visits all of them unless pruning cuts branches off. That grows very fast:
+
+| problem | complete paths |
+| --- | --- |
+| codes of length 10 from 2 letters | 2¹⁰ = 1,024 |
+| codes of length 20 from 2 letters | 2²⁰ = 1,048,576 |
+| all orders of 10 items | 10! = 3,628,800 |
+| all orders of 20 items | 20! ≈ 2.4 × 10¹⁸ |
+
+So backtracking is **exponential** in the worst case: O(bᵈ) for b options at each of d steps. It's the right tool when the input is small, or when pruning cuts the tree down to a size you can search. If you only need a count, or the best answer, there may be a faster method: dynamic programming, later in this unit, often turns these searches into polynomial time.
+
+### Where it's used
+Backtracking solves puzzles like sudoku, where each empty cell is a choice and a clash with a row, column or box prunes the branch, and the eight queens puzzle, where no two queens may attack each other. It finds paths through mazes, assigns colours or times so that neighbours don't clash, and splits text into words.
+
+Three families of problems come up so often that each gets its own lesson next: **subsets** (choose any group of the items), **permutations** (put all the items in order) and **combinations** (choose exactly k of the items). They all use choose, explore, undo, with different options at each step.
+
+=== keypoints
+- Backtracking builds a solution one choice at a time, and explores the tree of choices depth first.
+- The pattern: if the path is complete, record it and return. Otherwise, for each option: **choose** (`path.append(x)`), **explore** (the recursive call), **undo** (`path.pop()`).
+- Undo puts the shared path back as it was, so each option starts from the same state.
+- Record a copy of the path, with `path[:]` or `"".join(path)`, never the path list itself.
+- Prune: stop exploring as soon as a partial path can't lead to a solution.
+- The tree can be huge: bᵈ leaves for b options at each of d steps. Backtracking is exponential in the worst case, and pruning is what makes it practical.
+
+=== example: Words from a phone keypad
+intro: On a phone keypad, each digit has letters: 2 is "abc" and 3 is "def". This search finds every word the digits "23" could stand for, choosing one letter for each digit in turn.
+```python
+letters = {"2": "abc", "3": "def"}
+
+def words(digits, path, results):
+    if len(path) == len(digits):
+        results.append("".join(path))
+        return
+    for ch in letters[digits[len(path)]]:
+        path.append(ch)
+        words(digits, path, results)
+        path.pop()
+
+results = []
+words("23", [], results)
+print(len(results), results)
+```
+1: The letters of each digit.
+4-6: When there's a letter for every digit, the path is complete.
+7: `digits[len(path)]` is the next digit to choose a letter for; its letters are the options.
+8-10: Choose a letter, explore the rest, undo.
+13-14: 3 options for the first digit and 3 for the second give 3 × 3 = 9 words, in alphabetical order because the options are tried in order.
+
+=== example: A way through a maze
+intro: The maze is a grid of strings: `#` is a wall and `.` is open. The search starts at the top-left corner and tries to reach the bottom-right one, moving down, right, up or left. Cells on the current path are marked, so the search never walks in a circle, and unmarked again when it backtracks.
+```python
+maze = ["..#.",
+        ".##.",
+        "....",
+        "#.#."]
+
+def solve(r, c, path, seen):
+    if r < 0 or c < 0 or r >= len(maze) or c >= len(maze[0]):
+        return False
+    if maze[r][c] == "#" or (r, c) in seen:
+        return False
+    path.append((r, c))
+    seen.add((r, c))
+    if (r, c) == (len(maze) - 1, len(maze[0]) - 1):
+        return True
+    for dr, dc in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
+        if solve(r + dr, c + dc, path, seen):
+            return True
+    path.pop()
+    seen.remove((r, c))
+    return False
+
+path = []
+print(solve(0, 0, path, set()), path)
+```
+1-4: Four rows of four cells. The search starts at (0, 0) and the goal is (3, 3).
+6-10: Outside the grid, a wall, or a cell already on the path: this branch is hopeless, so it's pruned.
+11-12: Choose this cell: add it to the path and mark it.
+13-14: At the goal, stop and keep the path: `True` is passed back up through every call.
+15-17: Try the four moves in turn. As soon as one of them reaches the goal, return True at once.
+18-20: No move worked: undo this cell and report failure, so the caller tries its next move.
+22-23: The path found goes down the left side, along row 2, and down to the corner.
+
+=== animation: Choose, explore, undo
+view: array path
+array results
+vars ch
+intro: `path` holds the choices so far. Each call tries `a`, then `b`, for the next letter: it appends the letter, makes a call for the rest, then pops the letter off again. The `ch` of every call that's waiting is shown, one per level.
+```python
+def build(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        path.append(ch)
+        build(path, n, results)
+        path.pop()
+
+results = []
+build([], 2, results)
+```
+1: Defines build. Nothing runs yet.
+2: {'The path has ' + str(len(path)) + ' letters: complete.' if len(path) == n else 'The path has ' + str(len(path)) + ' of ' + str(n) + ' letters: not complete yet.'}
+3: Record a copy of the path: "{''.join(path)}".
+4: Go back to the call that made the last choice.
+5: Next option for this position. When both are used, this call is finished.
+6: Choose {ch}.
+7: Explore every path that starts {''.join(path)}.
+8: Undo: remove {ch}, ready for the next option.
+10: No results yet.
+11: Start with an empty path, for paths of 2 letters.
+
+=== animation: Pruning a branch
+view: array path
+array results
+intro: The same search for codes of 3 letters, with one rule: never two `b`s in a row. To keep it short, it follows only the codes that start with `b`. Before choosing `b`, the search checks the last letter; if it's `b`, the whole branch is skipped without being built.
+```python
+def no_bb(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        if ch == "b" and path and path[-1] == "b":
+            continue
+        path.append(ch)
+        no_bb(path, n, results)
+        path.pop()
+
+results = []
+no_bb(["b"], 3, results)
+```
+1: Defines no_bb. Nothing runs yet.
+2: {'Complete: ' + ''.join(path) + '.' if len(path) == n else 'Not complete yet.'}
+3: Record "{''.join(path)}".
+4: Back to the previous choice.
+5: Next option.
+6: {'Would this make two bs in a row? ' + str(ch == 'b' and len(path) > 0 and path[-1] == 'b') + '.'}
+7: Yes: prune. Skip this branch without building it.
+8: Choose {ch}.
+9: Explore the paths that start {''.join(path)}.
+10: Undo {ch}.
+12: No results yet.
+13: Codes of 3 letters that start with b.
+
+=== task: predict easy
+title: Complete paths in order
+code:
+```python
+def build(path, n):
+    if len(path) == n:
+        print("".join(path))
+        return
+    for ch in "xy":
+        path.append(ch)
+        build(path, n)
+        path.pop()
+
+build([], 2)
+```
+wrong[xx\nyy]: Each position can be either letter, so mixed paths like xy and yx are complete paths too.
+wrong[x\nxx\nxy\ny\nyx\nyy]: Only complete paths, with 2 letters, are printed. The paths x and y aren't complete.
+wrong[xy\nyx]: The same letter can be chosen for both positions: xx and yy count too.
+hint: Every complete path has 2 letters, each x or y.
+hint: The loop tries x before y, at every level.
+right: Four complete paths, in the order the search reaches them: xx, xy, yx, yy.
+wrong: The first letter is x for the first two paths (xx, xy) and y for the last two (yx, yy). Each one is printed when it has 2 letters.
+
+=== task: mcq easy
+title: What pop does
+prompt: In choose, explore, undo, what does `path.pop()` after the recursive call do?
+* It removes the choice that was explored last, so the next option starts from the same path :: Right. The loop's next choice replaces this one instead of being added after it.
+- It removes the complete path from the results :: Results are a separate list; pop only changes `path`.
+- It ends the search :: The search ends when every call has finished its loop.
+- It goes back to the first choice of all :: It undoes one choice only: the most recent one.
+hint: Which list does `path.pop()` change?
+hint: What should `path` look like when the loop tries its next option?
+right: After exploring everything that starts with this choice, pop takes the choice back off, so the path is as it was before the choice and the next option can take its place.
+wrong: `path.pop()` undoes the latest choice, putting the shared path back as it was before the `append`, ready for the loop's next option.
+
+=== task: cells easy
+title: Counting the tree
+prompt: `build` from the lesson makes every code of 3 letters. Fill in the numbers.
+labels: complete codes from "ab" | calls of build from "ab", counting the first one | complete codes from "abc"
+answer: 8 | 15 | 27
+wrong[6 | 15 | 27]: Each of the 3 positions has 2 options: 2 × 2 × 2 = 8 codes.
+wrong[8 | 8 | 27]: Every node of the tree is a call, not only the leaves: 1 + 2 + 4 + 8 = 15.
+wrong[8 | 15 | 9]: 3 options for each of 3 positions: 3 × 3 × 3 = 27.
+hint: With b options at each of 3 positions, there are b × b × b complete codes.
+hint: There's one call for the empty path, then one for each path of length 1, 2 and 3.
+right: 2³ = 8 codes, 1 + 2 + 4 + 8 = 15 calls in the tree, and 3³ = 27 codes with three letters.
+wrong: Count the leaves: options multiplied together for each position. Count the calls: every node of the tree, from the root down to the leaves.
+
+=== task: code easy
+title: Every string
+prompt: Write `all_strings(letters, n)` that returns a list of every string of length n made from the characters in `letters`, in the order a backtracking search finds them when it tries the letters in the order they're given. Use a helper `build(letters, n, path, results)` with choose, explore, undo.
+starter:
+```python
+def build(letters, n, path, results):
+    # your code here
+    pass
+
+def all_strings(letters, n):
+    results = []
+    build(letters, n, [], results)
+    return results
+```
+solution:
+```python
+def build(letters, n, path, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in letters:
+        path.append(ch)
+        build(letters, n, path, results)
+        path.pop()
+
+def all_strings(letters, n):
+    results = []
+    build(letters, n, [], results)
+    return results
+```
+tests:
+- all_strings("ab", 2)
+- all_strings("xyz", 1)
+- all_strings("ab", 0)
+- all_strings("a", 3)
+- all_strings("01", 3)
+fail[1]: ['aa', 'ab', 'ba', 'bb'].
+fail[3]: A string of length 0 is the empty string, and there's exactly one: [''].
+fail[4]: Only one letter to choose each time: ['aaa'].
+fail[5]: Eight strings, from '000' to '111'.
+hint: When `len(path) == n`, record `"".join(path)` and return.
+hint: Otherwise, for each ch in letters: `path.append(ch)`, call build, then `path.pop()`.
+hint: For n = 0 the empty path is already complete, so the result is [''].
+right: Choose each letter for the next position, explore, undo: the search visits every leaf of the tree, in the order of the letters.
+wrong: In build, record the joined path when it's complete; otherwise loop over the letters, appending one, recursing, and popping it again.
+
+=== task: fill easy
+title: Choose and undo
+prompt: Fill in the blanks so that the search makes every code of 2 letters, and the program prints:
+
+```output
+['aa', 'ab', 'ba', 'bb']
+```
+code:
+```python
+def build(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        path.??(ch)
+        build(path, n, results)
+        path.??()
+
+results = []
+build([], 2, results)
+print(results)
+```
+answer: append | pop
+wrong[append | clear]: `clear` empties the whole path, not only the last choice, so earlier choices are lost too.
+wrong[insert | pop]: `insert` needs a position and an item, so `path.insert(ch)` raises a TypeError.
+hint: The choice is added to the end of the path.
+hint: Undo removes only the last item.
+right: `path.append(ch)` makes the choice, and `path.pop()` removes it again once everything that starts with it has been explored.
+wrong: Choose with `path.append(ch)` and undo with `path.pop()`, which removes exactly the item that was appended.
+
+=== task: multi easy
+title: True of backtracking
+prompt: Choose **every** true statement about backtracking.
+* It explores the tree of choices depth first :: Right. It follows one branch to the end before trying the next.
+* Every `append` before the recursive call needs a `pop` after it :: Right. That puts the shared path back for the next option.
+* Pruning skips branches that can't lead to a solution :: Right. Whole subtrees are never built.
+- It stores the whole tree of choices in memory :: The tree only exists as the calls; at any time only the current path is kept.
+- It always runs in polynomial time :: With b options at each of d steps, it can visit bᵈ paths: exponential.
+- It finds the answers in a random order :: The order is fixed by the loop over the options.
+hint: How much does the search need to remember at any moment?
+hint: How many leaves can the tree have?
+right: Backtracking walks the tree depth first, undoing each choice after exploring it, and pruning helps it skip hopeless branches. It can still take exponential time.
+wrong: The search keeps only the current path, explores depth first in a fixed order, and its work grows like bᵈ unless pruning cuts it down.
+
+=== task: parsons easy
+title: Rolling two dice
+prompt: Arrange the lines so that `rolls` records every result of rolling n three-sided dice, with faces 1 to 3, and the program prints:
+
+```output
+[[1, 1], [1, 2], [1, 3], [2, 1], [2, 2], [2, 3], [3, 1], [3, 2], [3, 3]]
+```
+
+Not every line is needed.
+lines:
+```python
+def rolls(n, path, results):
+    if len(path) == n:
+        results.append(path[:])
+        return
+    for face in range(1, 4):
+        path.append(face)
+        rolls(n, path, results)
+        path.pop()
+
+results = []
+rolls(2, [], results)
+print(results)
+```
+distractors:
+```python
+        results.append(path)
+        path.pop(0)
+```
+hint: A complete roll is recorded as a copy, `path[:]`.
+hint: Undo removes the last face added, not the first.
+right: Each complete roll is copied into the results, and every face is popped again after it's explored, so the next face replaces it.
+wrong: Base case: when the path has n faces, append a copy and return. Otherwise, for each face 1 to 3: append, recurse, pop.
+
+=== task: order easy
+title: The search, step by step
+prompt: `build` makes every code of 2 letters from "ab". Put these moments of the search in order.
+items:
+- Choose a, then a: record "aa"
+- Undo the second a and choose b: record "ab"
+- Undo b, then undo the first a
+- Choose b, then a: record "ba"
+- Undo a and choose b: record "bb"
+hint: The first letter stays a until both codes that start with a are recorded.
+hint: Each undo is followed by the next option at the same position.
+right: aa and ab share the first choice; after undoing it, b is chosen first, giving ba and bb.
+wrong: Depth first: finish everything under the first a (aa, ab), undo back to the start, then everything under b (ba, bb).
+
+=== task: predict easy
+title: How many codes?
+code:
+```python
+def build(path, n, results):
+    if len(path) == n:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        path.append(ch)
+        build(path, n, results)
+        path.pop()
+
+counts = []
+for n in [0, 1, 3]:
+    results = []
+    build([], n, results)
+    counts.append(len(results))
+print(counts)
+```
+wrong[[0, 2, 8]]: For n = 0, the empty path already has 0 letters, so it's complete and recorded once: one code, the empty string.
+wrong[[1, 2, 6]]: 2 options for each of 3 positions: 2 × 2 × 2 = 8.
+wrong[[1, 1, 3]]: Each position has 2 options, so the counts multiply: 2¹ = 2 and 2³ = 8.
+hint: With n = 0, is the first call's path complete?
+hint: The number of codes is 2 to the power n.
+right: `[1, 2, 8]`: 2⁰ = 1 (the empty code), 2¹ = 2 and 2³ = 8.
+wrong: The first call checks `len(path) == n` before trying anything. For n = 0 that's true at once, giving one empty code. Otherwise there are 2ⁿ codes.
+
+=== task: mcq easy
+title: Codes of length 10
+prompt: How many codes of length 10 can be made from the letters "a" and "b"?
+* 1,024 :: Right. 2 options for each of 10 positions: 2¹⁰ = 1,024.
+- 20 :: That's 2 × 10. The options multiply: 2 × 2 × … × 2.
+- 100 :: That's 10². The count is 2¹⁰, not 10².
+- 3,628,800 :: That's 10!, the number of orders of 10 different items.
+hint: Each position doubles the number of codes.
+hint: 2¹⁰ is a little over a thousand.
+right: Each of the 10 positions can be a or b independently: 2¹⁰ = 1,024 complete paths, the leaves of the tree.
+wrong: The first letter has 2 options, and for each of them the second letter has 2, and the same goes for every one of the 10 positions: 2 multiplied by itself 10 times, 1,024.
+
+=== task: code medium
+title: Climbing stairs
+prompt: You can climb a staircase 1 or 2 steps at a time. Write `stairs(n)` that returns every way to climb exactly n steps, as lists of step sizes, in the order a backtracking search finds them when it tries 1 before 2. Use a helper `climb(n, path, results)`, where n is the number of steps left, and prune any step bigger than what's left.
+starter:
+```python
+def climb(n, path, results):
+    # your code here
+    pass
+
+def stairs(n):
+    results = []
+    climb(n, [], results)
+    return results
+```
+solution:
+```python
+def climb(n, path, results):
+    if n == 0:
+        results.append(path[:])
+        return
+    for step in (1, 2):
+        if step <= n:
+            path.append(step)
+            climb(n - step, path, results)
+            path.pop()
+
+def stairs(n):
+    results = []
+    climb(n, [], results)
+    return results
+```
+tests:
+- stairs(3)
+- stairs(1)
+- stairs(0)
+- stairs(4)
+- (lambda: len(stairs(10)))()
+fail[1]: [[1, 1, 1], [1, 2], [2, 1]].
+fail[3]: With no steps left, the empty climb is complete: [[]].
+fail[4]: Five ways: [[1, 1, 1, 1], [1, 1, 2], [1, 2, 1], [2, 1, 1], [2, 2]].
+fail[5]: 10 steps can be climbed in 89 ways.
+hint: When n is 0, record a copy of the path.
+hint: For each step in (1, 2), only if `step <= n`: append it, call `climb(n - step, path, results)`, pop it.
+hint: Recording `path` itself instead of `path[:]` would leave every result empty.
+right: The number left shrinks with each step, so every branch ends; steps that would overshoot are pruned. The counts are the Fibonacci numbers.
+wrong: In climb: when no steps are left, record `path[:]`. Otherwise try 1 and 2, skipping a step bigger than n, with append, recurse on n − step, and pop.
+
+=== task: code medium
+title: Balanced brackets
+prompt: Write `parentheses(n)` that returns every string of n pairs of balanced brackets, like `"(())"` and `"()()"` for n = 2, in the order a search finds them when it tries `"("` before `")"`. Prune as you build: add `"("` only while fewer than n have been opened, and `")"` only while fewer have been closed than opened. Use a helper `grow(n, path, opened, closed, results)`.
+starter:
+```python
+def grow(n, path, opened, closed, results):
+    # your code here
+    pass
+
+def parentheses(n):
+    results = []
+    grow(n, [], 0, 0, results)
+    return results
+```
+solution:
+```python
+def grow(n, path, opened, closed, results):
+    if len(path) == 2 * n:
+        results.append("".join(path))
+        return
+    if opened < n:
+        path.append("(")
+        grow(n, path, opened + 1, closed, results)
+        path.pop()
+    if closed < opened:
+        path.append(")")
+        grow(n, path, opened, closed + 1, results)
+        path.pop()
+
+def parentheses(n):
+    results = []
+    grow(n, [], 0, 0, results)
+    return results
+```
+tests:
+- parentheses(0)
+- parentheses(1)
+- parentheses(2)
+- parentheses(3)
+- (lambda: len(parentheses(5)))()
+fail[1]: For n = 0, the empty string is the only one: [''].
+fail[3]: ['(())', '()()'].
+fail[4]: ['((()))', '(()())', '(())()', '()(())', '()()()'].
+fail[5]: There are 42 balanced strings with 5 pairs.
+hint: A string is complete when it has 2n characters.
+hint: `if opened < n:` choose "(", explore with `opened + 1`, undo. Then `if closed < opened:` the same with ")".
+hint: Those two checks prune every branch that could never become balanced, so every complete string is valid.
+right: The two counts make the pruning exact: a ")" is only added when it has an open bracket to close, and no more than n "(" are used, so no invalid string is ever built.
+wrong: Grow the string one bracket at a time. Add "(" while `opened < n` and ")" while `closed < opened`, each with append, recurse, pop, and record the string at length 2n.
+
+=== task: predict medium
+title: The same list, again and again
+code:
+```python
+def build(path, results):
+    if len(path) == 2:
+        results.append(path)
+        print(results)
+        return
+    for ch in "ab":
+        path.append(ch)
+        build(path, results)
+        path.pop()
+
+build([], [])
+```
+wrong[[['a', 'a']]\n[['a', 'a'], ['a', 'b']]\n[['a', 'a'], ['a', 'b'], ['b', 'a']]\n[['a', 'a'], ['a', 'b'], ['b', 'a'], ['b', 'b']]]: That's what copies would give. Here every entry is the same list, `path`, so each print shows that one list several times, as it is right now.
+wrong[[['a', 'a']]\n[[], ['a', 'b']]\n[[], [], ['b', 'a']]\n[[], [], [], ['b', 'b']]]: The entries aren't separate lists that were emptied: they're all the same list as `path`, and right now path is full.
+wrong[[]\n[]\n[]\n[]]: The prints happen while the path is complete, so they show its letters, not an empty list.
+hint: `results.append(path)` adds the list object itself, not a copy.
+hint: By the second print, results holds the same list twice, and that list is now ['a', 'b'].
+right: Each entry is the one shared `path`, so every print shows the current path repeated: one aa, two abs, three bas, four bbs. When the search ends, path is empty, and so is every entry.
+wrong: All the entries in results are the same list as `path`. At each print, the path holds the current complete code, and it appears once for every entry so far.
+
+=== task: cells medium
+title: Paths across a grid
+prompt: A path goes from the top-left cell of a grid to the bottom-right cell, moving only down or right, one cell at a time. A backtracking search tries every path. How many complete paths does it find?
+labels: 2 rows, 2 columns | 2 rows, 3 columns | 3 rows, 3 columns | 3 rows, 4 columns
+answer: 2 | 3 | 6 | 10
+wrong[2 | 3 | 9 | 12]: Count the orders of the moves, not the cells: a 3 × 3 grid needs 2 downs and 2 rights, which can come in 6 orders.
+wrong[4 | 6 | 9 | 12]: Those are the numbers of cells. The paths are the orders of the down and right moves.
+wrong[2 | 3 | 6 | 12]: 3 rows and 4 columns need 2 downs and 3 rights: 10 orders, like DDRRR or RDRDR.
+hint: In a grid with r rows and c columns, every path makes r − 1 moves down and c − 1 moves right.
+hint: The paths are the different orders of those moves.
+right: 2, 3, 6 and 10: the number of ways to order r − 1 downs and c − 1 rights. The search visits each order once.
+wrong: Every path uses the same moves in a different order. For 3 × 4 that's 2 D's and 3 R's: DDRRR, DRDRR, DRRDR, DRRRD, RDDRR, RDRDR, RDRRD, RRDDR, RRDRD, RRRDD.
+
+=== task: fill medium
+title: Plus or minus
+prompt: Each number in a list gets a + or a − sign. `count_ways` counts the sign choices whose total is `target`, choosing a sign for one number per call. The running total is passed to each call as a new number, so there's nothing to undo. Fill in the blanks so that the program prints:
+
+```output
+5 1
+```
+code:
+```python
+def count_ways(nums, target, i, total):
+    if i == ??:
+        return 1 if total == target else 0
+    plus = count_ways(nums, target, i + 1, total + nums[i])
+    minus = count_ways(nums, target, i + 1, ??)
+    return plus + minus
+
+print(count_ways([1, 1, 1, 1, 1], 3, 0, 0), count_ways([2, 3], 1, 0, 0))
+```
+answer: len(nums) | total - nums[i]
+wrong[len(nums) - 1 | total - nums[i]]: That stops before the last number gets a sign, so the last number never counts.
+wrong[len(nums) | total]: The minus branch must subtract the number. Passing `total` unchanged treats the number as if it weren't there.
+wrong[len(nums) | total + nums[i]]: Both branches would add the number, so minus is never tried and every total is the sum of all the numbers.
+hint: The search is complete when every number has a sign: i has moved past the last index.
+hint: The minus branch subtracts `nums[i]` from the total.
+right: Five of the 32 sign choices for five 1s make 3 (four +, one −), and only −2 + 3 makes 1. Passing `total + nums[i]` and `total - nums[i]` as new values means no undo is needed.
+wrong: The base case is `i == len(nums)`, and the two choices for `nums[i]` pass `total + nums[i]` and `total - nums[i]` to the next call.
+
+=== task: mcq medium
+title: No undo needed
+prompt: Which of these searches needs no `path.pop()`?
+* One that calls itself with `path + ch`, a new string, instead of appending to a shared list :: Right. Each call gets its own path, so there's nothing to undo.
+- One that appends to `path` before the call, and records `path[:]` :: Copying the result doesn't put the shared path back: it still needs pop.
+- One that only records paths of length n :: The base case doesn't change how the shared path is restored.
+- None: every backtracking search must pop :: Pop undoes a change to a shared list. With no shared list, there's nothing to undo.
+hint: What makes the undo step necessary in the first place?
+hint: Does `path + ch` change `path`?
+right: `path + ch` builds a new string and leaves the caller's path unchanged. Each call has its own copy, so the next option automatically starts from the caller's path.
+wrong: Undo exists because every call changes one shared list. When each call gets a new value, like `path + ch` or `total + x`, the caller's value never changes.
+
+=== task: predict medium
+title: Every call, in order
+code:
+```python
+def show(path, n):
+    print("[" + path + "]")
+    if len(path) == n:
+        return
+    for ch in "ab":
+        show(path + ch, n)
+
+show("", 2)
+```
+wrong[[aa]\n[ab]\n[ba]\n[bb]]: Every call prints its path when it starts, not only the complete ones.
+wrong[[]\n[a]\n[b]\n[aa]\n[ab]\n[ba]\n[bb]]: That's level by level. The search goes depth first: after [a] comes [aa], before [b] is reached.
+wrong[[]\n[a]\n[aa]\n[ab]\n[b]\n[ba]\n[bb]\n[]]: The first call prints once, at its start. Returning doesn't print anything.
+hint: Each call prints first, then makes its own calls.
+hint: All the calls under "a" happen before the call for "b".
+right: The calls print in depth-first order: the root, then a and everything under it, then b and everything under it.
+wrong: show("") prints [], then calls show("a"), which prints [a] and calls show("aa") and show("ab"). Only then does show("b") run, with its own two calls.
+
+=== task: multi medium
+title: Safe pruning
+prompt: A search rolls 3 dice, one at a time, looking for every roll whose total is exactly 10. Choose **every** check that can safely stop a partial roll early, without losing any answer.
+* The total so far is already more than 10 :: Right. Every die adds at least 1, so the total can only grow.
+* Even rolling 6 on every remaining die can't bring the total up to 10 :: Right. No completion can reach 10.
+* The total so far plus 1 for every remaining die is more than 10 :: Right. Even the smallest possible rolls overshoot.
+- The last die rolled was a 1 :: A 1 can still be part of a 10, like 1, 3, 6.
+- The total so far is odd :: The remaining dice can make the total odd or even.
+- The first die is a 6 :: 6, 1, 3 totals 10.
+hint: A safe check proves that no way of finishing the roll can hit exactly 10.
+hint: What are the smallest and the biggest totals the remaining dice can add?
+right: Safe pruning only cuts branches that provably contain no answer: too big already, too big even with all 1s, or too small even with all 6s.
+wrong: Prune only when every completion fails. The remaining dice add at least 1 and at most 6 each, so compare the total with those bounds; facts like the last die or the parity don't rule anything out.
+
+=== task: parsons medium
+title: Down and right
+prompt: Arrange the lines so that `paths` records every route across a grid as a string of moves, `D` for down and `R` for right, trying down first. The route makes `down` more down moves and `right` more right moves. The program prints:
+
+```output
+['DRR', 'RDR', 'RRD']
+```
+
+Not every line is needed.
+lines:
+```python
+def paths(down, right, path, results):
+    if down == 0 and right == 0:
+        results.append(path)
+        return
+    if down > 0:
+        paths(down - 1, right, path + "D", results)
+    if right > 0:
+        paths(down, right - 1, path + "R", results)
+
+results = []
+paths(1, 2, "", results)
+print(results)
+```
+distractors:
+```python
+        paths(down - 1, right, path + "R", results)
+        results.append(path + "D")
+```
+hint: A route is complete when no moves are left.
+hint: Try a down move only if there's one left, then a right move only if there's one left.
+right: Each call offers up to two options, down and right, and passes the new string on, so nothing needs undoing.
+wrong: The base case records the path when no moves are left. Otherwise, if a down is left, recurse with one fewer down and "D" added; then the same for right.
+
+=== task: order medium
+title: Which comes first?
+prompt: This time the search tries the letters in the order "ba": `for ch in "ba":`. Put the codes of 2 letters in the order it records them.
+items:
+- bb
+- ba
+- ab
+- aa
+hint: The loop tries b before a, at every position.
+hint: Everything that starts with b comes before everything that starts with a.
+right: The loop order decides the result order: b first at both positions gives bb, ba, then ab, aa.
+wrong: The first position is b for the first two codes (bb, ba) and a for the last two (ab, aa); within each, the second letter is b, then a.
+
+=== task: code hard
+title: Splitting into words
+prompt: Write `split_words(s, words)` that returns every way to split the string `s` into words from the list `words`, each split written as the words joined by spaces. Try the words in the order they're given. Use a helper `place(s, start, path, words, results)` that tries every word that matches `s` at index `start`.
+starter:
+```python
+def place(s, start, path, words, results):
+    # your code here
+    pass
+
+def split_words(s, words):
+    results = []
+    place(s, 0, [], words, results)
+    return results
+```
+solution:
+```python
+def place(s, start, path, words, results):
+    if start == len(s):
+        results.append(" ".join(path))
+        return
+    for w in words:
+        if s[start:start + len(w)] == w:
+            path.append(w)
+            place(s, start + len(w), path, words, results)
+            path.pop()
+
+def split_words(s, words):
+    results = []
+    place(s, 0, [], words, results)
+    return results
+```
+tests:
+- split_words("catsdog", ["cat", "cats", "dog", "sdog"])
+- split_words("aaa", ["a", "aa"])
+- split_words("abc", ["ab"])
+- split_words("penpineapple", ["pen", "pine", "apple", "pineapple"])
+- split_words("ab", ["b", "a"])
+fail[1]: ['cat sdog', 'cats dog'].
+fail[2]: ['a a a', 'a aa', 'aa a'].
+fail[3]: No split ends exactly at the end of the string: [].
+fail[4]: ['pen pine apple', 'pen pineapple'].
+fail[5]: Only "a" matches at index 0, then "b": ['a b'].
+hint: The split is complete when `start == len(s)`.
+hint: A word w can be chosen if `s[start:start + len(w)] == w`; then explore from `start + len(w)`.
+hint: Words that don't match at start are pruned without going deeper.
+right: Each call tries every word that fits at the current position, so the search explores only splits that match the string so far.
+wrong: From `start`, try each word that matches there: append it, place the rest from `start + len(w)`, pop it. Record the joined path when start reaches the end.
+
+=== task: code hard
+title: Eight queens, and fewer
+prompt: Place n queens on an n × n board so that no two attack each other: no two in the same row, column or diagonal. Write `n_queens(n)` that returns the number of ways. Place one queen per row with a helper `place(n, row, cols, diag1, diag2)`, where the sets hold the columns and diagonals already under attack. Squares on the same diagonal share `row - col`, and squares on the same anti-diagonal share `row + col`.
+starter:
+```python
+def place(n, row, cols, diag1, diag2):
+    # return the number of ways to fill rows row to n - 1
+    pass
+
+def n_queens(n):
+    return place(n, 0, set(), set(), set())
+```
+solution:
+```python
+def place(n, row, cols, diag1, diag2):
+    if row == n:
+        return 1
+    count = 0
+    for col in range(n):
+        if col in cols or row - col in diag1 or row + col in diag2:
+            continue
+        cols.add(col)
+        diag1.add(row - col)
+        diag2.add(row + col)
+        count += place(n, row + 1, cols, diag1, diag2)
+        cols.remove(col)
+        diag1.remove(row - col)
+        diag2.remove(row + col)
+    return count
+
+def n_queens(n):
+    return place(n, 0, set(), set(), set())
+```
+tests:
+- n_queens(1)
+- n_queens(2)
+- n_queens(3)
+- n_queens(4)
+- n_queens(5)
+- n_queens(6)
+fail[2]: Two queens on a 2 × 2 board always attack each other: 0.
+fail[3]: A 3 × 3 board has no solution either: 0.
+fail[4]: There are 2 ways on a 4 × 4 board.
+fail[5]: 10 ways.
+fail[6]: Only 4 ways on a 6 × 6 board.
+hint: When `row == n`, every row has a queen: that's one solution.
+hint: Skip a column if it's in `cols`, or if `row - col` is in diag1, or `row + col` is in diag2.
+hint: Choose by adding to all three sets, explore the next row, then undo by removing from all three.
+right: Placing one queen per row handles the rows, and the three sets prune every square that's attacked, so most of the n^n possible placements are never built. For n = 8 there are 92 solutions.
+wrong: Go row by row. For each column that isn't attacked, mark its column and both diagonals, count the solutions for the next row, then unmark them.
+
+=== task: code hard
+title: IP addresses
+prompt: An IP address has four parts separated by dots, each a number from 0 to 255 written without leading zeros: "0" is fine, "01" isn't. Write `ip_addresses(s)` that returns every valid address made by putting three dots into the string of digits `s`. Try part lengths 1, 2 and 3 in that order. Use a helper `place(s, start, parts, results)`.
+starter:
+```python
+def place(s, start, parts, results):
+    # your code here
+    pass
+
+def ip_addresses(s):
+    results = []
+    place(s, 0, [], results)
+    return results
+```
+solution:
+```python
+def place(s, start, parts, results):
+    if len(parts) == 4:
+        if start == len(s):
+            results.append(".".join(parts))
+        return
+    for size in range(1, 4):
+        piece = s[start:start + size]
+        if len(piece) < size:
+            break
+        if (piece[0] == "0" and size > 1) or int(piece) > 255:
+            continue
+        parts.append(piece)
+        place(s, start + size, parts, results)
+        parts.pop()
+
+def ip_addresses(s):
+    results = []
+    place(s, 0, [], results)
+    return results
+```
+tests:
+- ip_addresses("25525511135")
+- ip_addresses("0000")
+- ip_addresses("1111")
+- ip_addresses("010010")
+- ip_addresses("123")
+- ip_addresses("101023")
+fail[1]: ['255.255.11.135', '255.255.111.35'].
+fail[2]: Each part is a single 0: ['0.0.0.0'].
+fail[4]: "01" and "010" have leading zeros: ['0.10.0.10', '0.100.1.0'].
+fail[5]: Three digits can't make four parts: [].
+fail[6]: ['1.0.10.23', '1.0.102.3', '10.1.0.23', '10.10.2.3', '101.0.2.3'].
+hint: With 4 parts, record the address only if every digit has been used: `start == len(s)`.
+hint: For size 1 to 3, take `piece = s[start:start + size]`. Stop if it's shorter than size: the string has run out.
+hint: Skip a piece with a leading zero (and more than one digit), or one bigger than 255.
+right: The checks prune every invalid part as soon as it's chosen, and a complete address must use every digit, so each address is found exactly once.
+wrong: Choose the next part, 1 to 3 digits long, skipping pieces that are too short, have a leading zero or are over 255. With four parts, record the address if no digits are left.
+
+=== task: code hard
+title: Colouring a map
+prompt: A graph is given as a list of neighbour lists: `adj[v]` lists the nodes next to node v. Write `colour(adj, k)` that gives each node a colour from 0 to k − 1 so that no two neighbours share a colour, and returns the list of colours, or `None` if it can't be done. Colour the nodes in order, trying colours from 0 up, with a helper `place(adj, k, colours, node)` that returns True when it has coloured every node from `node` on.
+starter:
+```python
+def place(adj, k, colours, node):
+    # your code here
+    pass
+
+def colour(adj, k):
+    colours = [None] * len(adj)
+    if place(adj, k, colours, 0):
+        return colours
+    return None
+```
+solution:
+```python
+def place(adj, k, colours, node):
+    if node == len(adj):
+        return True
+    for c in range(k):
+        clash = False
+        for nb in adj[node]:
+            if colours[nb] == c:
+                clash = True
+        if clash:
+            continue
+        colours[node] = c
+        if place(adj, k, colours, node + 1):
+            return True
+        colours[node] = None
+    return False
+
+def colour(adj, k):
+    colours = [None] * len(adj)
+    if place(adj, k, colours, 0):
+        return colours
+    return None
+```
+tests:
+- colour([[1, 2], [0, 2], [0, 1]], 3)
+- colour([[1, 2], [0, 2], [0, 1]], 2)
+- colour([[1, 3], [0, 2], [1, 3], [2, 0]], 2)
+- colour([[]], 1)
+- colour([[1], [0, 2], [1]], 2)
+- colour([], 3)
+fail[1]: A triangle needs three colours: [0, 1, 2].
+fail[2]: A triangle can't be coloured with two: None.
+fail[3]: A square alternates: [0, 1, 0, 1].
+fail[6]: With no nodes, the empty colouring works: [].
+hint: When `node == len(adj)`, every node has a colour: return True.
+hint: For each colour c, skip it if a neighbour already has c. Otherwise set it, try to colour the rest, and return True if that worked.
+hint: If no colour works, undo with `colours[node] = None` and return False, so the caller tries its next colour.
+right: Colouring stops as soon as a solution is found, and a clash with a neighbour prunes the colour at once. Undoing with None keeps uncoloured nodes from blocking later choices.
+wrong: Try each colour for the current node that no neighbour has; recurse; if the rest succeeds, return True, otherwise undo and try the next colour. Return False when none works.
+
+=== task: predict hard
+title: What pruning saves
+code:
+```python
+def calls(path, n, prune):
+    count = 1
+    if len(path) == n:
+        return count
+    for ch in "ab":
+        if prune and ch == "b" and path and path[-1] == "b":
+            continue
+        path.append(ch)
+        count += calls(path, n, prune)
+        path.pop()
+    return count
+
+print(calls([], 3, False), calls([], 3, True))
+```
+wrong[8 5]: Every call is counted, not only the complete codes: the root and every partial path too.
+wrong[15 13]: Pruning "bb" also removes everything under it: without it, the branch has 3 calls (bb, bba, bbb), and abb is a call too.
+wrong[14 10]: Each call counts itself with `count = 1`, including the very first one.
+hint: Without pruning, the tree has 1 + 2 + 4 + 8 calls.
+hint: With pruning, the paths bb, abb, bba and bbb are never built.
+right: `15 11`: pruning removes the call for abb, and the whole bb branch (bb, bba, bbb): 4 calls fewer.
+wrong: Unpruned: 1 + 2 + 4 + 8 = 15 calls. Pruned: the root, a and b, then aa, ab, ba (not bb), then aaa, aab, aba, baa, bab (not abb): 1 + 2 + 3 + 5 = 11.
+
+=== task: predict hard
+title: Undo in the wrong place
+code:
+```python
+def build(path, results):
+    if len(path) >= 2:
+        results.append("".join(path))
+        return
+    for ch in "ab":
+        path.append(ch)
+        build(path, results)
+    path.pop()
+
+results = []
+build([], results)
+print(results)
+```
+wrong[['aa', 'ab', 'ba', 'bb']]: With the pop after the loop, the second option is appended without the first being removed, so the path grows too long.
+wrong[['aa', 'aab']]: Back in the first call, the path is still [a, a], not [a], so choosing b there records "aab" a second time.
+wrong[['aa', 'ab', 'aab']]: In the second call, b is appended after the a that's still there: the path is [a, a, b], which is recorded as "aab".
+hint: Each call pops only once, after its whole loop, not once per option.
+hint: Track the list `path` after every append and pop.
+right: `['aa', 'aab', 'aab']`: the inner call records aa, then appends b without removing the a, recording aab, and pops only the b. The first call then appends b to [a, a] and records aab again.
+wrong: Trace path: [a], [a, a] (record aa), [a, a, b] (record aab), pop to [a, a]. The first call appends b: [a, a, b] (record aab), then pops to [a, a].
+
+=== task: cells hard
+title: The brackets tree
+prompt: `parentheses(2)` grows strings of brackets, adding "(" only while fewer than 2 are open and ")" only while fewer are closed than opened. Fill in the numbers. A call is any string the search builds, from the empty string up.
+labels: calls with this pruning | calls if every string of up to 4 brackets were built | balanced strings found
+answer: 8 | 31 | 2
+wrong[6 | 31 | 2]: Count every string the search builds: "", "(", "((", "(()", "(())", "()", "()(", "()()". That's 8.
+wrong[8 | 16 | 2]: Without pruning, the tree has 1 + 2 + 4 + 8 + 16 nodes, not only the 16 leaves.
+wrong[8 | 31 | 3]: Only "(())" and "()()" are balanced strings of 2 pairs.
+hint: With pruning, list the strings: after "(" comes "((" or "()", and each of those has one way on.
+hint: Without pruning, every string of 0 to 4 brackets is a call: 1 + 2 + 4 + 8 + 16.
+right: Pruning builds only 8 strings, all of them on the way to a balanced one, instead of 31. The gap grows fast: for 10 pairs it's about 82,000 calls instead of over 2 million.
+wrong: With pruning: "", "(", "((", "(()", "(())", "()", "()(", "()()". Without: all 31 strings of length 0 to 4. Either way, the balanced ones are "(())" and "()()".
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to a correct choose, explore, undo search that records lists. Choose **every** change that gives wrong results.
+* `results.append(path)` instead of `results.append(path[:])` :: Right. Every entry is the same list, which ends up empty.
+* Removing `path.pop()` :: Right. Choices pile up on the path instead of replacing each other.
+* Moving `path.pop()` from inside the loop to after it :: Right. Only one choice per call is undone, so later options are added on top of earlier ones.
+- Calling the search with `path + [x]` and removing both `append` and `pop` :: Each call gets a new list, so there's nothing to undo. The results are the same.
+- Trying the options in reverse order :: The same results are found, in a different order.
+- Returning right after recording a complete path :: Complete paths have nothing more to explore, so returning early is correct.
+hint: Which changes leave the shared path in a different state when the next option is tried?
+hint: Which change stores a list that's changed later?
+right: Recording the shared list, and undoing too little, both break the search. Passing new lists, changing the order, or returning at complete paths don't.
+wrong: The search needs the path restored after every option and a copy for every result. Passing `path + [x]` gives each call its own list, so it doesn't need pop at all.
+
+=== task: fill hard
+title: Rolling to a total
+prompt: `rolls` finds every roll of k six-sided dice whose total is exactly `target`. Before trying more dice, it prunes: if even all 1s on the remaining dice would overshoot, or even all 6s would fall short, no roll from here can work. Fill in the blanks so that the program prints:
+
+```output
+[[5, 6], [6, 5]]
+```
+code:
+```python
+def rolls(k, target, path, results):
+    if len(path) == k:
+        if sum(path) == target:
+            results.append(path[:])
+        return
+    left = k - len(path)
+    total = sum(path)
+    if total + left > target or total + left * ?? < target:
+        return
+    for face in range(1, 7):
+        path.append(face)
+        rolls(k, target, path, results)
+        path.??()
+
+results = []
+rolls(2, 11, [], results)
+print(results)
+```
+answer: 6 | pop
+wrong[1 | pop]: `total + left * 1 < target` is True at the start (0 + 2 < 11), so the search prunes everything and finds nothing: [].
+wrong[6 | remove]: `remove` needs the value to remove, so `path.remove()` raises a TypeError. Undo is `pop`, which removes the last item.
+hint: The most the remaining dice can add is 6 each.
+hint: Undo removes the face that was appended last.
+right: `total + left * 6 < target` prunes branches that can't reach the target even with all 6s, and `pop` undoes each face. Only [5, 6] and [6, 5] make 11.
+wrong: The upper bound is `left * 6`, the most the remaining dice can add. The undo after each face is `path.pop()`.
+
+=== task: parsons hard
+title: Upper and lower case
+prompt: Arrange the lines so that `cases` records every way to write the string `s` with each letter in lower or upper case, trying lower case first and keeping other characters as they are. The program prints:
+
+```output
+['a1b', 'a1B', 'A1b', 'A1B']
+```
+
+Not every line is needed.
+lines:
+```python
+def cases(s, i, path, results):
+    if i == len(s):
+        results.append(path)
+        return
+    if s[i].isalpha():
+        cases(s, i + 1, path + s[i].lower(), results)
+        cases(s, i + 1, path + s[i].upper(), results)
+    else:
+        cases(s, i + 1, path + s[i], results)
+
+results = []
+cases("a1b", 0, "", results)
+print(results)
+```
+distractors:
+```python
+        cases(s, i, path + s[i].upper(), results)
+        results.append(path.upper())
+```
+hint: Letters have two options; other characters have one.
+hint: Each option moves on to index i + 1, with the new string.
+right: Each letter doubles the number of results, and the digit doesn't: 2 × 1 × 2 = 4 strings, lower case first at each letter.
+wrong: Base case: when i reaches the end, record the path. If `s[i]` is a letter, recurse with its lower case and then its upper case added; otherwise recurse with the character as it is.
