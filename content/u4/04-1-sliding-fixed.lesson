@@ -1,0 +1,1183 @@
+=== lesson
+id: algo-sliding-fixed
+title: Fixed-size windows
+summary: A fixed-size window always holds exactly k items. You'll learn one template that handles every window the same way, then use it to find the best window and where it starts, compute moving averages, count windows that pass a test, keep counts of values in a dictionary, and pick the best stretch of a string, all in O(n).
+
+=== learn
+### One template for every window
+Every fixed-size window problem makes the same three moves at each index `right`: **add** the item entering at `right`; **remove** the item leaving at `right - k`, once the window would hold more than k items; and **use** the window once it's full, which is from `right = k - 1` on:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+
+print(window_sums([4, 2, 7, 1, 8, 3], 3))
+```
+```output
+[13, 10, 16, 12]
+```
+| right | adds | removes | window | total used |
+| --- | --- | --- | --- | --- |
+| 0 | 4 | | [4] | not full yet |
+| 1 | 2 | | [4, 2] | not full yet |
+| 2 | 7 | | [4, 2, 7] | 13 |
+| 3 | 1 | 4 | [2, 7, 1] | 10 |
+| 4 | 8 | 2 | [7, 1, 8] | 16 |
+| 5 | 3 | 7 | [1, 8, 3] | 12 |
+
+The window that ends at `right` starts at `right - k + 1`. This template treats the first window like all the others, so there's no separate code to set it up. Animation 1 runs it.
+
+### The best window, and where it starts
+To report **where** the best window is, save its start, `right - k + 1`, whenever its total beats the best so far:
+```python
+def best_window_at(nums, k):
+    total = 0
+    best = None
+    best_start = -1
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            if best is None or total > best:
+                best = total
+                best_start = right - k + 1
+    return best, best_start
+
+print(best_window_at([4, 2, 7, 1, 8, 3], 3), best_window_at([5, 5, 1], 2), best_window_at([1, 2], 3))
+```
+```output
+(16, 2) (10, 0) (None, -1)
+```
+`best` starts as None, meaning "no window yet". That works for totals that are negative too, where starting at 0 would wrongly beat every window. A list shorter than k never fills a window, so the answer stays (None, −1). The test `total > best` keeps the **first** of two equally good windows; `>=` would keep the last.
+
+### How many windows?
+A list of n items has n − k + 1 windows of k items: one starting at each index from 0 to n − k.
+
+| n | k | windows |
+| --- | --- | --- |
+| 6 | 3 | 4 |
+| 6 | 1 | 6: every item is its own window |
+| 6 | 6 | 1: the whole list |
+| 2 | 3 | 0: the list is too short |
+
+Moving averages divide each window's total by k, so they come in the same number:
+```python
+def moving_averages(nums, k):
+    return [s / k for s in window_sums(nums, k)]
+
+print(moving_averages([10, 20, 30, 40], 2))
+print(len(window_sums(list(range(10)), 3)), len(window_sums([1, 2], 3)))
+```
+```output
+[15.0, 25.0, 35.0]
+8 0
+```
+When k is more than n, the condition `right >= k - 1` is never true, so the template returns an empty list instead of crashing.
+
+### Counting windows that pass a test
+"Use the window" can be any test. To count the runs of 3 days whose average temperature is at least 20, compare the total with 20 × 3 = 60, so there's no need to divide:
+```python
+def count_warm(temps, k, threshold):
+    count = 0
+    total = 0
+    for right in range(len(temps)):
+        total += temps[right]
+        if right >= k:
+            total -= temps[right - k]
+        if right >= k - 1 and total >= threshold * k:
+            count += 1
+    return count
+
+temps = [18, 21, 23, 19, 20, 24, 17, 16]
+print(count_warm(temps, 3, 20))
+```
+```output
+5
+```
+| window | total | average at least 20? |
+| --- | --- | --- |
+| [18, 21, 23] | 62 | yes |
+| [21, 23, 19] | 63 | yes |
+| [23, 19, 20] | 62 | yes |
+| [19, 20, 24] | 63 | yes |
+| [20, 24, 17] | 61 | yes |
+| [24, 17, 16] | 57 | no |
+
+An average of at least 20 over 3 days is the same as a total of at least 60, and comparing whole numbers avoids decimals.
+
+### Windows that count things
+Instead of a total, a window can keep **counts** in a dictionary. How many different values does each window of 4 hold? Add 1 to the count of the value entering, take 1 away from the value leaving, and delete a value whose count reaches 0. Then `len(counts)` is the number of different values:
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if right >= k - 1:
+            out.append(len(counts))
+    return out
+
+print(distinct_in_windows([1, 2, 1, 3, 4, 2, 3], 4))
+```
+```output
+[3, 4, 4, 3]
+```
+The first window, [1, 2, 1, 3], has three different values. When the first 1 leaves, its count drops from 2 to 1, so 1 stays in the dictionary: there's still a 1 in the window. Deleting only at 0 is what keeps `len(counts)` right. The dictionary never holds more than k keys, so it needs O(k) extra space. Animation 2 runs this.
+
+### The best stretch of a string
+Strings slide the same way. This finds the run of k letters with the most vowels and returns the run itself, using its start:
+```python
+def most_vowels(s, k):
+    count = 0
+    best = -1
+    best_start = 0
+    for right in range(len(s)):
+        if s[right] in "aeiou":
+            count += 1
+        if right >= k and s[right - k] in "aeiou":
+            count -= 1
+        if right >= k - 1 and count > best:
+            best = count
+            best_start = right - k + 1
+    return s[best_start:best_start + k]
+
+print(most_vowels("subsequence", 3), most_vowels("rhythm", 2))
+```
+```output
+equ rh
+```
+In "subsequence", the windows "equ", "que" and "uen" all have 2 vowels, and `>` keeps the first, "equ". "rhythm" has no vowels, so every window has 0, and the first window, "rh", is the answer. Starting `best` at −1 makes sure the first full window always counts.
+
+### Cost, and what a window can't do
+| what the window keeps | time | extra space |
+| --- | --- | --- |
+| a total or a count | O(n) | O(1) |
+| counts of values in a dictionary | O(n) | O(k) |
+| a list of every window's result | O(n) | O(n − k + 1) for the list |
+
+Each step adds one item and removes one, so the work per step doesn't depend on k. Not every question fits this, though. The **largest** item in each window can't be updated by taking the leaving item away: if the largest leaves, you'd have to look through the whole window again, O(k) per step and O(n × k) in all. There are cleverer tools for that, beyond this course.
+
+=== keypoints
+- The template: for each `right`, add `nums[right]`; if `right >= k`, remove `nums[right - k]`; if `right >= k - 1`, use the window, which starts at `right - k + 1`.
+- n items have n − k + 1 windows of k: n windows when k = 1, one when k = n, none when k > n.
+- To report the best window, save `right - k + 1` with its total. Start best at None (or −1 for counts) so the first full window always counts; `>` keeps the first of equal windows.
+- To count windows that pass a test, test each full window; compare totals with `threshold * k` instead of dividing.
+- To count values in a window, add 1 for the entering value, take 1 away for the leaving one, and delete it at 0; `len(counts)` is then the number of different values. O(k) extra space.
+- Every fixed window scan is O(n). The largest item in each window can't be updated by subtraction.
+
+=== example: The busiest hour
+intro: A shop counts its visitors every 10 minutes from 9:00. Six counts in a row make an hour. The program finds the busiest hour and when it starts.
+```python
+visits = [3, 5, 2, 8, 9, 7, 6, 4, 10, 12, 3, 1]
+k = 6
+
+total = 0
+best = None
+best_start = 0
+for right in range(len(visits)):
+    total += visits[right]
+    if right >= k:
+        total -= visits[right - k]
+    if right >= k - 1 and (best is None or total > best):
+        best = total
+        best_start = right - k + 1
+
+start_minutes = 9 * 60 + best_start * 10
+print("busiest hour starts at", f"{start_minutes // 60}:{start_minutes % 60:02d}", "with", best, "visits")
+```
+1-2: Twelve counts, one for each 10 minutes from 9:00 to 11:00. A window of 6 counts is one hour.
+4-13: The template: add the new count, remove the one that's more than an hour old, and check every full hour.
+11: The brackets make Python test `best is None or total > best` first, and then combine the answer with `right >= k - 1`.
+15-16: The best window starts at count 4, which is 40 minutes after 9:00. Its 6 counts add up to 48 visitors.
+
+=== example: Different songs in every 4 plays
+intro: A radio station wants each run of 4 plays to have as many different songs as possible. The program shows how many different songs each run of 4 has.
+```python
+plays = ["Aria", "Blue", "Aria", "Coda", "Dawn", "Blue", "Coda"]
+k = 4
+counts = {}
+for right in range(len(plays)):
+    song = plays[right]
+    counts[song] = counts.get(song, 0) + 1
+    if right >= k:
+        old = plays[right - k]
+        counts[old] -= 1
+        if counts[old] == 0:
+            del counts[old]
+    if right >= k - 1:
+        print(plays[right - k + 1:right + 1], "->", len(counts), "different")
+```
+1-3: Seven plays in order, windows of 4, and an empty dictionary of counts.
+5-6: The song that enters gets 1 added to its count; `get` gives 0 for a song not seen yet.
+7-11: The song that leaves loses 1, and is deleted when its count reaches 0, so the dictionary only holds songs in the window.
+12-13: The slice shows the window itself, and `len(counts)` the number of different songs in it: 3, 4, 4 and 3.
+
+=== animation: The window template
+view: array nums ptr=right window=right-k+1:right
+array out
+vars right total
+intro: Each step adds the item at `right`, removes the item that falls out of a window of 3, and records the total once the window is full. The shaded cells are the window.
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+
+window_sums([4, 2, 7, 1, 8, 3], 3)
+```
+1: Defines window_sums. Nothing runs yet.
+2: The window totals will go here.
+3: The window starts empty.
+4: right moves on to the next item.
+5: Add the item entering: {total} + {nums[right]} = {total + nums[right]}.
+6: Is the window now longer than {k}? {right >= k}.
+7: Remove the item leaving, {nums[right - k]}: {total} − {nums[right - k]} = {total - nums[right - k]}.
+8: Is the window full? {right >= k - 1}.
+9: Record the total of the window from {right - k + 1} to {right}: {total}.
+10: Four windows, four totals.
+12: Sum every window of 3.
+
+=== animation: Counting different values
+view: array nums ptr=right window=right-k+1:right
+dict counts
+array out
+intro: A dictionary keeps how many times each value appears in the window of 4. A value whose count reaches 0 is deleted, so the dictionary's length is the number of different values.
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if right >= k - 1:
+            out.append(len(counts))
+    return out
+
+distinct_in_windows([1, 2, 1, 3, 4, 2, 3], 4)
+```
+1: Defines distinct_in_windows. Nothing runs yet.
+2: Counts of the values in the window.
+3: The number of different values in each window will go here.
+4: right moves on to the next item.
+5: The value entering is {nums[right]}.
+6: Its count goes up to {counts.get(x, 0) + 1}.
+7: Is the window now longer than {k}? {right >= k}.
+8: The value leaving is {nums[right - k]}.
+9: Its count goes down to {counts[old] - 1}.
+10: Has it dropped to 0? {counts[old] == 0}.
+11: None of {old} is left in the window: delete it.
+12: Is the window full? {right >= k - 1}.
+13: The window holds {len(counts)} different values.
+14: The counts for all four windows.
+16: Count the different values in every window of 4.
+
+=== task: predict easy
+title: Window totals
+code:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+
+print(window_sums([1, 2, 3, 4, 5], 2), window_sums([1, 2, 3], 3), window_sums([1, 2], 3))
+```
+wrong[[3, 5, 7, 9] [6] [3]]: A list of 2 items has no window of 3, so the result is empty.
+wrong[[1, 3, 5, 7, 9] [6] []]: A total is recorded only once the window is full, from right = k − 1 on.
+wrong[[3, 5, 7, 9] [1, 3, 6] []]: With k = 3, only the one full window, 1 + 2 + 3 = 6, is recorded.
+hint: Totals are recorded only for full windows.
+hint: A list shorter than k never fills a window.
+right: `[3, 5, 7, 9] [6] []`: four pairs, one window of 3, and no window at all when the list is too short.
+wrong: Pairs of [1, 2, 3, 4, 5] total 3, 5, 7 and 9. [1, 2, 3] has one window of 3, totalling 6. [1, 2] never fills a window of 3, so nothing is recorded.
+
+=== task: mcq easy
+title: How many windows?
+prompt: How many windows of 4 items does a list of 10 items have?
+* 7 :: Right. 10 − 4 + 1 = 7: windows start at indexes 0 to 6.
+- 6 :: That's 10 − 4, which forgets the window starting at index 0.
+- 10 :: The windows can't start in the last three places: there aren't 4 items left there.
+- 40 :: That multiplies; windows overlap, and there's one per possible start.
+hint: Where can the first window start? And the last?
+hint: The last window must end at index 9.
+right: 7: a window of 4 can start at any index from 0 to 6, which is n − k + 1 places.
+wrong: The last window of 4 starts at index 6 and ends at index 9, so the starts are 0 to 6: seven windows, n − k + 1.
+
+=== task: cells easy
+title: Counting windows
+prompt: How many windows of k items does a list of n items have?
+labels: n = 8, k = 3 | n = 8, k = 8 | n = 8, k = 1 | n = 3, k = 5
+answer: 6 | 1 | 8 | 0
+wrong[5 | 1 | 8 | 0]: 8 − 3 + 1 = 6: windows start at indexes 0 to 5.
+wrong[6 | 0 | 8 | 0]: When k equals n, the whole list is one window.
+wrong[6 | 1 | 8 | -2]: A list shorter than k has no windows at all: 0, not a negative number.
+hint: In general, n − k + 1.
+hint: If k is bigger than n, no window fits.
+right: 6, 1, 8 and 0: n − k + 1 windows, and none when the list is too short.
+wrong: 8 − 3 + 1 = 6. 8 − 8 + 1 = 1, the whole list. 8 − 1 + 1 = 8, one per item. A list of 3 can't hold a window of 5.
+
+=== task: code easy
+title: Write window_sums
+prompt: Write `window_sums(nums, k)` that returns a list with the total of every window of k items in a row, in order, using the template: add the entering item, remove the leaving one once `right >= k`, and record once `right >= k - 1`. The speed check uses long lists with big windows, so summing each window again is too slow.
+starter:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    # your code here
+    return out
+```
+solution:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+```
+tests:
+- window_sums([4, 2, 7, 1, 8, 3], 3)
+- window_sums([1, 2, 3], 1)
+- window_sums([1, 2, 3], 3)
+- window_sums([1, 2], 3)
+- window_sums([], 2)
+- window_sums([5, -5, 5], 2)
+speed: setup=nums = list(range(n)); k = n // 2 | call=window_sums(nums, k) | target=O(n)
+slow:
+```python
+def window_sums(nums, k):
+    out = []
+    for start in range(len(nums) - k + 1):
+        out.append(sum(nums[start:start + k]))
+    return out
+```
+fail[1]: The windows of 3 total 13, 10, 16 and 12.
+fail[3]: One window, the whole list: 6.
+fail[4]: The list is shorter than k, so there are no windows.
+fail[6]: 5 + (−5) = 0 and −5 + 5 = 0.
+hint: Loop right over every index and add `nums[right]` to total.
+hint: If `right >= k`, subtract `nums[right - k]`.
+hint: If `right >= k - 1`, the window is full: append the total.
+right: One addition and at most one subtraction per item: O(n), however big k is.
+wrong: For each right, add the new item; once the window would hold more than k items, subtract the one k places back; once it's full, record the total.
+
+=== task: fill easy
+title: When to remove, when to record
+prompt: Fill in the blanks so that the template removes the leaving item and records each full window at the right moment, and the program prints:
+
+```output
+[13, 10, 16, 12]
+```
+code:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= ??:
+            total -= nums[right - k]
+        if right >= ??:
+            out.append(total)
+    return out
+
+print(window_sums([4, 2, 7, 1, 8, 3], 3))
+```
+answer: k | k - 1
+wrong[k - 1 | k - 1]: Removing from right = k − 1 subtracts `nums[-1]`, the last item of the list, before the first window is even full.
+wrong[k | k]: Recording from right = k skips the first full window, [4, 2, 7]: [10, 16, 12].
+hint: The window holds right + 1 items before anything is removed.
+hint: It first holds k items when right is k − 1.
+right: Remove from right = k, when the window would hold k + 1 items; record from right = k − 1, when it first holds k.
+wrong: The first window is full at right = k − 1, so record from there. An item leaves from right = k on, when a k + 1-th item has entered.
+
+=== task: multi easy
+title: True of the template
+prompt: Choose **every** true statement about the fixed-window template.
+* The window that ends at index `right` starts at `right - k + 1` :: Right. It holds k items: `right - k + 1` up to `right`.
+* The first full window appears when `right` is `k - 1` :: Right. Indexes 0 to k − 1 make k items.
+* An item is removed for the first time when `right` reaches `k` :: Right. The item at index 0 leaves as the item at index k enters.
+- It needs separate code to set up the first window :: The template treats every window the same way.
+- It crashes when k is bigger than the list :: The window never fills, so it returns an empty result.
+- Each step costs O(k) :: One addition and at most one subtraction: O(1).
+hint: Work out the start of the window that ends at index right.
+hint: What happens when the window never fills?
+right: Windows end at right and start at `right - k + 1`; the first is full at right = k − 1, and items start leaving at right = k. No special first window, no crash, and O(1) per step.
+wrong: The template adds at right, removes at `right - k` from right = k, and uses the window from right = k − 1. It works for every window, including the first, and returns nothing when k is too big.
+
+=== task: parsons easy
+title: Count the good windows
+prompt: Arrange the lines so that `count_warm` counts the windows of k days whose average is at least `threshold`, and the program prints:
+
+```output
+4
+```
+
+Not every line is needed.
+lines:
+```python
+def count_warm(temps, k, threshold):
+    count = 0
+    total = 0
+    for right in range(len(temps)):
+        total += temps[right]
+        if right >= k:
+            total -= temps[right - k]
+        if right >= k - 1 and total >= threshold * k:
+            count += 1
+    return count
+
+print(count_warm([15, 25, 20, 10, 30, 22], 2, 20))
+```
+distractors:
+```python
+        if right >= k - 1 and total > threshold * k:
+            total -= temps[right - k + 1]
+```
+hint: An average of at least 20 over 2 days is a total of at least 40.
+hint: The item that leaves is k places back.
+right: The pairs total 40, 45, 30, 40 and 52, and four of them reach 40.
+wrong: Use the template: add each day, remove the day k places back once `right >= k`, and count a full window whose total is at least `threshold * k`.
+
+=== task: order easy
+title: The template, step by step
+prompt: `window_sums([3, 6, 1, 8], 2)` runs. Put the steps in order.
+items:
+- right = 0: add 3; the window isn't full yet
+- right = 1: add 6, and record 9
+- right = 2: add 1, remove 3, and record 7
+- right = 3: add 8, remove 6, and record 9
+hint: Nothing is recorded until the window holds 2 items.
+hint: From right = 2 on, the item 2 places back leaves.
+right: The window fills at right = 1, and from then on each step adds one item, removes one, and records the total: [9, 7, 9].
+wrong: Add 3 (not full). Add 6 and record 9. Add 1, remove 3, record 7. Add 8, remove 6, record 9.
+
+=== task: predict easy
+title: Ties and negatives
+code:
+```python
+def best_window_at(nums, k):
+    total = 0
+    best = None
+    best_start = -1
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            if best is None or total > best:
+                best = total
+                best_start = right - k + 1
+    return best, best_start
+
+print(best_window_at([2, 7, 3, 6, 4], 2), best_window_at([-4, -1, -3], 2))
+```
+wrong[(10, 3) (-4, 1)]: `total > best` keeps the first of the two windows totalling 10: the one starting at index 1.
+wrong[(10, 1) (0, -1)]: best starts as None, not 0, so negative totals still count: −4 is the best.
+wrong[(9, 0) (-4, 1)]: 7 + 3 = 10 beats 2 + 7 = 9.
+hint: The pairs total 9, 10, 9 and 10.
+hint: A later window replaces the best only if it's strictly bigger.
+right: `(10, 1) (-4, 1)`: the first window that reaches 10 starts at index 1, and among the negative pairs, −1 + −3 = −4 beats −5.
+wrong: [7, 3] at index 1 is the first window to total 10, and the later 10 doesn't beat it. For the negative list, −4 + −1 = −5 and −1 + −3 = −4, so −4, starting at index 1, is the best.
+
+=== task: mcq easy
+title: Where does the window start?
+prompt: A window of k items ends at index `right`. At which index does it start?
+* `right - k + 1` :: Right. From `right - k + 1` to `right` is exactly k items.
+- `right - k` :: That's one item too many: the item at `right - k` has already left.
+- `right + k` :: That's past the end of the window.
+- `k - 1` :: That's only right for the very first window.
+hint: Try k = 3 and right = 5: which three indexes end at 5?
+hint: The window holds 5, 4 and 3.
+right: `right - k + 1`: for k = 3 and right = 5, the window is indexes 3, 4 and 5.
+wrong: The k indexes ending at `right` are `right - k + 1` up to `right`. The item at `right - k` is the one that left last.
+
+=== task: code medium
+title: The best window and its start
+prompt: Write `best_window_at(nums, k)` that returns a tuple `(best_total, start)` for the window of k items with the largest total, keeping the first of any ties. If the list is shorter than k, return `(None, -1)`. Use the template; the speed check uses long lists with big windows.
+starter:
+```python
+def best_window_at(nums, k):
+    total = 0
+    best = None
+    best_start = -1
+    # your code here
+    return (best, best_start)
+```
+solution:
+```python
+def best_window_at(nums, k):
+    total = 0
+    best = None
+    best_start = -1
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            if best is None or total > best:
+                best = total
+                best_start = right - k + 1
+    return (best, best_start)
+```
+tests:
+- best_window_at([4, 2, 7, 1, 8, 3], 3)
+- best_window_at([5, 5, 1], 2)
+- best_window_at([1, 2], 3)
+- best_window_at([-5, -2, -8], 1)
+- best_window_at([3, 1, 3, 1], 2)
+speed: setup=nums = list(range(n)); k = n // 2 | call=best_window_at(nums, k) | target=O(n)
+slow:
+```python
+def best_window_at(nums, k):
+    best = None
+    best_start = -1
+    for start in range(len(nums) - k + 1):
+        total = sum(nums[start:start + k])
+        if best is None or total > best:
+            best = total
+            best_start = start
+    return (best, best_start)
+```
+fail[1]: The best window, [7, 1, 8], starts at index 2.
+fail[4]: All the numbers are negative; the best single item is −2, at index 1. Start best at None, not 0.
+fail[5]: Three windows tie at 4: keep the first, at index 0.
+hint: Use the template: add, remove once `right >= k`, and use the window once `right >= k - 1`.
+hint: A full window replaces the best if `best is None or total > best`.
+hint: Its start is `right - k + 1`.
+right: One pass, O(n). None marks "no window yet", so negative totals work, and `>` keeps the first of equal windows.
+wrong: Slide the window with the template. Whenever a full window's total beats the best (or there's no best yet), save its total and its start, `right - k + 1`.
+
+=== task: code medium
+title: Windows that reach a target
+prompt: Write `count_at_least(nums, k, target)` that returns how many windows of k items have a total of at least `target`. Slide the window; the speed check uses long lists with big windows.
+starter:
+```python
+def count_at_least(nums, k, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_at_least(nums, k, target):
+    count = 0
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1 and total >= target:
+            count += 1
+    return count
+```
+tests:
+- count_at_least([2, 5, 4, 1, 6, 3], 3, 10)
+- count_at_least([1, 1, 1], 2, 3)
+- count_at_least([5, 5], 1, 5)
+- count_at_least([1, 2], 3, 0)
+- count_at_least([3, -1, 4, -1, 5], 2, 3)
+speed: setup=nums = list(range(n)); k = n // 2 | call=count_at_least(nums, k, 0) | target=O(n)
+slow:
+```python
+def count_at_least(nums, k, target):
+    count = 0
+    for start in range(len(nums) - k + 1):
+        if sum(nums[start:start + k]) >= target:
+            count += 1
+    return count
+```
+fail[1]: The windows total 11, 10, 11 and 10: all four reach 10.
+fail[3]: Each 5 on its own reaches 5.
+fail[4]: The list is shorter than k: no windows, so 0, whatever the target.
+fail[5]: The pairs total 2, 3, 3 and 4: three of them reach 3.
+hint: Use the template to keep each window's total.
+hint: When the window is full and `total >= target`, add 1 to count.
+hint: A window that isn't full yet never counts.
+right: Each window is tested once after an O(1) update: O(n) in all.
+wrong: Slide the window and test each full one: `right >= k - 1 and total >= target`. Count the windows that pass.
+
+=== task: predict medium
+title: Different values
+code:
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if right >= k - 1:
+            out.append(len(counts))
+    return out
+
+print(distinct_in_windows([7, 7, 7, 8], 2), distinct_in_windows([1, 2, 3], 3))
+```
+wrong[[2, 2, 2] [3]]: [7, 7] holds only one different value, 7.
+wrong[[1, 1, 2] [1, 2, 3]]: With k = 3 there's one window, the whole list, with 3 different values.
+wrong[[1, 2] [3]]: Four items make 4 − 2 + 1 = 3 windows of 2.
+hint: The windows of 2 are [7, 7], [7, 7] and [7, 8].
+hint: `len(counts)` is the number of different values in the window.
+right: `[1, 1, 2] [3]`: the first two pairs are both 7s, the last pair has a 7 and an 8, and [1, 2, 3] has three different values.
+wrong: [7, 7] → 1, [7, 7] → 1, [7, 8] → 2. The whole list [1, 2, 3] is the only window of 3, with 3 different values.
+
+=== task: cells medium
+title: Inside the dictionary
+prompt: `distinct_in_windows([5, 6, 5, 6, 7], 3)` runs. Fill in the values.
+labels: count of 5 after right = 2 | count of 6 after right = 3 | count of 5 after right = 3 | different values in the last window | the result
+answer: 2 | 2 | 1 | 3 | [2, 2, 3]
+wrong[1 | 2 | 1 | 3 | [2, 2, 3]]: The first window, [5, 6, 5], holds two 5s.
+wrong[2 | 1 | 1 | 3 | [2, 2, 3]]: At right = 3 a 6 enters, making two 6s; the item that leaves is a 5, not a 6.
+wrong[2 | 2 | 0 | 3 | [2, 2, 3]]: Only one of the two 5s leaves, so 5's count drops to 1 and 5 stays in the dictionary.
+hint: At right = 3, a 6 enters and the 5 at index 0 leaves.
+hint: At right = 4, a 7 enters and the 6 at index 1 leaves.
+right: {5: 2, 6: 1} for the first window, then {5: 1, 6: 2}, then {5: 1, 6: 1, 7: 1}: 2, 2 and 3 different values.
+wrong: [5, 6, 5] has two 5s. Next, a 6 enters and one 5 leaves: {5: 1, 6: 2}. Then 7 enters and one 6 leaves: three different values.
+
+=== task: fill medium
+title: Delete at zero, report the length
+prompt: Fill in the blanks so that `distinct_in_windows` reports how many different values each window holds, and the program prints:
+
+```output
+[3, 4, 4, 3]
+```
+code:
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == ??:
+                del counts[old]
+        if right >= k - 1:
+            out.append(??)
+    return out
+
+print(distinct_in_windows([1, 2, 1, 3, 4, 2, 3], 4))
+```
+answer: 0 | len(counts)
+wrong[1 | len(counts)]: Deleting at 1 removes a value that's still in the window once. The counts go wrong, and a later `counts[old] -= 1` on a deleted value raises a KeyError.
+wrong[0 | len(out)]: `len(out)` is the number of windows recorded so far, not the number of different values: [0, 1, 2, 3].
+hint: A value has left the window completely when its count is 0.
+hint: Each key in counts is one different value in the window.
+right: Deleting only at 0 keeps exactly the values in the window as keys, so `len(counts)` is the number of different values.
+wrong: Delete a value when its count drops to 0, and append `len(counts)`, the number of keys, for each full window.
+
+=== task: mcq medium
+title: Why delete at zero?
+prompt: In `distinct_in_windows`, why is a value deleted from `counts` when its count reaches 0?
+* So that `len(counts)` counts only the values still in the window :: Right. A key with a count of 0 would still be counted by `len`.
+- To make the next slide faster :: It hardly changes the speed. The point is the count.
+- Because a dictionary can't hold the number 0 :: It can; it would only give the wrong length.
+- So that the same value can't enter the window again :: It can come back later: `get` starts it from 0 again.
+hint: What does `len(counts)` count?
+hint: Is a value with a count of 0 in the window?
+right: `len` counts keys. A value with count 0 isn't in the window any more, so its key must go, or the number of different values comes out too high.
+wrong: The answer is `len(counts)`, the number of keys. Keeping a key whose count is 0 would count a value that has already left the window.
+
+=== task: predict medium
+title: Moving averages
+code:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+
+def moving_averages(nums, k):
+    return [s / k for s in window_sums(nums, k)]
+
+print(moving_averages([2, 4, 6, 8], 2), moving_averages([3, 6, 9], 3), moving_averages([1, 2], 4))
+```
+wrong[[3, 5, 7] [6] []]: `/` always gives a float, so the averages print as 3.0, 5.0 and 7.0.
+wrong[[3.0, 5.0, 7.0] [6.0] [1.5]]: A list of 2 items has no window of 4, so the result is empty.
+wrong[[2.0, 3.0, 5.0, 7.0] [6.0] []]: Only full windows count: 4 items give 3 windows of 2.
+hint: Each average is a window total divided by k.
+hint: Division with `/` gives a float.
+right: `[3.0, 5.0, 7.0] [6.0] []`: three pairs averaging 3, 5 and 7; one window of 3 averaging 6; and no window of 4 in a list of 2.
+wrong: The pair totals 6, 10 and 14, divided by 2, give 3.0, 5.0 and 7.0. 18 / 3 = 6.0. [1, 2] has no window of 4, so its list is empty.
+
+=== task: multi medium
+title: Values a window can update
+prompt: As the window slides, one item enters and one leaves. Choose **every** value that can be kept up to date in O(1) per slide.
+* The total of the window :: Right. Add what enters, subtract what leaves.
+* How many vowels the window holds :: Right. Add 1 or take 1 away.
+* How many times each value appears, in a dictionary :: Right. Two counts change per slide.
+* How many different values the window holds, using that dictionary :: Right. It's `len(counts)`, kept right by deleting at 0.
+- The largest item in the window :: If the largest leaves, finding the new largest means looking at the whole window: O(k).
+- The middle value of the window in sorted order :: That needs the window in sorted order; one add and one remove don't tell you the new middle.
+hint: Can you undo an item's effect when it leaves?
+hint: Removing the largest item doesn't tell you the second largest.
+right: Totals, counts and dictionaries of counts all update with one change for the entering item and one for the leaving item. The largest item and the middle value can't be updated that way.
+wrong: A value works if the leaving item's effect can be undone in one step, like subtracting it from a total or a count. The largest item and the middle value need the rest of the window to be looked at again.
+
+=== task: parsons medium
+title: The window with the most vowels
+prompt: Arrange the lines so that `most_vowels` returns the first run of k letters with the most vowels, and the program prints:
+
+```output
+edu cr
+```
+
+Not every line is needed.
+lines:
+```python
+def most_vowels(s, k):
+    count = 0
+    best = -1
+    best_start = 0
+    for right in range(len(s)):
+        if s[right] in "aeiou":
+            count += 1
+        if right >= k and s[right - k] in "aeiou":
+            count -= 1
+        if right >= k - 1 and count > best:
+            best = count
+            best_start = right - k + 1
+    return s[best_start:best_start + k]
+
+print(most_vowels("education", 3), most_vowels("crypt", 2))
+```
+distractors:
+```python
+        if right >= k - 1 and count >= best:
+    return s[best_start:best_start + k + 1]
+```
+hint: best starts at −1, so the first full window always counts.
+hint: `>` keeps the first of equal windows; the slice must be k letters long.
+right: "edu", "uca", "ati", "tio" and "ion" all have 2 vowels, and `>` keeps the first, "edu". "crypt" has no vowels, so its first window, "cr", is the answer.
+wrong: Count vowels entering and leaving, save the start of each window that beats the best so far, and return the k letters from that start.
+
+=== task: order medium
+title: Counts over time
+prompt: `distinct_in_windows([4, 4, 9, 9], 2)` runs. Put the steps in order.
+items:
+- [4, 4] is full: 1 different value
+- 9 enters and one 4 leaves: [4, 9] has 2 different values
+- 9 enters again and the last 4 leaves, so 4 is deleted: [9, 9] has 1
+- The result is [1, 2, 1]
+hint: The first full window holds two 4s.
+hint: 4 is only deleted when both 4s have left.
+right: The windows [4, 4], [4, 9] and [9, 9] hold 1, 2 and 1 different values.
+wrong: First [4, 4] (one value). Then 9 enters and a 4 leaves: [4, 9] (two). Then the second 9 enters and the last 4 leaves, so 4 is deleted: [9, 9] (one).
+
+=== task: code hard
+title: Different values in every window
+prompt: Write `distinct_in_windows(nums, k)` that returns a list with the number of different values in every window of k items, in order. Keep a dictionary of counts and update it as the window slides. The speed check uses long lists with big windows, so building a set for each window is too slow.
+starter:
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if right >= k - 1:
+            out.append(len(counts))
+    return out
+```
+tests:
+- distinct_in_windows([1, 2, 1, 3, 4, 2, 3], 4)
+- distinct_in_windows([7, 7, 7, 8], 2)
+- distinct_in_windows([1, 2, 3], 3)
+- distinct_in_windows([1], 2)
+- distinct_in_windows(["a", "b", "a"], 2)
+speed: setup=nums = list(range(n)); k = n // 2 | call=distinct_in_windows(nums, k) | target=O(n)
+slow:
+```python
+def distinct_in_windows(nums, k):
+    out = []
+    for start in range(len(nums) - k + 1):
+        out.append(len(set(nums[start:start + k])))
+    return out
+```
+fail[1]: The windows hold 3, 4, 4 and 3 different values.
+fail[2]: [7, 7] holds only one different value.
+fail[5]: Strings work too: ["a", "b"] and ["b", "a"] both hold 2.
+error[KeyError]: Delete a value only when its count reaches 0, and use `counts.get(x, 0)` for a value that isn't in the dictionary yet.
+hint: Add 1 to the entering value's count with `counts.get(x, 0) + 1`.
+hint: Once `right >= k`, take 1 from the leaving value's count, and delete it at 0.
+hint: Once `right >= k - 1`, append `len(counts)`.
+right: Two dictionary updates per slide: O(n) time and O(k) extra space, where a set per window costs O(n × k).
+wrong: Keep counts of the values in the window: add the entering value, remove the leaving value (deleting it at 0), and record `len(counts)` for each full window.
+
+=== task: code hard
+title: Fewest blocks to repaint
+prompt: `blocks` is a string of "W" (white) and "B" (black) blocks. You want k black blocks in a row. Write `min_recolors(blocks, k)`: the fewest white blocks you must paint black, which is the smallest number of "W"s in any window of k. Slide a window, keeping its count of "W"s. The speed check uses long strings.
+starter:
+```python
+def min_recolors(blocks, k):
+    whites = 0
+    best = None
+    # your code here
+    return best
+```
+solution:
+```python
+def min_recolors(blocks, k):
+    whites = 0
+    best = None
+    for right in range(len(blocks)):
+        if blocks[right] == "W":
+            whites += 1
+        if right >= k and blocks[right - k] == "W":
+            whites -= 1
+        if right >= k - 1:
+            if best is None or whites < best:
+                best = whites
+    return best
+```
+tests:
+- min_recolors("WBBWWBBWBW", 7)
+- min_recolors("WBWBBBW", 2)
+- min_recolors("WWW", 3)
+- min_recolors("B", 1)
+- min_recolors("BWWWBB", 3)
+speed: setup=blocks = "WB" * n; k = n | call=min_recolors(blocks, k) | target=O(n)
+slow:
+```python
+def min_recolors(blocks, k):
+    best = None
+    for start in range(len(blocks) - k + 1):
+        whites = blocks[start:start + k].count("W")
+        if best is None or whites < best:
+            best = whites
+    return best
+```
+fail[1]: Every window of 7 has at least 3 whites.
+fail[2]: "BB" needs no painting at all.
+fail[3]: The only window is "WWW": 3 blocks to paint.
+fail[5]: "WBB" at the end needs only 1.
+hint: Count the "W"s in the window as it slides: add 1 when a "W" enters, take 1 away when one leaves.
+hint: Once the window is full, keep the smallest count seen.
+hint: That smallest count is the answer.
+right: One count per window, each updated in O(1): O(n). Counting the "W"s of every window again would be O(n × k).
+wrong: Slide a window of k over the string, keeping how many "W"s it holds. The window with the fewest is the best place for the k black blocks.
+
+=== task: code hard
+title: The calm shopkeeper
+prompt: A shopkeeper serves `customers[i]` customers in minute i, but in the minutes where `grumpy[i]` is 1 those customers leave unhappy. Once, the shopkeeper can stay calm for k minutes in a row. Write `max_satisfied(customers, grumpy, k)`: the most customers that can leave happy. Add up the customers who are happy anyway, then slide a window of k to find where calm minutes win back the most grumpy-minute customers. The speed check uses long lists.
+starter:
+```python
+def max_satisfied(customers, grumpy, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_satisfied(customers, grumpy, k):
+    base = 0
+    for i in range(len(customers)):
+        if grumpy[i] == 0:
+            base += customers[i]
+    extra = 0
+    best_extra = 0
+    for right in range(len(customers)):
+        if grumpy[right] == 1:
+            extra += customers[right]
+        if right >= k and grumpy[right - k] == 1:
+            extra -= customers[right - k]
+        if right >= k - 1:
+            best_extra = max(best_extra, extra)
+    return base + best_extra
+```
+tests:
+- max_satisfied([1, 0, 1, 2, 1, 1, 7, 5], [0, 1, 0, 1, 0, 1, 0, 1], 3)
+- max_satisfied([1], [0], 1)
+- max_satisfied([4, 10, 10], [1, 1, 0], 2)
+- max_satisfied([3, 5], [1, 1], 1)
+speed: setup=customers = list(range(n)); grumpy = [1, 0] * (n // 2); k = n // 2 | call=max_satisfied(customers, grumpy, k) | target=O(n)
+slow:
+```python
+def max_satisfied(customers, grumpy, k):
+    base = 0
+    for i in range(len(customers)):
+        if grumpy[i] == 0:
+            base += customers[i]
+    best_extra = 0
+    for start in range(len(customers) - k + 1):
+        extra = 0
+        for i in range(start, start + k):
+            if grumpy[i] == 1:
+                extra += customers[i]
+        best_extra = max(best_extra, extra)
+    return base + best_extra
+```
+fail[1]: 10 customers are happy anyway; calm minutes 5 to 7 win back 1 + 5 = 6 more.
+fail[3]: Staying calm in minutes 0 and 1 wins back 4 + 10 = 14, on top of 10.
+fail[4]: Staying calm in the second minute wins back its 5 customers.
+hint: First add up the customers in the minutes when the shopkeeper isn't grumpy.
+hint: Then slide a window of k, keeping the total of the grumpy-minute customers inside it.
+hint: The answer is that base plus the best window.
+right: One pass for the base and one sliding pass for the windows: O(n). Recounting each window would be O(n × k).
+wrong: The happy-anyway customers don't depend on the window. The window only adds the grumpy-minute customers inside it, so slide it to find the largest such total, and add it to the base.
+
+=== task: code hard
+title: Cards from both ends
+prompt: Cards in a row have points. You take exactly k cards, each one from the left end or the right end. Write `max_card_points(cards, k)`: the most points you can get. The cards you **don't** take form one run of n − k cards in the middle, so find the window of n − k cards with the **smallest** total and subtract it from the total of all the cards. The speed check uses long lists.
+starter:
+```python
+def max_card_points(cards, k):
+    n = len(cards)
+    size = n - k
+    total_all = sum(cards)
+    if size == 0:
+        return total_all
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_card_points(cards, k):
+    n = len(cards)
+    size = n - k
+    total_all = sum(cards)
+    if size == 0:
+        return total_all
+    window = 0
+    smallest = None
+    for right in range(n):
+        window += cards[right]
+        if right >= size:
+            window -= cards[right - size]
+        if right >= size - 1:
+            if smallest is None or window < smallest:
+                smallest = window
+    return total_all - smallest
+```
+tests:
+- max_card_points([1, 2, 3, 4, 5, 6, 1], 3)
+- max_card_points([2, 2, 2], 2)
+- max_card_points([9, 7, 7, 9, 7, 7, 9], 7)
+- max_card_points([1, 1000, 1], 1)
+- max_card_points([1, 79, 80, 1, 1, 1, 200, 1], 3)
+speed: setup=cards = list(range(n)); k = n // 2 | call=max_card_points(cards, k) | target=O(n)
+slow:
+```python
+def max_card_points(cards, k):
+    n = len(cards)
+    best = 0
+    for left_count in range(k + 1):
+        right_count = k - left_count
+        points = sum(cards[:left_count]) + sum(cards[n - right_count:])
+        best = max(best, points)
+    return best
+```
+fail[1]: Take the three cards on the right: 5 + 6 + 1 = 12.
+fail[3]: Taking all 7 cards gives every point: 55.
+fail[4]: Either end gives 1: the 1000 in the middle can't be reached with one card.
+fail[5]: The best three cards include the 200: 202 points.
+hint: The k cards taken leave a run of n − k cards in the middle.
+hint: Slide a window of n − k cards and find its smallest total.
+hint: Subtract that from the total of all the cards.
+right: Every way of taking k cards from the ends leaves exactly one window of n − k cards, so the best choice leaves the cheapest window. One sliding pass: O(n).
+wrong: Turn the question around: instead of choosing the cards to take, choose the run of n − k cards to leave. Slide a window of that size, keep the smallest total, and subtract it from the total of all the cards.
+
+=== task: predict hard
+title: Starting best at 0
+code:
+```python
+def best_window_bug(nums, k):
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            best = max(best, total)
+    return best
+
+print(best_window_bug([-3, -1, -2], 2), best_window_bug([3, -1, 2], 2))
+```
+wrong[-3 2]: best starts at 0, and every window total is negative, so 0 is never beaten: the function returns 0, which isn't the total of any window.
+wrong[0 3]: The pairs total 3 + (−1) = 2 and −1 + 2 = 1: the best is 2.
+wrong[-4 2]: −1 + −2 = −3 beats −4, and the starting 0 beats both.
+hint: What are the two window totals in the first list?
+hint: Can a negative total beat a best of 0?
+right: `0 2`: the first answer should be −3, but best started at 0, which beats every negative window. The second list has a positive window, 2, so the bug doesn't show.
+wrong: The first list's pairs total −4 and −3, and `max(0, ...)` keeps 0, a total that no window has. That's why best should start as None. The second list's pairs total 2 and 1.
+
+=== task: predict hard
+title: Edge cases
+code:
+```python
+def window_sums(nums, k):
+    out = []
+    total = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            out.append(total)
+    return out
+
+print(window_sums([5, 1, 4], 1), window_sums([5, 1, 4], 4), len(window_sums(list(range(100)), 10)))
+```
+wrong[[5, 1, 4] [10] 91]: With k = 4 the window is never full, so nothing is recorded.
+wrong[[5, 1, 4] [] 90]: 100 − 10 + 1 = 91 windows.
+wrong[[6, 5] [] 91]: k = 1 makes each item a window of its own.
+hint: With k = 1, each item enters and the previous item leaves at once.
+hint: n − k + 1 windows when k ≤ n, otherwise none.
+right: `[5, 1, 4] [] 91`: each item alone, no window of 4 in a list of 3, and 100 − 10 + 1 = 91 windows of 10.
+wrong: k = 1 records every item as its own window. k = 4 never fills, so the list is empty. 100 items have 91 windows of 10.
+
+=== task: cells hard
+title: Points from the ends
+prompt: `cards = [1, 2, 3, 4, 5, 6, 1]` and k = 3. Fill in the points for each way of taking 3 cards from the ends, and the best.
+labels: 3 from the right | 2 from the right and 1 from the left | 1 from the right and 2 from the left | 3 from the left | the best
+answer: 12 | 8 | 4 | 6 | 12
+wrong[12 | 8 | 4 | 6 | 8]: Taking all 3 from the right, 5 + 6 + 1 = 12, is the best.
+wrong[11 | 8 | 4 | 6 | 11]: The three cards on the right are 5, 6 and 1: 12.
+wrong[12 | 7 | 4 | 6 | 12]: The two right cards, 6 and 1, plus the left card, 1, make 8.
+hint: The right end holds 1, then 6, then 5; the left end holds 1, then 2, then 3.
+hint: The cards left behind form one window of 4 in the middle.
+right: 12, 8, 4, 6, and the best is 12. The window left behind for the best choice is [1, 2, 3, 4], the smallest window of 4, totalling 10; 22 − 10 = 12.
+wrong: 5 + 6 + 1 = 12. 6 + 1 + 1 = 8. 1 + 1 + 2 = 4. 1 + 2 + 3 = 6. The best is 12, from leaving the window [1, 2, 3, 4], which has the smallest total.
+
+=== task: multi hard
+title: Changes to distinct_in_windows
+prompt: Each change is made to `distinct_in_windows`. Choose **every** change that gives wrong results, or crashes, for some list.
+* Deleting a value when its count reaches 1 instead of 0 :: Right. That deletes a value still in the window, and a later subtraction from it raises a KeyError.
+* Removing `nums[right - k]` at every step, without checking `right >= k` :: Right. At the start, `right - k` is negative, so it removes items from the end of the list that never entered.
+* Appending `len(counts)` at every step, without checking `right >= k - 1` :: Right. The windows that aren't full yet are recorded too.
+- Writing `if x in counts: counts[x] += 1` with `else: counts[x] = 1` instead of using `get` :: The same counts, written another way.
+- Removing the leaving value before adding the entering one :: Each step makes the same two changes, so the counts end up the same.
+- Looping with `while right < len(nums):` and `right += 1` instead of `for` :: The same values of right, in the same order.
+hint: Which changes alter which items are added, removed or recorded?
+hint: Which ones only rewrite the same steps in another way?
+right: Deleting at 1, removing too early, and recording unfilled windows all change the answer. The `if x in counts` form, the order of the two updates and a `while` loop do exactly the same work.
+wrong: The template needs a delete only at 0, a removal only from right = k, and a record only from right = k − 1. Rewriting the count update, swapping the two updates or using a while loop changes nothing.
+
+=== task: fill hard
+title: Saving the start
+prompt: Fill in the blanks so that `best_window_at` saves where each new best window starts, keeping the first of any ties, and the program prints:
+
+```output
+(4, 0) (10, 1)
+```
+code:
+```python
+def best_window_at(nums, k):
+    total = 0
+    best = None
+    best_start = -1
+    for right in range(len(nums)):
+        total += nums[right]
+        if right >= k:
+            total -= nums[right - k]
+        if right >= k - 1:
+            if best is None or total ?? best:
+                best = total
+                best_start = right - ?? + 1
+    return best, best_start
+
+print(best_window_at([3, 1, 3, 1], 2), best_window_at([2, 7, 3, 6, 4], 2))
+```
+answer: > | k
+wrong[>= | k]: `>=` replaces the best with every equal window, so the last of the ties wins: (4, 2) and (10, 3).
+wrong[> | 1]: `right - 1 + 1` is right, the window's last index, not its first.
+hint: To keep the first of equal windows, a later window must be strictly better.
+hint: The window that ends at right starts k − 1 places earlier.
+right: `>` only replaces the best with a strictly bigger window, so ties keep the first, and `right - k + 1` is the window's start.
+wrong: Use `total > best` so equal windows don't replace the first one, and save `right - k + 1`, the first index of the window.
+
+=== task: parsons hard
+title: A window of all-different letters
+prompt: Arrange the lines so that `has_distinct_window` returns True if some run of k letters has no letter twice, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def has_distinct_window(s, k):
+    counts = {}
+    for right in range(len(s)):
+        counts[s[right]] = counts.get(s[right], 0) + 1
+        if right >= k:
+            old = s[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if right >= k - 1 and len(counts) == k:
+            return True
+    return False
+
+print(has_distinct_window("aabbcc", 2), has_distinct_window("aaabbb", 3))
+```
+distractors:
+```python
+        if right >= k - 1 and len(counts) > k:
+            return len(counts)
+```
+hint: A full window has k letters; they're all different when the dictionary has k keys.
+hint: Return True as soon as one window qualifies, and False only after the loop.
+right: In "aabbcc", the window "ab" has two different letters: True. No run of 3 in "aaabbb" has three different letters: False.
+wrong: Keep letter counts for the window, deleting a letter at 0. As soon as a full window has `len(counts) == k`, return True; if none does, return False after the loop.
