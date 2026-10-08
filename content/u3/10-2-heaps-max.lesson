@@ -1,0 +1,1157 @@
+=== lesson
+id: ds-heaps-max
+title: Max-heaps
+summary: A max-heap turns the rule round: every parent is at least as big as its children, so the largest item waits at the root. You'll build one by hand, push and pop with the comparisons flipped, get a max-heap out of Python's `heapq` by storing negative numbers, find the k largest items, and keep a running top-scores board with a small min-heap.
+
+=== learn
+### The reversed rule
+A **max-heap** flips the min-heap rule: every parent is **≥** each of its children. So along any path down from the root, the values never get bigger, and the **largest** item sits at index 0. Everything else stays the same: it's a complete tree stored level by level in a list, with the children of index i at 2i + 1 and 2i + 2, and its parent at (i − 1) // 2.
+```text
+             9 [0]
+           /       \
+       7 [1]        8 [2]
+      /    \       /    \
+   3 [3]  5 [4]  6 [5]  1 [6]
+
+list: [9, 7, 8, 3, 5, 6, 1]
+```
+The rule says nothing about siblings, so a max-heap isn't sorted either: 7 is on the left of 8, and the smallest value is somewhere among the leaves. Checking the rule means comparing every item with its parent, the other way round:
+```python
+def is_max_heap(h):
+    for i in range(1, len(h)):
+        if h[(i - 1) // 2] < h[i]:
+            return False
+    return True
+
+print(is_max_heap([9, 7, 8, 3, 5, 6, 1]), is_max_heap([9, 7, 8, 3, 8, 6, 1]), is_max_heap([1, 2, 3]))
+```
+```output
+True False False
+```
+In the second list, 8 at index 4 is bigger than its parent, 7. `[1, 2, 3]` is a min-heap, which is the opposite of what's needed here.
+
+### Push and pop, flipped
+Every comparison turns round. Push appends the new item and sifts it up while its parent is **smaller**. Pop saves the root, moves the last item there, and sifts it down towards its **larger** child, for as long as that child is larger:
+```python
+def max_sift_up(h, i):
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] >= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+def max_sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] > h[c]:
+            c += 1
+        if h[i] >= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def max_push(h, x):
+    h.append(x)
+    max_sift_up(h, len(h) - 1)
+
+def max_pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        max_sift_down(h, 0)
+    return top
+```
+Compared with the Min-heaps lesson, only three comparisons changed: `h[p] >= h[i]` stops the climb under a parent that's no smaller; `h[c + 1] > h[c]` picks the larger child; and `h[i] >= h[c]` stops the sinking once neither child is larger. Push and pop are still O(log n), and peeking at `h[0]` is O(1).
+
+### Building one by hand
+Pushing 3, 8, 5, 10, 1 and 9 into an empty max-heap:
+```python
+h = []
+for x in [3, 8, 5, 10, 1, 9]:
+    max_push(h, x)
+    print(x, h)
+print(max_pop(h), h)
+```
+```output
+3 [3]
+8 [8, 3]
+5 [8, 3, 5]
+10 [10, 8, 5, 3]
+1 [10, 8, 5, 3, 1]
+9 [10, 8, 9, 3, 1, 5]
+10 [9, 8, 5, 3, 1]
+```
+| push | lands at | climbs | list afterwards |
+| --- | --- | --- | --- |
+| 8 | index 1, below 3 | 3 < 8: swap | [8, 3] |
+| 5 | index 2, below 8 | 8 ≥ 5: stop | [8, 3, 5] |
+| 10 | index 3, below 3 | swaps with 3, then with 8 | [10, 8, 5, 3] |
+| 1 | index 4, below 8 | 8 ≥ 1: stop | [10, 8, 5, 3, 1] |
+| 9 | index 5, below 5 | swaps with 5, then stops below 10 | [10, 8, 9, 3, 1, 5] |
+
+The pop returns 10. The last item, 5, moves to the root; its larger child is 9, so they swap, and 5 lands at index 2 with no children left.
+
+Heapify works the same way with the flipped sift: sift down every item that has children, from index `n // 2 - 1` back to 0, in O(n):
+```python
+def max_heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        max_sift_down(h, start)
+
+nums = [2, 9, 4, 7, 1]
+max_heapify(nums)
+print(nums)
+```
+```output
+[9, 7, 4, 2, 1]
+```
+Index 1 (9) is already bigger than its children, 7 and 1. Then the root, 2, swaps with its larger child, 9, and then with 7. Animation 1 builds a max-heap push by push.
+
+### heapq with negative numbers
+`heapq` only makes min-heaps. The usual trick is to store **negative** numbers. If a > b, then −a < −b, so the largest number becomes the smallest negative, and a min-heap of negatives keeps it at the root. Negate on the way in, and negate again on the way out:
+```python
+import heapq
+
+scores = [70, 95, 82, 64, 88]
+h = []
+for s in scores:
+    heapq.heappush(h, -s)
+print(h)
+print(-h[0])
+order = []
+while h:
+    order.append(-heapq.heappop(h))
+print(order)
+```
+```output
+[-95, -88, -82, -64, -70]
+95
+[95, 88, 82, 70, 64]
+```
+The list holds a min-heap of negatives, and `-h[0]` is the largest score. Popping and negating gives the scores from largest to smallest.
+> Negate twice: once going in, once coming out. Forget the second one and you get negative scores.
+
+With tuples, negate only the number. Then ties are settled by the next item in the normal order:
+```python
+board = []
+for name, score in [("Ben", 82), ("Ana", 95), ("Cat", 82), ("Dev", 70)]:
+    heapq.heappush(board, (-score, name))
+while board:
+    neg, name = heapq.heappop(board)
+    print(name, -neg)
+```
+```output
+Ana 95
+Ben 82
+Cat 82
+Dev 70
+```
+Ben and Cat both scored 82, so `(-82, "Ben")` and `(-82, "Cat")` are compared by name, and Ben comes first.
+
+### The k largest items
+To get the k largest items of a list, there are three ways: sort it all in reverse and take the first k, O(n log n); negate, heapify and pop k times, O(n + k log n); or call `heapq.nlargest(k, items)`, which does the work for you:
+```python
+nums = [12, 45, 7, 30, 45, 18, 3]
+h = [-x for x in nums]
+heapq.heapify(h)
+print([-heapq.heappop(h) for i in range(3)])
+print(heapq.nlargest(3, nums))
+print(sorted(nums, reverse=True)[:3])
+```
+```output
+[45, 45, 30]
+[45, 45, 30]
+[45, 45, 30]
+```
+`[-x for x in nums]` builds the list of negatives, and heapifying it takes O(n). Both 45s count, since equal items are kept.
+
+### The k largest with a small min-heap
+Sometimes the items arrive one at a time, a **stream**, and there are too many to keep. Then hold only the k largest seen so far, in a **min-heap** of size k. That sounds backwards, but the heap's job is to find the item to throw out, and the one to throw out is the **smallest** of the k kept. For each new item:
+- if fewer than k are kept, push it;
+- otherwise, if it's bigger than the smallest kept, `h[0]`, replace the root with it: `heapq.heapreplace(h, x)` pops the smallest and pushes x in one O(log k) step;
+- otherwise, ignore it.
+```python
+def top_k(stream, k):
+    h = []
+    for x in stream:
+        if len(h) < k:
+            heapq.heappush(h, x)
+        elif x > h[0]:
+            heapq.heapreplace(h, x)
+    return sorted(h, reverse=True)
+
+print(top_k([5, 1, 9, 3, 7, 8, 2], 3))
+```
+```output
+[9, 8, 7]
+```
+| x | heap before | action | heap after |
+| --- | --- | --- | --- |
+| 5 | [] | fewer than 3: push | [5] |
+| 1 | [5] | fewer than 3: push | [1, 5] |
+| 9 | [1, 5] | fewer than 3: push | [1, 5, 9] |
+| 3 | [1, 5, 9] | 3 > 1: replace the root | [3, 5, 9] |
+| 7 | [3, 5, 9] | 7 > 3: replace the root | [5, 7, 9] |
+| 8 | [5, 7, 9] | 8 > 5: replace the root | [7, 8, 9] |
+| 2 | [7, 8, 9] | 2 < 7: ignore | [7, 8, 9] |
+
+Each item costs at most O(log k), so the whole stream costs O(n log k), and only k items are ever stored. Animation 2 runs a top-3 board.
+
+### Which heap for which job?
+| you want | use | because |
+| --- | --- | --- |
+| the largest item next, again and again | a max-heap: `heapq` with negatives | the largest is at the root |
+| the smallest item next, again and again | a min-heap: `heapq` as it is | the smallest is at the root |
+| the k largest from a stream | a min-heap holding k items | its root is the smallest kept item, the one to replace |
+| the k smallest from a stream | a max-heap holding k items (negatives) | its root is the largest kept item, the one to replace |
+| the k largest of a list you already have | `heapq.nlargest(k, items)` | it's written for exactly this |
+
+The k smallest of a stream mirror the k largest: keep negatives, and replace the root when a new item's negative is bigger than `h[0]`, which means the item itself is smaller than the largest one kept.
+
+| operation | cost |
+| --- | --- |
+| peek at the largest | O(1) |
+| push, pop | O(log n) |
+| heapify n items | O(n) |
+| the k largest of n items | O(n + k log n) with heapify; O(n log k) with a min-heap of size k |
+
+=== keypoints
+- Max-heap rule: every parent ≥ its children, so the largest item is at index 0. The shape and the index arithmetic are the same as a min-heap's.
+- Push sifts up while the parent is smaller. Pop moves the last item to the root and sifts it down towards the larger child, while that child is larger. Both O(log n).
+- `heapq` only makes min-heaps: store `-x` (or `(-score, name)`) and negate again when you read it back. Ties in tuples are then settled in normal order.
+- The k largest of a list: `heapq.nlargest(k, items)`, or heapify the negatives and pop k times, O(n + k log n).
+- To keep the k largest of a stream, use a min-heap of size k. Its root is the smallest kept item: replace it (`heapq.heapreplace`) when a bigger item arrives. O(n log k) time, O(k) memory.
+- The k smallest of a stream is the mirror image: a max-heap of size k, using negatives.
+
+=== example: A live top-3 board
+intro: Scores arrive one at a time during a tournament. A min-heap of the 3 best (score, name) pairs is updated after each one, and the board is printed from the top.
+```python
+import heapq
+
+board = []
+for name, score in [("Ana", 120), ("Ben", 95), ("Cat", 150), ("Dev", 130), ("Eve", 90), ("Fay", 160)]:
+    if len(board) < 3:
+        heapq.heappush(board, (score, name))
+    elif score > board[0][0]:
+        heapq.heapreplace(board, (score, name))
+    top = sorted(board, reverse=True)
+    print(name, score, "->", [n for s, n in top])
+```
+3: The board is a min-heap of (score, name) pairs, so its root is the weakest of the 3 kept.
+5-6: Until there are 3 players on the board, everyone gets on.
+7-8: After that, a new score gets on only if it beats the weakest one kept, `board[0][0]`, which drops off.
+9-10: Sorting 3 items in reverse is cheap, and shows the board from the top. Dev's 130 knocks Ben off, Eve's 90 isn't enough, and Fay's 160 knocks Ana off.
+
+=== example: Serving the highest bid
+intro: An auction always serves the highest bid next. heapq stores negative amounts, so it works as a max-heap, and a running number makes equal bids go first come, first served.
+```python
+import heapq
+
+bids = []
+number = 0
+for bidder, amount in [("Kai", 300), ("Lea", 450), ("Max", 450), ("Noa", 200)]:
+    heapq.heappush(bids, (-amount, number, bidder))
+    number += 1
+while bids:
+    neg, number, bidder = heapq.heappop(bids)
+    print(bidder, -neg)
+```
+3-7: Each bid goes in as (−amount, arrival number, bidder): the biggest amount gives the smallest tuple.
+6: The arrival number comes before the name, so equal bids are compared by arrival, not by name.
+8-10: Pop the smallest tuple, which is the highest bid, and negate the amount to print it. Lea and Max both bid 450; Lea bid first, so she's served first.
+
+=== animation: Pushing into a max-heap
+view: heap h ptr=i,p
+vars x i p
+intro: Building a max-heap by pushing 3, 8, 5 and 10. Each new item lands at the end and climbs while its parent is smaller. Watch 10 climb all the way to the root.
+```python
+def max_push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] >= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+h = []
+for x in [3, 8, 5, 10]:
+    max_push(h, x)
+print(h)
+```
+1: Defines max_push. Nothing runs yet.
+2: Add {x} at the end of the list.
+3: {x} is at index {len(h) - 1}.
+4: {'Is ' + str(x) + ' below the root? ' + str(i > 0) + '.' if i > 0 else str(x) + ' is at the root: nothing above it.'}
+5: The parent is at index ({i} − 1) // 2 = {(i - 1) // 2}.
+6: Is the parent {h[p]} at least as big as {h[i]}? {h[p] >= h[i]}.
+7: The parent isn't smaller: {x} stays where it is.
+8: The parent {h[p]} is smaller: swap it with {h[i]}.
+9: {x} has moved up to index {p}.
+11: An empty max-heap.
+12: Take the next number from the list.
+13: Push {x}.
+14: A max-heap: 10 at the root, and every parent at least as big as its children.
+
+=== animation: Keeping the top 3
+view: heap h
+vars x
+intro: A stream of 7 numbers, and a min-heap that holds the 3 largest seen so far. Its root is the smallest of the three: the one a bigger newcomer replaces.
+```python
+import heapq
+
+h = []
+for x in [5, 1, 9, 3, 7, 8, 2]:
+    if len(h) < 3:
+        heapq.heappush(h, x)
+    elif x > h[0]:
+        heapq.heapreplace(h, x)
+print(sorted(h, reverse=True))
+```
+1: heapq gives min-heaps.
+3: The min-heap of the largest items so far, empty at first.
+4: Take the next number from the stream.
+5: {x} arrives. Are fewer than 3 kept? {len(h) < 3}.
+6: Room on the board: push {x}.
+7: Is {x} bigger than the smallest kept item, {h[0]}? {x > h[0]}.
+8: Replace {h[0]} with {x}: the smallest drops out, and {x} sifts into place.
+9: The 3 largest, from the top.
+
+=== task: predict easy
+title: Four pushes into a max-heap
+code:
+```python
+def max_push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] >= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+h = []
+for x in [4, 7, 2, 9]:
+    max_push(h, x)
+print(h)
+```
+wrong[[9, 7, 4, 2]]: A max-heap isn't sorted. 9 climbs past 4 and 7, but 2 stays where it landed, at index 2.
+wrong[[2, 4, 7, 9]]: That's a min-heap's order. Here a parent must be at least as big as its children.
+wrong[[7, 9, 2, 4]]: 9 keeps climbing: its new parent, 7, is smaller too, so they swap again.
+hint: Each new item climbs while its parent is smaller.
+hint: After three pushes the list is `[7, 4, 2]`. 9 lands at index 3, below 4.
+right: `[9, 7, 2, 4]`: 7 climbs above 4, 2 stays below 7, and 9 swaps with 4 and then with 7 to reach the root.
+wrong: 4 alone; 7 swaps above 4: `[7, 4]`; 2 stays: `[7, 4, 2]`; 9 lands below 4, swaps with it, then swaps with 7: `[9, 7, 2, 4]`.
+
+=== task: mcq easy
+title: Which is a max-heap?
+prompt: Which of these lists is a max-heap?
+* `[9, 6, 8, 2, 5, 7]` :: Right. Every parent is at least as big as its children: 9 is above 6 and 8, 6 is above 2 and 5, and 8 is above 7.
+- `[9, 6, 8, 7, 5, 2]` :: 7 is at index 3, and its parent, at index 1, is 6: a parent smaller than its child.
+- `[1, 3, 2]` :: That's a min-heap: the root is the smallest.
+- `[8, 9, 7]` :: The root, 8, is smaller than its child 9.
+hint: Compare every item at index i with its parent at (i − 1) // 2.
+hint: In a max-heap, no parent may be smaller than one of its children.
+right: `[9, 6, 8, 2, 5, 7]` follows the max-heap rule everywhere.
+wrong: Check every item against its parent. Only `[9, 6, 8, 2, 5, 7]` has no parent smaller than its child.
+
+=== task: cells easy
+title: A heap of negatives
+prompt: This code pushes the negatives of three scores:
+
+```python
+import heapq
+
+h = []
+for s in [40, 75, 60]:
+    heapq.heappush(h, -s)
+```
+What is in each place afterwards, and what is `-h[0]`?
+labels: h[0] | h[1] | h[2] | -h[0]
+answer: -75 | -40 | -60 | 75
+wrong[-40 | -60 | -75 | 40]: The pushes sift up: −75 is the smallest number, so it climbs to the root.
+wrong[-75 | -60 | -40 | 75]: −60 lands at index 2, below −75, and isn't smaller than it, so it stays there. The list isn't sorted.
+wrong[75 | 40 | 60 | -75]: The heap holds the negatives, so its items are negative; `-h[0]` turns the root back into a score.
+hint: The heap holds −40, −75 and −60, and `heapq` keeps the smallest at the root.
+hint: −75 is smaller than −40, so it climbs above it.
+right: `[-75, -40, -60]`, and `-h[0]` is 75: the largest score is the smallest negative, so it sits at the root.
+wrong: Push −40; then −75 climbs above it: `[-75, -40]`; then −60 lands at index 2, below −75, and stays. Negating the root gives 75, the largest score.
+
+=== task: code easy
+title: Largest first
+prompt: Write `largest_first(nums)` that returns a new list with the items of `nums` from largest to smallest, using `heapq` with negative numbers: heapify the negatives, then pop them all and negate each one back. Don't use `sorted` or `.sort`.
+starter:
+```python
+import heapq
+
+def largest_first(nums):
+    # your code here
+    return list(nums)
+```
+solution:
+```python
+import heapq
+
+def largest_first(nums):
+    h = [-x for x in nums]
+    heapq.heapify(h)
+    out = []
+    while h:
+        out.append(-heapq.heappop(h))
+    return out
+```
+tests:
+- largest_first([3, 8, 1, 8])
+- largest_first([])
+- largest_first([-5, 0, 5])
+- largest_first([2])
+forbid[sorted(]: Use the heap: don't use `sorted`.
+forbid[.sort(]: Use the heap: don't use `.sort`.
+fail[1]: Largest first: [8, 8, 3, 1].
+fail[3]: Negative numbers too: [5, 0, -5]. −5 is stored as 5, the biggest stored value, so it comes out last.
+hint: `[-x for x in nums]` makes the list of negatives; `heapq.heapify` turns it into a heap.
+hint: Each `heapq.heappop` returns the smallest negative. Negate it before appending.
+right: The smallest negative belongs to the largest number, so popping the negatives and negating them back gives the numbers from largest to smallest. O(n log n).
+wrong: Negate every item, heapify, then pop until empty, negating each popped value back before adding it to the result.
+
+=== task: fill easy
+title: Flipping the comparisons
+prompt: Fill in the blanks so that `max_push` and `max_pop` keep a max-heap, and the program prints the items largest first:
+
+```output
+[9, 7, 4, 2, 1]
+```
+code:
+```python
+def max_push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] ?? h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+def max_pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        i = 0
+        while 2 * i + 1 < len(h):
+            c = 2 * i + 1
+            if c + 1 < len(h) and h[c + 1] ?? h[c]:
+                c += 1
+            if h[i] >= h[c]:
+                break
+            h[i], h[c] = h[c], h[i]
+            i = c
+    return top
+
+h = []
+for x in [4, 1, 9, 2, 7]:
+    max_push(h, x)
+print([max_pop(h) for i in range(5)])
+```
+answer: >= | >
+wrong[<= | >]: The climb then stops under a parent that's no bigger, which is a min-heap's rule, so the root isn't the largest.
+wrong[>= | <]: Pop then picks the smaller child, so a smaller item can end up above a bigger one, and the pops come out in the wrong order.
+hint: In a max-heap, the new item stops climbing once its parent is at least as big as it.
+hint: When sinking, the item swaps with its **larger** child.
+right: `h[p] >= h[i]` stops the climb under a parent that's no smaller, and `h[c + 1] > h[c]` picks the larger child for the sinking.
+wrong: Flip the min-heap comparisons: stop climbing when `h[p] >= h[i]`, and choose the right child when `h[c + 1] > h[c]`.
+
+=== task: multi easy
+title: True of every max-heap
+prompt: Choose **every** statement that is true of any max-heap with at least 3 different values.
+* The largest value is at index 0 :: Right. Every other item has the root above it, and parents are never smaller.
+* Every parent is ≥ each of its children :: Right. That's the max-heap rule.
+* The smallest value is in a leaf :: Right. An item with a child is bigger than (or equal to) that child, so it can't be the smallest.
+- The list is in decreasing order :: Siblings can be in either order: `[9, 7, 8]` is a max-heap.
+- The item at index 1 is always the second largest :: The second largest is at index 1 or index 2.
+- Python's `heapq` keeps a max-heap if you push positive numbers :: `heapq` always keeps a min-heap. For a max-heap, push negatives.
+hint: The rule only compares parents with their own children.
+hint: Which items can't be the smallest?
+right: The largest is at the root, the rule holds for every parent, and the smallest is a leaf. Nothing else is promised.
+wrong: A max-heap promises parent ≥ children, so the largest is at index 0 and the smallest is a leaf. Siblings aren't ordered, so the list isn't sorted, and the second largest can be at index 1 or 2. `heapq` only does min-heaps.
+
+=== task: parsons easy
+title: A leaderboard with negatives
+prompt: Arrange the lines so that the players come out highest score first, and the program prints:
+
+```output
+Mo 90
+Ida 75
+Lu 60
+```
+
+Not every line is needed.
+lines:
+```python
+import heapq
+
+board = []
+heapq.heappush(board, (-75, "Ida"))
+heapq.heappush(board, (-90, "Mo"))
+heapq.heappush(board, (-60, "Lu"))
+while board:
+    neg, name = heapq.heappop(board)
+    print(name, -neg)
+```
+distractors:
+```python
+heapq.heappush(board, (75, "Ida"))
+    print(name, neg)
+```
+hint: The scores go in negated, so the highest score is the smallest tuple.
+hint: Negate again when printing.
+right: The pushes can come in any order: (−90, "Mo") is the smallest tuple, so Mo comes out first, and `-neg` turns −90 back into 90.
+wrong: Push the three `(-score, name)` tuples, then pop until the board is empty, printing the name and `-neg`.
+
+=== task: order easy
+title: Pop from a max-heap, by hand
+prompt: The list `[9, 7, 8, 3, 5, 6, 1]` is a max-heap. Put the steps of popping from it in order.
+items:
+- Take the root's value, 9, to return it
+- Move the last item, 1, into the root's place
+- Compare 1 with its larger child, 8: swap
+- Compare 1 with its only child, 6: swap
+- 1 has no children now, so stop
+hint: The last item fills the root's place.
+hint: It sinks towards the larger child each time.
+right: Take 9, move 1 to the root, then sink it: it swaps with 8, then with 6, leaving `[8, 7, 6, 3, 5, 1]`.
+wrong: Pop saves 9, moves the last item, 1, to the root, then swaps it with its larger child while that child is larger: 8, then 6. At a leaf it stops.
+
+=== task: predict easy
+title: The largest few
+code:
+```python
+import heapq
+
+print(heapq.nlargest(2, [3, 9, 9, 1]))
+print(heapq.nlargest(2, ["ant", "bee", "cat"]))
+```
+wrong[[9, 3]\n['cat', 'bee']]: Equal values both count: there are two 9s.
+wrong[[9, 9]\n['ant', 'bee']]: For strings, largest means last in alphabetical order: "cat", then "bee".
+wrong[[9, 9]\n['bee', 'cat']]: `nlargest` returns the items largest first.
+hint: `nlargest(k, items)` returns the k largest items, largest first.
+hint: Strings compare in alphabetical order, so the largest comes last in the alphabet.
+right: `[9, 9]` and `['cat', 'bee']`: the largest items, largest first, counting equal values separately.
+wrong: The 2 largest of 3, 9, 9, 1 are 9 and 9. The 2 largest strings are the last two in alphabetical order, largest first: cat, then bee.
+
+=== task: mcq easy
+title: Why negatives?
+prompt: Why do programs push negative numbers into `heapq` to get a max-heap?
+* `heapq` only keeps min-heaps, and negating turns the largest number into the smallest :: Right. If a > b, then −a < −b, so the biggest original number sits at the root.
+- Negative numbers are faster to compare :: Speed has nothing to do with it: the order is what changes.
+- `heapq` can't store positive numbers :: It stores any numbers; it always keeps the smallest at the root.
+- Negating sorts the list :: The list stays a heap, not a sorted list.
+hint: Which item does `heapq` keep at the root?
+hint: What happens to the order of numbers when you negate them?
+right: Negating reverses the order, so `heapq`'s smallest, at the root, is the negative of the largest number.
+wrong: `heapq` always keeps the smallest item at the root. Negating reverses the order of numbers, so the smallest negative belongs to the largest original number.
+
+=== task: code medium
+title: Write max_pop
+prompt: Write `max_pop(h)` that removes and returns the largest item of the max-heap list `h`: save the root, move the last item into its place, and sift it down, swapping with its larger child while that child is larger. `pops(h, k)` pops k times and returns the popped items and what's left, for the tests.
+starter:
+```python
+def max_pop(h):
+    # your code here
+    return h[0]
+
+def pops(h, k):
+    out = []
+    for j in range(k):
+        out.append(max_pop(h))
+    return out, h
+```
+solution:
+```python
+def max_pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        i = 0
+        while 2 * i + 1 < len(h):
+            c = 2 * i + 1
+            if c + 1 < len(h) and h[c + 1] > h[c]:
+                c += 1
+            if h[i] >= h[c]:
+                break
+            h[i], h[c] = h[c], h[i]
+            i = c
+    return top
+
+def pops(h, k):
+    out = []
+    for j in range(k):
+        out.append(max_pop(h))
+    return out, h
+```
+tests:
+- pops([9, 7, 8, 3, 5, 6, 1], 1)
+- pops([9, 7, 8, 3, 5, 6, 1], 7)
+- pops([4], 1)
+- pops([10, 6, 9, 2, 5, 8, 7], 1)
+- pops([5, 5, 3], 2)
+fail[1]: 1 goes to the root, then swaps with 8 and with 6: ([9], [8, 7, 6, 3, 5, 1]).
+fail[2]: Every pop must return the largest item left: [9, 8, 7, 6, 5, 3, 1].
+fail[3]: Popping the only item leaves an empty list.
+fail[4]: 7 moves to the root, swaps with 9, then with 8.
+error[IndexError]: Only put the last item at index 0 if the list isn't empty after `h.pop()`.
+hint: Save `h[0]`, then `last = h.pop()`. If the list isn't empty, set `h[0] = last`.
+hint: Sink from index 0: let c be the left child, and move to the right child if it exists and is larger.
+hint: Stop when `h[i] >= h[c]`; otherwise swap and continue from c.
+right: The last item fills the root's place and sinks towards the larger child each time, so the next largest item rises to the root. O(log n).
+wrong: Save the root, move the last item to index 0, and sift it down: swap it with its larger child while that child is larger. Return the saved root.
+
+=== task: code medium
+title: The k largest
+prompt: Write `k_largest(nums, k)` that returns the k largest items of `nums`, largest first, using `heapq` with negatives: heapify the negatives (O(n)), then pop k times, negating each value back. k is never more than `len(nums)`. Don't use `sorted`, `.sort` or `nlargest`.
+starter:
+```python
+import heapq
+
+def k_largest(nums, k):
+    # your code here
+    return nums[:k]
+```
+solution:
+```python
+import heapq
+
+def k_largest(nums, k):
+    h = [-x for x in nums]
+    heapq.heapify(h)
+    return [-heapq.heappop(h) for i in range(k)]
+```
+tests:
+- k_largest([12, 45, 7, 30], 2)
+- k_largest([5], 1)
+- k_largest([3, 3, 1], 3)
+- k_largest([-4, -9, -1], 2)
+- k_largest([2, 8, 6], 0)
+forbid[sorted(]: Use the heap: don't use `sorted`.
+forbid[.sort(]: Use the heap: don't use `.sort`.
+forbid[nlargest]: Build the answer from the heap yourself.
+fail[1]: The two largest, largest first: [45, 30].
+fail[3]: Equal items both count: [3, 3, 1].
+fail[4]: With negative numbers, −1 is the largest, then −4.
+hint: `h = [-x for x in nums]`, then `heapq.heapify(h)`.
+hint: Pop k times, negating each popped value back.
+right: Heapify is O(n) and each of the k pops is O(log n): O(n + k log n), less than sorting everything when k is small.
+wrong: Negate the items, heapify, and pop k times, negating each value back, so the largest comes out first.
+
+=== task: predict medium
+title: Max-heapify by hand
+code:
+```python
+def max_sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] > h[c]:
+            c += 1
+        if h[i] >= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+h = [4, 10, 3, 5, 1, 8]
+for start in range(len(h) // 2 - 1, -1, -1):
+    max_sift_down(h, start)
+print(h)
+```
+wrong[[10, 8, 5, 4, 3, 1]]: Heapify makes a heap, not a sorted list: items only move along their own paths.
+wrong[[10, 4, 8, 5, 1, 3]]: 4 keeps sinking: at index 1, its larger child, 5, is larger, so they swap.
+wrong[[10, 5, 3, 4, 1, 8]]: Index 2 is handled first: 3 swaps with its larger child, 8, before the root is touched.
+hint: 6 items: start at index 2, then 1, then 0.
+hint: Index 2: 3 swaps with 8. Index 1: 10 stays. Index 0: 4 swaps with 10, then with 5.
+right: `[10, 5, 8, 4, 1, 3]`: 8 rises above 3, and the root, 4, sinks past 10 and 5.
+wrong: Index 2: 3 swaps with its child 8. Index 1: 10 is bigger than 5 and 1, so it stays. Index 0: 4 swaps with its larger child, 10, then with 5.
+
+=== task: cells medium
+title: The weakest of the top 3
+prompt: A min-heap keeps the 3 largest numbers seen so far: push while it holds fewer than 3, and after that replace the root when a bigger number arrives. What is the root, `h[0]`, after each number?
+labels: 4 | 9 | 2 | 7 | 8 | 1 | 10
+answer: 4 | 4 | 2 | 4 | 7 | 7 | 8
+wrong[4 | 9 | 9 | 9 | 9 | 9 | 10]: That's the largest so far. The root of this min-heap is the smallest of the numbers it keeps.
+wrong[4 | 4 | 2 | 2 | 2 | 1 | 1]: Once 3 numbers are kept, a smaller number is ignored, and a bigger one replaces the root: 1 never gets in.
+wrong[4 | 4 | 2 | 4 | 7 | 7 | 7]: 10 is bigger than 7, so 7 is replaced. The 3 largest are then 8, 9 and 10, and the smallest of those is 8.
+hint: For the first three numbers, the heap grows. Its root is the smallest of what's in it.
+hint: After that, the heap holds the 3 largest so far, and its root is the smallest of those three.
+right: 4, 4, 2, then 4, 7, 7, 8: once full, the root is always the third largest number seen so far.
+wrong: The heap holds {4}, {4, 9}, {2, 4, 9}, then 7 replaces 2: {4, 7, 9}; 8 replaces 4: {7, 8, 9}; 1 is ignored; 10 replaces 7: {8, 9, 10}. The root is the smallest of each set.
+
+=== task: fill medium
+title: Replacing the weakest
+prompt: Fill in the blanks so that `top_k` keeps the k largest numbers of the stream, and the program prints:
+
+```output
+[9, 8, 7]
+```
+code:
+```python
+import heapq
+
+def top_k(stream, k):
+    h = []
+    for x in stream:
+        if len(h) < k:
+            heapq.heappush(h, x)
+        elif x > ??:
+            heapq.??(h, x)
+    return sorted(h, reverse=True)
+
+print(top_k([5, 1, 9, 3, 7, 8, 2], 3))
+```
+answer: h[0] | heapreplace
+wrong[h[0] | heappush]: Pushing without removing anything lets the heap grow, so it keeps more than 3 numbers.
+wrong[h[-1] | heapreplace]: `h[-1]` is the last item of the list, here 9, not the smallest kept number, so 7 and 8 are wrongly ignored.
+hint: The number to beat is the smallest of the ones kept.
+hint: Which `heapq` function pops the smallest and pushes a new item in one step?
+right: A newcomer only gets in if it beats `h[0]`, the smallest kept number, and `heapreplace` swaps it in, O(log k).
+wrong: Compare with the root, `h[0]`, the smallest of the k kept, and use `heapq.heapreplace(h, x)` to drop it and add x.
+
+=== task: mcq medium
+title: Ten largest from millions
+prompt: A sensor sends millions of readings, one at a time. A program must keep the 10 largest seen so far, using as little memory as possible. Which structure fits?
+* A min-heap holding 10 readings :: Right. Its root is the smallest of the 10, the one a bigger reading replaces: O(log 10) per reading and only 10 readings stored.
+- A max-heap of every reading so far :: That works, but it stores millions of readings.
+- A max-heap holding 10 readings :: Its root would be the largest of the 10, but the one to throw out is the smallest.
+- A sorted list of every reading so far :: Inserting into a sorted list shifts items: O(n) per reading, and millions stored.
+hint: Which reading should a bigger newcomer push out?
+hint: Which kind of heap keeps that reading at the root?
+right: A min-heap of size 10: the weakest of the top 10 sits at the root, so checking and replacing it is fast, and memory stays at 10 readings.
+wrong: To keep the 10 largest, you need quick access to the smallest of them, the one to evict. That's the root of a min-heap of size 10.
+
+=== task: predict medium
+title: Negating negatives
+code:
+```python
+import heapq
+
+h = []
+for x in [3, -2, 8, -7]:
+    heapq.heappush(h, -x)
+print(h[0], -h[0])
+print([-heapq.heappop(h) for i in range(len(h))])
+```
+wrong[-8 8\n[8, 3, -7, -2]]: −7 is smaller than −2, so −2 comes out before −7, largest first.
+wrong[8 -8\n[8, 3, -2, -7]]: The heap holds the negatives, so its root is −8; negating it gives 8.
+wrong[-8 8\n[-8, -3, 2, 7]]: Each popped value is negated back before it goes into the list: −8 becomes 8.
+hint: The heap stores 3, −2, 8, −7 negated: −3, 2, −8, 7.
+hint: The smallest stored value is −8, which came from 8.
+right: The root is −8, from the largest number, 8. The pops, negated back, give the numbers largest first: 8, 3, −2, −7.
+wrong: The heap holds −3, 2, −8 and 7, so `h[0]` is −8 and `-h[0]` is 8. Popping gives −8, −3, 2, 7, and negating each gives 8, 3, −2, −7.
+
+=== task: multi medium
+title: The right heap for the job
+prompt: Choose **every** pairing of job and heap that is correct.
+* Keep the 5 largest prices of a stream: a min-heap of size 5 :: Right. Its root is the smallest of the five, the one to replace.
+* Keep the 5 smallest prices of a stream: a max-heap of size 5, using negatives :: Right. Its root is the largest of the five, the one to replace.
+* Always serve the highest bid next: a max-heap of all bids :: Right. The highest bid waits at the root.
+- Always serve the earliest appointment next: a max-heap of times :: The earliest time is the smallest: that's a min-heap.
+- Keep the 5 largest prices of a stream: a max-heap of size 5 :: Its root would be the largest of the five, but the one to throw out is the smallest.
+hint: When keeping the k largest, which one leaves when a better one arrives?
+hint: Serving the largest or smallest next means a heap of everything, with that item at the root.
+right: Keeping the k largest uses a min-heap (the weakest at the root), keeping the k smallest uses a max-heap, and serving the largest next uses a max-heap of everything.
+wrong: For a "top k" heap, the root must be the item to evict: the smallest of the k largest, or the largest of the k smallest. For "serve the most important next", the root must be the most important item.
+
+=== task: parsons medium
+title: Pushing into a max-heap
+prompt: Arrange the lines so that `max_push` appends the item and sifts it up while its parent is smaller, and the program prints:
+
+```output
+[10, 8, 9, 3, 1, 5]
+```
+
+Not every line is needed.
+lines:
+```python
+def max_push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0:
+        p = (i - 1) // 2
+        if h[p] >= h[i]:
+            break
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+h = []
+for x in [3, 8, 5, 10, 1, 9]:
+    max_push(h, x)
+print(h)
+```
+distractors:
+```python
+        if h[p] <= h[i]:
+        i = (i - 1) * 2
+```
+hint: The new item starts at the end of the list, at index `len(h) - 1`.
+hint: It stops climbing once its parent is at least as big as it.
+right: Each item climbs while its parent is smaller: 8 above 3, 10 past 3 and 8, and 9 past 5, stopping below 10.
+wrong: Append, set i to the last index, and loop while i > 0: find the parent, break if `h[p] >= h[i]`, otherwise swap and move i up to p.
+
+=== task: order medium
+title: A newcomer to the top 3
+prompt: A min-heap holds the 3 largest numbers so far: `[5, 7, 9]`. The number 8 arrives. Put the steps in order.
+items:
+- Check that the heap already holds 3 numbers
+- Compare 8 with the root, 5: 8 is bigger
+- Remove the root, 5, from the heap
+- Put 8 at the root and sift it down: it swaps with its smaller child, 7
+- The heap is now [7, 8, 9]
+hint: A newcomer only competes once the heap is full.
+hint: `heapreplace` removes the old root and sifts the new item down from the top.
+right: The heap is full, 8 beats the weakest kept number, 5, which leaves; 8 then sinks below 7, giving `[7, 8, 9]`.
+wrong: Once 3 numbers are kept, compare the newcomer with the root. 8 > 5, so 5 is dropped and 8 takes the root's place, sifting down past 7.
+
+=== task: code hard
+title: A board after every score
+prompt: Write `boards(scores, k)` that returns a list with one entry per score: the k best scores so far, largest first (fewer than k at the start). Keep a min-heap of at most k scores, replacing its root when a better score arrives, and after each score append `sorted(h, reverse=True)`. Sorting k items is cheap, but sorting all the scores so far after every score is far too slow for the speed check.
+starter:
+```python
+import heapq
+
+def boards(scores, k):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+import heapq
+
+def boards(scores, k):
+    h = []
+    out = []
+    for s in scores:
+        if len(h) < k:
+            heapq.heappush(h, s)
+        elif s > h[0]:
+            heapq.heapreplace(h, s)
+        out.append(sorted(h, reverse=True))
+    return out
+```
+tests:
+- boards([5, 1, 9, 3, 7], 2)
+- boards([], 3)
+- boards([4, 4, 4], 2)
+- boards([10, 20, 30, 40], 3)
+- boards([8, 3], 3)
+speed: setup=scores = list(range(n)) | call=boards(scores, 3) | target=O(n)
+slow:
+```python
+import heapq
+
+def boards(scores, k):
+    out = []
+    for i in range(len(scores)):
+        out.append(sorted(scores[:i + 1], reverse=True)[:k])
+    return out
+```
+fail[1]: [[5], [5, 1], [9, 5], [9, 5], [9, 7]]: 3 doesn't beat 5, but 7 does.
+fail[3]: Equal scores don't replace each other: the board stays [4, 4].
+fail[4]: 40 beats the weakest kept score, 10: [40, 30, 20].
+fail[5]: Fewer than k scores: the board shows all of them.
+hint: Keep a min-heap `h`. While it holds fewer than k scores, push each one.
+hint: After that, if a score beats `h[0]`, use `heapq.heapreplace(h, s)`.
+hint: After every score, append `sorted(h, reverse=True)` to the output.
+right: The heap never holds more than k scores, so each new score costs O(log k), and sorting k items is cheap: O(n) overall for a small k. Sorting every score so far each time would be O(n² log n).
+wrong: Keep only the k best in a min-heap: push while there's room, replace the root when a better score arrives, and record the sorted heap after each score.
+
+=== task: code hard
+title: The k smallest of a stream
+prompt: Write `k_smallest(stream, k)` that returns the k smallest numbers of the stream in increasing order (or all of them, if there are fewer than k). Keep a max-heap of at most k numbers using negatives: push `-x` while there's room; after that, if x is smaller than the largest kept number, `-h[0]`, replace the root with `-x`. Return the kept numbers, negated back and sorted.
+starter:
+```python
+import heapq
+
+def k_smallest(stream, k):
+    # your code here
+    return []
+```
+solution:
+```python
+import heapq
+
+def k_smallest(stream, k):
+    h = []
+    for x in stream:
+        if len(h) < k:
+            heapq.heappush(h, -x)
+        elif -x > h[0]:
+            heapq.heapreplace(h, -x)
+    return sorted(-v for v in h)
+```
+tests:
+- k_smallest([6, 2, 9, 1, 5], 2)
+- k_smallest([5, 4, 3, 2, 1], 3)
+- k_smallest([], 2)
+- k_smallest([7, 7, 3], 2)
+- k_smallest([8, -1, 4], 1)
+fail[1]: The two smallest are 1 and 2.
+fail[2]: The three smallest of a falling stream are the last three: [1, 2, 3].
+fail[4]: 3 and one of the 7s: [3, 7].
+fail[5]: Negative numbers too: [-1].
+error[IndexError]: Only compare with `h[0]` once the heap has k items in it.
+hint: The heap stores negatives, so its root, `h[0]`, is minus the largest kept number.
+hint: x is smaller than the largest kept number exactly when `-x > h[0]`.
+hint: At the end, `sorted(-v for v in h)` gives the kept numbers in increasing order.
+right: The root of the negative heap is the largest of the k smallest, the one a smaller newcomer replaces: O(log k) per number and only k stored.
+wrong: Mirror the top-k board: push negatives while there's room, and replace the root when `-x > h[0]`, which means x is smaller than the largest kept number. Negate and sort at the end.
+
+=== task: code hard
+title: The last stone
+prompt: A pile of stones has these weights. Each turn, take the two heaviest stones, x and y with x ≥ y, and smash them: if they weigh the same, both are destroyed; otherwise a stone of weight x − y goes back on the pile. Write `last_stone(stones)` that returns the weight of the stone left at the end, or 0 if none is left. Use `heapq` with negatives as a max-heap.
+starter:
+```python
+import heapq
+
+def last_stone(stones):
+    # your code here
+    return 0
+```
+solution:
+```python
+import heapq
+
+def last_stone(stones):
+    h = [-s for s in stones]
+    heapq.heapify(h)
+    while len(h) > 1:
+        a = -heapq.heappop(h)
+        b = -heapq.heappop(h)
+        if a != b:
+            heapq.heappush(h, -(a - b))
+    if h:
+        return -h[0]
+    return 0
+```
+tests:
+- last_stone([2, 7, 4, 1, 8, 1])
+- last_stone([5, 5])
+- last_stone([3])
+- last_stone([])
+- last_stone([10, 4, 4])
+fail[1]: 8 and 7 leave 1; 4 and 2 leave 2; 2 and 1 leave 1; 1 and 1 cancel; 1 is left.
+fail[3]: A single stone is left as it is: 3.
+fail[5]: 10 and 4 leave 6; 6 and 4 leave 2.
+error[IndexError]: Only pop two stones while at least two are left: `while len(h) > 1`.
+hint: Negate the weights and heapify, so the heaviest stone is at the root.
+hint: While two or more stones are left, pop two (negating them back), and push `-(a - b)` if they differ.
+hint: At the end, return `-h[0]` if a stone is left, otherwise 0.
+right: Each turn needs the two heaviest stones, which the max-heap hands out in O(log n) each. n stones take at most n turns: O(n log n).
+wrong: Keep the stones in a max-heap of negatives. Each turn pop the two heaviest; if they differ, push their difference back. Return the last one, or 0.
+
+=== task: code hard
+title: Window maximums with a heap
+prompt: Write `window_max(nums, k)` that returns the largest value in every window of k items in a row, from left to right. Push `(-nums[i], i)` into a heap for each index i. Once the first window is complete, throw away roots whose index has slid out of the window (index ≤ i − k), then record `-h[0][0]`. Old items can stay in the heap until they reach the root. The speed check uses windows of n // 2 items, so finding the largest by looking at the whole window each time is too slow.
+starter:
+```python
+import heapq
+
+def window_max(nums, k):
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+import heapq
+
+def window_max(nums, k):
+    h = []
+    out = []
+    for i in range(len(nums)):
+        heapq.heappush(h, (-nums[i], i))
+        if i >= k - 1:
+            while h[0][1] <= i - k:
+                heapq.heappop(h)
+            out.append(-h[0][0])
+    return out
+```
+tests:
+- window_max([1, 3, -1, -3, 5, 3, 6, 7], 3)
+- window_max([4, 2], 1)
+- window_max([9, 8, 7, 6], 2)
+- window_max([2, 2, 2], 3)
+- window_max([1, 5, 2, 4], 2)
+speed: setup=nums = list(range(n)); k = n // 2 | call=window_max(nums, k) | target=O(n log n)
+slow:
+```python
+import heapq
+
+def window_max(nums, k):
+    out = []
+    for i in range(len(nums) - k + 1):
+        out.append(max(nums[i:i + k]))
+    return out
+```
+fail[1]: [3, 3, 5, 5, 6, 7]: the first window is [1, 3, −1], and the last is [3, 6, 7].
+fail[3]: In a falling list, each window's largest is its first item: [9, 8, 7].
+fail[5]: [5, 5, 4]: the second window is [5, 2], and the third is [2, 4].
+error[IndexError]: Only look at `h[0]` once the heap has items in it, from index k − 1 on.
+hint: The heap holds (−value, index) pairs, so its root is the largest value, together with where it came from.
+hint: Before recording an answer, pop roots whose index is ≤ i − k: they're no longer in the window.
+hint: Record `-h[0][0]` once i ≥ k − 1.
+right: Only stale items at the root ever need removing, and each item is pushed and popped at most once: O(n log n). Rescanning each window would take O(n·k).
+wrong: Push (−value, index) for every item. From the first full window on, pop roots that have slid out of the window, then record the root's value, negated back.
+
+=== task: predict hard
+title: One max pop
+code:
+```python
+def max_pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        i = 0
+        while 2 * i + 1 < len(h):
+            c = 2 * i + 1
+            if c + 1 < len(h) and h[c + 1] > h[c]:
+                c += 1
+            if h[i] >= h[c]:
+                break
+            h[i], h[c] = h[c], h[i]
+            i = c
+    return top
+
+h = [10, 6, 9, 2, 5, 8, 7]
+print(max_pop(h), h)
+```
+wrong[10 [9, 6, 7, 2, 5, 8]]: 7 keeps sinking: at index 2, its child 8 is larger, so they swap too.
+wrong[10 [7, 6, 9, 2, 5, 8]]: 7 sinks towards its larger child: 9 is larger than 7, so they swap.
+wrong[10 [6, 9, 2, 5, 8, 7]]: Pop doesn't shift everything left. The last item, 7, moves to the root and sinks.
+hint: The last item, 7, moves to the root. Its children are 6 and 9.
+hint: After swapping with 9, 7 is at index 2, and its only child there is 8.
+right: `10 [9, 6, 8, 2, 5, 7]`: 7 swaps with its larger child 9, then with 8, and lands in a leaf.
+wrong: Pop returns 10. The last item, 7, goes to the root; its larger child, 9, is larger, so they swap. At index 2, its child 8 is larger too: swap again.
+
+=== task: predict hard
+title: The two smallest so far
+code:
+```python
+import heapq
+
+h = []
+seen = []
+for x in [6, 2, 9, 1, 5]:
+    if len(h) < 2:
+        heapq.heappush(h, -x)
+    elif -x > h[0]:
+        heapq.heapreplace(h, -x)
+    seen.append(-h[0])
+print(seen, sorted(-v for v in h))
+```
+wrong[[6, 2, 2, 1, 1] [1, 2]]: `-h[0]` is the largest of the kept numbers, not the smallest: the heap stores negatives.
+wrong[[6, 6, 9, 9, 9] [1, 2]]: 9 never gets in: it isn't smaller than the largest kept number, 6.
+wrong[[6, 6, 6, 2, 2] [2, 1]]: `sorted` puts the kept numbers in increasing order: [1, 2].
+hint: The heap keeps the 2 smallest numbers as negatives, so `-h[0]` is the larger of the two.
+hint: 1 arrives when the heap holds 6 and 2: 1 replaces 6.
+right: `[6, 6, 6, 2, 2] [1, 2]`: once full, `-h[0]` is the second smallest number so far. 1 replaces 6, and 5 isn't small enough to get in.
+wrong: After 6: {6}. After 2: {2, 6}, and the largest kept is 6. 9 is ignored. 1 replaces 6: {1, 2}, largest 2. 5 is ignored.
+
+=== task: cells hard
+title: Push 9, by hand
+prompt: The list `[8, 5, 7, 2, 4, 6]` is a max-heap. After pushing 9 with the max-heap rule, what is at each index?
+labels: 0 | 1 | 2 | 3 | 4 | 5 | 6
+answer: 9 | 5 | 8 | 2 | 4 | 6 | 7
+wrong[8 | 5 | 9 | 2 | 4 | 6 | 7]: 9 keeps climbing: its new parent, 8, is smaller too.
+wrong[9 | 5 | 7 | 2 | 4 | 6 | 8]: Each swap moves the parent down into the child's place: 7 goes to index 6, then 8 goes to index 2.
+wrong[8 | 5 | 7 | 2 | 4 | 6 | 9]: 9 is bigger than its parent, 7, so it can't stay at the end.
+hint: 9 lands at index 6. Its parent is at index (6 − 1) // 2 = 2.
+hint: It swaps with 7, then with 8.
+right: 9 swaps with 7 (index 2), then with 8 (index 0): `[9, 5, 8, 2, 4, 6, 7]`.
+wrong: Append 9 at index 6. Its parent, index 2, holds 7: swap. At index 2, its parent, index 0, holds 8: swap. 9 is the new root.
+
+=== task: multi hard
+title: heapq as a max-heap
+prompt: A program uses `heapq` as a max-heap by pushing negative numbers. Choose **every** statement that is true.
+* `-h[0]` is the largest number pushed so far that hasn't been popped :: Right. The smallest negative belongs to the largest number.
+* Every popped value has to be negated again before it's used :: Right. Otherwise it comes out as a negative number.
+* With `(-score, name)` tuples, equal scores come out in alphabetical order of name :: Right. The names are compared normally when the negated scores tie.
+* `heapq.nlargest(k, nums)` needs no negating at all :: Right. It takes the original numbers and returns the k largest.
+- The list `h` is in decreasing order of the original numbers :: It's a heap of negatives, not a sorted list.
+- Pushing the positive numbers and popping from the end of the list also gives a max-heap :: The end of a heap's list isn't the largest or the smallest item.
+hint: Negating reverses the order of numbers.
+hint: What does a heap promise about anything other than its root?
+right: The root holds minus the largest number, popped values need negating back, ties fall to the next tuple item, and `nlargest` works on the original numbers.
+wrong: Negation turns `heapq`'s min-heap into a max-heap of the original numbers, but only the root is in order: the list isn't sorted, and its end means nothing special.
+
+=== task: fill hard
+title: The k smallest, mirrored
+prompt: Fill in the blanks so that `k_smallest` keeps the k smallest numbers of the stream in a max-heap of negatives, and the program prints:
+
+```output
+[1, 2, 3]
+```
+code:
+```python
+import heapq
+
+def k_smallest(stream, k):
+    h = []
+    for x in stream:
+        if len(h) < k:
+            heapq.heappush(h, -x)
+        elif ?? > h[0]:
+            heapq.heapreplace(h, ??)
+    return sorted(-v for v in h)
+
+print(k_smallest([5, 4, 3, 2, 1, 6], 3))
+```
+answer: -x | -x
+wrong[x | -x]: Comparing x itself with a negative root lets every positive number in, so later numbers push out smaller ones: the result ends with 6.
+wrong[-x | x]: The heap must hold negatives. Pushing x itself puts a positive number among them, and the result comes out wrong.
+hint: The heap stores negatives, so compare and store `-x`.
+hint: x is smaller than the largest kept number exactly when `-x` is bigger than the root.
+right: `-x > h[0]` means x is smaller than the largest of the kept numbers, and `heapreplace(h, -x)` swaps x in, stored as a negative like everything else.
+wrong: Everything in the heap is negated, so both the comparison and the replacement use `-x`.
+
+=== task: parsons hard
+title: Max-heapify
+prompt: Arrange the lines so that `max_heapify` turns a list into a max-heap by sifting down every item that has children, from the last one back to the root, and the program prints:
+
+```output
+[9, 7, 4, 2, 1]
+```
+
+Not every line is needed.
+lines:
+```python
+def max_sift_down(h, i):
+    while 2 * i + 1 < len(h):
+        c = 2 * i + 1
+        if c + 1 < len(h) and h[c + 1] > h[c]:
+            c += 1
+        if h[i] >= h[c]:
+            break
+        h[i], h[c] = h[c], h[i]
+        i = c
+
+def max_heapify(h):
+    for start in range(len(h) // 2 - 1, -1, -1):
+        max_sift_down(h, start)
+
+nums = [2, 9, 4, 7, 1]
+max_heapify(nums)
+print(nums)
+```
+distractors:
+```python
+        if c + 1 < len(h) and h[c + 1] < h[c]:
+    for start in range(len(h) // 2 - 1, -1, 1):
+```
+hint: `max_sift_down` sinks an item towards its larger child while that child is larger.
+hint: `max_heapify` counts down from `len(h) // 2 - 1` to 0, with a step of −1.
+right: Index 1 (9) is already above 7 and 1; then the root, 2, sinks past 9 and 7: `[9, 7, 4, 2, 1]`. O(n), like the min-heap version.
+wrong: In `max_sift_down`, choose the larger child and stop when the item is at least as big as it. In `max_heapify`, loop `start` from `len(h) // 2 - 1` down to 0 and sift each one down.
