@@ -1,0 +1,1211 @@
+=== lesson
+id: algo-bt-perms
+title: Permutations
+summary: A permutation is one ordering of all the items. n items have n! of them, so they're only practical to list for small n. Backtracking builds each order one position at a time, choosing any item that hasn't been used yet. You'll track used items, permute by swapping in place, list each order once when items repeat, and prune orders that break a rule.
+
+=== learn
+### Every order
+A **permutation** is an arrangement of all the items in some order. `[a, b, c]` has six: `abc`, `acb`, `bac`, `bca`, `cab` and `cba`. Unlike a subset, a permutation uses every item, and the order is the whole point: `abc` and `cba` are different permutations.
+
+To count them, fill the positions one at a time. The first position can hold any of the n items. The second can hold any of the n − 1 that are left, the third any of n − 2, and the last position gets the one remaining item. That's n × (n − 1) × … × 1, written **n!** and called n factorial:
+
+| n | n! |
+| --- | --- |
+| 3 | 6 |
+| 5 | 120 |
+| 10 | 3,628,800 |
+| 15 | 1,307,674,368,000 |
+
+### Choosing what comes next
+Backtracking fills the positions in order. At each step, the options are the items that aren't in the path yet. A list of flags, `used`, records which items are taken, so the check is O(1):
+```python
+def perms(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        perms(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+results = []
+perms([1, 2, 3], [], [False, False, False], results)
+print(results)
+```
+```output
+[[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]]
+```
+The loop always tries the items from the start of the list, skipping the ones in use. When the items are sorted, the permutations come out in sorted order, like words in a dictionary. Animation 1 follows part of this search.
+
+### Two things to undo
+Choosing an item changes two things: the path, and the item's flag. Undoing must put both back, in the reverse order:
+
+| step | path | used |
+| --- | --- | --- |
+| choose 1 | [1] | 1 |
+| choose 2 | [1, 2] | 1, 2 |
+| choose 3 | [1, 2, 3]: complete | 1, 2, 3 |
+| undo 3 | [1, 2] | 1, 2 |
+| undo 2 | [1] | 1 |
+| choose 3 | [1, 3] | 1, 3 |
+| choose 2 | [1, 3, 2]: complete | 1, 3, 2 |
+
+If the flag weren't cleared, an item would stay "used" after its branch ended, and later branches could never choose it again: the search would find only a few of the orders.
+
+### How much work?
+The tree has n! leaves, and copying each permutation into the results takes n steps, so listing them all is **O(n × n!)**. Factorials grow even faster than powers of 2:
+
+| n | subsets, 2ⁿ | permutations, n! |
+| --- | --- | --- |
+| 5 | 32 | 120 |
+| 10 | 1,024 | 3,628,800 |
+| 15 | 32,768 | about 1.3 × 10¹² |
+| 20 | about 10⁶ | about 2.4 × 10¹⁸ |
+
+Ten items are fine; fifteen would take hours; twenty never finish. Problems over orders, like the best route through 20 cities, need smarter methods than trying every permutation.
+
+### Swapping in place
+A second method needs no `path` and no flags. It works on the list itself: position `k` is filled by swapping each item from `k` onwards into it, in turn. The items before `k` are fixed, and the ones from `k` on are the unused ones:
+```python
+def permute(items, k, results):
+    if k == len(items):
+        results.append(items[:])
+        return
+    for j in range(k, len(items)):
+        items[k], items[j] = items[j], items[k]
+        permute(items, k + 1, results)
+        items[k], items[j] = items[j], items[k]
+
+results = []
+permute([1, 2, 3], 0, results)
+print(results)
+```
+```output
+[[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 2, 1], [3, 1, 2]]
+```
+The second swap is the undo: it puts the list back exactly as it was before the first swap. The same six orders come out, but not in sorted order: swaps shuffle the unused part, so `[3, 2, 1]` comes before `[3, 1, 2]`. Animation 2 runs this search.
+
+### Repeated items
+With repeats, some orders look the same: the two 1s in `[1, 1, 2]` make `[1, 1, 2]` twice, once with each 1 first. To list each different order once, sort the items so equal ones sit together, and make equal items always be used in left-to-right order: skip an item if it equals the one before it and that one **isn't** in use yet:
+```python
+def unique_perms(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        if i > 0 and items[i] == items[i - 1] and not used[i - 1]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        unique_perms(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+results = []
+unique_perms(sorted([1, 2, 1]), [], [False, False, False], results)
+print(results)
+```
+```output
+[[1, 1, 2], [1, 2, 1], [2, 1, 1]]
+```
+The second 1 can only be chosen once the first 1 is already in the path, so the two 1s can't swap roles, and each arrangement is built exactly once.
+
+### Pruning orders
+Often only orders that follow a rule are wanted. Checking the rule as each item is placed, rather than on complete orders, prunes every branch from the first broken rule. Here the rule is that neighbouring numbers may not differ by 1:
+```python
+def spaced(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        if path and abs(path[-1] - items[i]) == 1:
+            continue
+        used[i] = True
+        path.append(items[i])
+        spaced(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+results = []
+spaced([1, 2, 3, 4], [], [False] * 4, results)
+print(results)
+```
+```output
+[[2, 4, 1, 3], [3, 1, 4, 2]]
+```
+Of the 24 orders, only 2 follow the rule. A branch like `[1, 2]` is cut as soon as 2 is offered, so none of its orders are ever completed.
+
+### Counting without listing
+Sometimes you only need the number of different orders. Without repeats it's n!. With repeats, divide by the orders of each group of equal items, since rearranging equal items changes nothing: `[1, 1, 2]` has 3! ÷ 2! = 3 different orders, and the letters of "banana" (three a's, two n's, one b) have 6! ÷ (3! × 2! × 1!) = 60.
+
+Python's `itertools` module has a `permutations` function, which produces orders in the same order as the used-flags search. It's handy, but it treats repeated items as different, so it would give `[1, 1, 2]` twice.
+
+=== keypoints
+- A permutation is an ordering of all the items. n different items have n! permutations.
+- Used flags: for each position, try every item that isn't used. Choose (set the flag, append), explore, undo (pop, clear the flag).
+- Listing all permutations is O(n × n!): fine for 10 items, impossible for 20.
+- Swapping in place: fill position k by swapping each item from k onwards into it, recurse with k + 1, and swap back.
+- Repeated items: sort, then skip `items[i]` if it equals `items[i - 1]` and `items[i - 1]` isn't used yet.
+- Prune by checking the rule as each item is placed.
+
+=== example: All the anagrams of a word
+intro: An anagram rearranges all the letters of a word. "loop" has a repeated o, so the search sorts the letters and uses the repeat rule to list each different arrangement once.
+```python
+def anagrams(letters, path, used, results):
+    if len(path) == len(letters):
+        results.append("".join(path))
+        return
+    for i in range(len(letters)):
+        if used[i]:
+            continue
+        if i > 0 and letters[i] == letters[i - 1] and not used[i - 1]:
+            continue
+        used[i] = True
+        path.append(letters[i])
+        anagrams(letters, path, used, results)
+        path.pop()
+        used[i] = False
+
+letters = sorted("loop")
+results = []
+anagrams(letters, [], [False] * len(letters), results)
+print(len(results), results)
+```
+2-4: A complete arrangement is joined into a string, which is a new object, so no copy is needed.
+5-9: Skip letters in use, and skip the second o until the first o is placed.
+10-14: Choose, explore, undo, for both the flag and the path.
+16: Sorting puts the two o's side by side: l, o, o, p.
+19: 4! ÷ 2! = 12 different anagrams, in alphabetical order.
+
+=== example: The shortest round trip
+intro: A delivery van starts at city 0, visits every other city once, and comes back. `dist[a][b]` is the distance from a to b. The search tries every order of the other cities, and prunes a partial route as soon as it's already as long as the best complete route found so far.
+```python
+dist = [[0, 2, 9, 10],
+        [2, 0, 6, 4],
+        [9, 6, 0, 3],
+        [10, 4, 3, 0]]
+best = [None, None]
+
+def tour(route, used, length):
+    if best[0] is not None and length >= best[0]:
+        return
+    if len(route) == len(dist):
+        total = length + dist[route[-1]][0]
+        if best[0] is None or total < best[0]:
+            best[0] = total
+            best[1] = route[:]
+        return
+    for city in range(1, len(dist)):
+        if not used[city]:
+            used[city] = True
+            route.append(city)
+            tour(route, used, length + dist[route[-2]][city])
+            route.pop()
+            used[city] = False
+
+tour([0], [True, False, False, False], 0)
+print(best)
+```
+1-4: The distances between four cities. The table is symmetric: a to b is as far as b to a.
+5: `best` holds the shortest total so far and its route. It's a list so that every call can update it.
+7-9: Pruning: a partial route that's already as long as the best tour can't lead to a shorter one.
+10-15: A complete route adds the trip back to city 0, and replaces the best if it's shorter.
+16-22: Try each unvisited city next, adding the distance from the current last city.
+24-25: City 0 is fixed as the start. The best tour, 0 → 1 → 3 → 2 → 0, has length 18.
+
+=== animation: Used flags
+view: array items
+array used
+array path
+intro: To keep it short, this search starts with 1 already chosen for the first position, and finds the two orders that begin with 1. Each step tries the items in list order, skipping any whose flag in `used` is True.
+```python
+def perms(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        perms(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+results = []
+perms([1, 2, 3], [1], [True, False, False], results)
+```
+1: Defines perms. Nothing runs yet.
+2: {'Every position is filled: ' + str(path) + '.' if len(path) == len(items) else str(len(path)) + ' of ' + str(len(items)) + ' positions filled.'}
+3: Record a copy of {path}.
+4: Back to the previous call.
+5: Next item to try for this position. When all have been tried, this call is finished.
+6: {'Is ' + str(items[i]) + ' already used? ' + str(used[i]) + '.'}
+7: Yes: skip it.
+8: Mark {items[i]} as used.
+9: Put {items[i]} in the next position.
+10: Explore the orders that continue {path}.
+11: Undo: take {items[i]} out of the path.
+12: Undo: {items[i]} is free again.
+14: No results yet.
+15: Start with 1 already placed and marked as used.
+
+=== animation: Swapping in place
+view: array items ptr=k,j
+intro: Position k is filled by swapping each item from k onwards into it, in turn. After exploring, the same swap is done again to put the list back. To save steps, this version stops at the last position, where only one item is left, so the whole list is one order.
+```python
+def permute(items, k, results):
+    if k == len(items) - 1:
+        results.append(items[:])
+        return
+    for j in range(k, len(items)):
+        items[k], items[j] = items[j], items[k]
+        permute(items, k + 1, results)
+        items[k], items[j] = items[j], items[k]
+
+results = []
+permute([1, 2, 3], 0, results)
+```
+1: Defines permute. Nothing runs yet.
+2: {'Only the last position is left, and only one item can go there: ' + str(items) + ' is complete.' if k == len(items) - 1 else 'Fill position ' + str(k) + '.'}
+3: Record a copy of {items}.
+4: Back to the previous call.
+5: Next item to bring into position {k}. When every one has had a turn, this call is finished.
+6: Swap {items[j]} into position {k}.
+7: Explore the orders that start {items[:k + 1]}.
+8: Swap back, so the list is as it was before.
+10: No results yet.
+11: Find every order of [1, 2, 3].
+
+=== task: predict easy
+title: Three letters
+code:
+```python
+def perms(items, path, used):
+    if len(path) == len(items):
+        print("".join(path))
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        perms(items, path, used)
+        path.pop()
+        used[i] = False
+
+perms(["x", "y", "z"], [], [False, False, False])
+```
+wrong[xyz\nxzy\nyxz\nyzx\nzyx\nzxy]: With z first, the search tries x before y for the second position, so zxy comes before zyx.
+wrong[xyz\nyzx\nzxy]: Every order of the three letters is printed, not only the rotations: 3! = 6 orders.
+wrong[xyz\nxzy\nyxz\nyzx\nzxy\nzyx\nxyz]: Each order is printed once; the search ends after zyx.
+hint: The first position takes x, then y, then z.
+hint: Within each, the remaining two letters are tried in list order.
+right: All 3! = 6 orders, in alphabetical order: x first (xyz, xzy), then y, then z.
+wrong: With x first, the other two can be yz or zy. Then y first: xz, zx. Then z first: xy, yx. Each order is printed when it's complete.
+
+=== task: mcq easy
+title: Five items
+prompt: How many different orders do 5 different items have?
+* 120 :: Right. 5 × 4 × 3 × 2 × 1 = 120.
+- 25 :: That's 5 × 5. Each position has one option fewer than the one before.
+- 32 :: That's 2⁵, the number of subsets.
+- 15 :: That's 5 + 4 + 3 + 2 + 1. The choices multiply, they don't add.
+hint: The first position has 5 options. How many does the second have?
+hint: 5! = 5 × 4 × 3 × 2 × 1.
+right: 5 options for the first position, 4 for the second, then 3, 2 and 1: 5! = 120.
+wrong: Fill the positions in order: 5 choices, then 4, 3, 2, 1. Multiply them: 120.
+
+=== task: cells easy
+title: Orders of four
+prompt: Think of all the orders of `[a, b, c, d]`. Fill in how many there are of each kind.
+labels: all orders | orders that start with a | orders that end with a | orders that start with a and end with b
+answer: 24 | 6 | 6 | 2
+wrong[24 | 4 | 4 | 2]: With a fixed first, the other three items can be in any of 3! = 6 orders.
+wrong[24 | 6 | 6 | 1]: With a first and b last, c and d can go in either order: 2.
+wrong[16 | 6 | 6 | 2]: 4! = 4 × 3 × 2 × 1 = 24, not 4².
+hint: Fixing one position leaves 3 items for the other 3 positions.
+hint: Fixing two positions leaves 2 items: 2! orders.
+right: 4! = 24 orders; 3! = 6 with a first, 6 with a last, and 2! = 2 with a first and b last.
+wrong: Count the free positions: none fixed gives 4!, one fixed gives 3!, two fixed gives 2!.
+
+=== task: code easy
+title: Every order
+prompt: Write `permutations(items)` that returns every order of the items, using a `used` list of flags, in the order the search finds them when it tries the items in list order. Use a helper `build(items, path, used, results)`.
+starter:
+```python
+def build(items, path, used, results):
+    # your code here
+    pass
+
+def permutations(items):
+    results = []
+    build(items, [], [False] * len(items), results)
+    return results
+```
+solution:
+```python
+def build(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        build(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+def permutations(items):
+    results = []
+    build(items, [], [False] * len(items), results)
+    return results
+```
+tests:
+- permutations([1, 2, 3])
+- permutations([])
+- permutations(["a"])
+- permutations([2, 1])
+- (lambda: len(permutations(list(range(5)))))()
+fail[1]: [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]].
+fail[2]: An empty list has one order, the empty one: [[]].
+fail[4]: [[2, 1], [1, 2]]: the items are tried in list order, 2 first.
+fail[5]: 5! = 120 orders.
+hint: When the path has every item, record `path[:]` and return.
+hint: For each index i not in use: set `used[i] = True`, append, recurse, pop, set `used[i] = False`.
+hint: Forgetting to clear the flag stops later branches from using that item.
+right: Each position takes every unused item in turn, and undoing both the path and the flag lets the next branch start clean: n! orders.
+wrong: Loop over the indexes, skip used ones, then choose (flag and append), explore, and undo (pop and clear the flag).
+
+=== task: fill easy
+title: Setting the flags
+prompt: Fill in the blanks so that each item is marked while it's in the path and freed afterwards, and the program prints:
+
+```output
+[['a', 'b'], ['b', 'a']]
+```
+code:
+```python
+def perms(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = ??
+        path.append(items[i])
+        perms(items, path, used, results)
+        path.pop()
+        used[i] = ??
+
+results = []
+perms(["a", "b"], [], [False, False], results)
+print(results)
+```
+answer: True | False
+wrong[True | True]: The flags are never cleared, so after the first order every item stays used, and no other order can be built: only ['a', 'b'].
+wrong[False | False]: Nothing is ever marked as used, so an item can appear twice in one order, like ['a', 'a'].
+hint: While an item is in the path, it must count as used.
+hint: After undoing, the item is free for the next branch.
+right: `used[i] = True` before exploring and `used[i] = False` after, so each order uses every item once.
+wrong: Mark the item with True when it's chosen, and clear it with False when it's taken back out.
+
+=== task: multi easy
+title: True of permutations
+prompt: Choose **every** true statement.
+* Every permutation uses every item exactly once :: Right. A permutation is an order of all the items.
+* [1, 2, 3] and [3, 2, 1] are different permutations :: Right. The order is what makes a permutation.
+* n different items have n! permutations :: Right. n choices, then n − 1, down to 1.
+- n items have 2ⁿ permutations :: 2ⁿ is the number of subsets. n! grows much faster.
+- A permutation can leave some items out :: That's an arrangement of only some items, not a permutation of all of them.
+- The used-flags search needs no undo :: Both the path and the flag must be put back after each branch.
+hint: What's the difference between a subset and a permutation?
+hint: Count the choices for each position.
+right: A permutation orders all the items, order matters, and there are n! of them. The search undoes both the path and the flags.
+wrong: Permutations use every item once, in some order, so there are n × (n − 1) × … × 1 = n! of them, and order matters.
+
+=== task: parsons easy
+title: Taking letters off a string
+prompt: Another way to build orders: pass the letters that are still left as a string, and remove the chosen letter from it. Arrange the lines so that `orders` records every order of the letters, and the program prints:
+
+```output
+['abc', 'acb', 'bac', 'bca', 'cab', 'cba']
+```
+
+Not every line is needed.
+lines:
+```python
+def orders(rest, path, results):
+    if rest == "":
+        results.append(path)
+        return
+    for i in range(len(rest)):
+        orders(rest[:i] + rest[i + 1:], path + rest[i], results)
+
+results = []
+orders("abc", "", results)
+print(results)
+```
+distractors:
+```python
+        orders(rest[:i] + rest[i:], path + rest[i], results)
+    if rest == path:
+```
+hint: The order is complete when no letters are left.
+hint: `rest[:i] + rest[i + 1:]` is the string without the letter at index i.
+right: Each call takes one of the remaining letters and passes on a shorter string and a longer path, both new values, so nothing needs undoing.
+wrong: Base case: no letters left, so record the path. Otherwise, for each index i, recurse with that letter removed from rest and added to path.
+
+=== task: order easy
+title: In what order?
+prompt: The used-flags search runs on `[a, b, c]`. Put these orders in the order it records them.
+items:
+- abc
+- acb
+- bca
+- cab
+- cba
+hint: The first letter changes slowest: all orders starting with a come first.
+hint: For the same first letter, the second position tries the remaining letters in list order.
+right: The full sequence is abc, acb, bac, bca, cab, cba: alphabetical, because the items are in alphabetical order.
+wrong: First a (abc, acb), then b (bac, bca), then c (cab, cba). Within each, the second letter follows list order.
+
+=== task: predict easy
+title: Not first
+code:
+```python
+def count(items, path, used):
+    if len(path) == len(items):
+        return 1
+    total = 0
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        if len(path) == 0 and items[i] == 1:
+            continue
+        used[i] = True
+        path.append(items[i])
+        total += count(items, path, used)
+        path.pop()
+        used[i] = False
+    return total
+
+print(count([1, 2, 3, 4], [], [False] * 4))
+```
+wrong[24]: The check skips 1 for the first position, which prunes every order that starts with 1.
+wrong[6]: 6 is the number of orders that start with 1, the ones that are skipped. The rest are counted: 24 − 6.
+wrong[12]: Only the first position is restricted. Each of 2, 3 and 4 can go first, with 3! = 6 orders after it: 18.
+hint: How many orders of 4 items start with 1?
+hint: The count is all orders minus those.
+right: `18`: 4! = 24 orders, minus the 3! = 6 that start with 1, which are pruned at the first step.
+wrong: Three items can go first (2, 3 or 4), and the other three can follow in 3! = 6 orders: 3 × 6 = 18.
+
+=== task: mcq easy
+title: Why the flags?
+prompt: What would go wrong in the used-flags search without the `used` list, trying every item at every position?
+* Items would be used more than once in an order, like [1, 1, 1] :: Right. Nothing would stop the same item from being chosen again.
+- The orders would come out unsorted :: The order of the results isn't the problem: the results themselves would be wrong.
+- Some orders would be missed :: Every real order would still be found, along with many that aren't permutations.
+- The search would never end :: The path still stops growing at n items, so it ends; it finds nⁿ paths instead of n!.
+hint: What stops an item from being picked twice?
+hint: How many paths of length 3 can be made from 3 items if repeats are allowed?
+right: The flags are what make each order use each item once. Without them the search lists all nⁿ sequences, including repeats like [1, 1, 1].
+wrong: `used` keeps an item out of the options while it's in the path. Without it, every item is an option at every position, so items repeat.
+
+=== task: code medium
+title: Ordered picks
+prompt: Write `arrangements(items, k)` that returns every ordered arrangement of k of the items, like the possible gold and silver winners of a race, in the order the used-flags search finds them. Use a helper `build(items, k, path, used, results)` that stops when the path has k items.
+starter:
+```python
+def build(items, k, path, used, results):
+    # your code here
+    pass
+
+def arrangements(items, k):
+    results = []
+    build(items, k, [], [False] * len(items), results)
+    return results
+```
+solution:
+```python
+def build(items, k, path, used, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        build(items, k, path, used, results)
+        path.pop()
+        used[i] = False
+
+def arrangements(items, k):
+    results = []
+    build(items, k, [], [False] * len(items), results)
+    return results
+```
+tests:
+- arrangements([1, 2, 3], 2)
+- arrangements([1, 2, 3], 0)
+- (lambda: len(arrangements([1, 2, 3], 3)))()
+- (lambda: len(arrangements(list(range(5)), 3)))()
+- arrangements(["gold", "silver"], 1)
+fail[1]: [[1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2]].
+fail[2]: Choosing nothing gives one arrangement, the empty one: [[]].
+fail[3]: With k = n, these are all 3! = 6 orders.
+fail[4]: 5 × 4 × 3 = 60 arrangements.
+hint: The search is the same as for permutations, but the path is complete at length k.
+hint: The count is n × (n − 1) × … for k factors.
+right: Stopping at length k turns the permutation search into ordered picks: n!/(n − k)! of them.
+wrong: Use the used-flags search, but record the path when it has k items instead of all of them.
+
+=== task: code medium
+title: The k-th order
+prompt: Write `kth_order(items, k)` that returns the k-th order (k = 1 is the first) that the used-flags search finds, and **stops** as soon as it's found, without listing the rest. Use a helper `find(items, path, used, k, count)` that returns True when the k-th order is in `path`, where `count` is a one-item list counting complete orders. The speed check asks for the 3rd order of longer and longer lists, where listing every order would never finish.
+starter:
+```python
+def find(items, path, used, k, count):
+    # your code here
+    pass
+
+def kth_order(items, k):
+    path = []
+    find(items, path, [False] * len(items), k, [0])
+    return path
+```
+solution:
+```python
+def find(items, path, used, k, count):
+    if len(path) == len(items):
+        count[0] += 1
+        return count[0] == k
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        if find(items, path, used, k, count):
+            return True
+        path.pop()
+        used[i] = False
+    return False
+
+def kth_order(items, k):
+    path = []
+    find(items, path, [False] * len(items), k, [0])
+    return path
+```
+tests:
+- kth_order([1, 2, 3], 1)
+- kth_order([1, 2, 3], 4)
+- kth_order([1, 2, 3], 6)
+- kth_order(["a", "b"], 2)
+- kth_order([7], 1)
+speed: setup=items = list(range(n)) | call=kth_order(items, 3) | target=O(n²) | sizes=50,100,200,400
+slow:
+```python
+def find(items, path, used, k, count):
+    if len(path) == len(items):
+        count.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        find(items, path, used, k, count)
+        path.pop()
+        used[i] = False
+
+def kth_order(items, k):
+    orders = []
+    find(items, [], [False] * len(items), k, orders)
+    return orders[k - 1]
+```
+fail[1]: The first order is the list itself: [1, 2, 3].
+fail[2]: The orders go 123, 132, 213, 231: the 4th is [2, 3, 1].
+fail[3]: The last of the 6 orders: [3, 2, 1].
+fail[4]: ['b', 'a'].
+hint: When a complete order is reached, add 1 to `count[0]` and return whether it's the k-th.
+hint: If a recursive call returns True, return True at once, without undoing, so `path` keeps the answer.
+hint: Listing all n! orders first is hopeless for 50 items.
+right: Returning True straight up the calls stops the search the moment the k-th order is complete, so only a sliver of the tree is visited.
+wrong: Count complete orders as they're found. When the count reaches k, return True all the way back up, leaving the path as it is.
+
+=== task: predict medium
+title: Forgetting to swap back
+code:
+```python
+results = []
+
+def permute(items, k):
+    if k == len(items):
+        results.append(items[:])
+        return
+    for j in range(k, len(items)):
+        items[k], items[j] = items[j], items[k]
+        permute(items, k + 1)
+
+permute([1, 2, 3], 0)
+print(results)
+```
+wrong[[[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 2, 1], [3, 1, 2]]]: That's the result with the swap back. Without it, each swap stays in the list, so later branches start from a shuffled list.
+wrong[[[1, 2, 3], [1, 3, 2]]]: The loop still runs for every j at every level, so 6 orders are recorded; some of them are repeats.
+wrong[[[1, 2, 3], [1, 3, 2], [3, 1, 2], [3, 2, 1]]]: The top loop has a third turn too, which swaps the 3 at index 2 into position 0, giving two more records.
+hint: After recording [1, 3, 2], the list stays [1, 3, 2] when the top-level loop moves on.
+hint: Trace the top loop: its swaps act on whatever the list is at that moment.
+right: `[[1, 2, 3], [1, 3, 2], [3, 1, 2], [3, 2, 1], [1, 2, 3], [1, 3, 2]]`: without the swap back, the list stays shuffled, so orders repeat and others, like [2, 1, 3], are never built.
+wrong: Trace the list itself. The second-level swaps leave it as [1, 3, 2]; the top loop then swaps positions 0 and 1 (giving [3, 1, 2]) and later 0 and 2 of [3, 2, 1] (giving [1, 2, 3]).
+
+=== task: cells medium
+title: Different arrangements
+prompt: How many **different** orders do the letters of each word have? Rearranging equal letters doesn't make a new order.
+labels: aab | aabb | abc | aaaa | banana
+answer: 3 | 6 | 6 | 1 | 60
+wrong[6 | 24 | 6 | 24 | 720]: Those count equal letters as different. Divide by the orders of each group of equal letters.
+wrong[3 | 4 | 6 | 1 | 60]: aabb: 4! ÷ (2! × 2!) = 24 ÷ 4 = 6.
+wrong[3 | 6 | 6 | 1 | 120]: banana has three a's and two n's: 720 ÷ (6 × 2) = 60.
+hint: Start from n!, then divide by k! for each letter that appears k times.
+hint: banana: 6 letters, a three times, n twice.
+right: 3!/2! = 3, 4!/(2! × 2!) = 6, 3! = 6, 4!/4! = 1 and 6!/(3! × 2!) = 60.
+wrong: Divide n! by the factorial of each letter's count: aab is 6/2, aabb is 24/4, aaaa is 24/24, banana is 720/12.
+
+=== task: fill medium
+title: A set per position
+prompt: With swapping, repeats can be skipped another way: each call keeps a set of the values it has already put into position k, and skips a value it has seen. Fill in the blanks so that the program prints:
+
+```output
+[[1, 1, 2], [1, 2, 1], [2, 1, 1]]
+```
+code:
+```python
+def permute(items, k, results):
+    if k == len(items):
+        results.append(items[:])
+        return
+    seen = set()
+    for j in range(k, len(items)):
+        if items[j] in ??:
+            continue
+        seen.??(items[j])
+        items[k], items[j] = items[j], items[k]
+        permute(items, k + 1, results)
+        items[k], items[j] = items[j], items[k]
+
+results = []
+permute([1, 1, 2], 0, results)
+print(results)
+```
+answer: seen | add
+wrong[items | add]: Every value is in `items`, so every option would be skipped and nothing would be recorded.
+wrong[seen | append]: Sets don't have `append`: it raises an AttributeError. A set grows with `add`.
+hint: The check is whether this value has already been put into position k by this call.
+hint: The set method that inserts a value is `add`.
+right: Each call puts each different value into position k only once, so equal items never start two identical branches.
+wrong: Skip `items[j]` if it's in `seen`; otherwise `seen.add(items[j])`, then swap, recurse and swap back.
+
+=== task: mcq medium
+title: Ten items
+prompt: How many orders do 10 different items have?
+* 3,628,800 :: Right. 10! = 10 × 9 × … × 1.
+- 1,024 :: That's 2¹⁰, the number of subsets.
+- 100 :: That's 10². The choices multiply down from 10 to 1.
+- 10,000,000,000 :: That's 10¹⁰: it would allow repeats.
+hint: 10! = 10 × 9 × 8 × … × 1.
+hint: 5! is 120, so 10! = 120 × 6 × 7 × 8 × 9 × 10.
+right: 3,628,800 orders: a few million is fine to list, but each extra item multiplies the count again.
+wrong: 10 choices for the first position, 9 for the second, down to 1: 10! = 3,628,800.
+
+=== task: predict medium
+title: Two rules
+code:
+```python
+def count(items, path, used):
+    if len(path) == len(items):
+        return 1
+    total = 0
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        if len(path) == 0 and items[i] == 1:
+            continue
+        if len(path) == len(items) - 1 and items[i] == 4:
+            continue
+        used[i] = True
+        path.append(items[i])
+        total += count(items, path, used)
+        path.pop()
+        used[i] = False
+    return total
+
+print(count([1, 2, 3, 4], [], [False] * 4))
+```
+wrong[12]: Subtracting both groups of 6 counts twice the orders that break both rules, like 1 _ _ 4. Add those 2 back: 14.
+wrong[18]: The second rule also prunes: 4 can't go last.
+wrong[16]: Orders that start with 1: 6. Orders that end with 4: 6. Both: 2. So 24 − 6 − 6 + 2 = 14.
+hint: How many orders start with 1, and how many end with 4?
+hint: Some orders do both: 1 first and 4 last.
+right: `14`: 24 orders, minus 6 starting with 1, minus 6 ending with 4, plus the 2 that do both (subtracted twice).
+wrong: Count what's removed: 6 start with 1, 6 end with 4, and 2 of them (1 2 3 4 and 1 3 2 4) are in both groups. 24 − 10 = 14.
+
+=== task: multi medium
+title: Is it a permutation problem?
+prompt: Choose **every** problem whose answers are orders of all the items.
+* Arranging 6 books on a shelf :: Right. Every book is placed, and the order is the answer.
+* Deciding the order to visit 5 shops, visiting each once :: Right. A route through all the shops is an order of them.
+* Finding all anagrams of a word :: Right. An anagram uses every letter, in a new order.
+- Choosing 3 toppings out of 8 :: The order doesn't matter, and not every topping is used: that's a combination.
+- Deciding which of 10 tasks to do today :: Each task is in or out: that's a subset.
+- Finding a path through a maze :: That's a search over moves, not an ordering of given items.
+hint: Is every item used, and does the order matter?
+hint: If only some items are used and order doesn't matter, it's a subset or a combination.
+right: Shelves, routes through every shop and anagrams all order every item. Toppings and tasks are selections, and a maze is a path search.
+wrong: Permutation problems use all the items and care about their order. Selections where order doesn't matter are subsets or combinations.
+
+=== task: parsons medium
+title: Counting without paths
+prompt: Arrange the lines so that `count_perms` counts the orders of the items without building them: it only needs the flags and the number of positions filled. The program prints:
+
+```output
+24
+```
+
+Not every line is needed.
+lines:
+```python
+def count_perms(used, placed):
+    if placed == len(used):
+        return 1
+    total = 0
+    for i in range(len(used)):
+        if not used[i]:
+            used[i] = True
+            total += count_perms(used, placed + 1)
+            used[i] = False
+    return total
+
+print(count_perms([False] * 4, 0))
+```
+distractors:
+```python
+            total += count_perms(used, placed)
+        if used[i]:
+```
+hint: The count is 1 once every position is filled.
+hint: Each unused item adds the count of orders that continue with it.
+right: The search tree is the same as before, but each leaf counts 1, so the root adds up 4! = 24 leaves.
+wrong: Base case: all positions filled, return 1. Otherwise, for every unused index: mark it, add the count for `placed + 1`, unmark it. Return the total.
+
+=== task: order medium
+title: Swap order
+prompt: The swapping search from the lesson runs on `[a, b, c]`. Put these orders in the order it records them.
+items:
+- abc
+- bac
+- bca
+- cba
+- cab
+hint: Position 0 gets a, then b (swapped from index 1), then c (swapped from index 2).
+hint: With c swapped into position 0 the list is [c, b, a], so its first order is cba.
+right: The full sequence is abc, acb, bac, bca, cba, cab: the swaps leave the remaining items in a different order than the used-flags search does.
+wrong: Swap a into place: abc, acb. Swap b in: bac, bca. Swap c in: the list becomes cba, so cba comes before cab.
+
+=== task: code hard
+title: Seating enemies apart
+prompt: Write `seat(guests, enemies)` that returns every order of the guests, as lists, in which no two enemies sit next to each other. `enemies` is a list of pairs of names. Use the used-flags search in list order, and prune: don't place a guest next to an enemy. Use a helper `build(guests, bad, path, used, results)`, where `bad` is a set of the enemy pairs in both directions.
+starter:
+```python
+def build(guests, bad, path, used, results):
+    # your code here
+    pass
+
+def seat(guests, enemies):
+    bad = set()
+    for a, b in enemies:
+        bad.add((a, b))
+        bad.add((b, a))
+    results = []
+    build(guests, bad, [], [False] * len(guests), results)
+    return results
+```
+solution:
+```python
+def build(guests, bad, path, used, results):
+    if len(path) == len(guests):
+        results.append(path[:])
+        return
+    for i in range(len(guests)):
+        if used[i]:
+            continue
+        if path and (path[-1], guests[i]) in bad:
+            continue
+        used[i] = True
+        path.append(guests[i])
+        build(guests, bad, path, used, results)
+        path.pop()
+        used[i] = False
+
+def seat(guests, enemies):
+    bad = set()
+    for a, b in enemies:
+        bad.add((a, b))
+        bad.add((b, a))
+    results = []
+    build(guests, bad, [], [False] * len(guests), results)
+    return results
+```
+tests:
+- seat(["A", "B", "C"], [("A", "B")])
+- (lambda: len(seat(["A", "B", "C", "D"], [("A", "B"), ("C", "D")])))()
+- seat(["A", "B"], [("A", "B")])
+- seat(["X"], [])
+- (lambda: len(seat(["A", "B", "C"], [])))()
+fail[1]: Only C can sit between them: [['A', 'C', 'B'], ['B', 'C', 'A']].
+fail[2]: 8 of the 24 orders keep both pairs apart.
+fail[3]: Two enemies with no one else must sit together: [].
+fail[5]: With no enemies, all 6 orders are fine.
+hint: Only the last guest placed can be next to the new one, so check `(path[-1], guests[i])`.
+hint: `bad` has both directions, so one check covers A next to B and B next to A.
+hint: Checking each guest as it's placed prunes every order that starts badly.
+right: Pruning at the moment a guest would sit next to an enemy cuts off whole branches, so only valid orders are ever completed.
+wrong: Use the used-flags search, and skip guest i if the path isn't empty and `(path[-1], guests[i])` is in `bad`.
+
+=== task: code hard
+title: Nobody in their own place
+prompt: A **derangement** is an order of 0 to n − 1 where no number is at its own index: [1, 2, 0] is one, but [0, 2, 1] isn't, since 0 is at index 0. Write `derangements(n)` that returns them all, in the order the used-flags search finds them, pruning a number that would land on its own index. Use a helper `build(n, path, used, results)`.
+starter:
+```python
+def build(n, path, used, results):
+    # your code here
+    pass
+
+def derangements(n):
+    results = []
+    build(n, [], [False] * n, results)
+    return results
+```
+solution:
+```python
+def build(n, path, used, results):
+    if len(path) == n:
+        results.append(path[:])
+        return
+    for x in range(n):
+        if used[x] or x == len(path):
+            continue
+        used[x] = True
+        path.append(x)
+        build(n, path, used, results)
+        path.pop()
+        used[x] = False
+
+def derangements(n):
+    results = []
+    build(n, [], [False] * n, results)
+    return results
+```
+tests:
+- derangements(3)
+- (lambda: len(derangements(4)))()
+- derangements(1)
+- derangements(0)
+- (lambda: len(derangements(5)))()
+fail[1]: [[1, 2, 0], [2, 0, 1]].
+fail[2]: 9 derangements of 4 items.
+fail[3]: 0 can only go at index 0, its own place: [].
+fail[4]: The empty order has nothing out of place: [[]].
+fail[5]: 44.
+hint: The next index to fill is `len(path)`.
+hint: Skip x if it's used, or if `x == len(path)`.
+hint: The counts 1, 0, 1, 2, 9, 44 grow like n!/e.
+right: The check places no number on its own index, so every complete order is a derangement, and branches that would break the rule are never built.
+wrong: In the used-flags search, the position being filled is `len(path)`; skip any x equal to it. Record the path when all n numbers are placed.
+
+=== task: code hard
+title: No twins side by side
+prompt: Write `no_twins(word)` that returns every **different** arrangement of the letters of `word` in which no two equal letters are next to each other, in alphabetical order. Sort the letters, use the repeat rule so each arrangement is built once, and prune a letter equal to the last one placed. Use a helper `build(letters, path, used, results)`.
+starter:
+```python
+def build(letters, path, used, results):
+    # your code here
+    pass
+
+def no_twins(word):
+    letters = sorted(word)
+    results = []
+    build(letters, [], [False] * len(letters), results)
+    return results
+```
+solution:
+```python
+def build(letters, path, used, results):
+    if len(path) == len(letters):
+        results.append("".join(path))
+        return
+    for i in range(len(letters)):
+        if used[i]:
+            continue
+        if i > 0 and letters[i] == letters[i - 1] and not used[i - 1]:
+            continue
+        if path and path[-1] == letters[i]:
+            continue
+        used[i] = True
+        path.append(letters[i])
+        build(letters, path, used, results)
+        path.pop()
+        used[i] = False
+
+def no_twins(word):
+    letters = sorted(word)
+    results = []
+    build(letters, [], [False] * len(letters), results)
+    return results
+```
+tests:
+- no_twins("aab")
+- no_twins("aabb")
+- no_twins("aaab")
+- no_twins("abc")
+- no_twins("")
+fail[1]: Only 'aba' keeps the a's apart.
+fail[2]: ['abab', 'baba'].
+fail[3]: Three a's and one b can't be kept apart: [].
+fail[4]: With no repeats, all 6 orders work.
+fail[5]: The empty word has one arrangement, '': [''].
+hint: The repeat rule: skip `letters[i]` if it equals `letters[i - 1]` and `letters[i - 1]` isn't used.
+hint: The new rule: skip it if it equals `path[-1]`.
+hint: Both checks happen before the letter is placed.
+right: The repeat rule builds each arrangement once, and the twin check prunes as soon as two equal letters would touch.
+wrong: Combine the two checks in the used-flags search on sorted letters: skip repeats that would start a duplicate branch, and skip a letter equal to the one before it in the path.
+
+=== task: code hard
+title: Orders with rules
+prompt: n tasks, numbered 0 to n − 1, are done one after another. `before` is a list of pairs (a, b) meaning task a must be done before task b. Write `count_orders(n, before)` that returns how many orders follow every rule. Use a helper `count(needs, done, placed)`, where `needs[b]` is the list of tasks that must come before b, and a task may be placed only once all of its needs are done.
+starter:
+```python
+def count(needs, done, placed):
+    # your code here
+    pass
+
+def count_orders(n, before):
+    needs = [[] for _ in range(n)]
+    for a, b in before:
+        needs[b].append(a)
+    return count(needs, [False] * n, 0)
+```
+solution:
+```python
+def count(needs, done, placed):
+    if placed == len(done):
+        return 1
+    total = 0
+    for t in range(len(done)):
+        if done[t]:
+            continue
+        ready = True
+        for a in needs[t]:
+            if not done[a]:
+                ready = False
+        if not ready:
+            continue
+        done[t] = True
+        total += count(needs, done, placed + 1)
+        done[t] = False
+    return total
+
+def count_orders(n, before):
+    needs = [[] for _ in range(n)]
+    for a, b in before:
+        needs[b].append(a)
+    return count(needs, [False] * n, 0)
+```
+tests:
+- count_orders(3, [(0, 1)])
+- count_orders(3, [(0, 1), (1, 2)])
+- count_orders(3, [])
+- count_orders(4, [(0, 2), (1, 2)])
+- count_orders(2, [(0, 1), (1, 0)])
+fail[1]: Half of the 6 orders have 0 before 1: 3.
+fail[2]: The rules force 0, 1, 2: only one order.
+fail[3]: No rules: 3! = 6.
+fail[4]: Task 2 must come after both 0 and 1: 8 of the 24 orders.
+fail[5]: Each task must come before the other, which is impossible: 0.
+hint: A task is ready when every task in `needs[t]` is done.
+hint: Count 1 when all tasks are placed; otherwise add up the counts for each ready task.
+hint: Rules that go in a circle leave no task ready, so the count is 0.
+right: Placing only ready tasks prunes every order that would break a rule, so the search counts exactly the valid orders. Listing such orders is called topological sorting, a later lesson.
+wrong: Use the used-flags pattern with `done`, and only place a task whose needs are all done. Count 1 at the end of each complete order.
+
+=== task: predict hard
+title: How many calls?
+code:
+```python
+def calls(n, used):
+    count = 1
+    if all(used):
+        return count
+    for i in range(n):
+        if not used[i]:
+            used[i] = True
+            count += calls(n, used)
+            used[i] = False
+    return count
+
+print(calls(3, [False] * 3), calls(4, [False] * 4))
+```
+wrong[6 24]: Every call counts, not only the complete orders at the leaves.
+wrong[10 41]: The leaves count too: for 3 items, 1 + 3 + 6 + 6 = 16.
+wrong[16 64]: For 4 items: 1 + 4 + 12 + 24 + 24 = 65.
+hint: Level by level, the number of calls is 1, then n, then n × (n − 1), down to n! at the leaves.
+hint: For 3 items the levels are 1, 3, 6 and 6.
+right: `16 65`: 1 + 3 + 6 + 6 for 3 items, and 1 + 4 + 12 + 24 + 24 for 4. The last two levels are both n!, because the last choice is forced.
+wrong: Count the calls level by level: one root, then a call for each choice of first item, then for each choice of second item, down to the complete orders. `all(used)` is True when every item is placed.
+
+=== task: predict hard
+title: The other repeat rule
+prompt: This version skips a repeated item when the copy before it **is** in use, instead of when it isn't. What does it print?
+code:
+```python
+def perms(items, path, used, results):
+    if len(path) == len(items):
+        results.append(path[:])
+        return
+    for i in range(len(items)):
+        if used[i]:
+            continue
+        if i > 0 and items[i] == items[i - 1] and used[i - 1]:
+            continue
+        used[i] = True
+        path.append(items[i])
+        perms(items, path, used, results)
+        path.pop()
+        used[i] = False
+
+results = []
+perms([1, 1, 2], [], [False, False, False], results)
+print(results)
+```
+wrong[[[1, 1, 2], [1, 2, 1], [1, 1, 2], [1, 2, 1], [2, 1, 1], [2, 1, 1]]]: The rule still forces the equal 1s into one fixed order, so each arrangement is built once.
+wrong[[[1, 2, 1], [2, 1, 1]]]: [1, 1, 2] is found too: by taking the second 1 first, then the first.
+wrong[[]]: Some branches get stuck, but others complete: three orders are recorded.
+hint: Now the second 1 can only be used before the first one.
+hint: Branches that pick the first 1 first get stuck, but the others complete.
+right: `[[1, 1, 2], [1, 2, 1], [2, 1, 1]]`: the same three orders. This rule forces equal items to be used right to left instead, so each arrangement is still built once, but more branches reach a dead end before completing.
+wrong: With this rule, the second copy of 1 must be placed before the first. Each different arrangement is still built exactly once, in the same order.
+
+=== task: cells hard
+title: Counting to an order
+prompt: The used-flags search lists the 24 orders of `[1, 2, 3, 4]`. Fill in the order it records at each position in the list.
+labels: 1st | 7th | 13th | 24th
+answer: [1, 2, 3, 4] | [2, 1, 3, 4] | [3, 1, 2, 4] | [4, 3, 2, 1]
+wrong[[1, 2, 3, 4] | [1, 4, 3, 2] | [2, 4, 3, 1] | [4, 3, 2, 1]]: Those are the 6th and 12th orders. Each first item starts a block of 3! = 6 orders, so the 7th order is the first one starting with 2.
+wrong[[1, 2, 3, 4] | [2, 1, 3, 4] | [3, 1, 2, 4] | [4, 1, 2, 3]]: The 24th order is the very last: [4, 3, 2, 1].
+wrong[[1, 2, 3, 4] | [2, 3, 1, 4] | [3, 1, 2, 4] | [4, 3, 2, 1]]: The 7th order is the first of the block that starts with 2, so the rest is in order: [2, 1, 3, 4].
+hint: The orders come in blocks of 6, one block for each first item.
+hint: Orders 1 to 6 start with 1, orders 7 to 12 with 2, and orders 13 to 18 with 3.
+right: The blocks of 3! = 6 orders make it possible to jump: the 7th and 13th orders are the first of their blocks, and the 24th is the last order of all.
+wrong: Each first item has a block of 6 orders, starting with the other items in order. So order 7 is [2, 1, 3, 4], order 13 is [3, 1, 2, 4], and order 24 is [4, 3, 2, 1].
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the used-flags search from this lesson. Choose **every** change that gives wrong results.
+* Leaving out `used[i] = False` after the recursive call :: Right. Items stay marked as used after their branch, so later branches can't use them.
+* Setting `used[i] = True` after the recursive call instead of before it :: Right. During the call the item isn't marked, so it can be chosen again deeper down.
+* Recording `path` instead of `path[:]` :: Right. Every entry is the same list, which is empty at the end.
+- Clearing the flag before `path.pop()` instead of after it :: Both are undone before the loop moves on, so the order of the two undos doesn't matter.
+- Looping over the indexes in reverse :: The same orders are found, in reverse order.
+- Passing `path + [items[i]]` to the call instead of append and pop :: Each call gets a new list, so the path needs no undo; the flags still do.
+hint: What must be true about `used` during the recursive call, and after it?
+hint: Changing the order of two undo steps that both finish before the next choice is harmless.
+right: Flags that are never cleared, flags set too late, and recording the shared path all break the search. The other changes keep both undos complete before the next choice.
+wrong: During the recursive call the chosen item must be marked, and after it both the flag and the path must be restored. Exactly when, between the call and the next loop turn, doesn't matter.
+
+=== task: fill hard
+title: Counting with factorials
+prompt: The number of different orders of a word's letters is n! divided by k! for every letter that appears k times. Fill in the blanks so that the program prints:
+
+```output
+60 12 6
+```
+code:
+```python
+def fact(n):
+    result = 1
+    for k in range(2, n + 1):
+        result *= k
+    return result
+
+def arrangements(word):
+    counts = {}
+    for ch in word:
+        counts[ch] = counts.get(ch, 0) + 1
+    total = fact(??)
+    for ch in counts:
+        total ?? fact(counts[ch])
+    return total
+
+print(arrangements("banana"), arrangements("loop"), arrangements("abc"))
+```
+answer: len(word) | //=
+wrong[len(counts) | //=]: n! counts the orders of all the letters, so n is `len(word)`, 6 for banana, not the number of different letters, 3.
+wrong[len(word) | *=]: Each group of k equal letters can be rearranged k! ways without making a new order, so divide by k!, don't multiply.
+hint: Start from the orders of all the letters, as if they were different.
+hint: Each group of equal letters was counted k! times too often.
+right: `fact(len(word))` counts the orders as if every letter were different, and `//=` divides out the k! rearrangements of each group of equal letters.
+wrong: Start with `fact(len(word))`, then divide with `total //= fact(counts[ch])` for each letter.
+
+=== task: parsons hard
+title: Stop at the first that works
+prompt: Arrange the lines so that `first_order` finds the first order of the digits, in used-flags order, whose number is divisible by 11, and stops there with the answer left in `path`. The program prints:
+
+```output
+True [1, 2, 4, 3]
+```
+
+Not every line is needed.
+lines:
+```python
+def divisible(path):
+    number = 0
+    for d in path:
+        number = number * 10 + d
+    return number % 11 == 0
+
+def first_order(items, path, used):
+    if len(path) == len(items):
+        return divisible(path)
+    for i in range(len(items)):
+        if not used[i]:
+            used[i] = True
+            path.append(items[i])
+            if first_order(items, path, used):
+                return True
+            path.pop()
+            used[i] = False
+    return False
+
+path = []
+print(first_order([1, 2, 3, 4], path, [False] * 4), path)
+```
+distractors:
+```python
+            first_order(items, path, used)
+    return True
+```
+hint: A complete order is a success only if its number is divisible by 11.
+hint: When a call returns True, return True at once, before the undo, so the path keeps the answer.
+right: 1234 isn't divisible by 11, but 1243 = 11 × 113 is. The True passes straight up, so nothing is undone and `path` holds [1, 2, 4, 3].
+wrong: At a complete order, return whether it's divisible. In the loop, choose, and if the recursive call succeeds, return True at once; otherwise undo and try the next item. Return False when no item works.
