@@ -1,0 +1,1394 @@
+=== lesson
+id: algo-bfs
+title: Breadth-first search
+summary: Breadth-first search (BFS) explores a graph in rings: first the start, then everything one edge away, then everything two edges away, with a queue keeping the order. Because it reaches every vertex by the fewest edges first, it finds shortest paths when every edge counts the same. You'll write BFS with a deque, record distances, rebuild a shortest path from parent links, count connected pieces, and see why it's O(V + E).
+
+=== learn
+### Explore in rings
+Six people, A to F, and who knows whom. Each line is an edge between two people who know each other:
+```text
+    D
+    │
+    B ─── E
+    │     │
+    A     │
+    │     │
+    C ─── F
+```
+**Breadth-first search** starts at one vertex, here A, and explores in rings. First A itself, at distance 0. Then everyone one edge from A: B and C. Then everyone one edge further out who hasn't been reached yet: D and E (through B) and F (through C):
+
+| distance from A | vertices |
+| --- | --- |
+| 0 | A |
+| 1 | B, C |
+| 2 | D, E, F |
+
+The **distance** here is the number of edges on the shortest path. BFS finishes a whole ring before it starts the next, so it reaches every vertex as early as possible.
+
+### A queue keeps the order
+To finish one ring before the next, BFS keeps the vertices it has found but not yet explored in a **queue**: first in, first out. It takes a vertex from the front, and adds that vertex's new neighbours to the back. A `deque` from the `collections` module does both ends in O(1):
+```python
+from collections import deque
+
+graph = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def bfs(graph, start):
+    seen = {start}
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                queue.append(w)
+    return order
+
+print(bfs(graph, "A"), bfs(graph, "F"))
+```
+```output
+['A', 'B', 'C', 'D', 'E', 'F'] ['F', 'C', 'E', 'A', 'B', 'D']
+```
+Everything in the queue at distance d was added before anything at distance d + 1, because the vertices at distance d + 1 are only found while the ones at distance d are being explored. So the queue always holds at most two rings, the nearer one in front.
+
+### Mark when you add
+`seen` records every vertex that has ever been put in the queue. A vertex is marked at the moment it's **added**, not when it's taken out. F is a neighbour of both C and E: when E is explored, F is already waiting in the queue, so E doesn't add it again.
+
+If marking waited until a vertex was taken out, a vertex could be added once for every neighbour that finds it before then. In a crowded graph the queue would fill with copies, and each copy would be explored again. Marking on adding guarantees that every vertex enters the queue **at most once**.
+
+`seen` is a set, so checking `w not in seen` is O(1). With a list it would be O(V) per check, which would make the whole search O(V × E).
+
+### Distances
+Replacing `seen` with a dictionary of distances records how far each vertex is, and still works as the "seen" check, since a vertex is in `dist` once it's found. A newly found vertex is one edge further than the vertex that found it:
+```python
+def distances(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+
+print(distances(graph, "A"))
+```
+```output
+{'A': 0, 'B': 1, 'C': 1, 'D': 2, 'E': 2, 'F': 2}
+```
+Vertices that can't be reached from the start never get a distance, so they're missing from the dictionary. Animation 1 runs this search.
+
+### Rebuilding the shortest path
+To get the path itself, record each vertex's **parent**: the vertex it was found from. Following parents from the goal back to the start walks a shortest path backwards:
+```python
+def shortest_path(graph, start, goal):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if v == goal:
+            break
+        for w in graph[v]:
+            if w not in parent:
+                parent[w] = v
+                queue.append(w)
+    if goal not in parent:
+        return None
+    path = []
+    v = goal
+    while v is not None:
+        path.append(v)
+        v = parent[v]
+    path.reverse()
+    return path
+
+print(shortest_path(graph, "D", "F"), shortest_path(graph, "A", "A"))
+```
+```output
+['D', 'B', 'E', 'F'] ['A']
+```
+The search can stop as soon as the goal is taken from the queue: its parent link is already set. The start's parent is `None`, which ends the walk back. Animation 2 follows the parents.
+
+### Why the first path is shortest
+Suppose BFS first reaches a vertex w from v, at distance d + 1. Could a shorter path to w exist? Its last step would come from some vertex u at distance d or less. But every vertex at distance d or less was taken from the queue, and explored, before v, because the queue is in order of distance. So u would have found w first. The first discovery is always by a shortest path.
+
+That argument relies on every edge counting the same: one step. If edges have different lengths, like roads in kilometres, a path with more edges can be shorter, and BFS can give the wrong answer. Weighted graphs need **Dijkstra's algorithm**, later in this unit.
+
+### O(V + E)
+Every vertex enters the queue at most once and leaves it once: O(V). When a vertex leaves, its neighbour list is scanned once, so over the whole search every edge is looked at once from each end: O(E). In all, **O(V + E)**, the size of the graph. The extra space is O(V), for the queue and the distances.
+
+The queue must take items from the front in O(1). `deque.popleft()` does. A plain list's `pop(0)` shifts every other item along, which costs O(V) per removal:
+
+| queue | taking one item from the front | whole search |
+| --- | --- | --- |
+| `deque.popleft()` | O(1) | O(V + E) |
+| `list.pop(0)` | O(V) | O(V² + E) |
+
+### Where BFS is used
+Whenever "fewest steps" is the question and every step costs the same, BFS is the tool: the fewest flights between two airports, the fewest moves to solve a puzzle, degrees of separation in a social network, the fewest clicks between two web pages. Running it from every vertex that hasn't been reached yet finds the graph's **connected components**, the pieces it falls into. And the rings themselves are useful: everyone within two steps of a person, or a tree level by level.
+
+Grids, like mazes and maps, are graphs too: each cell is a vertex, joined to the cells next to it. The next lesson runs BFS on grids.
+
+=== keypoints
+- BFS explores in rings of distance: the start, then everything 1 edge away, then 2, using a queue (first in, first out).
+- `queue = deque([start])`; while the queue isn't empty, `v = queue.popleft()`, and add each unseen neighbour to the back.
+- Mark a vertex as seen when it's added to the queue, so it's added at most once. Use a set or dictionary for O(1) checks.
+- `dist[w] = dist[v] + 1` records distances; `parent[w] = v` records how to walk a shortest path back from the goal.
+- In unweighted graphs, the first time BFS reaches a vertex is by a shortest path. With weighted edges, use Dijkstra's algorithm instead.
+- O(V + E) time with a deque, O(V) extra space. `list.pop(0)` would make it O(V²).
+
+=== example: Two handshakes away
+intro: In a small social network, the search finds everyone within two steps of Ana: her friends, and her friends' friends. Exploration stops at distance 2, so people further out are never reached.
+```python
+from collections import deque
+
+friends = {
+    "Ana": ["Ben", "Cy"],
+    "Ben": ["Ana", "Dee"],
+    "Cy": ["Ana", "Dee", "Eli"],
+    "Dee": ["Ben", "Cy", "Fay"],
+    "Eli": ["Cy"],
+    "Fay": ["Dee", "Gus"],
+    "Gus": ["Fay"],
+}
+
+dist = {"Ana": 0}
+queue = deque(["Ana"])
+while queue:
+    v = queue.popleft()
+    if dist[v] == 2:
+        continue
+    for w in friends[v]:
+        if w not in dist:
+            dist[w] = dist[v] + 1
+            queue.append(w)
+
+for name in dist:
+    print(name, dist[name])
+```
+1: `deque` makes the queue.
+3-11: Who knows whom. Every friendship is listed from both ends.
+13-14: Ana is at distance 0, and she's the first in the queue.
+15-18: People at distance 2 are kept but not explored, so nobody at distance 3 is ever added.
+19-22: A new person is one step further than whoever found them.
+24-25: Ben and Cy are friends; Dee and Eli are friends of friends. Fay and Gus are 3 and 4 steps away, so they're left out.
+
+=== example: Fewest flights
+intro: Each airport lists the airports it has direct flights to. The search finds a route with the fewest flights from one airport to another, using parent links.
+```python
+from collections import deque
+
+flights = {
+    "LIS": ["MAD", "PAR"],
+    "MAD": ["LIS", "ROM"],
+    "PAR": ["LIS", "BER", "ROM"],
+    "ROM": ["MAD", "PAR", "ATH"],
+    "BER": ["PAR", "WAW"],
+    "ATH": ["ROM"],
+    "WAW": ["BER"],
+}
+
+def route(start, goal):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if v == goal:
+            break
+        for w in flights[v]:
+            if w not in parent:
+                parent[w] = v
+                queue.append(w)
+    if goal not in parent:
+        return None
+    path = []
+    while goal is not None:
+        path.append(goal)
+        goal = parent[goal]
+    return path[::-1]
+
+print(route("LIS", "ATH"))
+print(route("WAW", "MAD"))
+```
+3-11: Direct flights, listed from both ends.
+13-15: The start has no parent; the search begins there.
+16-19: Stop as soon as the goal leaves the queue.
+20-23: Each newly found airport remembers where it was reached from.
+24-25: If the goal was never found, there's no route at all.
+26-30: Walk back along the parents, then reverse: `path[::-1]` is the list backwards.
+32-33: Lisbon to Athens takes 3 flights, through Madrid and Rome. Warsaw to Madrid takes 4, through Berlin, Paris and Lisbon.
+
+=== animation: Rings of distance
+view: graph g pos=D:100,30;B:100,100;E:240,100;A:100,170;C:100,240;F:240,240 visited=dist frontier=queue current=v dist=dist
+queue queue
+vars v w
+intro: Green vertices have a distance; dashed ones are waiting in the queue; yellow is the vertex being explored. The distance under each vertex is set the moment it's found, one more than the vertex that found it.
+```python
+from collections import deque
+
+g = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+
+def distances(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+
+distances(g, "A")
+```
+1: deque makes a queue that's O(1) at both ends.
+3: Who knows whom: each vertex and its neighbours.
+5: Defines distances. Nothing runs yet.
+6: The start is at distance 0.
+7: The queue starts with the start alone.
+8: {'Vertices are waiting: keep going.' if queue else 'The queue is empty: every reachable vertex has a distance.'}
+9: Take the vertex at the front: {queue[0]}.
+10: Look at the next neighbour of {v}. When there are none left, go back to the queue.
+11: {'Has ' + str(w) + ' been found already? ' + str(w in dist) + '.'}
+12: {w} is new: one edge further than {v}, at distance {dist[v] + 1}.
+13: {w} joins the back of the queue.
+14: Done: {dist}.
+16: Find the distance from A to every vertex.
+
+=== animation: Following the parents back
+view: graph g pos=D:100,30;B:100,100;E:240,100;A:100,170;C:100,240;F:240,240 visited=path current=v
+vars v path
+intro: After a search from D, `parent` holds the vertex each one was found from. Starting at the goal F and following the parents leads back to D along a shortest path, which then only needs reversing.
+```python
+g = {"A": ["B", "C"], "B": ["D", "A", "E"], "C": ["A", "F"], "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+parent = {"D": None, "B": "D", "A": "B", "E": "B", "C": "A", "F": "E"}
+
+path = []
+v = "F"
+while v is not None:
+    path.append(v)
+    v = parent[v]
+path.reverse()
+print(path)
+```
+1: The same graph.
+2: The parents found by a search from D. D has none: it's the start.
+4: The path is built backwards, starting empty.
+5: Start at the goal, F.
+6: {'Keep going: ' + str(v) + ' is a real vertex.' if v is not None else 'v is None: the walk has passed the start.'}
+7: Add {v} to the path.
+8: Step back to {v}'s parent, {parent[v]}.
+9: The path runs from the goal to the start; reverse it.
+10: A shortest path from D to F: {path}.
+
+=== task: predict easy
+title: Ring by ring
+code:
+```python
+from collections import deque
+
+graph = {"A": ["D", "B"], "B": ["A", "C", "E"], "C": ["B", "F"],
+         "D": ["A", "E"], "E": ["D", "B", "F"], "F": ["C", "E"]}
+
+def bfs(graph, start):
+    seen = {start}
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                queue.append(w)
+    return order
+
+print(bfs(graph, "A"))
+```
+wrong[['A', 'B', 'C', 'D', 'E', 'F']]: The order isn't alphabetical. A's neighbours join the queue in the order A lists them, D and then B, so D is explored first.
+wrong[['A', 'D', 'E', 'B', 'C', 'F']]: That goes deep, from D straight on to E. BFS finishes the first ring, D and B, before it explores anything at distance 2.
+wrong[['A', 'D', 'B', 'C', 'E', 'F']]: E joins the queue when D is explored, which is before B adds C. So E leaves the queue before C.
+hint: A's neighbours join the queue in the order they're listed: D, then B.
+hint: Exploring D adds E. Exploring B then adds C, behind E.
+right: `['A', 'D', 'B', 'E', 'C', 'F']`. The first ring is D and B, in the order A lists them. Next come E (found by D) and C (found by B), in the order they joined the queue, and then F.
+wrong: Follow the queue. A adds D and B. D adds E. B adds C, since E is already seen. E adds F. C finds nothing new. So the order is A, D, B, E, C, F.
+
+=== task: mcq easy
+title: Front of the queue
+prompt: In BFS, `queue` is a `deque`, and new vertices join it with `queue.append(w)`. Which call takes out the vertex that has waited longest?
+* `queue.popleft()` :: Right. `append` adds at the right end, so the vertex that has waited longest is at the left end.
+- `queue.pop()` :: That takes from the right end: the vertex added most recently. Used that way, the deque is a stack, and the search goes deep instead of in rings.
+- `queue[0]` :: That reads the front vertex but leaves it in the queue, so the loop would explore the same vertex again and again.
+- `queue.pop(0)` :: A deque's `pop` takes no position, so this raises a TypeError. `pop(0)` is a list method, and a slow one.
+hint: `append` adds at the right end.
+hint: The vertex that has waited longest is at the opposite end from where new ones join.
+right: `queue.popleft()` removes and returns the leftmost item in O(1). Adding at the right and taking from the left makes the deque first in, first out.
+wrong: New vertices join at the right with `append`, so the oldest one is at the left: `popleft()` takes it out.
+
+=== task: cells easy
+title: Round the ring
+prompt: Every edge counts as one step. Fill in each vertex's distance from S: the fewest edges on any path from S to it.
+
+```text
+A ─── B ─── C ─── D
+│                 │
+S                 E
+│                 │
+F ─── G ─── H ─── I
+```
+labels: C | D | E | H | I
+answer: 3 | 4 | 5 | 3 | 4
+wrong[3 | 4 | 5 | 7 | 6]: That goes round one way only. H and I are closer the other way: S, F, G, H is 3 edges, and one more reaches I.
+wrong[4 | 5 | 6 | 4 | 5]: That counts the vertices on each path, including S. A distance counts edges, so A and F are at distance 1.
+wrong[3 | 4 | 5 | 3 | 6]: I is 4 edges away along the bottom: S, F, G, H, I. Going over the top takes 6.
+hint: Count edges, not vertices: A and F are 1 step from S.
+hint: Every vertex can be reached by going round either way. Take the shorter way.
+right: 3, 4, 5, 3 and 4. The ring has 10 vertices, so E, opposite S, is 5 steps away whichever way you go, and every other vertex is closer one way round.
+wrong: Go round both ways from S and keep the smaller count. C is 3 along the top and H is 3 along the bottom. D and I are 4 (6 the other way), and E is 5 both ways.
+
+=== task: code easy
+title: Visiting order
+prompt: Write `bfs_order(graph, start)` that returns a list of the vertices in the order BFS takes them out of the queue. `graph` is a dictionary of neighbour lists, and neighbours join the queue in the order they're listed. Use a `deque` for the queue and a set for the vertices already seen. For example, with `{"A": ["B", "C"], "B": ["A"], "C": ["A"]}` and start `"A"`, the order is `['A', 'B', 'C']`.
+starter:
+```python
+from collections import deque
+
+def bfs_order(graph, start):
+    # your code here
+    pass
+```
+solution:
+```python
+from collections import deque
+
+def bfs_order(graph, start):
+    seen = {start}
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                queue.append(w)
+    return order
+```
+tests:
+- bfs_order({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "A")
+- bfs_order({"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}, "D")
+- bfs_order({0: [3, 1], 1: [0, 2], 2: [1], 3: [0, 4], 4: [3]}, 0)
+- bfs_order({1: [2], 2: [1, 3], 3: [2], 4: []}, 1)
+- bfs_order({"x": []}, "x")
+fail[1]: A square: A, then its neighbours B and C, then D, which both of them know. D must appear only once: ['A', 'B', 'C', 'D'].
+fail[2]: From D the rings are B and C, then A: ['D', 'B', 'C', 'A'].
+fail[3]: 0 lists 3 before 1, so 3 joins the queue first. Then 4 (found by 3) leaves the queue before 2 (found by 1): [0, 3, 1, 4, 2].
+fail[4]: 4 can't be reached from 1, so it isn't in the order: [1, 2, 3].
+fail[5]: A vertex with no neighbours: ['x'].
+error[AttributeError]: A list has no `popleft`. Make the queue with `deque([start])`, from the `collections` module.
+speed: setup=graph = {i: [0] for i in range(1, n)}; graph[0] = list(range(1, n)) | call=bfs_order(graph, 0) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def bfs_order(graph, start):
+    seen = [start]
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                seen.append(w)
+                queue.append(w)
+    return order
+```
+hint: Start with `seen = {start}`, `queue = deque([start])` and an empty `order` list.
+hint: While the queue isn't empty: `v = queue.popleft()`, append v to `order`, then add each neighbour that isn't in `seen` to both `seen` and the queue.
+hint: Mark a neighbour as seen as soon as it's added, so it can't be added twice. The speed check uses a star with n vertices, where a list of seen vertices would make each check slow.
+right: The deque hands out vertices in the order they were found, which is ring by ring, and the set makes each "seen?" check O(1), so the whole search is O(V + E).
+wrong: Keep a set of seen vertices and a deque. Take each vertex from the left, record it, and add each unseen neighbour at the right, marking it as you add it.
+
+=== task: fill easy
+title: Recording distances
+prompt: Fill in the blanks so that `distances` records how many edges each vertex is from the start, and the program prints:
+
+```output
+{'P': 0, 'Q': 1, 'R': 1, 'S': 2, 'T': 2}
+```
+code:
+```python
+from collections import deque
+
+graph = {"P": ["Q", "R"], "Q": ["P", "S"], "R": ["P", "S", "T"],
+         "S": ["Q", "R"], "T": ["R"]}
+
+def distances(graph, start):
+    dist = ??
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = ??
+                queue.append(w)
+    return dist
+
+print(distances(graph, "P"))
+```
+answer: {start: 0} | dist[v] + 1
+wrong[{} | dist[v] + 1]: The start needs its distance before the search begins. With an empty dictionary, `dist[v]` for P raises a KeyError.
+wrong[{start: 1} | dist[v] + 1]: Every distance comes out one too big: the start is 0 steps from itself.
+wrong[{start: 0} | dist[w] + 1]: w is new, so it has no distance yet, and `dist[w]` raises a KeyError. Its distance comes from v, the vertex that found it.
+wrong[{start: 0} | 1]: S and T would get 1, but they're found from Q and R, which are already 1 step away, so they're at 2.
+hint: Before the loop, only the start has a distance.
+hint: A new vertex is one edge further from the start than the vertex that found it.
+right: `{start: 0}` puts the start at distance 0, and `dist[v] + 1` puts each new vertex one step further than the vertex that found it. Because every vertex at distance 1 is explored before any at distance 2, that first distance is the shortest.
+wrong: Start with `dist = {start: 0}`. When v finds a new neighbour w, set `dist[w] = dist[v] + 1`.
+
+=== task: multi easy
+title: True of BFS
+prompt: Choose **every** true statement about breadth-first search.
+* It reaches every vertex that has a path from the start :: Right. Each vertex it reaches adds its unseen neighbours, so the search spreads along every path until the queue is empty.
+* Every vertex at distance 1 leaves the queue before any vertex at distance 2 :: Right. Vertices at distance 2 are only found while those at distance 1 are being explored, so they join the queue behind them.
+* Starting from a different vertex can give a different visiting order :: Right. The start comes first, and the rings are counted from it.
+- It always takes vertices from the queue in alphabetical order :: The order comes from the queue: the order the vertices were found in, which follows the neighbour lists.
+- It only works if the graph is a tree, with no cycles :: It works on any graph. `seen` stops it going round a cycle forever.
+- A vertex's distance is the number of vertices explored before it :: A distance counts the edges on a shortest path. In the lesson's graph, searching from A, C is explored third but is at distance 1.
+hint: Do vertices at distance 2 join the queue before or after the ones at distance 1?
+hint: What stops BFS going round a cycle forever?
+right: BFS spreads ring by ring from wherever it starts, and it reaches everything connected to the start. Its order follows the queue, not the alphabet.
+wrong: The queue makes BFS finish one ring before the next, and it reaches every vertex with a path from the start. Distances count edges, and `seen` lets it handle cycles.
+
+=== task: parsons easy
+title: Is there a path?
+prompt: Arrange the lines so that `has_path` returns True as soon as it takes `b` out of the queue, and False if the queue runs out first. The program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def has_path(graph, a, b):
+    seen = {a}
+    queue = deque([a])
+    while queue:
+        v = queue.popleft()
+        if v == b:
+            return True
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                queue.append(w)
+    return False
+```
+distractors:
+```python
+            if w in seen:
+        if v != b:
+```
+after:
+```python
+roads = {"Ash": ["Elm"], "Elm": ["Ash", "Oak"], "Oak": ["Elm"], "Yew": []}
+print(has_path(roads, "Ash", "Oak"), has_path(roads, "Oak", "Yew"))
+```
+hint: Check each vertex as it leaves the queue.
+hint: `return False` goes after the loop: only an empty queue means there's no path.
+right: Each vertex is checked as it leaves the queue, so the search stops as soon as b turns up. Reaching the end of the loop means every vertex connected to a has been explored, so there's no path.
+wrong: Put a in `seen` and in the queue. In the loop, take v from the front and return True if it's b; otherwise add its unseen neighbours. After the loop, return False.
+
+=== task: order easy
+title: The queue, step by step
+prompt: BFS runs from 1 on this graph, taking each vertex from the front of the queue and adding the new neighbours it finds at the back:
+
+```python
+graph = {1: [4, 2], 2: [1, 5], 3: [4],
+         4: [1, 3, 5], 5: [2, 4, 6], 6: [5]}
+```
+
+The queue starts as `[1]` and ends empty. Put the queue's contents in order, each one as it is right after a vertex has been explored.
+items:
+- `[4, 2]`
+- `[2, 3, 5]`
+- `[3, 5]`
+- `[5]`
+- `[6]`
+hint: Exploring a vertex takes it from the front; the new vertices it finds join at the back.
+hint: Exploring 1 gives `[4, 2]`. Which vertex is explored next, and what does it find?
+right: `[4, 2]`, `[2, 3, 5]`, `[3, 5]`, `[5]` and `[6]`. Each step takes one vertex from the front and adds the new neighbours it finds at the back.
+wrong: 1 adds 4 and 2. 4 leaves and adds 3 and 5 behind 2. 2 leaves, finding nothing new. 3 leaves, finding nothing new. 5 leaves and adds 6. Finally 6 leaves.
+
+=== task: predict easy
+title: Out of reach
+code:
+```python
+from collections import deque
+
+graph = {"A": ["B"], "B": ["A", "C"], "C": ["B"], "X": ["Y"], "Y": ["X"]}
+
+def distances(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+
+d = distances(graph, "A")
+print(d)
+print(len(d), "X" in d)
+```
+wrong[{'A': 0, 'B': 1, 'C': 2, 'X': -1, 'Y': -1}\n5 True]: No vertex gets a made-up distance. X and Y are never found, so they never enter the dictionary.
+wrong[{'A': 0, 'B': 1, 'C': 2}\n5 False]: `len` counts the dictionary's keys: only the 3 vertices that were found.
+wrong[{'A': 0, 'B': 1, 'C': 2}\n3 True]: X is in the graph, but not in `d`: `"X" in d` looks at d's keys.
+hint: Is there any edge between A, B, C and X, Y?
+hint: A vertex gets a distance only when it's found.
+right: `{'A': 0, 'B': 1, 'C': 2}`, then `3 False`. X and Y have no path from A, so they're never found and never get a distance.
+wrong: The search from A finds B and then C. X and Y are a separate piece of the graph, so they're missing from the dictionary: it has 3 keys, and X isn't one of them.
+
+=== task: mcq easy
+title: No seen set
+prompt: This `distances` function has no `seen` set. What stops it adding a vertex to the queue twice?
+code:
+```python
+def distances(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+```
+* A vertex is in `dist` from the moment it's found, so `w not in dist` is False the second time :: Right. `dist` does the job of `seen`: a vertex gets a key at the same moment it joins the queue.
+- `popleft` skips vertices that were already explored :: `popleft` takes whatever is at the front; it never checks anything.
+- A deque can't hold the same value twice :: A deque can hold repeats, like a list.
+- Nothing does: vertices can be added twice, but the distances come out right anyway :: Each vertex is added at most once here, because of the `w not in dist` check.
+hint: When does a vertex get a key in `dist`?
+hint: What does `w not in dist` check?
+right: Setting `dist[w]` and adding w to the queue happen together, so the dictionary's keys are exactly the vertices that have ever been queued. That makes it the record of what's been seen, too.
+wrong: The check `w not in dist` is the seen check: once a vertex has a distance, it's never added again.
+
+=== task: code medium
+title: Degrees of separation
+prompt: Write `separation(pairs, a, b)`. `pairs` is a list of friendships, each a tuple of two names, and a friendship works both ways. Return the fewest friendships in a chain from a to b: 0 if a and b are the same person, and -1 if no chain links them. First build a dictionary of neighbour lists from the pairs; someone who isn't in any pair has no friends. For example, `separation([("Ana", "Ben"), ("Ben", "Cy")], "Ana", "Cy")` is 2.
+starter:
+```python
+from collections import deque
+
+def separation(pairs, a, b):
+    graph = {}
+    for x, y in pairs:
+        # add y to x's list and x to y's list
+        pass
+    # search from a
+    return -1
+```
+solution:
+```python
+from collections import deque
+
+def separation(pairs, a, b):
+    graph = {}
+    for x, y in pairs:
+        if x not in graph:
+            graph[x] = []
+        if y not in graph:
+            graph[y] = []
+        graph[x].append(y)
+        graph[y].append(x)
+    dist = {a: 0}
+    queue = deque([a])
+    while queue:
+        v = queue.popleft()
+        if v == b:
+            return dist[v]
+        for w in graph.get(v, []):
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return -1
+```
+tests:
+- separation([("Ana", "Ben"), ("Ben", "Cy"), ("Cy", "Dee")], "Ana", "Dee")
+- separation([("Ana", "Ben"), ("Ben", "Cy"), ("Cy", "Dee"), ("Ana", "Cy")], "Ana", "Dee")
+- separation([("Ana", "Ben"), ("Cy", "Dee")], "Ana", "Dee")
+- separation([("Ana", "Ben")], "Ben", "Ben")
+- separation([("Ana", "Ben")], "Zed", "Ana")
+- separation([("Ana", "Ben"), ("Cy", "Ben")], "Cy", "Ana")
+fail[1]: A chain: Ana, Ben, Cy, Dee. That's 3 friendships.
+fail[2]: Ana and Cy are friends, so Dee is only 2 away. The search must find the shortest chain.
+fail[3]: The two friendships don't connect, so there's no chain: -1.
+fail[4]: Ben is 0 friendships from himself.
+fail[5]: Zed isn't in any pair, so he has no friends: -1.
+fail[6]: Each friendship works both ways: ("Cy", "Ben") makes Ben Cy's friend, and Cy Ben's. Cy to Ana is 2.
+error[KeyError]: Someone who isn't in any pair has no list in the dictionary. Look up neighbours with `graph.get(v, [])`.
+hint: For each pair (x, y), add y to x's list and x to y's list, making an empty list the first time a name appears.
+hint: Then run BFS from a with a dictionary of distances. When b leaves the queue, return its distance.
+hint: If the queue runs out first, return -1.
+right: Each friendship is an edge, listed from both ends, and BFS reaches b first along a chain with the fewest friendships.
+wrong: Build the neighbour lists from both ends of every pair. Then run BFS from a, recording distances, and return b's distance when it leaves the queue, or -1 if it never does.
+
+=== task: code medium
+title: Pieces of a graph
+prompt: A graph can fall into separate pieces, its connected components. Write `piece_sizes(graph)` that returns the number of vertices in each piece, largest first. Run a BFS from each vertex that no earlier search has reached, and share one `seen` set between all the searches. For example, `piece_sizes({1: [2], 2: [1], 3: []})` is `[2, 1]`. The speed check uses a line of n vertices, which is one piece.
+starter:
+```python
+from collections import deque
+
+def piece_sizes(graph):
+    seen = set()
+    sizes = []
+    for s in graph:
+        # your code here
+        pass
+    return sorted(sizes, reverse=True)
+```
+solution:
+```python
+from collections import deque
+
+def piece_sizes(graph):
+    seen = set()
+    sizes = []
+    for s in graph:
+        if s in seen:
+            continue
+        seen.add(s)
+        queue = deque([s])
+        size = 0
+        while queue:
+            v = queue.popleft()
+            size += 1
+            for w in graph[v]:
+                if w not in seen:
+                    seen.add(w)
+                    queue.append(w)
+        sizes.append(size)
+    return sorted(sizes, reverse=True)
+```
+tests:
+- piece_sizes({1: [2], 2: [1], 3: []})
+- piece_sizes({"a": ["b"], "b": ["a", "c"], "c": ["b"], "d": ["e"], "e": ["d"], "f": []})
+- piece_sizes({0: [1, 2], 1: [0, 2], 2: [0, 1]})
+- piece_sizes({})
+- piece_sizes({1: [], 2: [], 3: []})
+- piece_sizes({1: [4], 2: [3], 3: [2], 4: [1, 5], 5: [4]})
+fail[1]: 1 and 2 are one piece, and 3 is alone: [2, 1].
+fail[2]: a, b and c; d and e; and f alone: [3, 2, 1].
+fail[3]: A triangle is one piece of 3. Each vertex must be counted once, though there are two routes to it.
+fail[4]: No vertices, no pieces: [].
+fail[5]: Three vertices with no edges are three pieces of 1 each.
+fail[6]: The pieces don't follow the order of the keys: 1, 4 and 5 are one piece, and 2 and 3 are another.
+speed: setup=graph = {i: [j for j in (i - 1, i + 1) if 0 <= j < n] for i in range(n)} | call=piece_sizes(graph) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def piece_sizes(graph):
+    pieces = []
+    for s in graph:
+        seen = {s}
+        queue = deque([s])
+        while queue:
+            v = queue.popleft()
+            for w in graph[v]:
+                if w not in seen:
+                    seen.add(w)
+                    queue.append(w)
+        if seen not in pieces:
+            pieces.append(seen)
+    return sorted([len(p) for p in pieces], reverse=True)
+```
+hint: Skip a start vertex that's already in `seen`: an earlier search has covered its piece.
+hint: Otherwise run BFS from it, count the vertices as they leave the queue, and append the count to `sizes`.
+hint: Searching again from every vertex finds the same pieces over and over. With one shared `seen` set, each vertex is explored once in all.
+right: Each BFS marks its whole piece, so later starts in that piece are skipped. Every vertex and edge is handled once across all the searches: O(V + E).
+wrong: Loop over the vertices. One that isn't seen yet starts a new piece: run BFS from it with the shared set, count the vertices it reaches, and record the count.
+
+=== task: predict medium
+title: Marked too late
+prompt: This version marks a vertex as seen when it's taken out of the queue, not when it's added. What does it print?
+code:
+```python
+from collections import deque
+
+graph = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"]}
+
+def visit(graph, start):
+    seen = set()
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        seen.add(v)
+        order.append(v)
+        for w in graph[v]:
+            if w not in seen:
+                queue.append(w)
+    return order
+
+print(visit(graph, "A"))
+```
+wrong[['A', 'B', 'C', 'D']]: That's what marking on adding gives. Here D isn't marked until it leaves the queue, so C adds it a second time while the first copy is still waiting.
+wrong[['A', 'B', 'C', 'D', 'D', 'D']]: Only B and C add D, so it's in the queue twice. When each copy of D is explored, B and C are both marked, so nothing more is added.
+wrong[['A', 'B', 'D', 'C', 'D']]: The queue is first in, first out: C joined before D did, so C is explored before either copy of D.
+hint: When C is explored, has D been marked yet?
+hint: A vertex is added once for every neighbour that finds it before it's taken out.
+right: `['A', 'B', 'C', 'D', 'D']`. B and C both add D before D is taken out and marked, so D is in the queue twice and is explored twice.
+wrong: A adds B and C. B adds D. C adds D again, since D isn't marked until it leaves the queue. So D is taken out, and recorded, twice.
+
+=== task: cells medium
+title: Who found whom?
+prompt: This search records each vertex's parent: the vertex it was found from. After it runs, what is each vertex's parent?
+code:
+```python
+graph = {"S": ["B", "A"], "A": ["S", "C", "D"], "B": ["S", "D"],
+         "C": ["A", "E"], "D": ["A", "B", "E"], "E": ["C", "D"]}
+
+parent = {"S": None}
+queue = deque(["S"])
+while queue:
+    v = queue.popleft()
+    for w in graph[v]:
+        if w not in parent:
+            parent[w] = v
+            queue.append(w)
+```
+labels: A | B | C | D | E
+answer: S | S | A | B | D
+wrong[S | S | A | A | C]: S lists B before A, so B is explored first and finds D before A can. And D joins the queue before C, so D finds E first.
+wrong[S | S | A | A | D]: S lists B before A, so B is explored before A, and B finds D first.
+wrong[S | S | A | B | C]: D joins the queue (from B) before C does (from A), so D is explored first and finds E.
+hint: A parent is the vertex that found it first. S lists B before A, so B is explored first.
+hint: Write down the queue as it changes: [B, A], then [A, D], then [D, C].
+right: S, S, A, B and D. Every parent is one step nearer to S; which neighbour gets there first depends on the order of the queue.
+wrong: S finds B and A. B is explored first and finds D. A finds C (D is already taken). D leaves the queue before C, so D finds E.
+
+=== task: fill medium
+title: Within k steps
+prompt: Fill in the blanks so that `within` returns everyone at most k steps from the start, not counting the start, in sorted order, and the program prints:
+
+```output
+['Bo', 'Cal'] ['Bo', 'Cal', 'Dot', 'Eve']
+```
+code:
+```python
+from collections import deque
+
+graph = {"Ann": ["Bo", "Cal"], "Bo": ["Ann", "Dot"], "Cal": ["Ann", "Dot", "Eve"],
+         "Dot": ["Bo", "Cal", "Fin"], "Eve": ["Cal"], "Fin": ["Dot"]}
+
+def within(graph, start, k):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if dist[v] == ??:
+            continue
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return sorted([w for w in dist if ??])
+
+print(within(graph, "Ann", 1), within(graph, "Ann", 2))
+```
+answer: k | w != start
+wrong[k + 1 | w != start]: Vertices at distance k would still be explored, so people k + 1 steps away get in: Dot and Eve for k = 1.
+wrong[k - 1 | w != start]: For k = 1, Ann herself is at distance 0 = k − 1 and isn't explored, so nobody else is found.
+wrong[k | dist[w] == k]: That keeps only the people exactly k steps away: Dot and Eve, but not Bo and Cal, for k = 2.
+wrong[k | w == start]: That keeps only the start. Everyone else in `dist` should be kept instead.
+hint: A vertex at distance k is kept, but its neighbours would be k + 1 away: don't explore it.
+hint: Everyone in `dist` is within k steps. Leave out the start itself.
+right: Skipping vertices at distance k stops the search spreading further, so `dist` holds exactly the people within k steps, and the filter drops the start.
+wrong: Don't explore a vertex once `dist[v] == k`, and return everyone in `dist` except the start: `w != start`.
+
+=== task: mcq medium
+title: A list as the queue
+prompt: A BFS uses a plain list as its queue, taking items from the front with `queue.pop(0)`. Everything else is the same. On a graph with V vertices and E edges, what's its running time in the worst case?
+* O(V² + E) :: Right. Each `pop(0)` shifts the rest of the list along, up to V items, and there are V pops: O(V²), plus O(E) for the neighbour lists.
+- O(V + E) :: That's the deque version. `pop(0)` isn't O(1): every item behind the first one moves along a place.
+- O(V × E) :: `pop(0)` happens once per vertex, not once per edge, and each one costs at most V.
+- O(E²) :: The neighbour lists are still scanned once each. Only the pops cost more.
+hint: How many items does `pop(0)` move?
+hint: How many times is `pop(0)` called in all?
+right: V pops, each moving up to V items, add up to O(V²). The edges are still checked once from each end: O(E).
+wrong: Every vertex is popped once, and each `pop(0)` shifts up to V items: O(V²). Add O(E) for scanning the neighbour lists.
+
+=== task: predict medium
+title: Ignoring the lengths
+prompt: Each road has a length in km, but the search only looks at `graph`. What does this print?
+code:
+```python
+from collections import deque
+
+graph = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "E"],
+         "D": ["B", "E"], "E": ["C", "D"]}
+km = {"AB": 10, "BD": 1, "AC": 1, "CE": 1, "ED": 1}
+
+def shortest_path(graph, start, goal):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if v == goal:
+            break
+        for w in graph[v]:
+            if w not in parent:
+                parent[w] = v
+                queue.append(w)
+    path = []
+    v = goal
+    while v is not None:
+        path.append(v)
+        v = parent[v]
+    path.reverse()
+    return path
+
+path = shortest_path(graph, "A", "D")
+total = sum(km[path[i] + path[i + 1]] for i in range(len(path) - 1))
+print(path, total)
+```
+wrong[['A', 'C', 'E', 'D'] 3]: That's the shortest route in km, but BFS counts roads, not km. A, B, D uses 2 roads, so BFS finds it first.
+wrong[['A', 'B', 'D'] 2]: `total` adds up the lengths of the roads on the path: `km["AB"] + km["BD"]` = 10 + 1.
+wrong[['A', 'C', 'E', 'D'] 11]: BFS reaches D from B first: B and C are both 1 road from A, and B finds D while C only finds E.
+hint: BFS counts edges. Which route to D uses the fewest roads?
+hint: `total` adds the km of each road along the path that was found.
+right: `['A', 'B', 'D'] 11`. Two roads beats three for BFS, though the three short roads add up to only 3 km. Shortest routes by length need Dijkstra's algorithm.
+wrong: BFS finds the route with the fewest roads: A, B, D. Its length is 10 + 1 = 11 km, though A, C, E, D is only 3 km. BFS never looks at the lengths.
+
+=== task: multi medium
+title: A job for BFS?
+prompt: Choose **every** question that BFS answers directly, the way this lesson uses it.
+* The fewest moves to solve a sliding-tile puzzle, where every move counts the same :: Right. Each position is a vertex and each move an edge, so BFS from the starting position finds the fewest moves.
+* Everyone within three introductions of a person in a social network :: Right. Those are the first three rings around the person.
+* Whether two computers in a network can reach each other at all :: Right. Run BFS from one and see whether the other is reached.
+- The cheapest train journey, when tickets cost different amounts :: Edges with different costs need Dijkstra's algorithm. BFS counts edges, not money.
+- The longest route between two towns that never visits a town twice :: BFS finds shortest paths. Longest routes are a much harder problem.
+- An order to get dressed in, when some clothes must go on before others :: That's an ordering with dependencies, a topological sort, later in this unit.
+hint: Do all the steps cost the same?
+hint: BFS finds the fewest steps, and what can be reached; it doesn't find longest routes or orders.
+right: BFS answers "how few steps?" and "can it be reached?" when every step costs the same. Different costs need Dijkstra's algorithm, and orders with dependencies need a topological sort.
+wrong: Look for questions about the fewest equal steps, or about what can be reached. Different costs, longest routes and orders with dependencies all need other algorithms.
+
+=== task: parsons medium
+title: Level by level
+prompt: Arrange the lines so that `levels` returns the vertices ring by ring, one list for each distance, and the program prints:
+
+```output
+[['A'], ['B', 'C'], ['D', 'E', 'F']]
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def levels(graph, start):
+    seen = {start}
+    queue = deque([start])
+    rings = []
+    while queue:
+        ring = []
+        for _ in range(len(queue)):
+            v = queue.popleft()
+            ring.append(v)
+            for w in graph[v]:
+                if w not in seen:
+                    seen.add(w)
+                    queue.append(w)
+        rings.append(ring)
+    return rings
+```
+distractors:
+```python
+        for _ in range(len(seen)):
+            ring.append(w)
+```
+after:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "D", "E"], "C": ["A", "F"],
+         "D": ["B"], "E": ["B", "F"], "F": ["C", "E"]}
+print(levels(graph, "A"))
+```
+hint: At the start of each round of the `while` loop, the queue holds exactly one whole ring.
+hint: `range(len(queue))` is worked out once, before the inner loop adds the next ring at the back.
+right: Each round takes exactly as many vertices as the queue held when the round began, which is one whole ring, while the next ring builds up behind it.
+wrong: In each round, start an empty ring, then take `len(queue)` vertices from the front, recording each one and adding its new neighbours. Append the ring when the round ends.
+
+=== task: order medium
+title: Why the first path is shortest
+prompt: Put these steps of the argument in order, from how the search starts to the conclusion that BFS first reaches every vertex by a shortest path.
+items:
+- The queue starts with only the start in it, at distance 0.
+- Exploring the vertices at distance d adds only new vertices at distance d + 1, at the back.
+- So the queue is always in order of distance, nearer vertices in front.
+- So every vertex at distance d is explored before any vertex at distance d + 1.
+- So each vertex is first found from a neighbour as near the start as possible: by a shortest path.
+hint: Begin with how the queue starts.
+hint: The order of the queue comes before what it means for exploring.
+right: Each step follows from the one before: the queue starts in order, exploring keeps it in order, so the rings are explored in order, so each vertex is found from the nearest possible neighbour.
+wrong: The queue begins with the start alone. Exploring one ring adds the next ring behind it, which keeps the queue in order of distance. So nearer vertices are always explored first, and each vertex is first reached along a shortest path.
+
+=== task: code hard
+title: Word ladder
+prompt: A word ladder turns one word into another by changing one letter at a time, and every word along the way must be in a list. Write `ladder(start, goal, words)` that returns a shortest ladder as a list of words from `start` to `goal`, or None if there isn't one. The start doesn't have to be in `words`. The graph is never written out: the neighbours of a word are the words in the list that `one_apart` accepts, checked in list order. Use BFS with parent links. For example, `ladder("cat", "dog", ["bat", "bag", "bog", "cot", "cog", "dog"])` is `['cat', 'cot', 'cog', 'dog']`.
+starter:
+```python
+from collections import deque
+
+def one_apart(a, b):
+    if len(a) != len(b):
+        return False
+    diff = 0
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            diff += 1
+    return diff == 1
+
+def ladder(start, goal, words):
+    # your code here
+    return None
+```
+solution:
+```python
+from collections import deque
+
+def one_apart(a, b):
+    if len(a) != len(b):
+        return False
+    diff = 0
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            diff += 1
+    return diff == 1
+
+def ladder(start, goal, words):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if v == goal:
+            path = []
+            while v is not None:
+                path.append(v)
+                v = parent[v]
+            return path[::-1]
+        for w in words:
+            if w not in parent and one_apart(v, w):
+                parent[w] = v
+                queue.append(w)
+    return None
+```
+tests:
+- ladder("cold", "warm", ["cord", "card", "ward", "warm", "core"])
+- ladder("cat", "dog", ["bat", "bag", "bog", "cot", "cog", "dog"])
+- ladder("hit", "cog", ["hot", "dot", "dog", "lot", "cog"])
+- ladder("ab", "cd", ["ad", "cb", "xy"])
+- ladder("same", "same", [])
+- ladder("a", "c", ["b", "c", "ab"])
+fail[1]: cold, cord, card, ward, warm: each step changes one letter.
+fail[2]: Through cot and cog takes 3 steps; through bat, bag and bog takes 4. BFS must return the shorter ladder: ['cat', 'cot', 'cog', 'dog'].
+fail[3]: hit, hot, dot, dog, cog. lot is a dead end.
+fail[4]: cd isn't in the list, so no ladder can end there: None.
+fail[5]: The start is already the goal: ['same'].
+fail[6]: "ab" is a different length, so it's never a neighbour. a and c differ in one letter: ['a', 'c'].
+hint: The words are the vertices, and `one_apart` decides the edges: the neighbours of v are the words w with `one_apart(v, w)`.
+hint: Record `parent[w] = v` when a word is first found, starting with `parent = {start: None}`.
+hint: When the goal leaves the queue, walk back along the parents and reverse the list. If the queue empties first, return None.
+right: The graph is never built: each word's neighbours are worked out when it's explored. BFS with parent links then gives a ladder with the fewest steps.
+wrong: Run BFS from the start, where the neighbours of a word are the words one letter apart. Keep parents, and when the goal is taken from the queue, follow them back and reverse.
+
+=== task: code hard
+title: Two teams
+prompt: Can the vertices be split into two teams so that every edge joins two vertices on different teams? Write `two_teams(graph)` that returns True if they can and False if not. Colour the vertices with BFS: a search's start gets colour 0, and each newly found neighbour gets the other colour from the vertex that found it, `1 - colour[v]`. If an edge ever joins two vertices of the same colour, return False. The graph can have several pieces, so start a search from every vertex that has no colour yet.
+starter:
+```python
+from collections import deque
+
+def two_teams(graph):
+    colour = {}
+    # your code here
+    return True
+```
+solution:
+```python
+from collections import deque
+
+def two_teams(graph):
+    colour = {}
+    for s in graph:
+        if s in colour:
+            continue
+        colour[s] = 0
+        queue = deque([s])
+        while queue:
+            v = queue.popleft()
+            for w in graph[v]:
+                if w not in colour:
+                    colour[w] = 1 - colour[v]
+                    queue.append(w)
+                elif colour[w] == colour[v]:
+                    return False
+    return True
+```
+tests:
+- two_teams({1: [2], 2: [1, 3], 3: [2]})
+- two_teams({1: [2, 3], 2: [1, 3], 3: [1, 2]})
+- two_teams({"a": ["b", "d"], "b": ["a", "c"], "c": ["b", "d"], "d": ["c", "a"]})
+- two_teams({1: [2], 2: [1], 3: [4, 5], 4: [3, 5], 5: [3, 4]})
+- two_teams({})
+- two_teams({0: [1, 4], 1: [0, 2], 2: [1, 3], 3: [2, 4], 4: [3, 0]})
+fail[1]: A line alternates: 1 and 3 on one team, 2 on the other. True.
+fail[2]: A triangle can't be split: two of its three vertices always end up on the same team. False.
+fail[3]: A square alternates all the way round: a and c against b and d. True.
+fail[4]: The first piece is fine, but 3, 4 and 5 form a triangle. Each piece needs its own search. False.
+fail[5]: No vertices, so nothing can clash: True.
+fail[6]: A cycle of 5 can't alternate all the way round. Any cycle with an odd number of edges makes it impossible. False.
+hint: Loop over every vertex; if it has no colour yet, give it 0 and run BFS from it.
+hint: A newly found neighbour gets `1 - colour[v]`.
+hint: A neighbour that already has a colour must have the other one. If `colour[w] == colour[v]`, return False.
+right: BFS colours each piece ring by ring, alternating. An edge with the same colour at both ends means a cycle with an odd number of edges, which can never be split.
+wrong: Give each new piece's start colour 0, give each newly found neighbour the opposite colour, and return False as soon as an edge joins two vertices of the same colour. If every piece is coloured without a clash, return True.
+
+=== task: code hard
+title: Nearest station
+prompt: Some vertices are fire stations. Write `nearest(graph, stations)` that returns a dictionary giving each reachable vertex's distance to its nearest station, which is 0 for a station. Put **all** the stations in the queue at distance 0 before the search starts. Then BFS spreads from all of them at once, and the first time it reaches a vertex, it's from the nearest station. Vertices that no station can reach are left out. The speed check uses a line of n vertices with a station at every second one.
+starter:
+```python
+from collections import deque
+
+def nearest(graph, stations):
+    # your code here
+    return {}
+```
+solution:
+```python
+from collections import deque
+
+def nearest(graph, stations):
+    dist = {}
+    queue = deque()
+    for s in stations:
+        dist[s] = 0
+        queue.append(s)
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+```
+tests:
+- nearest({1: [2], 2: [1, 3], 3: [2, 4], 4: [3, 5], 5: [4]}, [1, 5])
+- nearest({1: [2], 2: [1, 3], 3: [2, 4], 4: [3, 5], 5: [4]}, [2])
+- nearest({"a": ["b"], "b": ["a"], "c": []}, ["a"])
+- nearest({"a": ["b"], "b": ["a"]}, [])
+- nearest({1: [2, 3], 2: [1, 4], 3: [1, 4], 4: [2, 3]}, [1, 4])
+fail[1]: Stations at both ends of the line: 2 and 4 are 1 away, and 3 is 2 away from either.
+fail[2]: One station, at 2: 1 and 3 are 1 away, 4 is 2 and 5 is 3.
+fail[3]: c can't be reached from any station, so it's left out.
+fail[4]: With no stations, nothing is reachable: {}.
+fail[5]: 2 and 3 are each next to both stations: 1.
+hint: Start with every station in `dist` at 0, and in the queue.
+hint: Then run the usual loop: a newly found vertex is one further than the vertex that found it.
+hint: A separate BFS from each station gives the right answer too, but it repeats the work once per station.
+right: With every station in the queue at distance 0, the rings grow from all of them together, so whichever station is nearest reaches a vertex first. It's one search, O(V + E), however many stations there are.
+wrong: Put all the stations in `dist` at 0 and in the queue, then run ordinary BFS. The first time each vertex is found, it's from its nearest station.
+
+=== task: code hard
+title: Longest path in a tree
+prompt: In a tree (a connected graph with no cycles), the number of edges on the longest path between two vertices is the tree's **diameter**. Two searches find it. BFS from any vertex: the vertex it takes out of the queue last is an end of a longest path. Then BFS from that end: the vertex it takes out last is the other end, and its distance is the diameter. Write `farthest(tree, start)`, returning the last vertex BFS takes out of the queue and its distance as a tuple, and `diameter(tree)`. The tree has at least one vertex. The speed check uses a line of n vertices.
+starter:
+```python
+from collections import deque
+
+def farthest(tree, start):
+    # your code here
+    pass
+
+def diameter(tree):
+    # your code here
+    return 0
+```
+solution:
+```python
+from collections import deque
+
+def farthest(tree, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in tree[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return v, dist[v]
+
+def diameter(tree):
+    start = list(tree)[0]
+    end = farthest(tree, start)[0]
+    return farthest(tree, end)[1]
+```
+tests:
+- farthest({1: [2], 2: [1, 3], 3: [2]}, 1)
+- farthest({"c": ["a", "b", "d"], "a": ["c"], "b": ["c"], "d": ["c", "e"], "e": ["d"]}, "e")
+- diameter({1: [2], 2: [1, 3], 3: [2]})
+- diameter({1: [2], 2: [1, 3, 5], 3: [2, 4], 4: [3], 5: [2, 6], 6: [5, 7], 7: [6]})
+- diameter({1: []})
+- diameter({"c": ["a", "b", "d"], "a": ["c"], "b": ["c"], "d": ["c", "e"], "e": ["d"]})
+fail[1]: From 1, BFS takes out 1, 2 and 3. The last is 3, at distance 2: (3, 2).
+fail[2]: From e: e, d, c, then a and b. The last one out is b, at distance 3: ('b', 3).
+fail[3]: A line of 3 vertices has 2 edges.
+fail[4]: From 1, the farthest vertex is 7, at distance 4. But the longest path runs from 4 to 7, with 5 edges: the second search, from 7, finds it.
+fail[5]: One vertex and no edges: 0.
+fail[6]: The longest path is a, c, d, e (or b, c, d, e): 3 edges.
+speed: setup=tree = {i: [j for j in (i - 1, i + 1) if 0 <= j < n] for i in range(n)} | call=diameter(tree) | target=O(n)
+slow:
+```python
+from collections import deque
+
+def farthest(tree, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in tree[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return v, dist[v]
+
+def diameter(tree):
+    best = 0
+    for v in tree:
+        best = max(best, farthest(tree, v)[1])
+    return best
+```
+hint: `farthest` is BFS with distances. When the queue is empty, v still holds the last vertex taken out, which is as far from the start as any vertex.
+hint: In `diameter`, call `farthest` from any vertex, then call it again from the vertex the first call returns.
+hint: Searching from every vertex finds the diameter too, but that's V searches instead of two.
+right: BFS takes vertices out in order of distance, so the last one is a farthest one. In a tree, a farthest vertex from anywhere is an end of a longest path, so a second search from it measures that path. Two searches: O(V).
+wrong: Write `farthest` as BFS with distances, returning the last vertex taken out and its distance. Search once from any vertex, then again from the vertex that first search returns; the second distance is the diameter.
+
+=== task: predict hard
+title: One-way streets
+prompt: Each list names the streets leading out of that place, and every street is one-way. What does this print?
+code:
+```python
+from collections import deque
+
+streets = {"A": ["B"], "B": ["C"], "C": ["A", "D"], "D": [], "E": ["D", "A"]}
+
+def reach(graph, start):
+    seen = {start}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                queue.append(w)
+    return sorted(seen)
+
+print(reach(streets, "A"))
+print(reach(streets, "D"))
+print(reach(streets, "E"))
+```
+wrong[['A', 'B', 'C', 'D', 'E']\n['A', 'B', 'C', 'D', 'E']\n['A', 'B', 'C', 'D', 'E']]: That treats the streets as two-way. Each list only names the streets leading out, so from A nothing leads to E, and D has no way out at all.
+wrong[['A', 'B', 'C', 'D']\n['A', 'B', 'C', 'D', 'E']\n['A', 'B', 'C', 'D', 'E']]: D's list is empty: no street leads out of D, so its search reaches only D itself.
+wrong[['A', 'B', 'C', 'D']\n['D']\n['A', 'D', 'E']]: From E, the search carries on through A: A leads to B, and B leads to C.
+hint: Each list says where you can go from that place, not where you can come from.
+hint: Which streets lead into E?
+right: `['A', 'B', 'C', 'D']`, `['D']` and `['A', 'B', 'C', 'D', 'E']`. A search follows each street only in its direction. Nothing leads into E, so only E's own search reaches it, and D, with no streets out, reaches only itself.
+wrong: From A: B, then C, then D (A is already seen). From D: no streets out, so only D. From E: D and A, then B from A, then C from B. Each list is sorted before printing.
+
+=== task: predict hard
+title: A stack by mistake
+prompt: This version takes from the wrong end with `queue.pop()`. What does it print?
+code:
+```python
+from collections import deque
+
+graph = {"S": ["A", "B"], "A": ["S", "D"], "B": ["S", "C"],
+         "C": ["B", "D"], "D": ["A", "C"]}
+
+def distances(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.pop()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                queue.append(w)
+    return dist
+
+print(distances(graph, "S"))
+```
+wrong[{'S': 0, 'A': 1, 'B': 1, 'D': 2, 'C': 2}]: That's what `popleft` gives. `pop` takes the newest vertex, B, first, so the search runs S, B, C, and C finds D before A gets a turn.
+wrong[{'S': 0, 'A': 1, 'B': 1, 'C': 2, 'D': 2}]: D's distance is set by the vertex that finds it first: C, at distance 2, so D gets 3. A never gets the chance to give it 2.
+wrong[{'S': 0, 'B': 1, 'C': 2, 'D': 3, 'A': 1}]: The dictionary keeps the order the keys were added in: S finds A and B together, before anything else.
+hint: `pop()` takes the vertex added most recently: after S, that's B.
+hint: Which vertex finds D first, and what's its distance?
+right: `{'S': 0, 'A': 1, 'B': 1, 'C': 2, 'D': 3}`. Taking the newest vertex first runs S, B, C, so C finds D and gives it 3, though S, A, D is only 2 steps. Without a queue's ring order, the first path found isn't always the shortest.
+wrong: `pop()` makes a stack. S adds A and B. B, the newest, goes next and adds C. C goes next and adds D at distance 3. When A finally runs, D is already in `dist`, so its distance stays 3.
+
+=== task: cells hard
+title: The queue at its fullest
+prompt: The extra memory BFS needs is mostly the queue. For each search, what's the largest number of vertices waiting in the queue at once?
+
+| box | graph | search from |
+| --- | --- | --- |
+| Line | 10 vertices in a row | one end |
+| Star | a centre joined to 10 outer vertices | the centre |
+| Star, outside | the same star | one outer vertex |
+| Tree | a full binary tree of 15 vertices, with 1, 2, 4 and 8 on its levels | the root |
+labels: Line | Star | Star, outside | Tree
+answer: 1 | 10 | 9 | 8
+wrong[10 | 10 | 10 | 15]: The queue only holds vertices that have been found but not yet explored. In the line, each vertex adds only the next one, so at most 1 is waiting.
+wrong[1 | 10 | 10 | 8]: From an outer vertex, the centre is explored second. It adds the other 9 outer vertices; the start is already seen.
+wrong[1 | 10 | 9 | 7]: When the last vertex on the third level leaves the queue, all 8 vertices of the bottom level are waiting.
+wrong[2 | 10 | 9 | 8]: From an end of the line, each vertex leaves the queue before it adds the next, so only 1 is ever waiting.
+hint: Only vertices that have been found but not yet explored are in the queue.
+hint: In the tree, the whole bottom level is waiting right after the last vertex above it is explored.
+right: 1, 10, 9 and 8. The queue holds at most two rings, so a wide ring means a long queue: a line never has more than 1 vertex waiting, while a star's centre fills it at once.
+wrong: Line: each vertex adds only the next one, so 1 waits at a time. Star from the centre: all 10 join at once. From outside: the centre adds the other 9. Tree: all 8 of the bottom level, after the level above is done.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to `shortest_path` from this lesson. Choose **every** change that can make it go wrong: a wrong answer, an error, or a loop that never ends.
+code:
+```python
+def shortest_path(graph, start, goal):
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        if v == goal:
+            break
+        for w in graph[v]:
+            if w not in parent:
+                parent[w] = v
+                queue.append(w)
+    if goal not in parent:
+        return None
+    path = []
+    v = goal
+    while v is not None:
+        path.append(v)
+        v = parent[v]
+    path.reverse()
+    return path
+```
+* Moving `parent[w] = v` out of the `if`, so every neighbour's parent is set but only new ones are queued :: Right. Later vertices overwrite earlier parents, and even the start gets one, so the walk back can go round in a circle forever.
+* Starting with `parent = {}` :: Right. Nothing gives the start its None. If a neighbour finds the start again, the walk back goes round in a circle; if not, `parent[v]` raises a KeyError at the start. A search from a vertex to itself returns None.
+* Leaving out `path.reverse()` :: Right. The walk goes from the goal back to the start, so the path comes out backwards.
+- Checking `w == goal` as each vertex is added to the queue, and stopping there :: The goal's parent is already set to the vertex that found it first, the same parent it would have when taken out. Stopping earlier gives the same path.
+- Leaving out the `break` :: The search explores the rest of the graph, but a parent never changes once it's set, so the path is the same. Only time is wasted.
+- Moving the goal check to after the `for` loop :: The goal's neighbours get explored first, but the goal's own parent, and those of the vertices before it, are already fixed. The path is the same.
+hint: Which changes alter a parent after it's set, or never give the start its None?
+hint: Stopping earlier or later doesn't change parents that are already recorded.
+right: The path is right as long as each vertex's parent is the vertex that first found it, the start's parent is None, and the walk is reversed. Where the search stops only changes how much work is done.
+wrong: Overwriting parents, leaving the start without its None and skipping the reverse all break the result. Stopping when the goal is found, after its neighbours, or not at all, leaves the same parents, so the path is the same.
+
+=== task: fill hard
+title: Is there a cycle?
+prompt: In a graph whose edges go both ways, BFS finds a cycle when it meets a neighbour that's already been found but isn't the vertex it came from: there are then two different routes to that neighbour. Fill in the blanks so that `has_cycle` checks every piece of the graph, and the program prints:
+
+```output
+False True
+```
+code:
+```python
+from collections import deque
+
+def has_cycle(graph):
+    parent = {}
+    for s in graph:
+        if s in parent:
+            continue
+        parent[s] = None
+        queue = deque([s])
+        while queue:
+            v = queue.popleft()
+            for w in graph[v]:
+                if w not in parent:
+                    parent[w] = v
+                    queue.append(w)
+                elif w != ??:
+                    return True
+    return ??
+
+tree = {1: [2, 3], 2: [1], 3: [1, 4], 4: [3]}
+loop = {1: [2], 2: [1], 3: [4, 5], 4: [3, 5], 5: [3, 4]}
+print(has_cycle(tree), has_cycle(loop))
+```
+answer: parent[v] | False
+wrong[v | False]: w is a neighbour of v, so it's never v itself. Every edge back to a parent would count as a cycle, and the tree would get True.
+wrong[parent[w] | False]: The vertex v came from is `parent[v]`. `parent[w]` is w's own parent: for the start it's None, so in the tree the edge from 2 back to 1 would look like a cycle.
+wrong[parent[v] | True]: Reaching the end means no piece had a second route to any vertex, so there's no cycle: False.
+hint: Every vertex except a search's start has exactly one edge back to the vertex that found it.
+hint: If every piece is searched without finding any other edge to a found vertex, there's no cycle.
+right: The edge back to `parent[v]` is the one v was found along, so it doesn't count. Any other edge to a vertex that's already been found closes a loop: there are two routes to it.
+wrong: Ignore the neighbour that is v's parent: `w != parent[v]`. Any other neighbour that's already been found means a cycle, so return True. If every piece is searched without that happening, return False.
+
+=== task: parsons hard
+title: Counting shortest routes
+prompt: Arrange the lines so that `count_routes` counts the shortest routes from start to goal. A vertex's count is the total of the counts of the vertices one step nearer that lead to it. The program prints:
+
+```output
+2 4 0
+```
+
+Not every line is needed.
+lines:
+```python
+from collections import deque
+
+def count_routes(graph, start, goal):
+    dist = {start: 0}
+    ways = {start: 1}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for w in graph[v]:
+            if w not in dist:
+                dist[w] = dist[v] + 1
+                ways[w] = ways[v]
+                queue.append(w)
+            elif dist[w] == dist[v] + 1:
+                ways[w] += ways[v]
+    return ways.get(goal, 0)
+```
+distractors:
+```python
+                ways[w] += 1
+            elif dist[w] == dist[v]:
+```
+after:
+```python
+roads = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"],
+         "D": ["B", "C", "E", "F"], "E": ["D", "G"], "F": ["D", "G"], "G": ["E", "F"]}
+print(count_routes(roads, "A", "D"), count_routes(roads, "A", "G"), count_routes(roads, "G", "Z"))
+```
+hint: The first time w is found, it has as many routes as v. Every later vertex at v's distance that leads to w adds its own routes.
+hint: Only a neighbour exactly one step further than v gets more routes from v: `dist[w] == dist[v] + 1`.
+right: Every shortest route to w arrives from a vertex one step nearer, so w's count is the total of theirs. Those vertices all leave the queue before w does, so w's count is complete before w passes it on.
+wrong: Keep `dist` and `ways`. A newly found w copies `ways[v]`; a w that's already one step further than v adds `ways[v]`. Return the goal's count, or 0 if it was never reached.
