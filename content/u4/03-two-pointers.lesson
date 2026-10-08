@@ -1,0 +1,1168 @@
+=== lesson
+id: algo-two-pointers
+title: Two pointers
+summary: Two pointers are two indexes that move through a list together, so one pass can do the work of two nested loops. You'll find a pair with a target sum from both ends of a sorted list, remove items in place with a read pointer and a write pointer, merge two sorted lists with one pointer in each, and see why each of these is O(n) instead of O(n²).
+
+=== learn
+### Two pointers instead of two loops
+Here's a common question: does a sorted list hold two numbers that add up to a target? The obvious way checks every pair, with two nested loops:
+```python
+def has_pair_slow(nums, target):
+    checks = 0
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            checks += 1
+            if nums[i] + nums[j] == target:
+                return (nums[i], nums[j]), checks
+    return None, checks
+
+nums = [1, 3, 4, 6, 8, 11, 15]
+print(has_pair_slow(nums, 19))
+print(has_pair_slow(nums, 40))
+```
+```output
+((4, 15), 15)
+(None, 21)
+```
+For 19, the loops try 1 with each later number (6 checks), then 3 with each later number (5 checks), then 4 + 6, 4 + 8, 4 + 11 and 4 + 15, which matches: 15 checks. For 40, there's no pair, so all 21 pairs are checked. A list of n items has n × (n − 1) / 2 pairs, so this is O(n²): about 500,000 pairs for 1,000 items.
+
+**Two pointers** do the same job in one pass. Two indexes move through the list, and each comparison tells you which one to move.
+
+### Pair sum from both ends
+Put `left` on the first item and `right` on the last, and look at their sum:
+
+- too small: the sum must grow, so move `left` one step right, to a bigger number;
+- too big: the sum must shrink, so move `right` one step left, to a smaller number;
+- equal: found.
+
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return (nums[left], nums[right])
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return None
+
+print(has_pair(nums, 19), has_pair(nums, 40), has_pair(nums, 9))
+```
+```output
+(4, 15) None (1, 8)
+```
+Searching for 19:
+
+| step | left | right | sum | then |
+| --- | --- | --- | --- | --- |
+| 1 | index 0, the 1 | index 6, the 15 | 16 | too small: left = 1 |
+| 2 | index 1, the 3 | index 6, the 15 | 18 | too small: left = 2 |
+| 3 | index 2, the 4 | index 6, the 15 | 19 | found (4, 15) |
+
+Three steps instead of 15 checks. The loop runs while `left < right`, not `<=`: a pair needs two different items, so once the pointers meet there's nothing left to pair. Animation 1 runs two searches.
+
+### Why moving a pointer is safe
+Moving `left` past an item drops it for good. Why can't it be part of a pair? When the sum is too small, `nums[left]` has been added to `nums[right]`, the biggest item still in play. Every other item still in play is smaller or equal, so `nums[left]` plus any of them is too small as well: `nums[left]` can't be in any pair, and it's safe to drop. In the same way, when the sum is too big, `nums[right]` has been added to the smallest item still in play, so it can't be in any pair either.
+
+That reasoning needs the list to be **sorted**. On an unsorted list, the pointers move the wrong way and miss pairs:
+```python
+print(has_pair([8, 1, 15, 4, 11, 3, 6], 19))
+```
+```output
+None
+```
+8 + 11 and 4 + 15 both make 19, but the search drops 8 at the very first step, because 8 + 6 = 14 is too small.
+
+### The second style: same direction
+In the other style, both pointers start at the front and move the same way, at different speeds. A common job is removing items **in place**, without making a new list. `read` visits every item, and `write` marks where the next item to keep goes:
+```python
+def remove_all(nums, unwanted):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] != unwanted:
+            nums[write] = nums[read]
+            write += 1
+    del nums[write:]
+    return nums
+
+print(remove_all([3, 0, 5, 0, 0, 8, 1], 0))
+```
+```output
+[3, 5, 8, 1]
+```
+| read | item | kept? | write after |
+| --- | --- | --- | --- |
+| 0 | 3 | yes: nums[0] = 3 | 1 |
+| 1 | 0 | no | 1 |
+| 2 | 5 | yes: nums[1] = 5 | 2 |
+| 3 | 0 | no | 2 |
+| 4 | 0 | no | 2 |
+| 5 | 8 | yes: nums[2] = 8 | 3 |
+| 6 | 1 | yes: nums[3] = 1 | 4 |
+
+`write` never gets ahead of `read`, so an item is only overwritten after it has been read. The kept items end up at indexes 0 to 3, and `del nums[write:]` deletes everything from index `write` to the end. That's one pass, O(n), with O(1) extra space. Calling `nums.remove(0)` again and again would shift the rest of the list every time: O(n) per removal, O(n²) in all.
+
+### One pointer in each list
+A third pattern uses two lists, with one pointer in each. Merging two sorted lists into one sorted list compares the two front items and takes the smaller one:
+```python
+def merge(a, b):
+    i = 0
+    j = 0
+    out = []
+    while i < len(a) and j < len(b):
+        if a[i] <= b[j]:
+            out.append(a[i])
+            i += 1
+        else:
+            out.append(b[j])
+            j += 1
+    out.extend(a[i:])
+    out.extend(b[j:])
+    return out
+
+print(merge([2, 5, 9], [1, 3, 4, 10]))
+```
+```output
+[1, 2, 3, 4, 5, 9, 10]
+```
+Each step moves one pointer forward, so the loop runs at most `len(a) + len(b)` times: O(n + m) for lists of n and m items. When one list runs out, what's left of the other is already sorted, so `extend` adds it in one go; one of the two leftovers is always empty. Merge sort, later in this unit, is built on this function. Animation 2 runs it.
+
+### Comparing the styles
+| style | where the pointers start | how they move | examples |
+| --- | --- | --- | --- |
+| opposite ends | on the first and last items | toward each other, until they meet | a pair with a target sum, reversing a list, checking a palindrome |
+| same direction | both at the front | one reads every item, the other moves only sometimes | removing items in place, removing duplicates, the middle of a linked list |
+| one per list | at the front of each list | each moves forward through its own list | merging two sorted lists, finding the items two sorted lists share |
+
+The next two lessons go deeper into the first two styles: pointers from opposite ends, and fast and slow pointers.
+
+### Why it's O(n)
+In every style, each step moves at least one pointer, and a pointer never moves back. A pointer can only move about n times before it reaches the end, so two pointers make at most about 2n moves: O(n). With opposite ends it's even fewer: the pointers start n − 1 places apart, and each step closes the gap by 1, so there are at most n − 1 steps.
+
+| n | pairs checked by nested loops | two-pointer steps, at most |
+| --- | --- | --- |
+| 10 | 45 | 9 |
+| 1,000 | 499,500 | 999 |
+| 1,000,000 | 499,999,500,000 | 999,999 |
+
+Nested loops look at every pair; two pointers rule out a whole row of pairs with each step.
+
+### When two pointers fit
+Two pointers need a reason to move one pointer and not the other. For pair sums, that reason is the sorted order. If the list isn't sorted, you can sort it first, O(n log n), or use a set of the numbers seen so far, which finds a pair in O(n) without sorting:
+```python
+def has_pair_set(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:
+            return (target - x, x)
+        seen.add(x)
+    return None
+
+print(has_pair_set([8, 1, 15, 4, 11, 3, 6], 19))
+```
+```output
+(15, 4)
+```
+At 4, the number it needs, 19 − 4 = 15, has already been seen. The set version needs O(n) extra space for the set; two pointers on a sorted list need O(1).
+
+=== keypoints
+- Two pointers replace nested loops: two indexes move through the data, and each comparison says which one to move. Every step moves a pointer, so the work is O(n) instead of O(n²).
+- Opposite ends: start on the first and last items and move toward each other. For a pair sum in a sorted list: too small, `left += 1`; too big, `right -= 1`; stop when `left` meets `right`.
+- Dropping an item is safe because of the order: a sum that's too small even with the biggest item left rules `nums[left]` out of every pair.
+- Same direction: `read` visits every item and `write` marks the next place to keep one, so items can be removed in place in one pass, with O(1) extra space.
+- One pointer per list: merging two sorted lists takes the smaller front item at each step: O(n + m).
+- Without order, use a set for pair sums (O(n) time, O(n) space) or sort first (O(n log n)).
+
+=== example: Spending a gift card exactly
+intro: A gift card is worth 49, and a shop's prices are sorted. Two pointers look for two different items that cost exactly 49, and count the steps.
+```python
+prices = [3, 7, 12, 18, 25, 31, 40, 52]
+card = 49
+
+left = 0
+right = len(prices) - 1
+steps = 0
+while left < right:
+    steps += 1
+    total = prices[left] + prices[right]
+    if total == card:
+        break
+    elif total < card:
+        left += 1
+    else:
+        right -= 1
+
+if left < right:
+    print("buy", prices[left], "and", prices[right], "after", steps, "steps")
+else:
+    print("no pair costs exactly", card)
+pairs = len(prices) * (len(prices) - 1) // 2
+print("checking every pair could take", pairs, "checks")
+```
+1-2: Eight prices, sorted from cheapest to dearest.
+4-6: left starts on the cheapest price and right on the dearest.
+7-15: 3 + 52 is too much, so right moves to 40. 3 + 40 and 7 + 40 are too little, so left moves on. 12 + 40 is too much, 12 + 31 too little, and 18 + 31 = 49.
+17-20: `break` leaves the pointers on the pair, still apart. If the loop had ended because they met, `left < right` would be False.
+21-22: Eight prices make 28 pairs. The pointers needed 6 steps.
+
+=== example: Dropping bad readings in place
+intro: A sensor writes −1 when a reading fails. The program removes the failed readings from the list itself, in one pass, with a read pointer and a write pointer.
+```python
+readings = [21, -1, 23, 22, -1, -1, 24, 25, -1, 23]
+
+write = 0
+for read in range(len(readings)):
+    if readings[read] != -1:
+        readings[write] = readings[read]
+        write += 1
+removed = len(readings) - write
+del readings[write:]
+print(readings)
+print("removed", removed, "bad readings in one pass")
+```
+1: Ten readings, four of them failed.
+3-7: `read` visits every reading. A good one is copied to index `write`, and `write` moves on; a −1 is skipped, so `write` stays where it is.
+8-9: The six good readings now fill indexes 0 to 5. Everything from index `write`, 6, to the end is left over and is deleted.
+10-11: The good readings keep their order. No second list was made.
+
+=== animation: Pair sum from both ends
+view: array nums ptr=left,right range=left:right
+vars target left right total
+intro: Two searches on the same sorted list: one for a pair adding up to 14, which exists, and one for 30, which doesn't. The shaded cells are the items still in play.
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return (nums[left], nums[right])
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return None
+
+nums = [1, 3, 4, 6, 8, 11, 15]
+print(has_pair(nums, 14))
+print(has_pair(nums, 30))
+```
+1: Defines has_pair. Nothing runs yet.
+2: left starts on the first item.
+3: right starts on the last item, at index {len(nums) - 1}.
+4: Are the pointers on two different items? left = {left}, right = {right}: {left < right}.
+5: Add the two items: {nums[left]} + {nums[right]} = {nums[left] + nums[right]}.
+6: Is {total} the target, {target}? {total == target}.
+7: Found it: {nums[left]} + {nums[right]} = {target}.
+8: Is {total} smaller than {target}? {total < target}.
+9: Too small, even with the biggest item left. {nums[left]} can't be in any pair, so left moves to {left + 1}.
+11: Too big, even with the smallest item left. {nums[right]} can't be in any pair, so right moves to {right - 1}.
+12: The pointers have met: no two items add up to {target}.
+14: Seven numbers, sorted.
+15: Look for two numbers that add up to 14.
+16: Look for two numbers that add up to 30.
+
+=== animation: Merging two sorted lists
+view: array a ptr=i
+array b ptr=j
+array out
+vars i j
+intro: One pointer in each sorted list. Each step compares the two front items and moves the smaller one to `out`, so `out` grows in sorted order.
+```python
+a = [2, 5, 9]
+b = [1, 3, 4, 10]
+i = 0
+j = 0
+out = []
+while i < len(a) and j < len(b):
+    if a[i] <= b[j]:
+        out.append(a[i])
+        i += 1
+    else:
+        out.append(b[j])
+        j += 1
+out.extend(a[i:])
+out.extend(b[j:])
+print(out)
+```
+1: The first sorted list.
+2: The second sorted list.
+3: i points at the front of a.
+4: j points at the front of b.
+5: The merged list starts empty.
+6: Do both lists still have items left? i = {i}, j = {j}: {i < len(a) and j < len(b)}.
+7: Compare the two front items: is {a[i]} <= {b[j]}? {a[i] <= b[j]}.
+8: {a[i]} is the smaller, so it goes next.
+9: i moves on to {i + 1}.
+11: {b[j]} is the smaller, so it goes next.
+12: j moves on to {j + 1}.
+13: a has run out, so what's left of it, a[i:], is empty: nothing to add.
+14: b still has {b[j:]} left. It's sorted and bigger than everything in out, so it goes on the end.
+15: Seven items in order, after 6 comparisons.
+
+=== task: predict easy
+title: Two pair searches
+code:
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return (nums[left], nums[right])
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return None
+
+print(has_pair([2, 4, 7, 9, 12], 16), has_pair([2, 4, 7, 9, 12], 5))
+```
+wrong[(2, 12) None]: 2 + 12 = 14 is too small, so left moves on to 4: 4 + 12 = 16.
+wrong[(7, 9) None]: 7 + 9 = 16 too, but the pointers find 4 + 12 first, because they start at the two ends.
+wrong[(4, 12) (2, 4)]: 2 + 4 = 6, not 5. No pair makes 5, so the second search returns None.
+hint: Start with the first and last items: 2 + 12.
+hint: A sum that's too small moves left; a sum that's too big moves right.
+right: `(4, 12) None`: 2 + 12 = 14 is too small, so left moves to 4, and 4 + 12 = 16. For 5, every sum is too big, so right moves down until the pointers meet.
+wrong: For 16: 2 + 12 = 14 (too small), then 4 + 12 = 16. For 5: 2 + 12, 2 + 9, 2 + 7 and 2 + 4 are all too big, so right keeps moving left until it meets left: None.
+
+=== task: mcq easy
+title: Why sorted?
+prompt: The two-pointer pair search moves `left` when the sum is too small and `right` when it's too big. Why must the list be sorted?
+* So that moving left always makes the sum bigger, and moving right always makes it smaller :: Right. Then each step can safely drop one item.
+- So that the loop ends :: The loop ends anyway: every step moves a pointer.
+- So that there are no repeated values :: Repeats are fine in a sorted list.
+- So that the pair found is the smallest one :: The search finds a pair that adds up to the target, not a particular one.
+hint: What does moving left do to the sum in a sorted list?
+hint: When is it safe to drop an item for good?
+right: In a sorted list, the item right of `left` is bigger and the item left of `right` is smaller, so each move pushes the sum the right way, and dropping an item can't lose a pair.
+wrong: The moves only make sense if bigger items are to the right. Then a sum that's too small, even with the biggest item left, rules the left item out. Without the order, a dropped item might belong to a pair.
+
+=== task: cells easy
+title: Tracing a pair search
+prompt: `has_pair([1, 3, 5, 8, 10], 15)` runs. Fill in the trace.
+labels: first sum | second sum | third sum | steps taken | the smaller number of the pair found
+answer: 11 | 13 | 15 | 3 | 5
+wrong[11 | 9 | 15 | 3 | 5]: 1 + 10 = 11 is too small, so left moves, not right: the second sum is 3 + 10 = 13.
+wrong[11 | 13 | 15 | 2 | 5]: Three sums were looked at: 11, 13 and 15. That's three steps.
+wrong[11 | 13 | 18 | 3 | 8]: 13 is too small, so left moves on to 5: 5 + 10 = 15, the target.
+hint: Start with 1 + 10.
+hint: A sum that's too small moves left one step.
+right: 11 and 13 are too small, so left moves from 1 to 3 to 5, and 5 + 10 = 15: found in 3 steps.
+wrong: 1 + 10 = 11 (left moves), 3 + 10 = 13 (left moves), 5 + 10 = 15: found after 3 steps, and the smaller number is 5.
+
+=== task: code easy
+title: Write has_pair
+prompt: Write `has_pair(nums, target)` for a sorted list: return True if two different items add up to `target`, and False otherwise. Use two pointers from both ends: the speed check uses long lists, so checking every pair is too slow.
+starter:
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    # your code here
+    return False
+```
+solution:
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return True
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return False
+```
+tests:
+- has_pair([1, 3, 4, 6, 8, 11, 15], 19)
+- has_pair([1, 3, 4, 6, 8, 11, 15], 40)
+- has_pair([1, 3, 4, 6, 8, 11, 15], 9)
+- has_pair([5], 10)
+- has_pair([], 0)
+- has_pair([2, 2, 3], 4)
+- has_pair([1, 3, 4, 6, 8, 11, 15], 8)
+speed: setup=nums = list(range(n)) | call=has_pair(nums, -1) | target=O(n)
+slow:
+```python
+def has_pair(nums, target):
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] + nums[j] == target:
+                return True
+    return False
+```
+fail[1]: 4 + 15 = 19.
+fail[4]: One item can't make a pair with itself.
+fail[6]: The two 2s are different items: 2 + 2 = 4.
+fail[7]: 4 + 4 would be 8, but there's only one 4. Loop while `left < right`, so an item is never paired with itself.
+hint: Loop while `left < right`, and look at `nums[left] + nums[right]`.
+hint: Equal: return True. Too small: `left += 1`. Too big: `right -= 1`.
+hint: Return False once the pointers meet.
+right: Each step drops one item, so there are at most n − 1 steps: O(n), where checking every pair is O(n²).
+wrong: Start at both ends. Move left when the sum is too small and right when it's too big; return True on a match, and False when the pointers meet.
+
+=== task: fill easy
+title: Where the pointers start
+prompt: Fill in where the two pointers start, so that the program prints:
+
+```output
+(1, 8) (6, 8)
+```
+code:
+```python
+def has_pair(nums, target):
+    left = ??
+    right = ??
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return (nums[left], nums[right])
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return None
+
+print(has_pair([1, 3, 4, 6, 8], 9), has_pair([1, 3, 4, 6, 8], 14))
+```
+answer: 0 | len(nums) - 1
+wrong[0 | len(nums)]: `len(nums)` is 5, one place past the last index, so `nums[5]` raises an IndexError.
+wrong[1 | len(nums) - 1]: Starting at index 1 skips the first item, so 1 + 8 is never tried, and the first search finds 3 + 6 instead.
+hint: The first index of a list is 0.
+hint: The last index is one less than the length.
+right: `left = 0` and `right = len(nums) - 1` put the pointers on the first and last items, so every item can still be part of a pair.
+wrong: left starts at index 0, the first item, and right at `len(nums) - 1`, the last item.
+
+=== task: multi easy
+title: True of two pointers
+prompt: Choose **every** true statement about the two-pointer patterns in this lesson.
+* Each step moves at least one pointer :: Right. That's why the number of steps is at most about 2n.
+* The pair search from both ends needs a sorted list :: Right. The moves rely on bigger items being to the right.
+* Removing items with a read pointer and a write pointer needs no second list :: Right. It works in place: O(1) extra space.
+- Two pointers always means one pointer at each end :: That's one style. Pointers can also both start at the front, or be one in each of two lists.
+- The pair search from both ends checks every pair :: It drops one item per step, which rules out many pairs at once.
+- A pointer sometimes moves back to try again :: No pointer ever moves back, which is what keeps the work O(n).
+hint: Think about the three styles: opposite ends, same direction, one per list.
+hint: What keeps the number of steps small?
+right: Every step moves a pointer forward (or inward), never back, so the work is O(n). The both-ends search needs sorted data; the read/write style works in place.
+wrong: Two pointers come in several styles, and none of them checks every pair or moves a pointer back. The both-ends pair search depends on sorted order; read/write removal needs no extra list.
+
+=== task: parsons easy
+title: Remove in place
+prompt: Arrange the lines so that `remove_all` removes every copy of `unwanted` in place, with a read pointer and a write pointer, and the program prints:
+
+```output
+[9, 2]
+```
+
+Not every line is needed.
+lines:
+```python
+def remove_all(nums, unwanted):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] != unwanted:
+            nums[write] = nums[read]
+            write += 1
+    del nums[write:]
+    return nums
+
+print(remove_all([4, 9, 4, 4, 2], 4))
+```
+distractors:
+```python
+        if nums[read] == unwanted:
+    del nums[read:]
+```
+hint: An item is kept when it isn't the unwanted value.
+hint: After the loop, the leftovers start at index write.
+right: 9 and 2 are copied to indexes 0 and 1, write ends at 2, and `del nums[2:]` removes the leftovers.
+wrong: Loop read over every index. Copy each item that isn't `unwanted` to `nums[write]` and move write on. Then delete from write to the end and return the list.
+
+=== task: order easy
+title: Looking for 15
+prompt: The two-pointer pair search looks for 15 in `[2, 5, 6, 9, 14]`. Put the steps in order.
+items:
+- 2 + 14 = 16 is too big: right moves to 9
+- 2 + 9 = 11 is too small: left moves to 5
+- 5 + 9 = 14 is too small: left moves to 6
+- 6 + 9 = 15: found
+hint: The pointers start on the first and last items.
+hint: Too big moves right; too small moves left.
+right: Four steps: right moves once, left twice, and 6 + 9 makes 15.
+wrong: Start with 2 + 14 (too big, right moves), then 2 + 9 (too small), 5 + 9 (too small), and 6 + 9 = 15.
+
+=== task: predict easy
+title: Read and write
+code:
+```python
+def remove_all(nums, unwanted):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] != unwanted:
+            nums[write] = nums[read]
+            write += 1
+    del nums[write:]
+    return nums
+
+print(remove_all([7, 7, 2, 7, 5], 7), remove_all([1, 2], 9))
+```
+wrong[[7, 7, 2, 7, 5] [1, 2]]: The function copies each kept item to the front and deletes the rest: the 7s are gone.
+wrong[[2, 5, 2, 7, 5] [1, 2]]: After the loop, write is 2, and `del nums[2:]` deletes everything from index 2 on.
+wrong[[2, 5] []]: Nothing in `[1, 2]` is 9, so every item is kept.
+hint: read visits every item; only items that aren't 7 are copied to index write.
+hint: After the loop, everything from index write on is deleted.
+right: `[2, 5] [1, 2]`: 2 and 5 are copied to indexes 0 and 1, and the rest is deleted. Nothing is removed from `[1, 2]`.
+wrong: Only 2 and 5 are kept: they're copied to the front, write ends at 2, and `del nums[2:]` drops the leftovers. The second list has no 9s, so it stays the same.
+
+=== task: mcq easy
+title: How many steps?
+prompt: The two-pointer pair search runs on a sorted list of 1,000 items, and no pair matches. How many steps does it take?
+* 999 :: Right. The pointers start 999 places apart, and each step closes the gap by one.
+- 499,500 :: That's the number of pairs: what nested loops would check.
+- 1,000 :: The pointers stop when they meet, after 999 steps.
+- About 10 :: That would be binary search. Two pointers move one place per step.
+hint: Where do the pointers start?
+hint: Each step moves one pointer one place toward the other.
+right: 999 steps: each step moves one pointer one place, and they start 999 places apart. That's O(n).
+wrong: left starts at 0 and right at 999. Each step moves one of them one place toward the other, so after 999 steps they meet.
+
+=== task: code medium
+title: Write merge
+prompt: Write `merge(a, b)` that merges two sorted lists into one sorted list, with one pointer in each list. Don't sort: the speed check uses long lists.
+starter:
+```python
+def merge(a, b):
+    i = 0
+    j = 0
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+def merge(a, b):
+    i = 0
+    j = 0
+    out = []
+    while i < len(a) and j < len(b):
+        if a[i] <= b[j]:
+            out.append(a[i])
+            i += 1
+        else:
+            out.append(b[j])
+            j += 1
+    out.extend(a[i:])
+    out.extend(b[j:])
+    return out
+```
+tests:
+- merge([2, 5, 9], [1, 3, 4, 10])
+- merge([], [1, 2])
+- merge([1, 2], [])
+- merge([1, 4, 4], [2, 4, 6])
+- merge([5, 6], [1, 2, 3])
+- merge([], [])
+speed: setup=a = list(range(0, 2 * n, 2)); b = list(range(1, 2 * n, 2)) | call=merge(a, b) | target=O(n)
+slow:
+```python
+def merge(a, b):
+    rest = a + b
+    out = []
+    while rest:
+        smallest = min(rest)
+        rest.remove(smallest)
+        out.append(smallest)
+    return out
+```
+forbid[sorted(]: Merge with two pointers instead of sorting.
+forbid[.sort(]: Merge with two pointers instead of sorting.
+fail[2]: When a is empty, the answer is b.
+fail[3]: When b is empty, the answer is a. Add the leftovers after the loop.
+fail[5]: b runs out first; then 5 and 6 are added from a.
+hint: Loop while both `i < len(a)` and `j < len(b)`.
+hint: Append the smaller of `a[i]` and `b[j]`, and move that list's pointer.
+hint: After the loop, add `a[i:]` and `b[j:]`: one of them is empty.
+right: Each step appends one item and moves one pointer, so merging n + m items takes O(n + m) steps.
+wrong: Compare the front items, take the smaller, move its pointer, and repeat until one list runs out. Then add what's left of both lists.
+
+=== task: code medium
+title: Remove small values in place
+prompt: Write `remove_below(nums, limit)` that removes every item smaller than `limit` from `nums` **in place**, keeping the order of the others, and returns `nums`. Use a read pointer and a write pointer. Don't call `.remove`: each call shifts the rest of the list, which is too slow for the speed check.
+starter:
+```python
+def remove_below(nums, limit):
+    write = 0
+    # your code here
+    return nums
+```
+solution:
+```python
+def remove_below(nums, limit):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] >= limit:
+            nums[write] = nums[read]
+            write += 1
+    del nums[write:]
+    return nums
+```
+tests:
+- remove_below([5, 1, 8, 3, 9, 2], 4)
+- remove_below([1, 2, 3], 10)
+- remove_below([7, 8], 1)
+- remove_below([], 3)
+- remove_below([4, 4, 3, 5], 4)
+speed: setup=nums = [0, 1] * n | call=remove_below(nums, 1) | target=O(n)
+slow:
+```python
+def remove_below(nums, limit):
+    i = 0
+    while i < len(nums):
+        if nums[i] < limit:
+            nums.pop(i)
+        else:
+            i += 1
+    return nums
+```
+forbid[.remove(]: Each `.remove` shifts the rest of the list. Use a write pointer instead.
+fail[1]: 5, 8 and 9 are at least 4: [5, 8, 9].
+fail[2]: Every item is below 10, so the list ends up empty.
+fail[5]: 4 isn't smaller than 4, so both 4s stay.
+hint: Loop read over every index, and copy each item that's at least `limit` to `nums[write]`, then `write += 1`.
+hint: Keep the items with `nums[read] >= limit`.
+hint: After the loop, `del nums[write:]` removes the leftovers.
+right: One pass with two pointers, O(n), and no second list. `.remove` or `.pop` in a loop would shift the list each time: O(n²).
+wrong: Copy every item that's at least limit to index write, moving write after each copy. Then delete everything from write to the end.
+
+=== task: predict medium
+title: Pairs with a set
+code:
+```python
+def has_pair_set(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:
+            return (target - x, x)
+        seen.add(x)
+    return None
+
+print(has_pair_set([5, 9, 2, 7, 4], 11), has_pair_set([5, 9, 2, 7, 4], 20))
+```
+wrong[(2, 9) None]: The pair is returned as `(target - x, x)`. When x is 2, the 9 has already been seen, so it's (9, 2).
+wrong[(7, 4) None]: 7 + 4 = 11 too, but 9 + 2 is found first: the search stops at 2, before it reaches 7 and 4.
+wrong[None None]: When x is 2, 11 − 2 = 9 is already in seen, so a pair is found.
+hint: Go through the numbers in order, and for each one ask: has 11 − x been seen?
+hint: The set holds the numbers before x, not after it.
+right: `(9, 2) None`: at 2, the 9 it needs has been seen. No two numbers make 20.
+wrong: At 5, 6 hasn't been seen; at 9, 2 hasn't; at 2, 9 has: return (9, 2). For 20, no number finds its partner, so the result is None.
+
+=== task: cells medium
+title: Read and write, step by step
+prompt: `remove_all([4, 0, 0, 6, 0, 9], 0)` runs. Fill in the values.
+labels: write after reading index 0 | write after reading index 3 | write after the loop | items deleted by del nums[write:] | the list at the end
+answer: 1 | 2 | 3 | 3 | [4, 6, 9]
+wrong[1 | 4 | 3 | 3 | [4, 6, 9]]: write only moves when an item is kept: by index 3 it has moved twice, to 2.
+wrong[1 | 2 | 3 | 0 | [4, 6, 9]]: Before `del`, the list still has 6 items: [4, 6, 9, 6, 0, 9]. Deleting from index 3 removes 3 of them.
+wrong[1 | 2 | 3 | 3 | [4, 6, 9, 6, 0, 9]]: `del nums[3:]` deletes the leftovers, from index 3 to the end.
+hint: write moves only when an item is kept.
+hint: Before `del`, the list is [4, 6, 9, 6, 0, 9].
+right: write goes 1, 1, 1, 2, 2, 3. The kept items fill indexes 0 to 2, and the 3 leftovers are deleted: [4, 6, 9].
+wrong: 4 is kept (write = 1), the two 0s are skipped, 6 is kept (write = 2), 0 is skipped, 9 is kept (write = 3). Then `del nums[3:]` deletes 3 items, leaving [4, 6, 9].
+
+=== task: fill medium
+title: Until one list runs out
+prompt: Fill in the blanks so that `merge` works, and the program prints:
+
+```output
+[1, 2, 3, 5, 8, 9]
+```
+code:
+```python
+def merge(a, b):
+    i = 0
+    j = 0
+    out = []
+    while i < len(a) ?? j < len(b):
+        if a[i] <= b[j]:
+            out.append(a[i])
+            i += 1
+        else:
+            out.append(b[j])
+            j += 1
+    out.extend(a[??:])
+    out.extend(b[j:])
+    return out
+
+print(merge([2, 8, 9], [1, 3, 5]))
+```
+answer: and | i
+wrong[or | i]: With `or`, the loop carries on after b runs out, and `b[j]` with j = 3 raises an IndexError.
+wrong[and | j]: `a[j:]` uses b's pointer. j is 3, so `a[3:]` is empty, and 8 and 9 are lost.
+hint: The loop compares `a[i]` with `b[j]`, so both must exist.
+hint: What's left of a starts at a's own pointer.
+right: `and` stops the loop as soon as either list runs out, and `a[i:]` adds the rest of a, starting at its pointer.
+wrong: Loop only while both lists have items (`and`), then add `a[i:]`, the part of a that hasn't been used.
+
+=== task: mcq medium
+title: Which style?
+prompt: You want to check whether a word reads the same backwards, like "level". Which two-pointer style fits?
+* Opposite ends: compare the first and last letters, then move both pointers inward :: Right. A palindrome's letters match in pairs, from the outside in.
+- Same direction: a read pointer and a write pointer from the front :: That style rewrites a list in place; it doesn't compare the two ends.
+- One pointer per list, after copying the word into two lists :: One copy would have to be reversed first. Opposite pointers do the job without copying.
+- Binary search on the middle letter :: Nothing here is being searched for in sorted data.
+hint: Which letters must match in a word that reads the same backwards?
+hint: The first must match the last, the second the second-to-last.
+right: Opposite ends: compare `word[left]` and `word[right]`, move both inward, and stop when they meet. The next lesson writes it.
+wrong: A palindrome mirrors around its middle, so the natural check compares letters from both ends, moving inward.
+
+=== task: predict medium
+title: Counting the steps
+code:
+```python
+nums = [1, 2, 3, 4, 5, 6]
+left = 0
+right = len(nums) - 1
+steps = 0
+while left < right:
+    steps += 1
+    if nums[left] + nums[right] < 100:
+        left += 1
+    else:
+        right -= 1
+print(steps, left, right)
+```
+wrong[6 6 5]: The loop stops as soon as left reaches right: 5 steps, with both at 5.
+wrong[15 5 5]: The pointers don't try every pair: each step moves left once, so there are 5 steps.
+wrong[5 0 0]: Every sum is below 100, so left moves each time and right stays at 5.
+hint: Is any sum 100 or more?
+hint: left moves one place per step until it meets right.
+right: `5 5 5`: every sum is under 100, so left moves 5 times, from 0 to 5, where it meets right.
+wrong: Each step moves left one place. After 5 steps left is 5, the same as right, and the loop stops.
+
+=== task: multi medium
+title: O(n) with two pointers
+prompt: Choose **every** job that two pointers can do in O(n).
+* Finding two numbers in a sorted list that add up to a target :: Right. From both ends.
+* Merging two sorted lists :: Right. One pointer per list: O(n + m).
+* Removing every 0 from a list, in place :: Right. A read pointer and a write pointer.
+* Finding the numbers two sorted lists have in common :: Right. One pointer per list, moving the one at the smaller value.
+- Finding two numbers that add up to a target in an **unsorted** list, without sorting it or using a set :: The moves need sorted order. Unsorted, you'd sort first or use a set.
+- Sorting a list :: Sorting by comparing items needs O(n log n) steps in general.
+hint: Which jobs have an order that tells you which pointer to move?
+hint: Sorting can't be done in O(n) by comparing items.
+right: Pair sums in sorted data, merging, in-place removal and common items all work in one pass. An unsorted pair search needs a set or sorting, and sorting itself is O(n log n).
+wrong: Two pointers need a rule for which pointer to move: sorted order, or "keep this item or not". An unsorted pair search has no such rule, and sorting is O(n log n) work on its own.
+
+=== task: parsons medium
+title: Pairs with a set
+prompt: Arrange the lines so that `has_pair_set` finds two numbers that add up to the target in an unsorted list, and the program prints:
+
+```output
+(8, 5) None
+```
+
+Not every line is needed.
+lines:
+```python
+def has_pair_set(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:
+            return (target - x, x)
+        seen.add(x)
+    return None
+
+print(has_pair_set([6, 2, 8, 5], 13), has_pair_set([6, 2, 8, 5], 4))
+```
+distractors:
+```python
+        seen.add(target - x)
+        if x in seen:
+```
+hint: For each number, the partner it needs is target − x.
+hint: Add x to the set after checking, so a number is never paired with itself.
+right: The set remembers the numbers already passed; at 5, its partner 8 is in it. For 4, the lone 2 can't pair with itself.
+wrong: For each x, check whether `target - x` is in seen; if it is, return the pair. Otherwise add x to seen and move on. Return None after the loop.
+
+=== task: order medium
+title: Least work first
+prompt: A list of 1,000 numbers must be checked for a pair that adds up to a target. Put these approaches in order of the work they do, least first.
+items:
+- Two pointers, when the list is already sorted
+- Sort the list first, then two pointers
+- Nested loops over every pair
+hint: Two pointers make at most 999 steps.
+hint: Sorting 1,000 items takes about 10,000 steps; nested loops check 499,500 pairs.
+right: About 1,000 steps, then about 11,000, then 499,500: O(n), O(n log n) and O(n²).
+wrong: Two pointers on sorted data are O(n). Sorting first adds O(n log n). Nested loops check every pair: O(n²).
+
+=== task: code hard
+title: Common items
+prompt: `a` and `b` are sorted lists, with no repeats inside each list. Write `common_items(a, b)` that returns a sorted list of the values found in both, using one pointer in each list. The speed check uses long lists, so checking each item of `a` with `in b` is too slow.
+starter:
+```python
+def common_items(a, b):
+    i = 0
+    j = 0
+    out = []
+    # your code here
+    return out
+```
+solution:
+```python
+def common_items(a, b):
+    i = 0
+    j = 0
+    out = []
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            out.append(a[i])
+            i += 1
+            j += 1
+        elif a[i] < b[j]:
+            i += 1
+        else:
+            j += 1
+    return out
+```
+tests:
+- common_items([1, 3, 4, 7, 9], [2, 3, 7, 8, 9, 10])
+- common_items([1, 2], [3, 4])
+- common_items([], [1])
+- common_items([5, 6, 7], [5, 6, 7])
+- common_items([2, 10], [1, 2, 3, 10, 11])
+speed: setup=a = list(range(0, 2 * n, 2)); b = list(range(0, 3 * n, 3)) | call=common_items(a, b) | target=O(n)
+slow:
+```python
+def common_items(a, b):
+    out = []
+    for x in a:
+        if x in b:
+            out.append(x)
+    return out
+```
+fail[1]: 3, 7 and 9 are in both lists.
+fail[4]: The lists are the same, so every value is shared.
+fail[5]: 2 and 10 are in both.
+error[IndexError]: Loop only while both `i < len(a)` and `j < len(b)`.
+hint: Loop while both pointers are inside their lists.
+hint: Equal front items: record the value and move both pointers.
+hint: Otherwise move the pointer at the smaller value: it can't match anything later in the other list.
+right: Each step moves at least one pointer, so the loop takes at most len(a) + len(b) steps: O(n + m), where `in b` for each item of a is O(n × m).
+wrong: Compare `a[i]` and `b[j]`. If they're equal, keep the value and move both; otherwise move the pointer at the smaller value. Stop when either list runs out.
+
+=== task: code hard
+title: The closest pair sum
+prompt: Write `closest_sum(nums, target)` for a sorted list of at least two numbers: return the sum of two different items that is closest to `target`. (The tests never have two sums equally close.) Use two pointers from both ends; the speed check uses long lists.
+starter:
+```python
+def closest_sum(nums, target):
+    # your code here
+    return nums[0] + nums[1]
+```
+solution:
+```python
+def closest_sum(nums, target):
+    left = 0
+    right = len(nums) - 1
+    best = nums[left] + nums[right]
+    while left < right:
+        total = nums[left] + nums[right]
+        if abs(total - target) < abs(best - target):
+            best = total
+        if total == target:
+            return total
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return best
+```
+tests:
+- closest_sum([1, 4, 6, 9, 13], 12)
+- closest_sum([1, 4, 6, 9, 13], 100)
+- closest_sum([1, 4, 6, 9, 13], 0)
+- closest_sum([2, 5], 1)
+- closest_sum([-3, 1, 2, 8], 0)
+- closest_sum([1, 4, 6, 9, 13], 15)
+speed: setup=nums = list(range(0, 2 * n, 2)) | call=closest_sum(nums, -5) | target=O(n)
+slow:
+```python
+def closest_sum(nums, target):
+    best = nums[0] + nums[1]
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            total = nums[i] + nums[j]
+            if abs(total - target) < abs(best - target):
+                best = total
+    return best
+```
+fail[1]: 4 + 9 = 13 is 1 away from 12, and no pair makes 11 or 12.
+fail[2]: The biggest sum, 9 + 13 = 22, is closest to 100.
+fail[3]: The smallest sum, 1 + 4 = 5, is closest to 0.
+fail[5]: −3 + 2 = −1 is 1 away from 0.
+hint: Keep `best`, and move the pointers as in the pair search: sum too small, move left; too big, move right.
+hint: At each step, if `abs(total - target)` is smaller than `abs(best - target)`, update best.
+hint: An exact match can be returned at once.
+right: The pointers visit at most n − 1 pairs, and the closest sum is always among them: each move only skips pairs that are even further from the target. O(n).
+wrong: Move the pointers exactly as in the pair search, and remember the sum closest to the target among the pairs you visit. Return it when the pointers meet.
+
+=== task: code hard
+title: Sorted squares
+prompt: `nums` is sorted and may contain negative numbers. Write `sorted_squares(nums)` that returns the squares of the numbers in sorted order, in O(n). Don't sort: the biggest square is always at one of the two ends, so fill the answer from the back with two pointers.
+starter:
+```python
+def sorted_squares(nums):
+    out = [0] * len(nums)
+    left = 0
+    right = len(nums) - 1
+    # your code here
+    return out
+```
+solution:
+```python
+def sorted_squares(nums):
+    out = [0] * len(nums)
+    left = 0
+    right = len(nums) - 1
+    for k in range(len(nums) - 1, -1, -1):
+        if abs(nums[left]) > abs(nums[right]):
+            out[k] = nums[left] * nums[left]
+            left += 1
+        else:
+            out[k] = nums[right] * nums[right]
+            right -= 1
+    return out
+```
+tests:
+- sorted_squares([-4, -1, 0, 3, 10])
+- sorted_squares([-7, -3, 2, 3, 11])
+- sorted_squares([1, 2, 3])
+- sorted_squares([-5, -2])
+- sorted_squares([])
+- sorted_squares([0])
+speed: setup=nums = list(range(-n, n)) | call=sorted_squares(nums) | target=O(n)
+slow:
+```python
+from bisect import insort
+
+def sorted_squares(nums):
+    out = []
+    for x in nums:
+        insort(out, x * x)
+    return out
+```
+forbid[sorted(]: Fill the answer with two pointers instead of sorting.
+forbid[.sort(]: Fill the answer with two pointers instead of sorting.
+fail[1]: The squares are 16, 1, 0, 9 and 100; in order: [0, 1, 9, 16, 100].
+fail[2]: −3 and 3 both square to 9.
+fail[4]: Both numbers are negative: the smaller square, 4, comes from −2.
+hint: The biggest square is at one of the ends: compare `abs(nums[left])` with `abs(nums[right])`.
+hint: Fill `out` from its last index down to 0, taking the bigger square each time and moving that pointer inward.
+hint: `for k in range(len(nums) - 1, -1, -1):` counts k down from the last index to 0.
+right: Each step places one square and moves one pointer inward: n steps, O(n), where squaring and then sorting would be O(n log n).
+wrong: Use pointers at both ends. The end with the bigger absolute value has the biggest square left: put it at the back of out, move that pointer inward, and repeat.
+
+=== task: code hard
+title: Count the pairs
+prompt: `nums` is sorted and has no repeated values. Write `pair_count(nums, target)` that returns how many pairs of different items add up to `target`, in O(n), using two pointers from both ends.
+starter:
+```python
+def pair_count(nums, target):
+    left = 0
+    right = len(nums) - 1
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+def pair_count(nums, target):
+    left = 0
+    right = len(nums) - 1
+    count = 0
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            count += 1
+            left += 1
+            right -= 1
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return count
+```
+tests:
+- pair_count([1, 2, 3, 4, 5, 6], 7)
+- pair_count([1, 2, 3, 4, 5, 6], 20)
+- pair_count([1, 3, 5, 8, 11], 16)
+- pair_count([-2, 0, 2, 4], 2)
+- pair_count([], 5)
+- pair_count([5], 10)
+speed: setup=nums = list(range(n)) | call=pair_count(nums, n - 1) | target=O(n)
+slow:
+```python
+def pair_count(nums, target):
+    count = 0
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] + nums[j] == target:
+                count += 1
+    return count
+```
+fail[1]: 1 + 6, 2 + 5 and 3 + 4 make 7: 3 pairs.
+fail[4]: −2 + 4 and 0 + 2 both make 2.
+fail[6]: One item can't pair with itself.
+hint: Move the pointers as in the pair search, but don't stop at a match.
+hint: After a match, move **both** pointers inward: with no repeats, neither item can be in another pair.
+hint: Count the matches, and return the count when the pointers meet.
+right: After a match, `nums[left]` can only pair with `nums[right]`, because there are no repeats, so both pointers can move. Every step moves a pointer: O(n).
+wrong: Use the pair search, but on a match add 1 to count and move both pointers inward instead of returning. Return count when they meet.
+
+=== task: predict hard
+title: Same list, two names
+code:
+```python
+def remove_all(nums, unwanted):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] != unwanted:
+            nums[write] = nums[read]
+            write += 1
+    del nums[write:]
+    return nums
+
+data = [1, 0, 2, 0, 3]
+same = data
+remove_all(data, 0)
+print(same, len(data))
+```
+wrong[[1, 0, 2, 0, 3] 3]: `same` and `data` are two names for one list, and `remove_all` changes that list itself.
+wrong[[1, 2, 3] 5]: `del nums[write:]` really shortens the list: it has 3 items now.
+wrong[[1, 0, 2, 0, 3] 5]: The function works in place: it changes the list it's given, which both names refer to.
+hint: `same = data` doesn't copy the list.
+hint: The function changes the list in place.
+right: `[1, 2, 3] 3`: there's only one list. `remove_all` rewrote it in place, so both names see the change.
+wrong: `same` is another name for the list `data` names. `remove_all` moves 1, 2 and 3 to the front and deletes the rest, in that list itself.
+
+=== task: predict hard
+title: Unsorted input
+code:
+```python
+def has_pair(nums, target):
+    left = 0
+    right = len(nums) - 1
+    while left < right:
+        total = nums[left] + nums[right]
+        if total == target:
+            return (nums[left], nums[right])
+        elif total < target:
+            left += 1
+        else:
+            right -= 1
+    return None
+
+print(has_pair([6, 1, 9, 3], 12), has_pair([6, 1, 9, 3], 15))
+```
+wrong[(9, 3) (6, 9)]: 6 + 9 = 15, but the search drops 6 at the first step, because 6 + 3 = 9 is too small. The list isn't sorted, so that move was wrong.
+wrong[None None]: For 12, the pointers end up on 9 and 3, which add up to 12: a lucky find.
+wrong[(6, 3) None]: 6 + 3 = 9, not 12. After dropping 6 and 1, the pointers reach 9 and 3.
+hint: Trace it: start with 6 and 3.
+hint: A sum that's too small moves left, whatever the numbers are.
+right: `(9, 3) None`: for 12 the pointers happen to reach 9 + 3. For 15 they drop 6 first, so 6 + 9 is never tried. Two pointers need sorted data.
+wrong: For 12: 6 + 3 = 9 and 1 + 3 = 4 are too small, then 9 + 3 = 12. For 15: 9, 4 and 12 are all too small, left reaches right, and the search returns None, though 6 + 9 = 15.
+
+=== task: cells hard
+title: Comparisons in a merge
+prompt: How many comparisons (`a[i] <= b[j]`) does `merge(a, b)` from this lesson make for each pair of lists?
+labels: [1, 2, 3] and [4, 5, 6] | [1, 3, 5] and [2, 4, 6] | [] and [1, 2] | [5] and [1, 2, 3, 4]
+answer: 3 | 5 | 0 | 4
+wrong[6 | 5 | 0 | 4]: After 1, 2 and 3 are taken, a has run out, so the loop stops: 3 comparisons. 4, 5 and 6 are added without comparing.
+wrong[3 | 6 | 0 | 4]: After 5 comparisons a is used up, and 6 is added with `extend`.
+wrong[3 | 5 | 0 | 1]: 5 is compared with 1, 2, 3 and 4 in turn, and each is smaller, so b runs out after 4 comparisons.
+hint: The loop stops as soon as either list runs out.
+hint: Leftovers are added with `extend`, without comparing.
+right: 3, 5, 0 and 4: one comparison per item taken while both lists still have items; the rest are added in one go.
+wrong: [1, 2, 3] runs out after 3 comparisons. The interleaved lists need 5 before a runs out. An empty list means no comparisons. 5 is compared with each of 1, 2, 3 and 4.
+
+=== task: multi hard
+title: Changes that break has_pair
+prompt: Each change is made to `has_pair` from this lesson. Choose **every** change that makes it give a wrong answer for some sorted list.
+* `while left <= right:` :: Right. When the pointers meet, an item is added to itself: `has_pair([5], 10)` finds (5, 5).
+* Moving both pointers after every sum that isn't a match :: Right. That skips pairs: in `[1, 2, 3, 9]` with target 11, 2 + 9 is never tried.
+* Starting with `left = 1` :: Right. The first item is never used: `has_pair([1, 4, 8], 9)` misses 1 + 8.
+- Testing `total > target` first and `total < target` second :: The same sums lead to the same moves.
+- Writing `total = nums[right] + nums[left]` :: Addition doesn't care about order.
+- Writing the loop test as `while right > left:` :: That's the same test as `left < right`.
+hint: Try each change on a list with one or two items.
+hint: Which changes leave every move exactly as it was?
+right: `<=` pairs an item with itself, moving both pointers skips pairs, and starting at 1 ignores the first item. The other three changes do exactly the same as before.
+wrong: Three changes break it: `left <= right`, moving both pointers, and `left = 1`. Swapping the order of the tests, adding in the other order, and writing the test as `right > left` change nothing.
+
+=== task: fill hard
+title: Keep the even numbers
+prompt: Fill in the blanks so that `keep_even` keeps only the even numbers, in place, and the program prints:
+
+```output
+[8, 6, 4]
+```
+code:
+```python
+def keep_even(nums):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] % 2 == 0:
+            nums[??] = nums[read]
+            write += 1
+    del nums[??:]
+    return nums
+
+print(keep_even([3, 8, 6, 1, 4, 7]))
+```
+answer: write | write
+wrong[read | write]: `nums[read] = nums[read]` copies each item onto itself, so nothing moves to the front, and `del nums[3:]` keeps the first three items: [3, 8, 6].
+wrong[write | read]: After the loop read is 5, so `del nums[5:]` removes only the last item: [8, 6, 4, 1, 4].
+hint: Kept items are copied to the front, to the place write marks.
+hint: After the loop, the leftovers start at index write.
+right: Each even number is copied to `nums[write]`, and after the loop `del nums[write:]` deletes everything after the kept items: [8, 6, 4].
+wrong: Copy kept items to `nums[write]`, and delete from `write` to the end: write is the number of items kept.
+
+=== task: parsons hard
+title: Is it a subsequence?
+prompt: `small` is a **subsequence** of `big` if you can get `small` by deleting some characters of `big`, without changing the order of the rest: "ace" is a subsequence of "abcde", but "aec" isn't. Arrange the lines so that the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def is_subsequence(small, big):
+    i = 0
+    for ch in big:
+        if i < len(small) and small[i] == ch:
+            i += 1
+    return i == len(small)
+
+print(is_subsequence("ace", "abcde"), is_subsequence("aec", "abcde"))
+```
+distractors:
+```python
+    return i > 0
+    return i == len(big)
+```
+hint: i points at the next character of small that still has to be found.
+hint: Every character of big is read once; i only moves on a match.
+right: The for loop is one pointer through big, and i is a second pointer through small that moves only on a match. All of small has been found when i reaches `len(small)`: O(len(big)).
+wrong: Go through big one character at a time. When it matches `small[i]`, move i on. At the end, small is a subsequence if i has reached `len(small)`.
