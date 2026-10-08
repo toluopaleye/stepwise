@@ -1,0 +1,1026 @@
+=== lesson
+id: ds-heaps
+title: Heaps and priority queues
+summary: A priority queue always hands out its most important item next, and a heap is the structure that makes it fast. You'll see how a complete binary tree is stored in a plain list, move between parents and children with index arithmetic, check the heap rule, follow push and pop step by step, and compare min-heaps with max-heaps: peeking is O(1), and pushing and popping are O(log n).
+
+=== learn
+### Priority queues
+A queue serves items in the order they arrived. A **priority queue** serves the most important item first, whatever order the items arrived in. An emergency room treats the most urgent patient first; a computer runs its most important job first; a game handles the event that's due soonest first. A priority queue has three operations:
+
+| operation | what it does |
+| --- | --- |
+| push(item) | adds an item |
+| pop() | removes and returns the most important item |
+| peek() | looks at the most important item without removing it |
+
+Here "most important" means the **smallest** priority number: urgency 1 comes before urgency 3. A plain list can do the job. Append to push, and use `min` to find the item to pop:
+```python
+waiting = []
+for patient in [(3, "sprained ankle"), (1, "chest pain"), (2, "broken arm")]:
+    waiting.append(patient)
+most_urgent = min(waiting)
+waiting.remove(most_urgent)
+print(most_urgent)
+print(waiting)
+```
+```output
+(1, 'chest pain')
+[(3, 'sprained ankle'), (2, 'broken arm')]
+```
+Tuples compare item by item, so `min` finds the smallest urgency. But `min` looks at every item, and so does `remove`, so each pop is O(n). Keeping the list sorted, with the most important item at the end, makes pop fast but push slow, because every new item has to be slotted into its place. A **heap** makes both fast:
+
+| | push | pop | peek |
+| --- | --- | --- | --- |
+| unsorted list | O(1) | O(n) | O(n) |
+| sorted list | O(n) | O(1) | O(1) |
+| heap | O(log n) | O(log n) | O(1) |
+
+### A complete tree in a list
+A heap is a **complete** binary tree: every level is full except possibly the last, which is filled from the left, as in the Kinds of binary trees lesson. A complete tree has no gaps, so it fits in a plain list, level by level and left to right. Index 0 holds the root, indexes 1 and 2 hold its children, and indexes 3 to 6 hold the next level:
+```text
+             2 [0]
+           /       \
+       5 [1]        3 [2]
+      /     \       /
+   9 [3]   6 [4]  8 [5]
+
+list: [2, 5, 3, 9, 6, 8]
+```
+The number in brackets is each item's index. There are no `left` and `right` links: an item's position in the list says where it sits in the tree, so a heap needs no node objects at all.
+
+Appending an item to the list puts it in the next free place on the bottom level, to the right of the last item there, so the tree stays complete. If the bottom level is full, the new item starts the next level, at the far left.
+
+### Parents and children by arithmetic
+The Kinds of binary trees lesson numbered the places of a tree this way. For the item at index i:
+
+| | index |
+| --- | --- |
+| left child | 2i + 1 |
+| right child | 2i + 2 |
+| parent | (i − 1) // 2 |
+
+Each item gets two child places, handed out in order: index 0 gets 1 and 2, index 1 gets 3 and 4, index 2 gets 5 and 6, and index i gets 2i + 1 and 2i + 2. Going up, `(i - 1) // 2` undoes it: 5 and 6 both give 2. A child index that isn't less than `len(h)` means that child doesn't exist.
+```python
+h = [2, 5, 3, 9, 6, 8]
+for i in range(len(h)):
+    kids = []
+    for c in [2 * i + 1, 2 * i + 2]:
+        if c < len(h):
+            kids.append(h[c])
+    if i > 0:
+        print(i, h[i], "parent", h[(i - 1) // 2], "children", kids)
+    else:
+        print(i, h[i], "root", "children", kids)
+```
+```output
+0 2 root children [5, 3]
+1 5 parent 2 children [9, 6]
+2 3 parent 2 children [8]
+3 9 parent 5 children []
+4 6 parent 5 children []
+5 8 parent 3 children []
+```
+Index 2's right child would be at index 6, but the list's indexes stop at 5, so 3 has only one child. Indexes 3, 4 and 5 have no children: their child indexes start at 7.
+
+### The heap rule
+A **min-heap** follows one rule: every parent is **smaller than or equal to** each of its children. So along any path down from the root, the values never get smaller, and the root holds the smallest value of all. A **max-heap** flips the rule: every parent is **bigger than or equal to** its children, and the root holds the largest value.
+
+To check a list, compare every item except the root with its parent:
+```python
+def is_min_heap(h):
+    for i in range(1, len(h)):
+        if h[(i - 1) // 2] > h[i]:
+            return False
+    return True
+
+print(is_min_heap([2, 5, 3, 9, 6, 8]), is_min_heap([2, 5, 3, 4, 6, 8]), is_min_heap([1, 9, 2, 10, 11, 3, 4]))
+```
+```output
+True False True
+```
+In the second list, 4 is at index 3, and its parent, at index 1, is 5. A parent bigger than its child breaks the rule. Every item has exactly one parent to check, so the check is O(n). Animation 1 runs it.
+
+### What the rule doesn't say
+The rule only compares parents with their children. It promises nothing else. Here's the third list from the last step as a tree:
+```text
+           1
+        /     \
+       9       2
+      / \     / \
+    10   11  3   4
+```
+- Siblings can be in either order: 9 and 2 are both children of 1.
+- An item lower down can be smaller than one higher up on another branch: 3 is two levels down, but it's smaller than 9, one level down.
+- So a heap is **not sorted**: `[1, 9, 2, 10, 11, 3, 4]` is a min-heap, and it's far from sorted order.
+
+What you do know is that the smallest value is at index 0, and the second smallest is one of the root's children, at index 1 or 2, because only the root can be above it. Searching a heap for any other value means looking through the whole list: O(n).
+
+### Peek, push and pop
+**Peek** reads `h[0]`: O(1).
+
+**Push** puts the new item at the end of the list, which keeps the tree complete but may break the rule. So the item **sifts up**: while it's smaller than its parent, the two swap places. Pushing 1 into `[2, 5, 3, 9, 6, 8]`:
+
+| list | 1 is at | its parent | compare |
+| --- | --- | --- | --- |
+| [2, 5, 3, 9, 6, 8, 1] | index 6 | index 2, holding 3 | 3 > 1: swap |
+| [2, 5, 1, 9, 6, 8, 3] | index 2 | index 0, holding 2 | 2 > 1: swap |
+| [1, 5, 2, 9, 6, 8, 3] | index 0 | none | the root: stop |
+
+**Pop** removes the root, the smallest item. To keep the tree complete, the **last** item moves into the root's place, and then it **sifts down**: while it's bigger than its smaller child, the two swap. It swaps with the smaller child because that child becomes the parent of the other one. Popping from `[1, 5, 2, 9, 6, 8, 3]`:
+
+| list | 3 is at | its children | compare |
+| --- | --- | --- | --- |
+| [3, 5, 2, 9, 6, 8] | index 0 | 5 and 2 | the smaller child, 2, is less than 3: swap |
+| [2, 5, 3, 9, 6, 8] | index 2 | 8 | 8 is not less than 3: stop |
+
+Each swap moves the item one level, and a complete tree of n items has about log2 n levels, so push and pop are both **O(log n)**: no more than about 20 swaps for a million items. Animation 2 pushes two items, and the Min-heaps lesson writes push and pop in full.
+
+### Python's heapq
+Python's `heapq` module pushes and pops on a plain list, keeping it a min-heap:
+```python
+import heapq
+
+tasks = []
+heapq.heappush(tasks, (3, "water the plants"))
+heapq.heappush(tasks, (1, "fix the server"))
+heapq.heappush(tasks, (2, "reply to email"))
+print(tasks[0])
+print(tasks)
+while tasks:
+    print(heapq.heappop(tasks))
+```
+```output
+(1, 'fix the server')
+[(1, 'fix the server'), (3, 'water the plants'), (2, 'reply to email')]
+(1, 'fix the server')
+(2, 'reply to email')
+(3, 'water the plants')
+```
+`heapq.heappush(h, x)` pushes, `heapq.heappop(h)` pops the smallest, and `h[0]` peeks. Items can be tuples like `(priority, task)`: tuples compare item by item, so the priority decides. The list itself isn't sorted (3 sits before 2), but the pops still come out smallest first.
+
+`heapq.heapify(xs)` rearranges an existing list into a heap in O(n). The Min-heaps lesson shows how it works:
+```python
+nums = [9, 4, 7, 1, 8, 2]
+heapq.heapify(nums)
+print(nums, nums[0])
+```
+```output
+[1, 4, 2, 9, 8, 7] 1
+```
+> `heapq` only makes min-heaps. The Max-heaps lesson shows the usual trick for a max-heap: store negative numbers.
+
+### Min-heaps and max-heaps
+| | min-heap | max-heap |
+| --- | --- | --- |
+| rule | parent ≤ children | parent ≥ children |
+| at the root | the smallest value | the largest value |
+| pop gives | the smallest first | the largest first |
+| in Python | `heapq` as it is | `heapq` with negative numbers |
+| good for | the earliest deadline, the shortest distance, the lowest price | the highest score, the biggest bid, the most votes |
+
+Both kinds have the same shape, the same index arithmetic and the same costs: peek O(1), push and pop O(log n). Only the direction of the comparison changes. The next two lessons take each kind in turn.
+
+### Heaps against the alternatives
+| | push | pop the smallest | peek | find any value | everything in order |
+| --- | --- | --- | --- | --- | --- |
+| unsorted list | O(1) | O(n) | O(n) | O(n) | O(n log n): sort it |
+| sorted list, smallest at the end | O(n) | O(1) | O(1) | O(log n) | O(n) |
+| balanced search tree | O(log n) | O(log n) | O(log n) | O(log n) | O(n) |
+| min-heap | O(log n) | O(log n) | O(1) | O(n) | O(n log n): pop n times |
+
+A heap does one job, handing out the smallest (or largest) item, and does it with nothing but a list: no node objects and no links. It's always balanced, because it's always complete. When you also need to search for values or list them in order, a search tree fits better.
+
+=== keypoints
+- A priority queue hands out the most important item first, with push, pop and peek. A heap does push and pop in O(log n) and peek in O(1).
+- A heap is a complete binary tree stored level by level in a list: the root at index 0, the children of index i at 2i + 1 and 2i + 2, and its parent at (i − 1) // 2.
+- Min-heap rule: every parent ≤ its children, so the smallest value is at index 0. Max-heap: every parent ≥ its children, so the largest is at index 0.
+- The rule says nothing about siblings or cousins: a heap isn't sorted, and finding an arbitrary value is O(n).
+- Push appends, then sifts up (swap with the parent while smaller). Pop takes the root, moves the last item to the root, then sifts down (swap with the smaller child while bigger). Both O(log n).
+- `heapq.heappush`, `heapq.heappop` and `h[0]` use a plain list as a min-heap; `heapq.heapify` turns a list into a heap in O(n).
+
+=== example: An emergency room
+intro: Patients arrive in any order, each with an urgency from 1 (most urgent) to 3. The waiting list is a heap, so the next patient is always the most urgent one, and patients with equal urgency are seen in the order they arrived.
+```python
+import heapq
+
+arrivals = [(3, "sprained ankle"), (1, "chest pain"), (2, "broken arm"), (1, "bad burn"), (3, "small cut")]
+waiting = []
+number = 0
+for urgency, problem in arrivals:
+    heapq.heappush(waiting, (urgency, number, problem))
+    number += 1
+print("next up:", waiting[0][2])
+
+while waiting:
+    urgency, number, problem = heapq.heappop(waiting)
+    print(f"treat {problem} (urgency {urgency})")
+```
+3: Each arrival is a pair: its urgency and the problem.
+5-8: Push `(urgency, number, problem)`. Tuples compare item by item: urgency decides, and when two urgencies are equal, the arrival number does, so earlier arrivals go first.
+9: Peek: index 0 holds the most urgent patient. Index 2 of that tuple is the problem.
+11-13: Pop until no one is waiting, O(log n) each. The two urgency-1 patients come first, chest pain before bad burn because it arrived first; then urgency 2; then the two urgency-3 patients, in the order they arrived.
+
+=== example: Levels and paths in a heap's list
+intro: A heap's list holds its tree level by level: level k has up to 2^k items. This program slices the list into levels, then follows parent indexes from the last item up to the root.
+```python
+h = [1, 3, 2, 7, 4, 5, 6, 9, 8]
+
+start = 0
+size = 1
+level = 0
+while start < len(h):
+    print("level", level, h[start:start + size])
+    start += size
+    size *= 2
+    level += 1
+
+i = len(h) - 1
+path = []
+while i > 0:
+    path.append(h[i])
+    i = (i - 1) // 2
+path.append(h[0])
+print("from the last item up to the root:", path)
+```
+1: A min-heap of 9 items: every parent is ≤ its children.
+3-10: Level 0 starts at index 0 and holds 1 item; each level after that holds twice as many and starts where the last one ended: 0, 1, 3, 7.
+7: The last level, 9 and 8, isn't full: the slice stops at the end of the list.
+12-16: Start at the last index, 8, and step to the parent each time: 8, 3, 1, then 0.
+17-18: Read upwards, the values never get bigger: 8, 7, 3, 1. Down any path of a min-heap, they never get smaller.
+
+=== animation: Checking the heap rule
+view: heap h ptr=i,p
+vars i p
+intro: `is_min_heap` compares every item with its parent, using the index arithmetic. The second list has one item that's smaller than its parent. Watch `i` move along the list while `p` points at its parent in the tree.
+```python
+def is_min_heap(h):
+    for i in range(1, len(h)):
+        p = (i - 1) // 2
+        if h[p] > h[i]:
+            return False
+    return True
+
+print(is_min_heap([1, 3, 2, 7, 4, 5, 6]))
+print(is_min_heap([1, 3, 2, 7, 4, 1, 6]))
+```
+1: Defines is_min_heap. Nothing runs yet.
+2: Every item except the root, at index 0, has a parent to compare with.
+3: The parent of index {i} is at ({i} − 1) // 2 = {(i - 1) // 2}.
+4: Is the parent {h[p]} bigger than its child {h[i]}? {h[p] > h[i]}.
+5: A parent bigger than its child breaks the rule.
+6: Every parent is ≤ its children: this is a min-heap.
+8: A min-heap: each parent is ≤ its children.
+9: The same list with index 5 changed to 1, which is below its parent, 2.
+
+=== animation: Pushing: sifting up
+view: heap h ptr=i,p
+vars x i p
+intro: `push` adds an item at the end of the list, then swaps it with its parent for as long as it's smaller. 4 stays where it lands; 1 climbs all the way to the root.
+```python
+def push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0 and h[(i - 1) // 2] > h[i]:
+        p = (i - 1) // 2
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+h = [2, 5, 3, 9, 6, 8]
+push(h, 4)
+push(h, 1)
+print(h)
+```
+1: Defines push. Nothing runs yet.
+2: Add {x} at the end of the list: the next free place on the bottom level.
+3: {x} is at index {len(h) - 1}.
+4: {'Is the parent ' + str(h[(i - 1) // 2]) + ' bigger than ' + str(h[i]) + '? ' + str(h[(i - 1) // 2] > h[i]) + '.' if i > 0 else str(h[i]) + ' is at the root: there is nothing above it.'}
+5: The parent is at index ({i} − 1) // 2 = {(i - 1) // 2}.
+6: Swap {h[i]} with its parent, {h[p]}.
+7: {x} has moved up to index {p}.
+9: A min-heap with 2 at the root.
+10: Push 4.
+11: Push 1, which is smaller than everything.
+12: 1 sifted all the way up to the root. The rest of the list stays a heap.
+
+=== task: predict easy
+title: Index arithmetic
+code:
+```python
+h = [4, 7, 5, 9, 8, 6]
+i = 4
+print(h[(i - 1) // 2], h[2 * 1 + 1], h[2 * 2 + 1])
+```
+wrong[5 9 6]: The parent of index 4 is at (4 − 1) // 2 = 1, not 4 // 2 = 2.
+wrong[7 8 6]: 2 * 1 + 1 is 3, and `h[3]` is 9.
+wrong[7 9 5]: 2 * 2 + 1 is 5, and `h[5]` is 6.
+hint: Work out each index first, then look it up in the list.
+hint: (4 − 1) // 2 = 1, 2 × 1 + 1 = 3, and 2 × 2 + 1 = 5.
+right: `7 9 6`: index 4's parent is index 1 (7); the left child of index 1 is index 3 (9); the left child of index 2 is index 5 (6).
+wrong: Compute the indexes, then read the list: (4 − 1) // 2 = 1 gives 7; 2 × 1 + 1 = 3 gives 9; 2 × 2 + 1 = 5 gives 6.
+
+=== task: mcq easy
+title: Which is a min-heap?
+prompt: Which of these lists is a min-heap?
+* `[1, 3, 2, 6, 4, 5]` :: Right. Every parent is ≤ its children: 1 is above 3 and 2, 3 is above 6 and 4, and 2 is above 5.
+- `[3, 1, 2, 6, 4, 5]` :: The root, 3, is bigger than its child 1.
+- `[1, 4, 2, 3, 6, 5]` :: 3 is at index 3, and its parent, at index 1, is 4: a parent bigger than its child.
+- `[6, 5, 4, 3, 2, 1]` :: That's a max-heap: every parent is bigger than its children.
+hint: Compare each item at index i with its parent at (i − 1) // 2.
+hint: The parent of index 3 is index 1; the parent of index 5 is index 2.
+right: `[1, 3, 2, 6, 4, 5]` follows the rule everywhere; each of the others has a parent bigger than its child.
+wrong: Check every item against its parent. Only `[1, 3, 2, 6, 4, 5]` has no parent bigger than its child. `[6, 5, 4, 3, 2, 1]` is the opposite kind, a max-heap.
+
+=== task: cells easy
+title: Parents and children
+prompt: Work out each index, using the heap's index arithmetic.
+labels: left child of 0 | right child of 0 | left child of 3 | right child of 3 | parent of 7 | parent of 10
+answer: 1 | 2 | 7 | 8 | 3 | 4
+wrong[1 | 2 | 6 | 7 | 3 | 4]: The left child of 3 is 2 × 3 + 1 = 7, not 2 × 3 = 6.
+wrong[1 | 2 | 7 | 8 | 3 | 5]: 10 // 2 is 5, but the parent formula takes 1 away first: (10 − 1) // 2 = 4.
+hint: Left child: 2i + 1. Right child: 2i + 2. Parent: (i − 1) // 2.
+hint: 7 and 8 are the children of 3; 9 and 10 are the children of 4.
+right: 1, 2, 7, 8, 3, 4. The children 7 and 8 both lead back to the parent 3, and 9 and 10 lead back to 4.
+wrong: Apply the formulas: 2 × 0 + 1 = 1, 2 × 0 + 2 = 2, 2 × 3 + 1 = 7, 2 × 3 + 2 = 8, (7 − 1) // 2 = 3 and (10 − 1) // 2 = 4.
+
+=== task: code easy
+title: The children of an item
+prompt: Write `children(h, i)` that returns a list of the values of the children of index i in the heap list `h`: the left child first, then the right, leaving out any child whose index is past the end of the list. For example, `children([2, 5, 3, 9, 6, 8], 2)` returns `[8]`.
+starter:
+```python
+def children(h, i):
+    # your code here
+    return []
+```
+solution:
+```python
+def children(h, i):
+    out = []
+    for c in [2 * i + 1, 2 * i + 2]:
+        if c < len(h):
+            out.append(h[c])
+    return out
+```
+tests:
+- children([2, 5, 3, 9, 6, 8], 0)
+- children([2, 5, 3, 9, 6, 8], 1)
+- children([2, 5, 3, 9, 6, 8], 2)
+- children([2, 5, 3, 9, 6, 8], 3)
+- children([7], 0)
+fail[1]: Index 0's children are at 1 and 2: [5, 3].
+fail[2]: Index 1's children are at 3 and 4: [9, 6].
+fail[3]: Index 2's right child would be at 6, past the end of the list: only [8].
+error[IndexError]: Check that a child's index is less than `len(h)` before reading it.
+hint: The child indexes are `2 * i + 1` and `2 * i + 2`.
+hint: Keep an index only if it's less than `len(h)`.
+right: Two possible indexes, each kept only if it's inside the list. O(1).
+wrong: Work out 2i + 1 and 2i + 2, and add `h[c]` for each one that's less than `len(h)`.
+
+=== task: fill easy
+title: The child formulas
+prompt: Fill in the blanks so that the program prints the two children of index 1:
+
+```output
+9 6
+```
+code:
+```python
+h = [2, 5, 3, 9, 6, 8]
+i = 1
+left = 2 * i + ??
+right = 2 * i + ??
+print(h[left], h[right])
+```
+answer: 1 | 2
+wrong[0 | 1]: 2 × 1 + 0 = 2 points at 3, the root's right child. Index 1's own children start at index 3: `3 9`.
+wrong[2 | 3]: That points at indexes 4 and 5, one place too far: `6 8`.
+hint: Index 0's children are at indexes 1 and 2.
+hint: Plug i = 0 into your formulas: they must give 1 and 2.
+right: Left child 2i + 1, right child 2i + 2: for index 1, that's indexes 3 and 4, holding 9 and 6.
+wrong: The children of index i are at 2i + 1 and 2i + 2. For i = 1, that's 3 and 4.
+
+=== task: multi easy
+title: True of every min-heap
+prompt: Choose **every** statement that is true of any min-heap with at least 3 different values.
+* The smallest value is at index 0 :: Right. Everything else has the root above it, and parents are never bigger.
+* Every parent is ≤ each of its children :: Right. That's the heap rule.
+* A node's two children can be in either order :: Right. The rule never compares siblings.
+- The list is in sorted order :: `[1, 9, 2, 10, 11, 3, 4]` is a min-heap, and it isn't sorted.
+- The largest value is always the last item :: The largest value is in a leaf, but not always the last one.
+- The item at index 1 is always the second smallest :: The second smallest is at index 1 or index 2.
+hint: The rule only compares parents with their own children.
+hint: Picture `[1, 9, 2, 10, 11, 3, 4]` as a tree.
+right: The smallest is at the root, the rule holds for every parent, and siblings can be in any order. Nothing more is promised: not sorted order, nor where the largest or second smallest sits.
+wrong: A min-heap promises parent ≤ children, so the smallest is at index 0. It doesn't order siblings, so the list needn't be sorted, the largest can be any leaf, and the second smallest can be at index 1 or 2.
+
+=== task: parsons easy
+title: Check the rule
+prompt: Arrange the lines so that `is_min_heap` checks every item against its parent, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def is_min_heap(h):
+    for i in range(1, len(h)):
+        if h[(i - 1) // 2] > h[i]:
+            return False
+    return True
+
+print(is_min_heap([1, 4, 2, 6, 5, 3]), is_min_heap([1, 4, 2, 3, 5, 6]))
+```
+distractors:
+```python
+    for i in range(len(h)):
+        if h[i // 2] > h[i]:
+```
+hint: Every item except the root has a parent, so start the loop at index 1.
+hint: The parent of index i is at (i − 1) // 2.
+right: Each item from index 1 on is compared with its parent, and one parent bigger than its child is enough to say no. In the second list, 3 is below its parent 4.
+wrong: Loop i from 1 to the end, and return False as soon as `h[(i - 1) // 2] > h[i]`. If the loop finishes, return True.
+
+=== task: order easy
+title: Push 1, by hand
+prompt: The list `[2, 5, 3, 9, 6, 8]` is a min-heap. Put the steps of pushing 1 in order.
+items:
+- Append 1 at the end of the list, at index 6
+- Compare 1 with its parent at index 2, which holds 3: swap
+- Compare 1 with its parent at index 0, which holds 2: swap
+- 1 is at the root, so stop
+hint: A new item always starts at the end of the list.
+hint: It climbs one level with each swap.
+right: Append at the end, then swap upwards while the parent is bigger: first 3, then 2. 1 ends at the root.
+wrong: Push appends 1 at index 6, then sifts it up: its parent 3 is bigger, so they swap; its new parent 2 is bigger, so they swap again; at the root it stops.
+
+=== task: predict easy
+title: Pops come out in order
+code:
+```python
+import heapq
+
+h = []
+for x in [5, 1, 8, 3]:
+    heapq.heappush(h, x)
+print(h[0])
+while h:
+    print(heapq.heappop(h))
+```
+wrong[5\n5\n1\n8\n3]: A heap isn't first in, first out: every pop returns the smallest item left.
+wrong[8\n8\n5\n3\n1]: `heapq` keeps a min-heap: the smallest comes out first, not the largest.
+wrong[1\n1\n8\n3\n5]: Each pop returns the smallest item that's left, whatever its place in the list, so they come out in sorted order.
+hint: `h[0]` is the smallest item.
+hint: Each `heappop` removes and returns the smallest item that's left.
+right: The peek shows 1, then the pops give 1, 3, 5, 8. Popping everything from a heap gives the items in sorted order.
+wrong: `heapq` keeps a min-heap: `h[0]` is the smallest, 1, and each pop takes the smallest item remaining: 1, 3, 5, 8.
+
+=== task: mcq easy
+title: Shortest job first
+prompt: A printer always prints the waiting job with the fewest pages next, whenever it arrived. Which structure fits its waiting jobs best?
+* A min-heap of (pages, job) pairs :: Right. The job with the fewest pages is always at the root, and each push and pop is O(log n).
+- A queue :: A queue prints jobs in the order they arrived, whatever their size.
+- A stack :: A stack prints the newest job first.
+- A max-heap of (pages, job) pairs :: That would print the longest job first.
+hint: Which job should come out next: the oldest, the newest or the smallest?
+hint: "Fewest pages" means the smallest number.
+right: A min-heap: the job with the fewest pages is always at the root, ready to print.
+wrong: The printer wants the smallest page count each time, so its waiting jobs belong in a min-heap, ordered by pages.
+
+=== task: code medium
+title: Is it a max-heap?
+prompt: Write `is_max_heap(h)` that returns True if the list `h` follows the max-heap rule, where every parent is bigger than or equal to each of its children, and False if it doesn't. An empty list and a single item both count as heaps.
+starter:
+```python
+def is_max_heap(h):
+    # your code here
+    return True
+```
+solution:
+```python
+def is_max_heap(h):
+    for i in range(1, len(h)):
+        if h[(i - 1) // 2] < h[i]:
+            return False
+    return True
+```
+tests:
+- is_max_heap([9, 7, 8, 3, 5, 6])
+- is_max_heap([9, 7, 8, 3, 8, 6])
+- is_max_heap([])
+- is_max_heap([1, 2])
+- is_max_heap([5, 5, 5])
+- is_max_heap([9, 1, 8, 0, 0, 7, 9])
+fail[2]: 8 at index 4 is bigger than its parent, 7, at index 1.
+fail[4]: 2 is bigger than its parent, 1.
+fail[6]: The last item, 9, is bigger than its parent at index 2, which holds 8.
+hint: Compare every item from index 1 on with its parent, at (i − 1) // 2.
+hint: In a max-heap, a parent that's smaller than its child breaks the rule.
+right: The same check as for a min-heap, with the comparison turned round. O(n).
+wrong: Loop i from 1, and return False when `h[(i - 1) // 2] < h[i]`. Equal values are allowed.
+
+=== task: code medium
+title: The path to the root
+prompt: Write `path_up(h, i)` that returns the values you meet walking from index i up to the root of the heap list `h`, following parent indexes: `h[i]` first and `h[0]` last. For example, `path_up([1, 3, 2, 7, 4, 5, 6, 9, 8], 8)` returns `[8, 7, 3, 1]`.
+starter:
+```python
+def path_up(h, i):
+    # your code here
+    return [h[i]]
+```
+solution:
+```python
+def path_up(h, i):
+    out = [h[i]]
+    while i > 0:
+        i = (i - 1) // 2
+        out.append(h[i])
+    return out
+```
+tests:
+- path_up([1, 3, 2, 7, 4, 5, 6, 9, 8], 8)
+- path_up([1, 3, 2, 7, 4, 5, 6, 9, 8], 6)
+- path_up([1, 3, 2, 7, 4, 5, 6, 9, 8], 0)
+- path_up([1, 3, 2, 7, 4, 5, 6, 9, 8], 4)
+- path_up([5, 8], 1)
+fail[1]: The indexes go 8, 3, 1, 0, holding 8, 7, 3 and 1.
+fail[2]: Index 6's parent is index 2, whose parent is index 0: [6, 2, 1].
+fail[4]: Index 4, then 1, then 0: [4, 3, 1].
+fail[5]: Index 1's parent is the root: [8, 5].
+error[IndexError]: Stop when i reaches 0: the root has no parent.
+hint: Start the list with `h[i]`.
+hint: While `i > 0`, move to the parent with `i = (i - 1) // 2` and add `h[i]`.
+right: Each step roughly halves the index, so the path has about log2 n steps: O(log n). In a min-heap, the values never get bigger on the way up.
+wrong: Begin with `[h[i]]`, then keep setting `i = (i - 1) // 2` and appending `h[i]` until i is 0.
+
+=== task: predict medium
+title: One pop
+code:
+```python
+import heapq
+
+h = [2, 4, 3, 7, 5, 6, 8]
+print(heapq.heappop(h))
+print(h)
+```
+wrong[2\n[4, 3, 7, 5, 6, 8]]: Pop doesn't shift everything left. The last item, 8, moves to the root and sifts down.
+wrong[2\n[3, 4, 8, 7, 5, 6]]: 8 keeps sifting down: at index 2, its only child, 6, is smaller, so they swap too.
+wrong[2\n[8, 4, 3, 7, 5, 6]]: After 8 moves to the root, it swaps with its smaller child for as long as that child is smaller.
+hint: The last item, 8, moves into the root's place.
+hint: Then 8 swaps with its smaller child while that child is smaller: first 3, then 6.
+right: 2 is returned. 8 moves to the root and sifts down past 3 and then 6: `[3, 4, 6, 7, 5, 8]`.
+wrong: Pop returns 2. The last item, 8, moves to index 0. Its children are 4 and 3; the smaller, 3, is less than 8, so they swap. At index 2, 8's only child is 6: swap again. Now 8 is a leaf.
+
+=== task: cells medium
+title: Push 2, by hand
+prompt: The list `[3, 6, 4, 9, 7, 5]` is a min-heap. After pushing 2, what is at each index?
+labels: 0 | 1 | 2 | 3 | 4 | 5 | 6
+answer: 2 | 6 | 3 | 9 | 7 | 5 | 4
+wrong[3 | 6 | 4 | 9 | 7 | 5 | 2]: 2 is smaller than its parent, 4, so it can't stay at the end: it sifts up.
+wrong[2 | 6 | 4 | 9 | 7 | 5 | 3]: Each swap moves the parent down into the child's place: 4 goes to index 6 first, then 3 goes to index 2.
+wrong[2 | 3 | 6 | 9 | 7 | 5 | 4]: Only the items on 2's path move. 6 is at index 1, which isn't on that path, so it stays.
+hint: 2 starts at index 6. Its parent is at index 2.
+hint: Swap with the parent while it's bigger: first 4, then 3.
+right: 2 swaps with 4 (at index 2), then with 3 (at index 0): `[2, 6, 3, 9, 7, 5, 4]`.
+wrong: Append 2 at index 6. Its parent, index 2, holds 4: swap. Now at index 2, its parent, index 0, holds 3: swap. 2 is the new root.
+
+=== task: fill medium
+title: Sifting up
+prompt: Fill in the blanks so that `push` sifts the new item up, and the program prints:
+
+```output
+[1, 2, 3, 5, 6, 8, 4, 9]
+```
+code:
+```python
+def push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0 and h[(i - 1) // 2] ?? h[i]:
+        p = (i - 1) // 2
+        h[i], h[p] = h[p], h[i]
+        i = ??
+
+h = [2, 5, 3, 9, 6, 8, 4]
+push(h, 1)
+print(h)
+```
+answer: > | p
+wrong[< | p]: The loop then runs only while the parent is smaller, which is already true of a heap, so 1 never moves: `[2, 5, 3, 9, 6, 8, 4, 1]`.
+wrong[> | i]: `i` never moves, so after one swap the loop compares 9 with its new parent, 1, and stops: `[2, 5, 3, 1, 6, 8, 4, 9]`.
+hint: The item should keep climbing while its parent is bigger.
+hint: After a swap, the item sits where its parent was.
+right: The loop runs while the parent is bigger (`>`), and after each swap, `i = p` follows the item up to its new index.
+wrong: Keep swapping while `h[(i - 1) // 2] > h[i]`, and after each swap move `i` to the parent's index, `p`.
+
+=== task: mcq medium
+title: Where is the largest?
+prompt: A min-heap holds many different values. Where can its largest value be?
+* Only in a leaf: an item with no children :: Right. Any item with a child is smaller than that child, so it can't be the largest.
+- Always at the end of the list :: The last item is a leaf, but the largest can be any leaf. In `[1, 9, 2, 10, 11, 3, 4]` it's 11, at index 4.
+- At index 1 or 2 :: Those places hold the candidates for the second smallest, not the largest.
+- Anywhere at all :: An item with a child can't be the largest, because its child is bigger.
+hint: What does the rule say about an item that has a child?
+hint: Which items have no children?
+right: In a leaf: every item with a child is smaller than that child. The leaves fill the second half of the list, so finding the largest still means checking about n/2 items.
+wrong: Every parent is smaller than its children, so the largest value has no children: it's one of the leaves, which fill the second half of the list.
+
+=== task: predict medium
+title: Peeking as items arrive
+code:
+```python
+import heapq
+
+h = []
+for x in [7, 3, 9, 1, 4]:
+    heapq.heappush(h, x)
+    print(h[0], len(h))
+```
+wrong[7 1\n3 2\n9 3\n1 4\n4 5]: `h[0]` is the smallest item so far, not the item that was pushed last.
+wrong[7 1\n7 2\n9 3\n9 4\n9 5]: That's the largest so far. `heapq` keeps a min-heap.
+wrong[1 1\n1 2\n1 3\n1 4\n1 5]: 1 hasn't been pushed until the fourth round, so the heap can't hold it before then.
+hint: After each push, `h[0]` is the smallest item pushed so far.
+hint: 9 and 4 are bigger than the smallest item already there.
+right: The root always holds the smallest item so far: 7, then 3 twice (9 is bigger), then 1 twice (4 is bigger).
+wrong: After each push, `h[0]` is the smallest so far: 7, 3, 3, 1, 1, and `len(h)` counts the items, 1 to 5.
+
+=== task: multi medium
+title: Jobs for a max-heap
+prompt: Choose **every** job where a max-heap, which hands out the largest item first, fits best.
+* An auction that always serves the highest bid next :: Right. The highest bid is the largest value.
+* A leaderboard that shows the top score :: Right. The top score is the largest value.
+* A downloader that fetches the biggest file first :: Right. The biggest file has the largest size.
+- A calendar that reminds you of the earliest appointment first :: The earliest time is the smallest value: a min-heap.
+- A map app that explores the nearest place first :: The nearest place has the smallest distance: a min-heap.
+- A ticket line served in arrival order :: That's a plain queue: first in, first out.
+hint: Does the job want the biggest value next, or the smallest?
+hint: Arrival order needs no heap at all.
+right: The highest bid, the top score and the biggest file all want the largest value next: a max-heap. The earliest and the nearest want the smallest: a min-heap.
+wrong: Pick a max-heap when the largest value should come out first (bids, scores, sizes) and a min-heap when the smallest should (times, distances). Arrival order is a queue.
+
+=== task: parsons medium
+title: A to-do list
+prompt: Arrange the lines so that the tasks come out most urgent first (1 is the most urgent), and the program prints:
+
+```output
+1 pay rent
+2 buy milk
+3 call Sam
+```
+
+Not every line is needed.
+lines:
+```python
+import heapq
+
+chores = []
+heapq.heappush(chores, (2, "buy milk"))
+heapq.heappush(chores, (3, "call Sam"))
+heapq.heappush(chores, (1, "pay rent"))
+while chores:
+    urgency, task = heapq.heappop(chores)
+    print(urgency, task)
+```
+distractors:
+```python
+    urgency, task = chores.pop()
+    heapq.heappop(chores)
+```
+hint: Push the three tasks first, then pop until the list is empty.
+hint: Each pop gives back the tuple with the smallest urgency, which unpacks into two variables.
+right: The pushes can come in any order: the heap hands back the most urgent task each time. `chores.pop()` would take the last item of the list instead.
+wrong: Import `heapq`, push the three `(urgency, task)` tuples, then loop `while chores:`, popping with `heapq.heappop(chores)` and printing both parts.
+
+=== task: order medium
+title: Pop, by hand
+prompt: The list `[1, 4, 2, 8, 5, 3, 7]` is a min-heap. Put the steps of popping from it in order.
+items:
+- Take the root's value, 1, to return it
+- Move the last item, 7, into the root's place
+- Compare 7 with its smaller child, 2: swap
+- Compare 7 with its only child, 3: swap
+- 7 has no children now, so stop
+hint: The root is removed first, and the last item fills the gap.
+hint: The item sinks one level with each swap, always towards its smaller child.
+right: Take 1, move 7 to the root, then sift it down: it swaps with 2, then with 3, and stops at a leaf: `[2, 4, 3, 8, 5, 7]`.
+wrong: Pop saves the root, 1, moves the last item, 7, to the root, then swaps it with its smaller child while that child is smaller: 2, then 3. With no children left, it stops.
+
+=== task: code hard
+title: Write push
+prompt: Write `push(h, x)` that adds x to the min-heap list `h` and restores the rule by sifting up: append x, then swap it with its parent for as long as the parent is bigger. It changes `h` in place and returns nothing. `after` runs your push and returns the list, so the tests can show it.
+starter:
+```python
+def push(h, x):
+    h.append(x)
+    # your code here
+
+def after(h, x):
+    push(h, x)
+    return h
+```
+solution:
+```python
+def push(h, x):
+    h.append(x)
+    i = len(h) - 1
+    while i > 0 and h[(i - 1) // 2] > h[i]:
+        p = (i - 1) // 2
+        h[i], h[p] = h[p], h[i]
+        i = p
+
+def after(h, x):
+    push(h, x)
+    return h
+```
+tests:
+- after([2, 5, 3, 9, 6, 8], 1)
+- after([2, 5, 3, 9, 6, 8], 4)
+- after([], 7)
+- after([3, 6, 4, 9, 7, 5], 2)
+- after([1, 3, 2, 7, 4], 0)
+- after([5, 8], 6)
+fail[1]: 1 climbs past 3 and then 2 to the root: [1, 5, 2, 9, 6, 8, 3].
+fail[4]: 2 swaps with 4, then with 3: [2, 6, 3, 9, 7, 5, 4].
+fail[5]: 0 swaps with 2, then with 1: [0, 3, 1, 7, 4, 2].
+error[IndexError]: Stop the loop at the root: only look at a parent while i > 0.
+hint: After appending, x is at index `len(h) - 1`.
+hint: While i > 0 and the parent at `(i - 1) // 2` is bigger than `h[i]`, swap the two.
+hint: After a swap, set i to the parent's index and check again.
+right: The new item climbs one level per swap and stops below a parent that's no bigger: at most about log2 n swaps, O(log n).
+wrong: Append, then sift up: compare with the parent at (i − 1) // 2, swap while the parent is bigger, and move i up each time.
+
+=== task: code hard
+title: The second smallest
+prompt: Write `second_smallest(h)` that returns the second smallest value in the min-heap list `h`, which has at least 2 items, all different. Don't search the whole list: think about where the second smallest value can be. The speed check runs your function on big heaps.
+starter:
+```python
+def second_smallest(h):
+    # your code here
+    return h[1]
+```
+solution:
+```python
+def second_smallest(h):
+    if len(h) == 2:
+        return h[1]
+    return min(h[1], h[2])
+```
+tests:
+- second_smallest([1, 3, 2, 7, 4, 5, 6])
+- second_smallest([1, 2, 3])
+- second_smallest([1, 5])
+- second_smallest([0, 4, 9, 5, 6, 10, 11])
+- second_smallest([2, 8, 3, 9, 10, 4])
+speed: setup=h = list(range(n)) | call=second_smallest(h) | target=O(log n)
+slow:
+```python
+def second_smallest(h):
+    return sorted(h)[1]
+```
+fail[1]: The root's children are 3 and 2: the smaller one, 2, is the second smallest.
+fail[5]: Index 2 holds 3, which is smaller than index 1's 8.
+error[IndexError]: A heap of 2 items has no index 2: check the length first.
+hint: Only the root can be above the second smallest value, so it must be one of the root's children.
+hint: The root's children are at indexes 1 and 2, but index 2 exists only when there are 3 or more items.
+right: The second smallest has nothing above it except the smallest, so it's at index 1 or 2: one comparison, O(1). Sorting the list would take O(n log n).
+wrong: The second smallest must be a child of the root. Return `h[1]` for 2 items; otherwise return the smaller of `h[1]` and `h[2]`.
+
+=== task: code hard
+title: Count the small ones
+prompt: Write `count_below(h, x)` that returns how many values in the min-heap list `h` are smaller than x. Use the rule to skip work: if an item isn't smaller than x, nothing below it is either, so don't look at its subtree. Start at index 0, and only visit the children of items that are smaller than x. The speed check uses big heaps in which only a few values are smaller than x.
+starter:
+```python
+def count_below(h, x):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_from(h, i, x):
+    if i >= len(h) or h[i] >= x:
+        return 0
+    return 1 + count_from(h, 2 * i + 1, x) + count_from(h, 2 * i + 2, x)
+
+def count_below(h, x):
+    return count_from(h, 0, x)
+```
+tests:
+- count_below([1, 3, 2, 7, 4, 5, 6], 5)
+- count_below([1, 3, 2, 7, 4, 5, 6], 1)
+- count_below([1, 3, 2, 7, 4, 5, 6], 100)
+- count_below([], 3)
+- count_below([2, 9, 3, 10, 11, 4, 5], 6)
+speed: setup=h = list(range(n)) | call=count_below(h, 5) | target=O(log n)
+slow:
+```python
+def count_below(h, x):
+    count = 0
+    for v in h:
+        if v < x:
+            count += 1
+    return count
+```
+fail[1]: 1, 3, 2 and 4 are smaller than 5.
+fail[3]: Every value is smaller than 100: 7.
+fail[5]: 2, 3, 4 and 5 are smaller than 6. 9 isn't, and neither is anything below it.
+error[IndexError]: Check that an index is inside the list before reading it.
+hint: Write a helper that counts from index i: 0 if i is past the end or `h[i] >= x`.
+hint: Otherwise it's 1 plus the counts from the two children, at 2i + 1 and 2i + 2.
+hint: Start the helper at index 0.
+right: A subtree whose top isn't smaller than x is skipped whole, so the walk only visits the matching items and their children: O(k) for k matches, however big the heap is.
+wrong: Count from the root down, stopping at any item that is ≥ x, because its whole subtree is ≥ x too. Each smaller item counts 1, plus whatever its children's subtrees give. Checking every item is O(n).
+
+=== task: code hard
+title: From list to tree
+prompt: Write `to_tree(h, i)` that builds linked `Node` objects for the heap list `h`, starting from index i: a node holding `h[i]`, whose left subtree is built from index 2i + 1 and right subtree from index 2i + 2. An index past the end of the list gives None. `preorder` lists a tree's values root first, for the tests.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def to_tree(h, i):
+    # your code here
+    return None
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def to_tree(h, i):
+    if i >= len(h):
+        return None
+    return Node(h[i], to_tree(h, 2 * i + 1), to_tree(h, 2 * i + 2))
+```
+tests:
+- preorder(to_tree([1, 3, 2, 7, 4, 5, 6], 0))
+- preorder(to_tree([], 0))
+- preorder(to_tree([2, 5, 3, 9, 6, 8], 0))
+- preorder(to_tree([2, 5, 3, 9, 6, 8], 1))
+- to_tree([4, 8], 0).left.val
+- to_tree([4, 8], 0).right
+fail[1]: 1, then 3's subtree (3, 7, 4), then 2's subtree (2, 5, 6).
+fail[3]: 2; then 5 with 9 and 6; then 3 with 8.
+fail[4]: Starting at index 1 builds only 5's subtree: [5, 9, 6].
+fail[5]: 8 is the left child of index 0.
+error[RecursionError]: Stop when i is past the end of the list: return None.
+error[IndexError]: Check `i >= len(h)` before reading `h[i]`.
+hint: If `i >= len(h)`, return None.
+hint: Otherwise return `Node(h[i], ...)`, with the subtrees built from indexes 2i + 1 and 2i + 2.
+right: The index arithmetic gives every item's children, so recursion rebuilds the links the list leaves out. Each index is visited once: O(n).
+wrong: Return None past the end. Otherwise make a node for `h[i]`, with `to_tree(h, 2 * i + 1)` as its left child and `to_tree(h, 2 * i + 2)` as its right.
+
+=== task: predict hard
+title: Ties in a heap
+code:
+```python
+import heapq
+
+h = []
+for item in [(2, "b"), (1, "z"), (2, "a"), (1, "y")]:
+    heapq.heappush(h, item)
+while h:
+    print(heapq.heappop(h))
+```
+wrong[(1, 'z')\n(1, 'y')\n(2, 'b')\n(2, 'a')]: Ties don't keep their arrival order. When the first items are equal, the second items are compared, and 'y' comes before 'z'.
+wrong[(2, 'b')\n(1, 'z')\n(2, 'a')\n(1, 'y')]: That's the order they were pushed in. Pops always give the smallest item left.
+wrong[(1, 'y')\n(1, 'z')\n(2, 'b')\n(2, 'a')]: The tie between (2, 'b') and (2, 'a') is settled the same way: 'a' comes before 'b'.
+hint: Tuples compare item by item: the first items decide, unless they're equal.
+hint: Between (1, 'z') and (1, 'y'), the second items decide.
+right: Pops come out smallest first, and ties on the first item are settled by the second: 'y' before 'z', 'a' before 'b'. To keep arrival order for ties, put an arrival number second, as in the emergency room example.
+wrong: The tuples are compared whole: (1, 'y') < (1, 'z') < (2, 'a') < (2, 'b'), so the pops give them in that order.
+
+=== task: predict hard
+title: Sorted lists and heaps
+code:
+```python
+def is_min_heap(h):
+    for i in range(1, len(h)):
+        if h[(i - 1) // 2] > h[i]:
+            return False
+    return True
+
+print(is_min_heap([1, 2, 3, 4, 5, 6]))
+print(is_min_heap([6, 5, 4, 3, 2, 1]))
+print(is_min_heap([1, 6, 2, 7, 8, 3]))
+print(is_min_heap([1, 2, 3, 0]))
+```
+wrong[True\nFalse\nFalse\nFalse]: A heap doesn't have to be sorted: in `[1, 6, 2, 7, 8, 3]`, every parent is still ≤ its children.
+wrong[False\nFalse\nTrue\nFalse]: A sorted list is always a min-heap: every item's parent sits earlier in the list, so it's never bigger.
+wrong[True\nTrue\nTrue\nFalse]: `[6, 5, 4, 3, 2, 1]` is a max-heap: its root, 6, is bigger than its children.
+hint: In a sorted list, every item's parent sits earlier in the list.
+hint: In the last list, index 3's parent is index 1.
+right: True, False, True, False: a sorted list is always a min-heap, a heap needn't be sorted, and in the last list 0 sits below its parent, 2.
+wrong: Check each item against its parent. Sorted from small to big: always fine. Big to small: the root is bigger than its children. `[1, 6, 2, 7, 8, 3]`: every parent is smaller. `[1, 2, 3, 0]`: 0's parent is 2.
+
+=== task: cells hard
+title: Pop, then look
+prompt: The list `[1, 3, 2, 7, 4, 5, 6]` is a min-heap. After one pop, what is at each index?
+labels: 0 | 1 | 2 | 3 | 4 | 5
+answer: 2 | 3 | 5 | 7 | 4 | 6
+wrong[2 | 3 | 6 | 7 | 4 | 5]: 6 keeps sifting down: at index 2, its child 5 is smaller, so they swap.
+wrong[3 | 2 | 7 | 4 | 5 | 6]: Pop doesn't shift everything left. The last item, 6, moves to the root and sifts down.
+wrong[3 | 6 | 2 | 7 | 4 | 5]: 6 swaps with its smaller child, 2 at index 2, not with 3.
+hint: The last item, 6, moves to index 0.
+hint: Swap it with its smaller child while that child is smaller: first 2, then 5.
+right: 6 moves to the root, swaps with 2, then with 5: `[2, 3, 5, 7, 4, 6]`.
+wrong: Remove 1. The last item, 6, goes to index 0. Its children are 3 and 2: swap with 2. At index 2, its child at index 5 holds 5: swap again. Now 6 is a leaf.
+
+=== task: multi hard
+title: Heap or search tree?
+prompt: Choose **every** statement that is true when comparing a min-heap with a balanced binary search tree holding the same n values.
+* The heap finds the smallest value in O(1), the tree in O(log n) :: Right. The heap keeps it at index 0; the tree has to walk its left links.
+* Both add a value in O(log n) :: Right. The heap sifts up one path; the tree walks down one path.
+* The heap needs no node objects or links :: Right. Positions in the list do the job of links.
+* The heap stays balanced, however many values are pushed :: Right. It's always a complete tree.
+- The heap can check whether any value is in it in O(log n) :: The rule doesn't say which branch holds a value, so searching a heap is O(n).
+- The heap can list all its values in sorted order in O(n) :: Only by popping them one by one: O(n log n). The tree does it in O(n) with inorder.
+hint: Which structure keeps the smallest value in a fixed place?
+hint: Which one tells you whether to go left or right when looking for a value?
+right: A heap wins on the smallest value and stays balanced with no links; a search tree wins at finding any value and at listing everything in order.
+wrong: The heap is simpler and keeps the minimum at index 0, always balanced. But it can't search for a value or list everything in order quickly: that's what a search tree is for.
+
+=== task: fill hard
+title: Slicing the levels
+prompt: Fill in the blanks so that the program prints the heap level by level:
+
+```output
+[1]
+[3, 2]
+[7, 4, 5, 6]
+[9, 8]
+```
+code:
+```python
+h = [1, 3, 2, 7, 4, 5, 6, 9, 8]
+start = 0
+size = 1
+while start < len(h):
+    print(h[start:start + size])
+    start = ??
+    size = ??
+```
+answer: start + size | size * 2
+wrong[size | size * 2]: The next level starts where this one ends, at `start + size`. Setting `start` to `size` starts level 2 at index 2, inside level 1.
+wrong[start + size | size + 1]: Each level holds twice as many items as the one above it, so `size` doubles: 1, 2, 4, 8.
+hint: The next level starts right after this one ends.
+hint: How many items does each level hold, compared with the level above?
+right: Each level starts where the last one ended (`start + size`) and holds twice as many items (`size * 2`): 1, 2, 4, then whatever is left.
+wrong: After printing a level, move `start` past it with `start + size`, and double `size`.
+
+=== task: parsons hard
+title: Pop with sifting down
+prompt: Arrange the lines so that `pop` removes and returns the smallest item of a min-heap list, moving the last item to the root and sifting it down, and the program prints:
+
+```output
+1 [2, 4, 3, 5, 6]
+```
+
+Not every line is needed.
+lines:
+```python
+def pop(h):
+    top = h[0]
+    last = h.pop()
+    if h:
+        h[0] = last
+        i = 0
+        while True:
+            small = i
+            for c in [2 * i + 1, 2 * i + 2]:
+                if c < len(h) and h[c] < h[small]:
+                    small = c
+            if small == i:
+                break
+            h[i], h[small] = h[small], h[i]
+            i = small
+    return top
+
+h = [1, 4, 2, 5, 6, 3]
+print(pop(h), h)
+```
+distractors:
+```python
+                if c < len(h) and h[c] > h[small]:
+        h[0] = top
+```
+hint: Save the root, then take the last item off the end with `h.pop()`.
+hint: If items remain, put the last item at index 0, then swap it down with its smaller child until neither child is smaller.
+right: The last item fills the root's place so the tree stays complete, then sinks: each round finds the smallest of the item and its children, and stops when the item itself is the smallest. O(log n).
+wrong: Save `h[0]`, pop the last item, and if the list isn't empty, put it at index 0. Then repeat: find the smallest of it and its children; if that's a child, swap and carry on from there; otherwise stop. Return the saved root.
