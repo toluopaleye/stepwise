@@ -1,0 +1,1396 @@
+=== lesson
+id: algo-dfs-grid
+title: DFS on grids
+summary: On a grid, DFS spreads through every cell joined to a starting cell. That's flood fill, the paint bucket in a drawing program, and it's how islands on a map are counted and measured. You'll flood-fill a region, count islands, measure the biggest one, decide whether corners count as joined, switch to an explicit stack for big maps, and find enclosed water by filling in from the edges.
+
+=== learn
+### Flood fill
+A drawing program's paint bucket fills a whole region at once. Click a pixel, and it changes colour, along with every pixel joined to it, up, down, left or right, through pixels of the same colour. That's a depth-first search on the grid: the neighbours of a cell are the cells next to it that still have the old colour.
+```python
+def fill(grid, r, c, old, new):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+        return
+    if grid[r][c] != old:
+        return
+    grid[r][c] = new
+    fill(grid, r - 1, c, old, new)
+    fill(grid, r + 1, c, old, new)
+    fill(grid, r, c - 1, old, new)
+    fill(grid, r, c + 1, old, new)
+
+picture = [list("..#."),
+           list(".#.."),
+           list("#..#")]
+fill(picture, 0, 0, ".", "o")
+for row in picture:
+    print("".join(row))
+```
+```output
+oo#.
+o#..
+#..#
+```
+The fill from (0, 0) colours the three dots joined to it and stops at the `#` cells. The dots on the right are a separate region, so they keep their colour. The grid is a list of lists, `list("..#.")` being `[".", ".", "#", "."]`, because strings can't be changed.
+
+### Check inside the call
+This `fill` calls itself on all four neighbours without checking them first, and lets each call check its own cell: if it's off the grid, or doesn't have the old colour, the call returns at once. That keeps the code short, at the cost of up to four quick calls per cell that do nothing. Checking before calling, as the BFS on grids did, works equally well.
+
+Changing the colour is also what marks a cell as visited: a filled cell no longer has the old colour, so no call fills it twice, and no `seen` set is needed. If `new` were the same as `old`, nothing would ever change and the calls would go on until a RecursionError, so a real paint program checks for that first. Animation 1 shows a fill spreading.
+
+### Counting islands
+On a map where `#` is land and `.` is water, an **island** is a group of land cells joined up, down, left or right. Counting islands is counting connected pieces. Scan every cell; each land cell that no earlier search has reached starts a new island, and a DFS from it sinks the whole island into the sea, so the scan doesn't count it again:
+```python
+def sink(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    sink(grid, r - 1, c)
+    sink(grid, r + 1, c)
+    sink(grid, r, c - 1)
+    sink(grid, r, c + 1)
+
+def count_islands(rows):
+    grid = [list(row) for row in rows]
+    islands = 0
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                islands += 1
+                sink(grid, r, c)
+    return islands
+
+world = ["##..#",
+         "#...#",
+         "..#..",
+         "....#"]
+print(count_islands(world))
+```
+```output
+4
+```
+The islands are the three cells at the top left, the two at the top right, the single cell in the middle and the one at the bottom right, which only touches the top right island diagonally, through water. `count_islands` sinks a copy, so the original map is unchanged. A set of visited (r, c) cells would work as well, without changing any grid at all. Animation 2 counts the islands on a small map.
+
+### How big is each island?
+A DFS can count as it goes: each call that sinks a cell returns 1, plus whatever its four neighbours' calls return. A call that finds water, or the edge, returns 0:
+```python
+def area(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return 0
+    grid[r][c] = "."
+    return 1 + area(grid, r - 1, c) + area(grid, r + 1, c) + area(grid, r, c - 1) + area(grid, r, c + 1)
+
+def island_sizes(rows):
+    grid = [list(row) for row in rows]
+    sizes = []
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                sizes.append(area(grid, r, c))
+    return sizes
+
+sizes = island_sizes(world)
+print(sizes, max(sizes))
+```
+```output
+[3, 2, 1, 1] 3
+```
+Each land cell is counted by the one call that sinks it, so every island's cells are counted exactly once.
+
+### Do corners count?
+Whether land that touches only at a corner is one island or two depends on the problem. With 8 directions, the diagonal cells are neighbours too, and two loops over -1, 0 and 1 produce all eight offsets:
+```python
+def sink8(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr != 0 or dc != 0:
+                sink8(grid, r + dr, c + dc)
+
+def count_with(rows, sinker):
+    grid = [list(row) for row in rows]
+    count = 0
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                count += 1
+                sinker(grid, r, c)
+    return count
+
+diagonal = ["#.",
+            ".#"]
+print(count_with(diagonal, sink), count_with(diagonal, sink8))
+```
+```output
+2 1
+```
+`count_with` takes the sinking function as an argument, so the same scan can count either way. `dr != 0 or dc != 0` leaves out (0, 0), which would be the cell itself.
+
+### Big maps need a stack
+Each recursive call handles one cell, and the calls nest as deep as the path the search winds along. On a 100 × 100 map that's all land, that path can run through most of the 10,000 cells, far past Python's limit of about 1,000 nested calls. The explicit stack from the last lesson has no such limit:
+```python
+def sink_stack(grid, r, c):
+    stack = [(r, c)]
+    while stack:
+        r, c = stack.pop()
+        if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+            continue
+        grid[r][c] = "."
+        stack.append((r - 1, c))
+        stack.append((r + 1, c))
+        stack.append((r, c - 1))
+        stack.append((r, c + 1))
+
+big = ["#" * 100] * 100
+print(count_with(big, sink_stack))
+try:
+    count_with(big, sink)
+except RecursionError:
+    print("recursive sink: RecursionError")
+```
+```output
+1
+recursive sink: RecursionError
+```
+`sink_stack` pushes all four neighbours and checks each one when it's popped, the same "check inside" idea as the recursive version. Real maps and images are often this big, so the stack version is the safe default for grids.
+
+### Filling from the edges
+Some questions are about what **can't** be reached. Here, which water is a lake, enclosed by land, rather than part of the sea? Sea water touches the edge of the map, or touches other sea water. So fill the sea first, starting from every water cell on the edge; any water left unfilled afterwards is enclosed:
+```python
+def lakes(rows):
+    grid = [list(row) for row in rows]
+    height, width = len(grid), len(grid[0])
+    for r in range(height):
+        for c in range(width):
+            if r == 0 or r == height - 1 or c == 0 or c == width - 1:
+                fill(grid, r, c, ".", "~")
+    return ["".join(row) for row in grid]
+
+island = [".....",
+          ".###.",
+          ".#.#.",
+          ".###.",
+          "....."]
+for row in lakes(island):
+    print(row)
+```
+```output
+~~~~~
+~###~
+~#.#~
+~###~
+~~~~~
+```
+The sea becomes `~`, and the dot left in the middle is a lake. Filling from the edges turns "is this water enclosed?", a question about every possible way out, into one search.
+
+### How much work?
+Every cell is filled or sunk at most once, and each one leads to at most four more calls, or four pushes, so flood fill and island counting are O(R × C) for R rows and C columns, however many islands there are. The quick calls that find water or the edge add at most four per cell, which doesn't change that.
+
+=== keypoints
+- Flood fill is DFS on a grid: from a cell, spread to the neighbours above, below, left and right that match.
+- Changing a cell, by filling it or sinking land into water, marks it as visited, so the grid can be its own `seen` set. Work on a copy to keep the original.
+- Counting islands: scan every cell; each land cell not yet reached starts a new island, and one DFS from it marks the whole island.
+- A DFS that returns 1 plus its four neighbours' results measures an island's area.
+- Whether diagonal cells are joined is part of the problem: 4 and 8 directions can give different counts.
+- Recursion can go as deep as there are cells, so big grids need an explicit stack. Everything here is O(rows × cols).
+
+=== example: The paint bucket
+intro: A small drawing as a list of lists. The bucket tool fills the inside of the shape, and the fill stops at the outline, wherever the outline is.
+```python
+def fill(grid, r, c, old, new):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+        return
+    if grid[r][c] != old:
+        return
+    grid[r][c] = new
+    fill(grid, r - 1, c, old, new)
+    fill(grid, r + 1, c, old, new)
+    fill(grid, r, c - 1, old, new)
+    fill(grid, r, c + 1, old, new)
+
+picture = [list("........"),
+           list("..####.."),
+           list(".#....#."),
+           list(".#..#.#."),
+           list("..####.."),
+           list("........")]
+fill(picture, 2, 3, ".", "o")
+for row in picture:
+    print("".join(row))
+```
+1-10: The flood fill from the lesson.
+12-17: A closed shape with a `#` inside it. Each row is a list of characters, so cells can be changed.
+18: Click inside the shape, at row 2, column 3, and fill with `o`.
+19-20: The inside is filled, around the `#` in the middle, and the dots outside the outline are untouched: they're a different region.
+
+=== example: The biggest island
+intro: A map with several islands. One scan finds every island, measures each one with a DFS that counts as it sinks, and reports how many there are and how big the largest is.
+```python
+def area(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return 0
+    grid[r][c] = "."
+    return 1 + area(grid, r - 1, c) + area(grid, r + 1, c) + area(grid, r, c - 1) + area(grid, r, c + 1)
+
+world = ["##...#..",
+         "#..###..",
+         "...#....",
+         ".#....##",
+         "###...##"]
+grid = [list(row) for row in world]
+sizes = []
+for r in range(len(grid)):
+    for c in range(len(grid[0])):
+        if grid[r][c] == "#":
+            sizes.append(area(grid, r, c))
+print(len(sizes), "islands, sizes", sizes)
+print("largest:", max(sizes))
+```
+1-5: Sink one island and return how many land cells it had.
+7-11: `#` is land, `.` is water.
+12: Work on a copy, so `world` keeps its islands.
+13-17: Every land cell the scan finds starts a new island; `area` measures and sinks all of it.
+18-19: Four islands, in the order the scan reaches them: top left, top middle, bottom left, bottom right. The one in the top middle, with 5 cells, is the largest.
+
+=== animation: The fill spreading
+view: grid grid row=r col=c
+callstack r c
+intro: Filling from (0, 0) with `o`. Every call checks its own cell first: off the grid, a wall or already filled, and it returns straight away. The call stack shows which cells are waiting for their neighbours to finish.
+```python
+grid = [[".", ".", "#"], ["#", ".", "#"], ["#", "#", "."]]
+
+def fill(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != ".":
+        return
+    grid[r][c] = "o"
+    fill(grid, r - 1, c)
+    fill(grid, r + 1, c)
+    fill(grid, r, c - 1)
+    fill(grid, r, c + 1)
+
+fill(grid, 0, 0)
+```
+1: The grid: dots can be filled, `#` cells can't.
+3: Defines fill. Nothing runs yet.
+4: {'(' + str(r) + ', ' + str(c) + ') is off the grid.' if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) else '(' + str(r) + ', ' + str(c) + ') is ' + ('a dot: fill it.' if grid[r][c] == '.' else 'a wall.' if grid[r][c] == '#' else 'filled already.')}
+5: Nothing to do here: back to the call underneath.
+6: Fill ({r}, {c}).
+7: Try the cell above, ({r - 1}, {c}).
+8: Try the cell below, ({r + 1}, {c}).
+9: Try the cell to the left, ({r}, {c - 1}).
+10: Try the cell to the right, ({r}, {c + 1}).
+12: Fill from the top left corner.
+
+=== animation: Counting islands
+view: grid grid row=r col=c
+vars islands
+callstack r c
+intro: The scan goes along each row. Each `#` it finds is a new island, and `sink` turns that whole island into water before the scan carries on, so no island is counted twice.
+```python
+grid = [["#", ".", "#"], ["#", ".", "."]]
+
+def sink(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    sink(grid, r - 1, c)
+    sink(grid, r + 1, c)
+    sink(grid, r, c - 1)
+    sink(grid, r, c + 1)
+
+islands = 0
+for r in range(2):
+    for c in range(3):
+        if grid[r][c] == "#":
+            islands += 1
+            sink(grid, r, c)
+```
+1: A map with two islands: the two cells on the left, and the one at the top right.
+3: Defines sink. Nothing runs yet.
+4: {'(' + str(r) + ', ' + str(c) + ') is off the grid.' if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) else '(' + str(r) + ', ' + str(c) + ') is ' + ('land: sink it.' if grid[r][c] == '#' else 'water.')}
+5: Nothing to sink here: back to the call underneath.
+6: Turn ({r}, {c}) into water.
+7: Sink the cell above, ({r - 1}, {c}), if it's land.
+8: Sink the cell below, ({r + 1}, {c}), if it's land.
+9: Sink the cell to the left, ({r}, {c - 1}), if it's land.
+10: Sink the cell to the right, ({r}, {c + 1}), if it's land.
+12: No islands found yet.
+13: Scan the next row.
+14: Scan the next cell in row {r}.
+15: {'(' + str(r) + ', ' + str(c) + ') is land that no search has reached: a new island.' if grid[r][c] == '#' else '(' + str(r) + ', ' + str(c) + ') is water.'}
+16: Count island number {islands + 1}.
+17: Sink the whole island, starting at ({r}, {c}).
+
+=== task: predict easy
+title: Paint it
+code:
+```python
+def fill(grid, r, c, old, new):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+        return
+    if grid[r][c] != old:
+        return
+    grid[r][c] = new
+    fill(grid, r - 1, c, old, new)
+    fill(grid, r + 1, c, old, new)
+    fill(grid, r, c - 1, old, new)
+    fill(grid, r, c + 1, old, new)
+
+picture = [list("..#.."),
+           list(".##.."),
+           list("#...#"),
+           list("..#..")]
+fill(picture, 2, 2, ".", "*")
+for row in picture:
+    print("".join(row))
+```
+wrong[**#**\n*##**\n#***#\n**#**]: The three dots at the top left are walled off by `#` cells: nothing joins them to (2, 2), so they keep their colour.
+wrong[..#..\n.##..\n#***#\n..#..]: The fill keeps spreading from every cell it colours: up from row 2 into the right-hand columns, and down into row 3 on both sides of the `#`.
+wrong[..#**\n.##**\n#***#\n..#**]: From (2, 1), the cell below, (3, 1), is a dot too, and so is (3, 0) beside it. They're joined to the region.
+hint: Start at (2, 2) and spread up, down, left and right through dots only.
+hint: Which dots can't be reached without crossing a `#`?
+right: Every dot joined to (2, 2) becomes `*`: the middle of row 2, the right-hand side, and the bottom row on both sides. The three dots at the top left are a separate region, cut off by `#` cells, so they stay as they are.
+wrong: From (2, 2) the fill reaches (2, 1) and (2, 3), then (3, 0) and (3, 1) below the left part, and up the right-hand columns to rows 0 and 1, and (3, 3) and (3, 4). Nothing reaches the top left corner.
+
+=== task: mcq easy
+title: Why list(row)?
+prompt: The lesson turns each row of the map into a list with `list(row)` before filling or sinking. What happens if `grid` is a plain list of strings, like `["..#", ".#."]`, and the code runs `grid[0][1] = "o"`?
+* It raises a TypeError, because strings can't be changed in place :: Right. A string is immutable; a list of its characters can be changed.
+- It changes the second character of the first row to `o` :: That works on a list, not on a string. Strings can't have their characters replaced.
+- It replaces the whole first row with `"o"` :: `grid[0][1] = ...` targets one character, and strings don't allow even that.
+- It adds `o` to the end of the first row :: Assignment doesn't add anything; on a string it raises an error.
+hint: Can you change one character of a string?
+hint: What does `list("..#")` give?
+right: Strings are immutable, so a fill or sink needs a grid of lists, like `[list(row) for row in rows]`, whose cells can be reassigned.
+wrong: `grid[0]` is a string, and strings don't support item assignment: Python raises a TypeError. Convert each row with `list(row)` first.
+
+=== task: cells easy
+title: Count the islands
+prompt: `#` is land and `.` is water, and land cells are joined up, down, left or right. How many islands does each map have?
+
+```text
+A        B        C        D
+# . #    # # .    # . #    # # #
+. . .    . # #    . # .    # . #
+# . #    . . #    # . #    # # #
+```
+labels: A | B | C | D
+answer: 4 | 1 | 5 | 1
+wrong[4 | 1 | 1 | 1]: In C, the cells only touch at their corners. With moves up, down, left and right, that doesn't join them: 5 separate islands.
+wrong[4 | 3 | 5 | 1]: In B, each cell touches the next one along a side, in a staircase from the top left to the bottom right: one island.
+wrong[4 | 1 | 5 | 2]: D is a ring: one island, even though it surrounds a water cell.
+hint: Two land cells are on the same island only if you can walk between them through land, one side at a time.
+hint: Touching at a corner doesn't count.
+right: 4, 1, 5 and 1. Only side-by-side cells are joined, so diagonal neighbours are separate islands, while a staircase and a ring are each a single island.
+wrong: A: four separate corners. B: a staircase joined side to side. C: five cells touching only at corners. D: a ring of eight cells joined all the way round.
+
+=== task: code easy
+title: Count the islands
+prompt: Write `count_islands(rows)`, where `rows` is a list of strings with `#` for land and `.` for water, and return the number of islands. Land cells are joined up, down, left and right. Copy the map into a list of lists, scan every cell, and when you find land, add 1 and sink the whole island with `sink`, a recursive DFS that turns land into water.
+starter:
+```python
+def sink(grid, r, c):
+    # your code here
+    pass
+
+def count_islands(rows):
+    grid = [list(row) for row in rows]
+    islands = 0
+    # your code here
+    return islands
+```
+solution:
+```python
+def sink(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    sink(grid, r - 1, c)
+    sink(grid, r + 1, c)
+    sink(grid, r, c - 1)
+    sink(grid, r, c + 1)
+
+def count_islands(rows):
+    grid = [list(row) for row in rows]
+    islands = 0
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                islands += 1
+                sink(grid, r, c)
+    return islands
+```
+tests:
+- count_islands(["##..#", "#...#", "..#..", "....#"])
+- count_islands(["...", "..."])
+- count_islands(["###", "###"])
+- count_islands(["#.#.#"])
+- count_islands(["#", ".", "#"])
+- count_islands(["#.", ".#"])
+fail[1]: The lesson's map: 4 islands.
+fail[2]: No land at all: 0.
+fail[3]: Solid land is one island: 1. Each island must be sunk, or every cell gets counted.
+fail[4]: Three single cells in a row, separated by water: 3.
+fail[5]: One column, two cells with water between: 2.
+fail[6]: Diagonal cells aren't joined: 2.
+error[IndexError]: A neighbour off the grid was read. Check all four bounds before looking at `grid[r][c]`.
+error[RecursionError]: The calls never stop. Make sure `sink` changes the cell to water before calling itself on the neighbours.
+hint: In `sink`, return at once if (r, c) is off the grid or isn't land. Otherwise turn it into water and sink its four neighbours.
+hint: In `count_islands`, loop over every row and column. Each `#` the scan meets is a new island.
+right: Sinking an island the moment it's found means the scan never meets that island again, so each island is counted once.
+wrong: `sink` checks its cell, turns it into water and calls itself on the four neighbours. The scan counts each `#` it finds and sinks the island it belongs to.
+
+=== task: fill easy
+title: Old and new
+prompt: Fill in the blanks so that `fill` repaints the region joined to the starting cell, and the program prints:
+
+```output
+oo#.
+o#..
+#..#
+```
+code:
+```python
+def fill(grid, r, c, old, new):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+        return
+    if grid[r][c] != ??:
+        return
+    grid[r][c] = ??
+    fill(grid, r - 1, c, old, new)
+    fill(grid, r + 1, c, old, new)
+    fill(grid, r, c - 1, old, new)
+    fill(grid, r, c + 1, old, new)
+
+picture = [list("..#."),
+           list(".#.."),
+           list("#..#")]
+fill(picture, 0, 0, ".", "o")
+for row in picture:
+    print("".join(row))
+```
+answer: old | new
+wrong[new | new]: The first cell has the old colour, not the new one, so the very first call stops and nothing changes.
+wrong[old | old]: Writing the old colour back changes nothing, so every call keeps finding the old colour, and the calls go round in circles until a RecursionError.
+hint: A cell belongs to the region if it still has the colour that's being replaced.
+hint: Changing the cell is also what stops it being filled twice.
+right: Stopping at any cell without the old colour keeps the fill inside its region, and writing the new colour marks each cell as done.
+wrong: Return unless `grid[r][c]` is `old`; then set it to `new` and spread to the four neighbours.
+
+=== task: multi easy
+title: True of flood fill
+prompt: Choose **every** true statement about the recursive flood fill in this lesson.
+* Changing a cell's colour marks it as visited, so no separate `seen` set is needed :: Right. A filled cell no longer has the old colour, so no later call fills it again.
+* It's a depth-first search on the grid :: Right. Each call dives into its first neighbour before trying the others.
+* A cell off the grid makes its call return straight away :: Right. The bounds check comes first in each call.
+- It colours every cell of the old colour in the whole grid :: Only cells joined to the start through the old colour. Other regions of the same colour are untouched.
+- It spreads to diagonal cells as well :: It only calls itself on the cells above, below, left and right.
+- It needs the grid to be a list of strings :: Strings can't be changed; the grid must be a list of lists.
+hint: What happens to a dot that's the right colour but walled off from the start?
+hint: Which four cells does each call try?
+right: The fill is DFS on the grid that uses the colour itself as the visited mark, and each call checks its own cell. It only reaches the start's own region, along the four sides.
+wrong: Filled cells mark themselves, each call checks bounds and colour, and the spreading goes up, down, left and right within one region.
+
+=== task: parsons easy
+title: Check before calling
+prompt: This version checks each neighbour **before** calling itself, so every call is for a cell that really needs filling. Arrange the lines so that the program prints:
+
+```output
+oo#.
+o#..
+#..#
+```
+
+Not every line is needed.
+lines:
+```python
+def fill(grid, r, c):
+    grid[r][c] = "o"
+    for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+        if 0 <= nr < len(grid) and 0 <= nc < len(grid[0]) and grid[nr][nc] == ".":
+            fill(grid, nr, nc)
+```
+distractors:
+```python
+        if grid[nr][nc] == ".":
+    grid[r][c] = "."
+```
+after:
+```python
+picture = [list("..#."),
+           list(".#.."),
+           list("#..#")]
+fill(picture, 0, 0)
+for row in picture:
+    print("".join(row))
+```
+hint: The cell is filled first, then each neighbour is checked.
+hint: The bounds have to be checked before `grid[nr][nc]` is read.
+right: Each call fills its cell and then calls itself only on neighbours that are on the grid and still dots. No call is wasted, at the cost of a longer condition.
+wrong: Fill the cell with `o`, then for each of the four neighbouring cells, if it's on the grid and a dot, fill from it.
+
+=== task: order easy
+title: Round the ring
+prompt: The recursive fill starts at (0, 1) on this grid, and each call tries up, down, left, then right:
+
+```text
+. . .
+. # .
+. . .
+```
+
+Put the cells in the order they're filled.
+items:
+- `(0, 1)`
+- `(0, 0)`
+- `(1, 0)`
+- `(2, 0)`
+- `(2, 1)`
+- `(2, 2)`
+- `(1, 2)`
+- `(0, 2)`
+hint: From (0, 1), up is off the grid and down is the wall. Left comes next.
+hint: Each call dives into its first fillable neighbour, so the fill runs all the way round the ring before any call gets to try "right" at (0, 1).
+right: (0, 1), (0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (1, 2) and (0, 2). The fill dives anticlockwise round the ring, and (0, 2), right next to the start, is filled last.
+wrong: (0, 1) goes left to (0, 0), which goes down to (1, 0) and (2, 0), then right along the bottom to (2, 2), up to (1, 2) and (0, 2). By the time (0, 1) tries right, (0, 2) is already filled.
+
+=== task: predict easy
+title: Counting twice
+prompt: This `count_islands` sinks the map it's given, without making a copy first. What does it print?
+code:
+```python
+def sink(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    sink(grid, r - 1, c)
+    sink(grid, r + 1, c)
+    sink(grid, r, c - 1)
+    sink(grid, r, c + 1)
+
+def count_islands(grid):
+    islands = 0
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                islands += 1
+                sink(grid, r, c)
+    return islands
+
+world = [list("#.#"),
+         list("#.."),
+         list("..#")]
+print(count_islands(world), count_islands(world))
+```
+wrong[3 3]: The first call sinks every island in `world` itself, so the second call finds only water.
+wrong[2 0]: The left column is one island, and each right-hand corner is another: 3.
+wrong[4 4]: (0, 0) and (1, 0) are side by side, so they're one island: 3 in all. And the second call sees a map with no land.
+hint: Which list does `sink` change?
+hint: What's left of `world` after the first call?
+right: `3 0`. Sinking changes the caller's own lists, so the first call leaves `world` all water. Copying with `[list(row) for row in rows]` inside the function keeps the original intact.
+wrong: The first count finds 3 islands and sinks them all in `world`. The second count scans a map of water: 0.
+
+=== task: mcq easy
+title: How much work?
+prompt: A satellite photo is a grid of 2,000 rows and 3,000 columns. Roughly how much work does counting its islands with flood fill take?
+* About 6 million cells' worth: each cell is sunk at most once and makes at most four calls :: Right. The work is proportional to the number of cells, O(rows × cols).
+- About 36 trillion: every cell compared with every other :: Flood fill never compares pairs of cells; it only looks at neighbours.
+- About 5,000: one step per row and per column :: The scan alone visits all 6 million cells.
+- It depends mainly on the number of islands, multiplied by the size of the grid :: Each cell is sunk once in all, however many islands there are, because sunk land is never counted again.
+hint: How many times can one cell be sunk?
+hint: How many cells are there?
+right: 2,000 × 3,000 = 6 million cells, each handled a constant number of times: O(rows × cols), whatever the islands look like.
+wrong: The scan looks at each cell once, and each land cell is sunk once, with four quick neighbour checks. That's a few times 6 million steps.
+
+=== task: code medium
+title: The largest island
+prompt: Write `largest_island(rows)` that returns the number of cells in the biggest island (0 if there's no land), where `#` is land, `.` is water and land is joined up, down, left and right. One test is a 150 × 150 map of solid land, an island far too big for recursion, so measure each island with an explicit stack: pop a cell, skip it unless it's land on the grid, sink it, count it, and push its four neighbours.
+starter:
+```python
+def largest_island(rows):
+    grid = [list(row) for row in rows]
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def largest_island(rows):
+    grid = [list(row) for row in rows]
+    best = 0
+    for r0 in range(len(grid)):
+        for c0 in range(len(grid[0])):
+            if grid[r0][c0] != "#":
+                continue
+            size = 0
+            stack = [(r0, c0)]
+            while stack:
+                r, c = stack.pop()
+                if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+                    continue
+                grid[r][c] = "."
+                size += 1
+                stack.append((r - 1, c))
+                stack.append((r + 1, c))
+                stack.append((r, c - 1))
+                stack.append((r, c + 1))
+            best = max(best, size)
+    return best
+```
+tests:
+- largest_island(["##..#", "#...#", "..#..", "....#"])
+- largest_island(["...", "..."])
+- largest_island(["#.#", "###", "#.#"])
+- largest_island(["#.", ".#"])
+- largest_island(["##...#..", "#..###..", "...#....", ".#....##", "###...##"])
+- largest_island(["#" * 150] * 150)
+fail[1]: The lesson's map: the biggest island has 3 cells.
+fail[2]: No land: 0.
+fail[3]: An H shape, all joined: 7.
+fail[4]: Two separate cells: 1.
+fail[5]: The example's map: the island in the top middle, with 5 cells.
+fail[6]: Solid land: one island of 22,500 cells. With recursion this would raise a RecursionError.
+error[RecursionError]: The island is too big for recursion. Use a list as a stack inside a `while` loop.
+hint: For each land cell the scan finds, start a stack with that cell and a size of 0.
+hint: Pop a cell; if it's off the grid or not land, `continue`. Otherwise sink it, add 1 to the size, and push its four neighbours.
+hint: When the stack is empty, the island is measured; keep the biggest size.
+right: The stack does what the recursion did, cell by cell, with no depth limit, and counting each cell as it's sunk measures the island exactly.
+wrong: Scan the grid. For each `#`, run a stack loop that sinks and counts every land cell it reaches, then compare the count with the best so far.
+
+=== task: code medium
+title: The paint bucket
+prompt: An image is a list of lists of numbers, one number per pixel colour. Write `paint_bucket(image, r, c, colour)` that fills the region of (r, c), every pixel joined to it up, down, left or right through pixels of the same colour, with `colour`, changing `image` itself, and returns `image`. If the pixel already has that colour, return the image unchanged straight away: otherwise the fill would never end. Use a helper `paint(image, r, c, old, new)`.
+starter:
+```python
+def paint(image, r, c, old, new):
+    # your code here
+    pass
+
+def paint_bucket(image, r, c, colour):
+    # your code here
+    return image
+```
+solution:
+```python
+def paint(image, r, c, old, new):
+    if r < 0 or r >= len(image) or c < 0 or c >= len(image[0]) or image[r][c] != old:
+        return
+    image[r][c] = new
+    paint(image, r - 1, c, old, new)
+    paint(image, r + 1, c, old, new)
+    paint(image, r, c - 1, old, new)
+    paint(image, r, c + 1, old, new)
+
+def paint_bucket(image, r, c, colour):
+    old = image[r][c]
+    if old == colour:
+        return image
+    paint(image, r, c, old, colour)
+    return image
+```
+tests:
+- paint_bucket([[1, 1, 1], [1, 1, 0], [1, 0, 1]], 1, 1, 2)
+- paint_bucket([[0, 0, 0], [0, 0, 0]], 0, 0, 0)
+- paint_bucket([[5]], 0, 0, 3)
+- paint_bucket([[1, 2], [2, 1]], 0, 0, 7)
+- paint_bucket([[3, 3, 4], [4, 3, 4], [4, 4, 3]], 0, 2, 9)
+fail[1]: The 1s joined to the middle become 2; the 1 in the bottom right corner only touches the region diagonally, so it stays: [[2, 2, 2], [2, 2, 0], [2, 0, 1]].
+fail[2]: The colour is already 0: return the image unchanged, without filling.
+fail[3]: One pixel: [[3]].
+fail[4]: The other 1 only touches diagonally: [[7, 2], [2, 1]].
+fail[5]: Starting on the 4 at the top right, only that 4 and the one below it are joined: [[3, 3, 9], [4, 3, 9], [4, 4, 3]].
+error[RecursionError]: If the new colour equals the old one, painting changes nothing and the calls never stop. Return early in that case.
+hint: Read `old = image[r][c]` before painting anything.
+hint: `paint` returns if the pixel is off the image or isn't `old`; otherwise it sets it to `new` and paints the four neighbours.
+right: The region is defined by the start pixel's old colour, and repainting is what marks each pixel as done, which is exactly why painting with the same colour has to be ruled out first.
+wrong: Remember the start pixel's colour. If it's already `colour`, return. Otherwise run the recursive paint from (r, c), replacing `old` with `colour`, and return the image.
+
+=== task: predict medium
+title: Sinking with a stack
+prompt: This sink records the cells in the order it turns them into water. What does it print?
+code:
+```python
+def sink_stack(grid, r, c):
+    order = []
+    stack = [(r, c)]
+    while stack:
+        r, c = stack.pop()
+        if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+            continue
+        grid[r][c] = "."
+        order.append((r, c))
+        stack.append((r - 1, c))
+        stack.append((r + 1, c))
+        stack.append((r, c - 1))
+        stack.append((r, c + 1))
+    return order
+
+block = [list("##"),
+         list("##")]
+print(sink_stack(block, 0, 0))
+```
+wrong[[(0, 0), (1, 0), (1, 1), (0, 1)]]: That's the recursive order, which tries "down" before "right". The stack pushes "right" last, so it's on top and comes off first.
+wrong[[(0, 0), (0, 1), (1, 0), (1, 1)]]: After (0, 1), the next cell popped is one of the cells (0, 1) pushed, not the (1, 0) that (0, 0) pushed earlier. (0, 1) pushed (1, 1) after (0, 0), so (1, 1) is on top.
+wrong[[(0, 0), (0, 1), (1, 1)]]: (1, 1) pushes its left neighbour, (1, 0), last, so it's popped next, and it's still land.
+hint: The last neighbour pushed is the cell to the right.
+hint: After each cell, look at what it pushed last.
+right: `[(0, 0), (0, 1), (1, 1), (1, 0)]`. Each cell pushes its right-hand neighbour last, so that one comes off first. When the cell to the right is water or off the grid, the push before it wins, so the sink walks round the block clockwise: right, down, left.
+wrong: (0, 0) pushes up, down, left, right; right, (0, 1), is popped. (0, 1)'s last useful push is down, (1, 1). (1, 1)'s is left, (1, 0). Everything else popped is water or off the grid.
+
+=== task: cells medium
+title: Four or eight?
+prompt: Count the islands in each map twice: once joining land only up, down, left and right, and once joining diagonal neighbours too.
+
+```text
+B        C
+# . #    # # . .
+. # .    . . # #
+# . #
+```
+labels: B, 4 directions | B, 8 directions | C, 4 directions | C, 8 directions
+answer: 5 | 1 | 2 | 1
+wrong[1 | 1 | 1 | 1]: With 4 directions, cells that only touch at a corner aren't joined. B's cells all touch that way: 5 islands.
+wrong[5 | 5 | 2 | 2]: With 8 directions, a corner touch is enough, so B's centre joins all four corners into one island, and C's two pairs meet at a corner.
+wrong[5 | 1 | 2 | 2]: In C, the right-hand cell of the top pair, (0, 1), touches the left-hand cell of the bottom pair, (1, 2), at a corner.
+hint: Which land cells touch only at a corner?
+hint: With 8 directions, each corner touch joins two cells.
+right: 5, 1, 2 and 1. The maps don't change; only the rule for what counts as joined does, and that rule is part of the problem, not the algorithm.
+wrong: B: 4 directions leave all 5 cells separate; 8 join them through the centre. C: 4 directions give two pairs; 8 join them where they touch diagonally.
+
+=== task: fill medium
+title: Number the islands
+prompt: Fill in the blanks so that each island is painted with its own number, counting from 1 in the order the scan finds them, and the program prints:
+
+```output
+11..2
+1..22
+..3..
+44..5
+```
+code:
+```python
+world = [list("##..#"),
+         list("#..##"),
+         list("..#.."),
+         list("##..#")]
+
+def paint(grid, r, c, label):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = label
+    paint(grid, r - 1, c, label)
+    paint(grid, r + 1, c, label)
+    paint(grid, r, c - 1, label)
+    paint(grid, r, c + 1, label)
+
+label = 0
+for r in range(len(world)):
+    for c in range(len(world[0])):
+        if world[r][c] == ??:
+            label += 1
+            paint(world, r, c, ??)
+for row in world:
+    print("".join(row))
+```
+answer: "#" | str(label)
+wrong["#" | label]: The cells would hold numbers, and `"".join(row)` can only join strings, so it raises a TypeError.
+wrong["." | str(label)]: The scan would start a "new island" at every water cell, and `paint` returns at once there, so the land is never painted.
+wrong["#" | "1"]: Every island would get the same label, 1, so they couldn't be told apart.
+hint: A new island starts at land that hasn't been painted yet.
+hint: The label must be a string to sit in the grid alongside `.` and be joined.
+right: The scan meets each island at its first cell in reading order, gives it the next number, and `paint` spreads that number over the whole island, so later cells of it are no longer `#`.
+wrong: Start a new island when the scan finds `"#"`, and paint it with `str(label)`.
+
+=== task: mcq medium
+title: Why return 0?
+prompt: In the lesson's `area`, a call that finds water, or the edge of the map, returns 0. What would go wrong if it used a bare `return` instead?
+* The call would give back None, and adding None to a number raises a TypeError :: Right. Every call's result is added up, so every call must return a number.
+- Nothing: Python treats a bare `return` as 0 :: A bare `return` gives None, not 0.
+- The island would be measured as 0 :: The program wouldn't get that far: adding None raises an error.
+- The search would stop at the first water cell and report a smaller island :: Each result is added by the caller; the problem is the type of the result, not when the search stops.
+hint: What does a function return when it says only `return`?
+hint: What does the caller do with each result?
+right: Each call's answer is part of a sum, so water and the edge must count as 0, a number, not as nothing.
+wrong: `return` on its own returns None. The calling cell adds its neighbours' results, and `int + None` raises a TypeError, so a water cell must return 0.
+
+=== task: predict medium
+title: Lakes and sea
+prompt: The sea is filled first, starting from every water cell on the edge of the map. What does it print?
+code:
+```python
+def fill(grid, r, c, old, new):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+        return
+    if grid[r][c] != old:
+        return
+    grid[r][c] = new
+    fill(grid, r - 1, c, old, new)
+    fill(grid, r + 1, c, old, new)
+    fill(grid, r, c - 1, old, new)
+    fill(grid, r, c + 1, old, new)
+
+island = ["#####.",
+          "#..#..",
+          "#..###",
+          "##.#.#",
+          ".####."]
+grid = [list(row) for row in island]
+height, width = len(grid), len(grid[0])
+for r in range(height):
+    for c in range(width):
+        if r == 0 or r == height - 1 or c == 0 or c == width - 1:
+            fill(grid, r, c, ".", "~")
+for row in grid:
+    print("".join(row))
+```
+wrong[#####~\n#~~#~~\n#~~###\n##~#~#\n~####~]: The dots inside are walled off from every edge cell by `#`, so the sea fill never reaches them: they stay as dots.
+wrong[#####~\n#..#..\n#..###\n##.#.#\n~####~]: (1, 4) and (1, 5) are joined to the edge cell (0, 5), so they're sea too.
+wrong[#####~\n#..#~~\n#..###\n##.#~#\n~####~]: (3, 4) is surrounded by land on all four sides, and it isn't on the edge, so the sea can't reach it.
+hint: Which water cells are on the edge of the map? Which dots are joined to them?
+hint: A dot that the sea can't reach stays a dot.
+right: The sea fills the top right corner, (1, 4) and (1, 5) beside it, and the two bottom corners. The dots left over, the four at the top left inside, (3, 2) below them, and (3, 4), are lakes.
+wrong: Edge water at (0, 5), (4, 0) and (4, 5) is filled, and from (0, 5) the fill spreads to (1, 5) and (1, 4). Everything else is shut in by land, so it stays `.`.
+
+=== task: multi medium
+title: A job for flood fill?
+prompt: Choose **every** task that flood fill, or a scan with flood fill, does directly.
+* Recolouring a region of an image with a paint bucket :: Right. That's flood fill itself.
+* Counting the separate rooms on a building plan, where walls are `#` :: Right. Each room is a region of floor cells; count them as islands.
+* Finding which water on a map is enclosed by land :: Right. Fill the sea from the edges; what's left is enclosed.
+- Finding the fewest moves through a maze :: Flood fill reaches everything, but in no particular order. Fewest moves needs BFS.
+- Finding the cheapest route across land where each cell costs a different amount :: Different costs need Dijkstra's algorithm.
+- Sorting the islands' sizes from largest to smallest :: Flood fill can measure them, but ordering the numbers is a sort, not a search.
+hint: Is the question about which cells are joined, or about distances and costs?
+hint: Flood fill doesn't care in which order it reaches cells.
+right: Regions, rooms and enclosed water are all about which cells are joined, which is what flood fill finds. Distances and costs need BFS or Dijkstra's algorithm.
+wrong: Flood fill answers "which cells belong together?". Questions about fewest moves or lowest cost need a search that goes in order of distance.
+
+=== task: parsons medium
+title: The coastline
+prompt: An island's **perimeter** is the number of cell edges where it meets water or the edge of the map. A neat DFS counts it: a step off the island, into water or off the grid, is one edge of coastline, so it returns 1; a land cell that's already been counted returns 0; a new land cell adds up what its four neighbours return. Arrange the lines so that the program prints:
+
+```output
+4 8 12
+```
+
+Not every line is needed.
+lines:
+```python
+def perimeter(grid, r, c, seen):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] == ".":
+        return 1
+    if (r, c) in seen:
+        return 0
+    seen.add((r, c))
+    total = 0
+    for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+        total += perimeter(grid, nr, nc, seen)
+    return total
+```
+distractors:
+```python
+    if (r, c) not in seen:
+        total += 1
+```
+after:
+```python
+print(perimeter(["#"], 0, 0, set()), perimeter(["##", "#."], 0, 0, set()),
+      perimeter([".#..", "###.", ".#.."], 0, 1, set()))
+```
+hint: Water or the edge of the grid is where the coastline is: that step counts 1.
+hint: Land that's already been visited counts 0, or its edges would be counted twice.
+right: Every one of the island's cell edges is crossed by exactly one call, from the land cell on its side: if the other side is water or off the grid, that call returns 1. Edges between two land cells return 0, so only the coastline is counted.
+wrong: Return 1 for water or off the grid, 0 for land already seen. Otherwise mark the cell and return the total of its four neighbours' results.
+
+=== task: order medium
+title: Counting islands, step by step
+prompt: Put the steps of counting the islands on a map in order.
+items:
+- Copy the map into a list of lists, so it can be changed.
+- Scan the cells row by row.
+- When the scan finds a land cell, add 1 to the count.
+- Sink that whole island with a DFS, so the scan never counts it again.
+- When the scan is finished, the count is the number of islands.
+hint: Nothing can be sunk until the map is a list of lists.
+hint: The count goes up before the island is sunk.
+right: Copy, scan, count each land cell the scan meets, sink its island at once, and read the count at the end.
+wrong: Make a changeable copy first. Then scan; every land cell found starts a new island, which is counted and sunk straight away. The final count is the answer.
+
+=== task: code hard
+title: The shortest bridge
+prompt: A map has exactly two islands, or sometimes only one. Write `bridge(rows)` that returns the fewest water cells that must be turned into land to join two islands, moving up, down, left and right; return -1 if the map has only one island. First find any land cell and mark its whole island with a DFS, collecting its cells. Then run a BFS from all of that island's cells at once, at distance 0, through water, and stop when it reaches land of the other island: the distance of the cell it came from is the number of water cells crossed.
+starter:
+```python
+from collections import deque
+
+def bridge(rows):
+    grid = [list(row) for row in rows]
+    # your code here
+    return -1
+```
+solution:
+```python
+from collections import deque
+
+def bridge(rows):
+    grid = [list(row) for row in rows]
+    height, width = len(grid), len(grid[0])
+    first = []
+    for r0 in range(height):
+        for c0 in range(width):
+            if grid[r0][c0] == "#" and not first:
+                stack = [(r0, c0)]
+                while stack:
+                    r, c = stack.pop()
+                    if r < 0 or r >= height or c < 0 or c >= width or grid[r][c] != "#":
+                        continue
+                    grid[r][c] = "A"
+                    first.append((r, c))
+                    stack.append((r - 1, c))
+                    stack.append((r + 1, c))
+                    stack.append((r, c - 1))
+                    stack.append((r, c + 1))
+    dist = {}
+    for cell in first:
+        dist[cell] = 0
+    queue = deque(first)
+    while queue:
+        r, c = queue.popleft()
+        for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+            if 0 <= nr < height and 0 <= nc < width and (nr, nc) not in dist:
+                if grid[nr][nc] == "#":
+                    return dist[(r, c)]
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+    return -1
+```
+tests:
+- bridge(["#.#"])
+- bridge(["#.", ".#"])
+- bridge(["#....#"])
+- bridge(["##...", "##...", ".....", "...##"])
+- bridge(["#...", "....", "...#"])
+- bridge(["###", "#.#", "###"])
+fail[1]: One water cell between them: 1.
+fail[2]: The islands touch only at a corner: turning one of the two water cells into land joins them, 1.
+fail[3]: Four water cells in a row: 4.
+fail[4]: Three water cells, such as (1, 2), (2, 2) and (2, 3), join the first island's corner to the second island: 3.
+fail[5]: Opposite corners of a 3 × 4 map: 4 water cells along any shortest bridge.
+fail[6]: The ring is a single island, so there's nothing to join: -1.
+hint: Mark the first island with a DFS (a stack is safest), changing its cells to something other than `#` and collecting them in a list.
+hint: Put every cell of that island in the BFS queue at distance 0. Water cells get the distance of the cell they're reached from, plus 1.
+hint: When a neighbour is `#`, it belongs to the other island: return the distance of the cell you're standing on.
+right: DFS is the right tool for "which cells form this island?", and BFS from all of them at once is the right tool for "how far is the nearest other land?". The first `#` the BFS meets is the closest, and the cell it's reached from is that many water cells out.
+wrong: Find a land cell, mark and collect its whole island. Start a BFS with all of those cells at distance 0, through water; when a neighbour is land that wasn't marked, return the current cell's distance. If the BFS runs out, there was only one island: -1.
+
+=== task: code hard
+title: One cell of new land
+prompt: You may turn **one** water cell into land. Write `best_flip(rows)` that returns the size of the largest island you can make (with no water at all, the largest island as it is). Land is joined up, down, left and right. Checking each water cell by flipping it and measuring again is far too slow on big maps. Instead, label every island with a number and record its size in one pass; then a flipped cell's island is 1 plus the sizes of the **different** islands next to it. The speed check uses a map of about n cells with columns of land and water side by side.
+starter:
+```python
+def best_flip(rows):
+    height, width = len(rows), len(rows[0])
+    label = {}
+    sizes = []
+    # your code here
+    return 0
+```
+solution:
+```python
+def best_flip(rows):
+    height, width = len(rows), len(rows[0])
+    label = {}
+    sizes = []
+    for r0 in range(height):
+        for c0 in range(width):
+            if rows[r0][c0] != "#" or (r0, c0) in label:
+                continue
+            number = len(sizes)
+            size = 0
+            stack = [(r0, c0)]
+            while stack:
+                r, c = stack.pop()
+                if r < 0 or r >= height or c < 0 or c >= width:
+                    continue
+                if rows[r][c] != "#" or (r, c) in label:
+                    continue
+                label[(r, c)] = number
+                size += 1
+                stack.append((r - 1, c))
+                stack.append((r + 1, c))
+                stack.append((r, c - 1))
+                stack.append((r, c + 1))
+            sizes.append(size)
+    best = max(sizes) if sizes else 0
+    for r in range(height):
+        for c in range(width):
+            if rows[r][c] == ".":
+                beside = set()
+                for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+                    if (nr, nc) in label:
+                        beside.add(label[(nr, nc)])
+                total = 1
+                for number in beside:
+                    total += sizes[number]
+                best = max(best, total)
+    return best
+```
+tests:
+- best_flip(["#.", ".#"])
+- best_flip(["##", "#."])
+- best_flip(["##", "##"])
+- best_flip(["..", ".."])
+- best_flip(["#.#", "...", "#.#"])
+- best_flip(["##.##", "#...#"])
+fail[1]: Flipping either water cell joins both single cells: 3.
+fail[2]: Flipping the corner makes the whole 2 × 2 square: 4.
+fail[3]: No water to flip: the island as it is, 4.
+fail[4]: No land: the flipped cell on its own, 1.
+fail[5]: Flipping a middle edge cell joins two corners: 1 + 1 + 1 = 3.
+fail[6]: Flipping (0, 2) joins two islands of 3: 3 + 3 + 1 = 7.
+speed: setup=side = int(n ** 0.5); rows = ["#." * (side // 2)] * side | call=best_flip(rows) | target=O(n)
+slow:
+```python
+def largest(grid):
+    seen = set()
+    best = 0
+    for r0 in range(len(grid)):
+        for c0 in range(len(grid[0])):
+            if grid[r0][c0] != "#" or (r0, c0) in seen:
+                continue
+            size = 0
+            stack = [(r0, c0)]
+            while stack:
+                r, c = stack.pop()
+                if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]):
+                    continue
+                if grid[r][c] != "#" or (r, c) in seen:
+                    continue
+                seen.add((r, c))
+                size += 1
+                stack.append((r - 1, c))
+                stack.append((r + 1, c))
+                stack.append((r, c - 1))
+                stack.append((r, c + 1))
+            best = max(best, size)
+    return best
+
+def best_flip(rows):
+    grid = [list(row) for row in rows]
+    best = largest(grid)
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == ".":
+                grid[r][c] = "#"
+                best = max(best, largest(grid))
+                grid[r][c] = "."
+    return best
+```
+hint: Pass 1: for each land cell without a label, run a stack DFS that gives its whole island the next number, and append the island's size to `sizes`.
+hint: Pass 2: for each water cell, collect the labels of its land neighbours in a set, so an island that touches it twice is only added once.
+hint: The answer is the biggest of 1 + those sizes, or the biggest existing island if that's larger.
+right: Labelling turns "how big is the island next to this cell?" into a lookup, so every water cell is checked in constant time. The set stops one island being added twice when it touches the cell from two sides.
+wrong: Label the islands and record their sizes in one pass. Then for each water cell, add 1 to the sizes of the distinct islands around it, and keep the best, starting from the largest island.
+
+=== task: code hard
+title: Different shapes
+prompt: Write `count_shapes(rows)` that returns how many **different** island shapes the map has, where two islands have the same shape if one can be slid onto the other, without turning or flipping it. Record each island as the list of its cells' positions relative to its first cell, the one the scan meets first, then sort that list into a tuple so it can go in a set. Land is joined up, down, left and right.
+starter:
+```python
+def count_shapes(rows):
+    grid = [list(row) for row in rows]
+    shapes = set()
+    # your code here
+    return len(shapes)
+```
+solution:
+```python
+def collect(grid, r, c, r0, c0, cells):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    cells.append((r - r0, c - c0))
+    collect(grid, r - 1, c, r0, c0, cells)
+    collect(grid, r + 1, c, r0, c0, cells)
+    collect(grid, r, c - 1, r0, c0, cells)
+    collect(grid, r, c + 1, r0, c0, cells)
+
+def count_shapes(rows):
+    grid = [list(row) for row in rows]
+    shapes = set()
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                cells = []
+                collect(grid, r, c, r, c, cells)
+                shapes.add(tuple(sorted(cells)))
+    return len(shapes)
+```
+tests:
+- count_shapes(["##..##", "#...#."])
+- count_shapes(["##.##", "#...#"])
+- count_shapes(["#.#.#"])
+- count_shapes(["##.#.", "#..##", "....."])
+- count_shapes(["...", "..."])
+- count_shapes([".#.", "##.", "..."])
+fail[1]: Two copies of the same L shape, one slid along: 1.
+fail[2]: An L and its mirror image are different shapes, since flipping isn't allowed: 2.
+fail[3]: Three single cells are all the same shape: 1.
+fail[4]: The left island is an L with its corner at the top; the right one has its corner at the bottom: 2.
+fail[5]: No islands: 0.
+fail[6]: A single island: 1.
+hint: Measure each cell from the island's first cell: (r − r0, c − c0). Identical shapes give identical lists.
+hint: The DFS can visit cells in different orders, so sort the list before turning it into a tuple.
+hint: A set of tuples counts each different shape once.
+right: Subtracting the first cell's position slides every island to the same starting point, and sorting removes any difference in visiting order, so equal shapes give equal tuples and the set keeps one of each.
+wrong: For each island, collect (r − r0, c − c0) for every cell, sort the list, make it a tuple, and add it to a set. The answer is the size of the set.
+
+=== task: code hard
+title: Water to both oceans
+prompt: A grid gives the height of each cell. Rain flows from a cell to a neighbour (up, down, left or right) that's the same height or lower. The top and left edges touch the Pacific, and the bottom and right edges touch the Atlantic. Write `both_oceans(heights)` that returns, sorted, the (r, c) cells whose rain can reach both oceans. Work backwards from the oceans: a DFS from every Pacific edge cell that climbs to neighbours of the same height or higher finds every cell that can drain into the Pacific; do the same for the Atlantic, and keep the cells in both. Use a helper `climb(heights, r, c, reached)`.
+starter:
+```python
+def climb(heights, r, c, reached):
+    # your code here
+    pass
+
+def both_oceans(heights):
+    height, width = len(heights), len(heights[0])
+    pacific, atlantic = set(), set()
+    # your code here
+    return []
+```
+solution:
+```python
+def climb(heights, r, c, reached):
+    reached.add((r, c))
+    for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+        if 0 <= nr < len(heights) and 0 <= nc < len(heights[0]):
+            if (nr, nc) not in reached and heights[nr][nc] >= heights[r][c]:
+                climb(heights, nr, nc, reached)
+
+def both_oceans(heights):
+    height, width = len(heights), len(heights[0])
+    pacific, atlantic = set(), set()
+    for r in range(height):
+        for c in range(width):
+            if (r == 0 or c == 0) and (r, c) not in pacific:
+                climb(heights, r, c, pacific)
+            if (r == height - 1 or c == width - 1) and (r, c) not in atlantic:
+                climb(heights, r, c, atlantic)
+    return sorted(pacific & atlantic)
+```
+tests:
+- both_oceans([[1, 2, 2, 3, 5], [3, 2, 3, 4, 4], [2, 4, 5, 3, 1], [6, 7, 1, 4, 5], [5, 1, 1, 2, 4]])
+- both_oceans([[1]])
+- both_oceans([[3, 3], [3, 3]])
+- both_oceans([[1, 2], [4, 3]])
+- both_oceans([[5, 1], [1, 5]])
+fail[1]: [(0, 4), (1, 3), (1, 4), (2, 2), (3, 0), (3, 1), (4, 0)].
+fail[2]: One cell touches every edge: [(0, 0)].
+fail[3]: Flat ground drains every way: all four cells.
+fail[4]: (0, 0) is the lowest point and only drains to the Pacific; the other three reach both: [(0, 1), (1, 0), (1, 1)].
+fail[5]: Every cell is on an edge that touches both oceans: all four.
+hint: Climbing is the flow reversed: from a cell the ocean can be reached from, move to neighbours at least as high.
+hint: Start a climb from every cell on the top and left edges for the Pacific, and from the bottom and right edges for the Atlantic.
+hint: `pacific & atlantic` is the set of cells in both.
+right: Instead of following rain down from every cell, two searches go up from the oceans: each finds every cell that drains into its ocean, and the answer is where they overlap. That's O(rows × cols) instead of one search per cell.
+wrong: Run `climb` from each Pacific edge cell into a `pacific` set, and from each Atlantic edge cell into an `atlantic` set, only moving to neighbours that are the same height or higher. Return the sorted intersection.
+
+=== task: predict hard
+title: Stopping too soon
+prompt: An island of `small` is a **sub-island** if every one of its cells is land in `big` too. This version checks each island of `small` with `and`, which stops as soon as one part fails. What does it print?
+code:
+```python
+big = ["###..",
+       "#...#",
+       "..###"]
+small = [list("##..."),
+         list("#..##"),
+         list("..#.#")]
+
+def check(r, c):
+    if r < 0 or r >= len(small) or c < 0 or c >= len(small[0]) or small[r][c] != "#":
+        return True
+    small[r][c] = "."
+    return (big[r][c] == "#" and check(r - 1, c) and check(r + 1, c)
+            and check(r, c - 1) and check(r, c + 1))
+
+count = 0
+for r in range(len(small)):
+    for c in range(len(small[0])):
+        if small[r][c] == "#" and check(r, c):
+            count += 1
+print(count)
+```
+wrong[2]: That's the true number of sub-islands. But the island on the right starts at (1, 3), which is water in `big`, so `and` stops at once, before (1, 4) and (2, 4) are sunk. The scan finds them later, as if they were a new island, and that part does fit.
+wrong[1]: The island in the middle of the bottom row, (2, 2), is land in `big`: a sub-island. So is the one at the top left.
+wrong[4]: Each island is sunk as far as it's checked, so the top left island's three cells count once together.
+hint: The right-hand island is (1, 3), (1, 4) and (2, 4). Which of those does the scan reach first, and is it land in `big`?
+hint: What happens to the cells `check` never reaches because `and` stopped early?
+right: `3`. The top left island and the single cell are real sub-islands. The right-hand island fails at its first cell, and `and` skips sinking the rest, so (1, 4) and (2, 4) are counted later as a sub-island of their own. A correct version must keep sinking the whole island even after a cell fails.
+wrong: Top left: all land in `big`, counted. (1, 3) is water in `big`: false straight away, with (1, 4) and (2, 4) still unsunk. The scan reaches (1, 4) next: it and (2, 4) are land in `big`, counted. (2, 2) is counted too. 3 in all.
+
+=== task: predict hard
+title: Fields of the same crop
+prompt: Each letter is a crop, and a field is a group of cells of the same crop joined up, down, left or right. What does it print?
+code:
+```python
+farm = [list("AAB"),
+        list("ABB"),
+        list("CCA")]
+
+def take(grid, r, c, crop):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != crop:
+        return
+    grid[r][c] = "."
+    take(grid, r - 1, c, crop)
+    take(grid, r + 1, c, crop)
+    take(grid, r, c - 1, crop)
+    take(grid, r, c + 1, crop)
+
+fields = []
+for r in range(3):
+    for c in range(3):
+        if farm[r][c] != ".":
+            fields.append(farm[r][c])
+            take(farm, r, c, farm[r][c])
+print(len(fields), fields)
+```
+wrong[3 ['A', 'B', 'C']]: The A in the bottom right corner isn't joined to the other As: it only touches Bs and a C. It's a field of its own.
+wrong[5 ['A', 'B', 'B', 'C', 'A']]: The three Bs are joined: (0, 2) sits above (1, 2), which is next to (1, 1). One field.
+wrong[4 ['A', 'B', 'A', 'C']]: The scan goes row by row: the C field is found at (2, 0), before the lone A at (2, 2).
+hint: Fill each field with its own crop only: a different letter is a wall.
+hint: Which As can reach each other through As?
+right: `4 ['A', 'B', 'C', 'A']`. The fill spreads only through the same letter, so different crops wall each other off, and the two separate groups of A count as two fields.
+wrong: The scan finds the top left As (three cells), then the Bs (three cells), then the Cs, and finally the single A in the corner, which no other A touches.
+
+=== task: cells hard
+title: How many calls?
+prompt: The lesson's `fill` calls itself on all four neighbours and lets each call check its own cell. Starting inside a region of dots where every other cell is a wall or off the grid, how many calls are made in all, counting the first one?
+labels: a single dot | a row of 3 dots | a 3 × 3 square of dots | calls that return straight away, for the square
+answer: 5 | 13 | 37 | 28
+wrong[1 | 3 | 9 | 0]: Those count only the calls that fill something. Every filled cell also calls itself on its four neighbours, and most of those calls find a wall, the edge or a filled cell.
+wrong[5 | 15 | 45 | 36]: The first call isn't made by any cell: the total is 1 + 4 for each filled cell, so 4 × 3 + 1 = 13, not 5 × 3.
+wrong[5 | 13 | 37 | 27]: 37 calls in all, of which 9 fill a dot: 37 − 9 = 28 return straight away.
+hint: Each filled dot makes exactly four calls.
+hint: Add the first call, which comes from outside.
+right: 5, 13, 37 and 28. A region of k dots takes 4k + 1 calls, so the extra calls only multiply the work by a constant: still O(rows × cols).
+wrong: Every filled dot calls `fill` four times, and the first call comes from outside: 4 × 1 + 1, 4 × 3 + 1 and 4 × 9 + 1. Of the square's 37, 9 fill a dot and 28 return.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the lesson's `sink` and `count_islands`. Choose **every** change that can give the wrong count, raise an error, or never finish.
+code:
+```python
+def sink(grid, r, c):
+    if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+        return
+    grid[r][c] = "."
+    sink(grid, r - 1, c)
+    sink(grid, r + 1, c)
+    sink(grid, r, c - 1)
+    sink(grid, r, c + 1)
+
+def count_islands(rows):
+    grid = [list(row) for row in rows]
+    islands = 0
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == "#":
+                islands += 1
+                sink(grid, r, c)
+    return islands
+```
+* Putting `grid[r][c] != "#"` first in the condition :: Right. The cell is read before the bounds are checked: one row past the bottom raises an IndexError, and -1 quietly reads the far side of the map.
+* Setting `grid[r][c] = "#"` instead of `"."` :: Right. Nothing is ever marked, so neighbouring land cells call each other back and forth until a RecursionError.
+* Leaving out the four recursive calls :: Right. Only the starting cell is sunk, so every land cell is counted as its own island.
+- Scanning column by column instead of row by row :: The islands are found in a different order, but each is still found and sunk once.
+- Keeping a set of visited cells instead of sinking land into water :: That's another way to mark cells; the count is the same, and the copy isn't even needed.
+- Using an explicit stack instead of recursion in `sink` :: The same cells are sunk, with no depth limit.
+hint: Which changes break the bounds check, the marking, or the spreading?
+hint: Which changes only alter the order of work or the way cells are marked?
+right: A late bounds check, a mark that doesn't mark, and a sink that doesn't spread all break it. The scan order, the kind of marking and recursion versus a stack don't change the count.
+wrong: The bounds must be checked before the cell is read, sinking must change the cell, and the sink must spread. How the scan runs and how cells are marked only change the work's order.
+
+=== task: fill hard
+title: Islands without a grid
+prompt: When a huge map is nearly all water, it's cheaper to store only the land, as a set of (r, c) cells. Then there are no bounds to check: a neighbour is land exactly when it's in the set. Fill in the blanks so that `count_sparse` counts the islands by removing cells from the set as it reaches them, starting each island from its smallest cell, and the program prints:
+
+```output
+3 2 0
+```
+code:
+```python
+def count_sparse(cells):
+    land = set(cells)
+    islands = 0
+    for start in sorted(cells):
+        if start not in land:
+            continue
+        land.remove(start)
+        islands += 1
+        stack = [start]
+        while stack:
+            r, c = stack.pop()
+            for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+                if (nr, nc) in ??:
+                    land.remove((nr, nc))
+                    stack.append(??)
+    return islands
+
+print(count_sparse([(0, 0), (0, 1), (0, 2), (5, 5), (6, 5), (1000, 1000)]),
+      count_sparse([(0, 0), (1, 1)]), count_sparse([]))
+```
+answer: land | (nr, nc)
+wrong[cells | (nr, nc)]: `cells` still holds every land cell, including ones already removed from `land`, so `land.remove` fails with a KeyError the second time a cell is reached.
+wrong[land | (r, c)]: Pushing the current cell again means the search never moves on from the neighbour it removed. From (0, 0), (0, 1) is removed but never explored, so (0, 2) is left behind and counted as a fourth island.
+hint: Only land that hasn't been reached yet should be explored.
+hint: Each neighbour that's removed from `land` must be explored in its turn.
+right: Removing a cell from `land` both marks it as reached and stops it starting another island; pushing it lets its own neighbours be explored. Islands far apart cost nothing extra, because only land is ever stored, and the loop over `sorted(cells)` only starts from land that's still unreached.
+wrong: Check `(nr, nc) in land`, remove it, and push `(nr, nc)`. When the stack is empty the island is finished, and the outer loop moves on to the next cell that's still in `land`.
+
+=== task: parsons hard
+title: Measuring with a stack
+prompt: Arrange the lines so that `area_stack` sinks one island and returns its size using an explicit stack, checking each cell when it's popped, and the program prints:
+
+```output
+3 1 6
+```
+
+Not every line is needed.
+lines:
+```python
+def area_stack(grid, r, c):
+    stack = [(r, c)]
+    count = 0
+    while stack:
+        r, c = stack.pop()
+        if r < 0 or r >= len(grid) or c < 0 or c >= len(grid[0]) or grid[r][c] != "#":
+            continue
+        grid[r][c] = "."
+        count += 1
+        stack.append((r - 1, c))
+        stack.append((r + 1, c))
+        stack.append((r, c - 1))
+        stack.append((r, c + 1))
+    return count
+```
+distractors:
+```python
+        count += 4
+            break
+```
+after:
+```python
+world = [list("##..#"),
+         list("#...."),
+         list("..###"),
+         list("..###")]
+print(area_stack(world, 0, 0), area_stack(world, 0, 4), area_stack(world, 2, 2))
+```
+hint: A popped cell that's off the grid, or isn't land, is skipped with `continue`.
+hint: Sink and count the cell before pushing its four neighbours.
+right: Each land cell is counted exactly once, when it's sunk, and pushing its neighbours keeps the search spreading with no recursion. The skip at the top handles water, the edge and cells already sunk.
+wrong: Pop a cell; skip it if it's off the grid or not land. Otherwise sink it, add 1 to the count and push its four neighbours. Return the count when the stack is empty.
