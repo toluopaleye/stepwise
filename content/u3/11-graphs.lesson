@@ -1,0 +1,1051 @@
+=== lesson
+id: ds-graphs
+title: Graphs
+summary: A graph is a set of vertices joined by edges: towns and roads, people and friendships, web pages and links. You'll learn the words (vertex, edge, neighbour, degree, path, cycle, connected), store a graph as a dictionary of neighbour lists, check paths and find what's reachable, and compare the kinds of graph, directed or undirected, weighted or unweighted, and the three ways to store one, side by side.
+
+=== learn
+### Vertices and edges
+A **graph** is a set of **vertices** (also called nodes) joined by **edges**. Each edge connects two vertices. Graphs model anything made of things and connections between them:
+
+| things (vertices) | connections (edges) |
+| --- | --- |
+| towns | roads between them |
+| people | friendships |
+| web pages | links |
+| airports | flights |
+
+This lesson uses this graph, with 5 vertices and 6 edges:
+```text
+  A ------- B
+  |       / |
+  |     /   |
+  |   /     |
+  | /       |
+  C ------- D ------- E
+```
+A tree is a special kind of graph, but a graph in general is freer: it has no root and no parents or children, it can have loops of edges like A, B, C, and it can even be in several separate pieces. When the edges have no direction, as here, the graph is **undirected**: the edge A–B lets you go from A to B and from B to A.
+
+### Neighbours and degree
+Two vertices joined by an edge are **neighbours**. A vertex's **degree** is the number of edges that touch it:
+
+| vertex | neighbours | degree |
+| --- | --- | --- |
+| A | B, C | 2 |
+| B | A, C, D | 3 |
+| C | A, B, D | 3 |
+| D | B, C, E | 3 |
+| E | D | 1 |
+
+The degrees add up to 2 + 3 + 3 + 3 + 1 = 12, which is twice the number of edges. That's always true of an undirected graph, because every edge has two ends and adds 1 to the degree of each. It's sometimes called the **handshake rule**: if everyone at a party counts their handshakes, the total is twice the number of handshakes.
+
+### A dictionary of neighbour lists
+The usual way to store a graph in Python is an **adjacency list**: a dictionary that maps each vertex to a list of its neighbours. In an undirected graph, each edge is written twice, once in each of its two vertices' lists:
+```python
+graph = {
+    "A": ["B", "C"],
+    "B": ["A", "C", "D"],
+    "C": ["A", "B", "D"],
+    "D": ["B", "C", "E"],
+    "E": ["D"],
+}
+for v in graph:
+    print(v, len(graph[v]), graph[v])
+total = 0
+for v in graph:
+    total += len(graph[v])
+print("degrees add up to", total, "so there are", total // 2, "edges")
+print("D" in graph["B"], "E" in graph["A"])
+```
+```output
+A 2 ['B', 'C']
+B 3 ['A', 'C', 'D']
+C 3 ['A', 'B', 'D']
+D 3 ['B', 'C', 'E']
+E 1 ['D']
+degrees add up to 12 so there are 6 edges
+True False
+```
+A vertex's degree is the length of its list. To ask "is there an edge between B and D?", look for D in B's list: `"D" in graph["B"]` checks the list item by item, so it takes O(degree) steps.
+
+### Building it from a list of edges
+Graphs often arrive as a list of edges, each a pair of vertices. To build the dictionary, go through the pairs, give each new vertex an empty list, and add each vertex to the other's list:
+```python
+def build(edges):
+    g = {}
+    for u, v in edges:
+        if u not in g:
+            g[u] = []
+        if v not in g:
+            g[v] = []
+        g[u].append(v)
+        g[v].append(u)
+    return g
+
+edges = [("A", "B"), ("A", "C"), ("B", "C"), ("B", "D"), ("C", "D"), ("D", "E")]
+g = build(edges)
+print(g)
+print(g == graph)
+```
+```output
+{'A': ['B', 'C'], 'B': ['A', 'C', 'D'], 'C': ['A', 'B', 'D'], 'D': ['B', 'C', 'E'], 'E': ['D']}
+True
+```
+Every edge costs a few O(1) steps, so building the graph takes O(E) for E edges. The two `append`s are what make it undirected: the pair ("A", "B") puts B in A's list **and** A in B's list. Animation 1 builds this graph edge by edge.
+
+### Paths
+A **path** is a sequence of vertices in which each one is joined by an edge to the next. Its **length** is the number of edges along it. A, B, D, E is a path of length 3. A, D, E isn't a path, because there's no edge from A to D. To check a route, check every step:
+```python
+def is_path(graph, route):
+    for i in range(len(route) - 1):
+        if route[i + 1] not in graph[route[i]]:
+            return False
+    return True
+
+print(is_path(graph, ["A", "B", "D", "E"]), is_path(graph, ["A", "D", "E"]), is_path(graph, ["C", "B", "A", "C"]))
+```
+```output
+True False True
+```
+A route of k vertices has k − 1 steps to check. The last route, C, B, A, C, starts and ends at the same vertex: that's a cycle.
+
+There can be many paths between two vertices. From A to E there are A, B, D, E and A, C, D, E, both of length 3, and longer ones like A, B, C, D, E. Finding the shortest path is a job for breadth-first search, in Unit 4.
+
+### Cycles
+A **cycle** is a path that comes back to where it started, uses at least 3 vertices, and never uses the same edge twice. This graph has three cycles:
+
+| cycle | length |
+| --- | --- |
+| A, B, C, A | 3 |
+| B, C, D, B | 3 |
+| A, B, D, C, A | 4 |
+
+E isn't on any cycle: its only edge leads to D, and a cycle through E would have to use that edge twice.
+
+A graph with no cycles at all, all in one piece, is a **tree**. A tree with n vertices always has exactly n − 1 edges. This graph has 5 vertices and 6 edges, two more than a tree would, and every extra edge closes a cycle.
+
+### Connected or in pieces
+A graph is **connected** if there's a path between every pair of vertices. Otherwise it falls into separate pieces called **connected components**. To find what a vertex can reach, keep a set of vertices seen so far and a list of vertices still to look at:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+islands = {"P": ["Q"], "Q": ["P"], "R": ["S", "T"], "S": ["R"], "T": ["R"]}
+print(sorted(reachable(islands, "P")), sorted(reachable(islands, "R")))
+print(sorted(reachable(graph, "E")))
+```
+```output
+['P', 'Q'] ['R', 'S', 'T']
+['A', 'B', 'C', 'D', 'E']
+```
+Each vertex taken from `waiting` adds its unseen neighbours. `seen` stops any vertex being added twice, which matters because a graph can have cycles: without it, the loop would go round A, B, C forever. `islands` has two components, {P, Q} and {R, S, T}; the lesson's graph is connected, since E reaches everything. Each vertex and each edge is handled once, O(V + E). Animation 2 runs this search. Unit 4 builds this idea into depth-first and breadth-first search.
+
+### Kinds of graph
+Graphs differ in two ways: whether edges have a direction, and whether they carry a number.
+
+| | edges | example | stored as |
+| --- | --- | --- | --- |
+| undirected | two-way | friendships | each edge in both vertices' lists |
+| directed | one-way, from one vertex to another | follows on social media, one-way streets | each edge in the list of the vertex it starts from |
+| unweighted | all equal | "is there a road?" | lists of neighbours |
+| weighted | each has a number: a distance, a price, a time | road lengths, ticket prices | lists of (neighbour, weight) pairs |
+
+Any mix is possible: a map of one-way streets with their lengths is directed and weighted.
+```python
+follows = {"ana": ["ben"], "ben": ["ana", "cy"], "cy": []}
+roads = {"A": [("B", 12), ("C", 30)], "B": [("A", 12), ("C", 9)], "C": [("A", 30), ("B", 9)]}
+print("cy" in follows["ben"], "ben" in follows["cy"])
+for town, km in roads["B"]:
+    print("B to", town, km, "km")
+```
+```output
+True False
+B to A 12 km
+B to C 9 km
+```
+Ben follows Cy, but Cy doesn't follow Ben back: a directed edge only goes one way. In `roads`, each neighbour comes with the length of the road. The next three lessons look at directed graphs, weighted graphs and the ways of storing graphs in detail.
+
+### Three ways to store a graph
+Besides the adjacency list, there are two other common ways:
+- An **edge list** is a plain list of pairs, like `edges` above.
+- An **adjacency matrix** is a V × V table: row u, column v holds 1 if there's an edge from u to v, and 0 if not. The vertices are numbered so that each one has a row and a column.
+```python
+names = ["A", "B", "C", "D", "E"]
+index = {}
+for i in range(len(names)):
+    index[names[i]] = i
+matrix = [[0] * len(names) for i in range(len(names))]
+for u in graph:
+    for v in graph[u]:
+        matrix[index[u]][index[v]] = 1
+for row in matrix:
+    print(row)
+print(matrix[index["B"]][index["D"]], matrix[index["A"]][index["E"]])
+```
+```output
+[0, 1, 1, 0, 0]
+[1, 0, 1, 1, 0]
+[1, 1, 0, 1, 0]
+[0, 1, 1, 0, 1]
+[0, 0, 0, 1, 0]
+1 0
+```
+Each row has a 1 for every neighbour, so a row adds up to the vertex's degree. For an undirected graph, the matrix is symmetric: row u, column v always equals row v, column u. Checking for an edge is one look-up, O(1), but the table has V² boxes, mostly 0s.
+
+| | space | is u–v an edge? | list u's neighbours | add an edge |
+| --- | --- | --- | --- | --- |
+| edge list | O(E) | O(E): scan every pair | O(E) | O(1) |
+| adjacency list | O(V + E) | O(degree of u) | O(degree of u) | O(1) |
+| adjacency matrix | O(V²) | O(1) | O(V): scan the whole row | O(1) |
+
+Most real graphs have far fewer edges than V², so adjacency lists are the usual choice.
+
+=== keypoints
+- A graph is a set of vertices joined by edges. Unlike a tree, it has no root, can have cycles and can be in several pieces.
+- Neighbours are joined by an edge, and a vertex's degree is how many edges touch it. In an undirected graph the degrees add up to twice the number of edges.
+- An adjacency list stores a graph as a dict from each vertex to a list of its neighbours. Each undirected edge appears in two lists; building one from an edge list is O(E).
+- A path is a sequence of vertices joined by edges, and its length counts the edges. A cycle returns to its start without reusing an edge. A connected graph with n vertices and no cycles is a tree, with n − 1 edges.
+- A graph is connected if every vertex can reach every other. Finding what a vertex reaches needs a `seen` set, or cycles would make the search loop forever.
+- Directed edges go one way; weighted edges carry a number, stored as (neighbour, weight) pairs.
+- Edge list, adjacency list and adjacency matrix use O(E), O(V + E) and O(V²) space; checking for an edge takes O(E), O(degree) and O(1).
+
+=== example: A friendship network
+intro: An undirected graph of friendships. The program counts everyone's friends, finds the most popular person, and lists the friends two people have in common.
+```python
+friends = {
+    "Ali": ["Bea", "Cam", "Dot"],
+    "Bea": ["Ali", "Cam"],
+    "Cam": ["Ali", "Bea", "Dot", "Eli"],
+    "Dot": ["Ali", "Cam"],
+    "Eli": ["Cam"],
+}
+for person in friends:
+    print(person, len(friends[person]))
+
+most = max(friends, key=lambda p: len(friends[p]))
+print("most friends:", most)
+
+common = []
+for f in friends["Ali"]:
+    if f in friends["Dot"]:
+        common.append(f)
+print("Ali and Dot both know", common)
+```
+1-7: Every friendship appears in both people's lists, because a friendship goes both ways.
+8-9: A person's number of friends is their degree: the length of their list.
+11: `max` with a `key` picks the person whose list is longest: Cam, with 4.
+14-18: Common friends are the people in both lists: Cam. (Bea isn't Dot's friend.)
+
+=== example: Flights from a timetable
+intro: An airline's routes arrive as a list of (from, to) pairs. Flights are one-way, so the graph is directed: each route goes only into the list of the airport it leaves from.
+```python
+routes = [("LIM", "BOG"), ("BOG", "MEX"), ("MEX", "LIM"), ("LIM", "SCL"), ("BOG", "LIM")]
+flights = {}
+for start, end in routes:
+    if start not in flights:
+        flights[start] = []
+    if end not in flights:
+        flights[end] = []
+    flights[start].append(end)
+
+for airport in flights:
+    print(airport, "->", flights[airport])
+print("direct MEX to BOG?", "BOG" in flights["MEX"])
+print("direct BOG to MEX?", "MEX" in flights["BOG"])
+```
+1: Five one-way routes between four airports, written with airport codes.
+3-8: Every airport gets a list, even SCL, which has no flights out. Only one `append` per route: the edge goes from `start` to `end`.
+10-11: Each airport and where you can fly from it.
+12-13: There's a flight from BOG to MEX but not back: in a directed graph, the edge u → v says nothing about v → u.
+
+=== animation: Building an adjacency list
+view: graph graph pos=A:60,40;B:200,40;C:60,160;D:200,160;E:330,160
+vars u v
+intro: Six edges become a dictionary of neighbour lists. Each pair is added in both directions, and the picture draws an edge as soon as it's in the dictionary.
+```python
+edges = [("A", "B"), ("A", "C"), ("B", "C"), ("B", "D"), ("C", "D"), ("D", "E")]
+graph = {}
+for u, v in edges:
+    if u not in graph:
+        graph[u] = []
+    if v not in graph:
+        graph[v] = []
+    graph[u].append(v)
+    graph[v].append(u)
+print(graph)
+```
+1: Six edges, each a pair of vertices.
+2: The adjacency list starts empty.
+3: Take the next edge from the list.
+4: Is {u} new to the graph? {u not in graph}.
+5: Give {u} an empty list of neighbours.
+6: Is {v} new to the graph? {v not in graph}.
+7: Give {v} an empty list of neighbours.
+8: Add {v} to {u}'s list.
+9: And {u} to {v}'s list: the edge goes both ways.
+10: Five vertices; six edges, each in two lists.
+
+=== animation: What can be reached?
+view: graph g pos=A:60,40;B:190,40;C:60,150;D:190,150;E:320,40;F:320,150 visited=seen frontier=waiting current=v
+vars v waiting seen
+intro: Finding everything A can reach. `seen` holds the vertices found so far (green), and `waiting` the ones still waiting to be looked at (dashed). E and F are a separate piece of the graph, so the search never finds them.
+```python
+g = {"A": ["B", "C"], "B": ["A", "D"], "C": ["A", "D"], "D": ["B", "C"], "E": ["F"], "F": ["E"]}
+seen = {"A"}
+waiting = ["A"]
+while waiting:
+    v = waiting.pop()
+    for w in g[v]:
+        if w not in seen:
+            seen.add(w)
+            waiting.append(w)
+print(sorted(seen))
+```
+1: Two pieces: A, B, C and D joined in a loop, and E and F on their own.
+2: A has been found.
+3: A is waiting to be looked at.
+4: Is anything still waiting? {len(waiting) > 0}.
+5: Take the last vertex from `waiting`: {waiting[-1]}.
+6: Go through {v}'s neighbours: {g[v]}.
+7: Has {w} been seen already? {w in seen}.
+8: {w} is new: mark it as seen.
+9: And put {w} on the list to look at later.
+10: A reaches B, C and D, but not E or F: the graph isn't connected.
+
+=== task: predict easy
+title: Reading an adjacency list
+code:
+```python
+g = {"A": ["B", "D"], "B": ["A", "C", "D"], "C": ["B"], "D": ["A", "B", "E"], "E": ["D"]}
+print(len(g["C"]), g["D"], "A" in g["E"])
+```
+wrong[3 ['A', 'B', 'E'] False]: `len(g["C"])` counts C's neighbours, and C has only one: B.
+wrong[1 ['A', 'B', 'E'] True]: E's only neighbour is D, so A isn't in E's list.
+wrong[1 3 False]: `g["D"]` is D's list of neighbours itself, not its length.
+hint: Each key maps to the list of that vertex's neighbours.
+hint: C's list is `["B"]`, and E's list is `["D"]`.
+right: `1 ['A', 'B', 'E'] False`: C has one neighbour, D's neighbours are A, B and E, and there's no edge between E and A.
+wrong: C's list has 1 item. D's list is `['A', 'B', 'E']`. E's list is `['D']`, which doesn't contain A, so the last value is False.
+
+=== task: mcq easy
+title: What is a degree?
+prompt: In an undirected graph, what is a vertex's **degree**?
+* The number of edges that touch it :: Right. It's also the length of its list in an adjacency list.
+- The number of vertices in the whole graph :: That's the size of the graph, not a property of one vertex.
+- The length of the longest path that starts at it :: Degree only counts the edges that touch the vertex itself.
+- How many edges away it is from the first vertex :: That's a distance. Graphs don't have a first vertex or a root.
+hint: Think of the edges that meet at the vertex.
+hint: In an adjacency list, how is a vertex's degree shown?
+right: The degree counts the edges touching a vertex, which is the same as the number of its neighbours.
+wrong: A vertex's degree is how many edges touch it. In a dict of neighbour lists, it's `len(graph[v])`.
+
+=== task: cells easy
+title: Count the degrees
+prompt: What is the degree of each vertex in this graph?
+
+```text
+  P --- Q --- R
+  |     |
+  S --- T     U
+```
+labels: P | Q | R | S | T | U
+answer: 2 | 3 | 1 | 2 | 2 | 0
+wrong[2 | 3 | 1 | 2 | 2 | 1]: U has no edges at all, so its degree is 0.
+wrong[2 | 2 | 1 | 2 | 2 | 0]: Q has three edges: to P, to R and down to T.
+wrong[1 | 3 | 1 | 1 | 1 | 0]: Count every edge that touches the vertex: P is joined to Q and to S.
+hint: Count the lines that meet at each letter.
+hint: Q has edges going left, right and down.
+right: 2, 3, 1, 2, 2, 0. They add up to 10, twice the 5 edges.
+wrong: P: Q and S. Q: P, R and T. R: Q. S: P and T. T: Q and S. U: none. So 2, 3, 1, 2, 2, 0.
+
+=== task: code easy
+title: All the degrees
+prompt: Write `degrees(graph)` that returns a dictionary mapping each vertex of an adjacency list to its degree, the number of neighbours in its list.
+starter:
+```python
+def degrees(graph):
+    # your code here
+    return {}
+```
+solution:
+```python
+def degrees(graph):
+    out = {}
+    for v in graph:
+        out[v] = len(graph[v])
+    return out
+```
+tests:
+- degrees({"A": ["B", "D"], "B": ["A", "C", "D"], "C": ["B"], "D": ["A", "B", "E"], "E": ["D"]})
+- degrees({})
+- degrees({"X": []})
+- degrees({"a": ["b"], "b": ["a"]})
+fail[1]: A vertex's degree is the length of its list: A 2, B 3, C 1, D 3, E 1.
+fail[3]: A vertex with no neighbours has degree 0.
+fail[4]: Each end of the edge counts once: a 1, b 1.
+hint: Loop over the vertices of the graph.
+hint: The degree of `v` is `len(graph[v])`.
+right: One `len` per vertex: O(V).
+wrong: For every vertex `v`, store `len(graph[v])` in the result under the key `v`.
+
+=== task: fill easy
+title: Both directions
+prompt: Fill in the blanks so that each edge goes into both vertices' lists, and the program prints:
+
+```output
+{'A': ['B', 'C'], 'B': ['A'], 'C': ['A']}
+```
+code:
+```python
+edges = [("A", "B"), ("A", "C")]
+g = {}
+for u, v in edges:
+    if u not in g:
+        g[u] = []
+    if v not in g:
+        g[v] = []
+    g[u].append(??)
+    g[v].append(??)
+print(g)
+```
+answer: v | u
+wrong[u | v]: Each vertex then gets itself as a neighbour: A's list becomes ['A', 'A'].
+wrong[v | v]: B and C get themselves, not A: the edge isn't two-way.
+hint: The edge (u, v) makes v a neighbour of u.
+hint: It also makes u a neighbour of v.
+right: `g[u].append(v)` and `g[v].append(u)` store each undirected edge in both lists.
+wrong: An undirected edge between u and v puts v in u's list and u in v's list.
+
+=== task: multi easy
+title: Graphs and trees
+prompt: Choose **every** statement that is true of graphs in general.
+* A graph can contain cycles :: Right. Unlike a tree, a graph can have loops of edges.
+* A graph can be in several separate pieces :: Right. Those pieces are its connected components.
+* Every tree is a graph :: Right. A tree is a connected graph with no cycles.
+- Every graph has a root :: Graphs have no root; only trees are drawn from one.
+- Every vertex has exactly one parent :: Graphs have no parents and children.
+- The edges always have a direction :: Undirected graphs have two-way edges.
+hint: Think of a road map: where is its root?
+hint: A tree is one special kind of graph.
+right: Graphs can have cycles and separate pieces, and trees are the special case with neither.
+wrong: A graph is any set of vertices and edges. It has no root or parents, its edges may or may not have directions, and it may have cycles and separate pieces. A tree is a connected graph without cycles.
+
+=== task: parsons easy
+title: Degrees and edges
+prompt: Arrange the lines so that the program adds up the degrees and works out the number of edges, and prints:
+
+```output
+12 6
+```
+
+Not every line is needed.
+lines:
+```python
+graph = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}
+total = 0
+for v in graph:
+    total += len(graph[v])
+print(total, total // 2)
+```
+distractors:
+```python
+    total += 1
+print(total, total * 2)
+```
+hint: Each vertex adds its degree, the length of its list.
+hint: Every edge is counted twice, once from each end.
+right: The degrees add up to 12, and each edge was counted at both of its ends, so there are 12 // 2 = 6 edges.
+wrong: Start `total` at 0, add `len(graph[v])` for every vertex, then print the total and half of it.
+
+=== task: order easy
+title: A path, step by step
+prompt: Put the vertices in order to make a path from A to E that uses every vertex once.
+
+```text
+  A --- B     E
+        |     |
+        C --- D
+```
+items:
+- A
+- B
+- C
+- D
+- E
+hint: Start at A and follow the only edge out of it.
+hint: Each step must follow an edge.
+right: A, B, C, D, E: each pair of neighbours in the list is joined by an edge. The path has length 4.
+wrong: From A the only edge goes to B. From B go down to C, across to D, and up to E.
+
+=== task: predict easy
+title: The handshake rule
+code:
+```python
+g = {"A": ["B", "D"], "B": ["A", "C", "D"], "C": ["B"], "D": ["A", "B", "E"], "E": ["D"]}
+total = 0
+for v in g:
+    total += len(g[v])
+print(total, total // 2)
+```
+wrong[5 2]: `total` adds up the lengths of the lists, not the number of vertices: 2 + 3 + 1 + 3 + 1.
+wrong[10 10]: Each edge is counted twice, once at each end, so there are 10 // 2 = 5 edges.
+wrong[10 20]: Halve the total, don't double it: 10 // 2 = 5.
+hint: Add the lengths of the five lists.
+hint: Each edge appears in two lists.
+right: `10 5`: the degrees add up to 10, and every edge was counted twice, so there are 5 edges.
+wrong: The degrees are 2, 3, 1, 3 and 1, which add up to 10. Each edge appears in two lists, so the number of edges is 10 // 2 = 5.
+
+=== task: mcq easy
+title: How many times is an edge stored?
+prompt: An undirected graph is stored as a dictionary of neighbour lists. How many times does each edge appear?
+* Twice: once in each of its two vertices' lists :: Right. The edge A–B puts B in A's list and A in B's list.
+- Once :: That's how a directed edge is stored: only in the list of the vertex it starts from.
+- Once for every vertex in the graph :: An edge only touches its own two vertices.
+- It depends on the degrees of its two vertices :: Every undirected edge appears exactly twice, whatever the degrees.
+hint: An undirected edge can be followed from either end.
+hint: Which lists does the edge A–B belong in?
+right: Twice: that's why the list lengths add up to twice the number of edges.
+wrong: An undirected edge is in the list of each of its two vertices, so it appears exactly twice.
+
+=== task: code medium
+title: Build an undirected graph
+prompt: Write `build_undirected(edges)` that turns a list of `(u, v)` pairs into an adjacency list, a dict from each vertex to a list of its neighbours. Each edge goes both ways, and neighbours should appear in the order the edges are listed.
+starter:
+```python
+def build_undirected(edges):
+    g = {}
+    # your code here
+    return g
+```
+solution:
+```python
+def build_undirected(edges):
+    g = {}
+    for u, v in edges:
+        if u not in g:
+            g[u] = []
+        if v not in g:
+            g[v] = []
+        g[u].append(v)
+        g[v].append(u)
+    return g
+```
+tests:
+- build_undirected([("A", "B"), ("B", "C")])
+- build_undirected([])
+- build_undirected([("X", "Y"), ("Y", "Z"), ("Z", "X")])
+- build_undirected([(1, 2), (1, 3), (1, 4)])
+fail[1]: A–B and B–C: {'A': ['B'], 'B': ['A', 'C'], 'C': ['B']}.
+fail[3]: A triangle: every vertex has the other two as neighbours.
+fail[4]: Vertex 1 is joined to 2, 3 and 4; each of those is joined only to 1.
+error[KeyError]: Give a vertex an empty list the first time you see it, before appending to it.
+hint: For each pair `(u, v)`, make sure both `u` and `v` have a list.
+hint: Then append `v` to `u`'s list and `u` to `v`'s list.
+right: Each edge costs a few O(1) steps, so building the graph is O(E), and both appends make every edge two-way.
+wrong: For every pair, create missing lists, then add each vertex to the other's list.
+
+=== task: code medium
+title: How long is the route?
+prompt: Write `path_length(graph, route)` that returns the number of edges in `route`, a list of vertices, if each vertex is joined by an edge to the next; otherwise return -1. A route of one vertex has length 0.
+starter:
+```python
+def path_length(graph, route):
+    # your code here
+    return len(route) - 1
+```
+solution:
+```python
+def path_length(graph, route):
+    for i in range(len(route) - 1):
+        if route[i + 1] not in graph[route[i]]:
+            return -1
+    return len(route) - 1
+```
+tests:
+- path_length({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}, ["A", "B", "D", "E"])
+- path_length({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}, ["A", "D"])
+- path_length({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}, ["C"])
+- path_length({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}, ["E", "D", "C", "A", "B"])
+- path_length({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}, ["A", "B", "E"])
+fail[2]: There's no edge from A to D: -1.
+fail[5]: A to B is fine, but B and E aren't joined: -1.
+hint: Check every step: is `route[i + 1]` in the list of `route[i]`?
+hint: Return -1 as soon as one step fails.
+hint: If every step works, the length is `len(route) - 1`.
+right: A route of k vertices has k − 1 steps, and each check looks through one neighbour list: O(k × degree).
+wrong: Loop over the steps of the route and return -1 at the first missing edge; otherwise return the number of steps, `len(route) - 1`.
+
+=== task: predict medium
+title: What can be reached?
+code:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+h = {"1": ["2"], "2": ["1", "3"], "3": ["2"], "4": ["5"], "5": ["4"], "6": []}
+print(sorted(reachable(h, "3")), sorted(reachable(h, "5")), sorted(reachable(h, "6")))
+```
+wrong[['2', '3'] ['4', '5'] ['6']]: 3 reaches 1 too, through 2: the search keeps going from every vertex it finds.
+wrong[['1', '2', '3'] ['4', '5'] []]: The start is in `seen` from the beginning, so even a vertex with no edges reaches itself.
+wrong[['1', '2', '3', '4', '5', '6'] ['1', '2', '3', '4', '5', '6'] ['1', '2', '3', '4', '5', '6']]: There's no edge between the pieces {1, 2, 3}, {4, 5} and {6}, so no search crosses from one to another.
+hint: The graph has three separate pieces.
+hint: Each search stays inside the piece it starts in.
+right: Each search finds exactly the connected component of its start: {1, 2, 3}, {4, 5} and {6}.
+wrong: 3 reaches 2, and through it 1. 5 reaches 4. 6 has no edges, so it reaches only itself.
+
+=== task: cells medium
+title: Routes on the lesson's graph
+prompt: For each route on this graph, write its length if it's a path, or `no` if it isn't.
+
+```text
+  A ------- B
+  |       / |
+  |     /   |
+  |   /     |
+  | /       |
+  C ------- D ------- E
+```
+labels: A B D E | A D | C B A C | E D C A B
+answer: 3 | no | 3 | 4
+wrong[4 | no | 4 | 5]: The length counts edges, not vertices: A, B, D, E has 3 edges.
+wrong[3 | 1 | 3 | 4]: A and D aren't joined by an edge, so A, D isn't a path.
+wrong[3 | no | no | 4]: C, B, A, C is a path: C–B, B–A and A–C are all edges. It ends where it started, so it's also a cycle.
+hint: Check each step of a route against the picture.
+hint: A path of k vertices has k − 1 edges.
+right: 3, no, 3, 4: every step of the other routes follows an edge, and A–D isn't an edge.
+wrong: A B D E: three edges. A D: no such edge. C B A C: three edges, ending back at C. E D C A B: four edges.
+
+=== task: fill medium
+title: Seen and waiting
+prompt: Fill in the blanks so that `reachable` finds every vertex the start can reach, and the program prints:
+
+```output
+['A', 'B', 'C', 'D']
+```
+code:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in ??:
+                seen.add(w)
+                waiting.??(w)
+    return seen
+
+g = {"A": ["B"], "B": ["A", "C"], "C": ["B", "D"], "D": ["C"], "E": []}
+print(sorted(reachable(g, "A")))
+```
+answer: seen | append
+wrong[graph | append]: Every neighbour is a key of `graph`, so nothing is ever added, and only the start is reached: `['A']`.
+wrong[seen | add]: `waiting` is a list, and lists have `append`, not `add`: AttributeError.
+hint: A vertex should be added only once, the first time it's found.
+hint: New vertices go onto the list to be looked at later.
+right: `w not in seen` skips vertices already found, and `waiting.append(w)` queues each new one to be looked at.
+wrong: Check against `seen`, the set of everything found so far, and `append` each new vertex to `waiting`.
+
+=== task: mcq medium
+title: A huge, sparse graph
+prompt: A road network has 1,000,000 junctions, and each junction has about 4 roads. Which way of storing it fits best?
+* An adjacency list :: Right. It needs space for about 1,000,000 vertices plus 4,000,000 neighbour entries, O(V + E).
+- An adjacency matrix :: That would need 1,000,000 × 1,000,000 boxes, a million million, almost all 0.
+- One big list of all the junctions, with no edges :: Without the edges, there's no way to know which junctions are joined.
+- A set of the degrees :: Degrees say how many roads meet, not which junctions they join.
+hint: How many boxes does a V × V matrix have?
+hint: Compare that with the number of roads.
+right: An adjacency list: its size grows with the number of roads, while a matrix's grows with V², almost all of it empty.
+wrong: A matrix needs V² = 10¹² boxes, while the junctions have only about 2,000,000 roads between them. Adjacency lists store only the roads that exist.
+
+=== task: predict medium
+title: Row sums of a matrix
+code:
+```python
+matrix = [
+    [0, 1, 1, 0, 0],
+    [1, 0, 1, 1, 0],
+    [1, 1, 0, 1, 0],
+    [0, 1, 1, 0, 1],
+    [0, 0, 0, 1, 0],
+]
+sums = []
+for row in matrix:
+    sums.append(sum(row))
+print(sums, sum(sums) // 2, matrix[3][4], matrix[4][0])
+```
+wrong[[2, 3, 3, 3, 1] 12 1 0]: Each edge is counted twice, once in each of its rows, so there are 12 // 2 = 6 edges.
+wrong[[2, 3, 3, 3, 1] 6 0 0]: Row 3, column 4 is the edge between vertices 3 and 4: it's 1.
+wrong[[2, 3, 3, 3, 1] 6 1 1]: Row 4 has a single 1, in column 3: there's no edge between 4 and 0.
+hint: A row adds up to the degree of its vertex.
+hint: `matrix[r][c]` is row r, column c.
+right: `[2, 3, 3, 3, 1] 6 1 0`: the row sums are the degrees, half their total is the number of edges, and the two look-ups each take one step.
+wrong: Row sums: 2, 3, 3, 3 and 1, adding up to 12, so 6 edges. `matrix[3][4]` is 1 (an edge), and `matrix[4][0]` is 0 (no edge).
+
+=== task: multi medium
+title: Which are cycles?
+prompt: Choose **every** route that is a cycle in this graph.
+
+```text
+  A --- B --- C
+  |     |     |
+  D --- E --- F
+```
+* A, B, E, D, A :: Right. Four edges, back to A, none used twice.
+* B, C, F, E, B :: Right. The right-hand square.
+* A, B, C, F, E, D, A :: Right. The whole outside of the graph.
+- A, B, C, A :: There's no edge from C back to A.
+- A, B, A :: That uses the edge A–B twice, and a cycle needs at least 3 vertices.
+- D, E, F :: It doesn't come back to where it started.
+hint: A cycle follows edges, returns to its start, and never uses an edge twice.
+hint: Check every step of each route against the picture.
+right: The two squares and the outside loop are cycles. The others miss an edge, reuse one, or don't return.
+wrong: A cycle must follow edges, end where it began and never reuse an edge. A B E D A, B C F E B and A B C F E D A all do.
+
+=== task: parsons medium
+title: Build a matrix
+prompt: Arrange the lines so that the program builds an adjacency matrix for the undirected edges, and prints:
+
+```output
+[0, 1, 1]
+[1, 0, 0]
+[1, 0, 0]
+```
+
+Not every line is needed.
+lines:
+```python
+names = ["X", "Y", "Z"]
+index = {"X": 0, "Y": 1, "Z": 2}
+matrix = [[0] * 3 for i in range(3)]
+for u, v in [("X", "Y"), ("X", "Z")]:
+    matrix[index[u]][index[v]] = 1
+    matrix[index[v]][index[u]] = 1
+for row in matrix:
+    print(row)
+```
+distractors:
+```python
+matrix = [[0] * 3] * 3
+    matrix[u][v] = 1
+```
+hint: Each row must be its own list: build them with a comprehension.
+hint: An undirected edge sets two boxes: row u, column v and row v, column u.
+right: Each edge fills two boxes, so the matrix is symmetric: X's row has 1s for Y and Z, and their rows each have a 1 for X.
+wrong: Make 3 separate rows with `[[0] * 3 for i in range(3)]`, then for each edge set both `matrix[index[u]][index[v]]` and `matrix[index[v]][index[u]]` to 1.
+
+=== task: order medium
+title: The order of the search
+prompt: `reachable` runs from S on `g = {"S": ["A", "B"], "A": ["S", "C"], "B": ["S"], "C": ["A"]}`, taking each vertex from the **end** of `waiting`. Put the vertices in the order they're taken out of `waiting`.
+items:
+- S
+- B
+- A
+- C
+hint: S is taken first. Its neighbours A and B are added, in that order.
+hint: `pop()` takes the last item added.
+right: S, then B (the last one added), then A, which adds C, then C. Taking from the end makes the search go deep first.
+wrong: S adds A and B. `pop()` takes B, which adds nothing new. Then A, which adds C. Then C.
+
+=== task: code hard
+title: Count the pieces
+prompt: Write `count_components(graph)` that returns the number of connected components of an undirected graph. Go through the vertices; whenever one hasn't been seen yet, count a new component and mark everything it can reach as seen, with a `waiting` list as in `reachable`.
+starter:
+```python
+def count_components(graph):
+    # your code here
+    return 1
+```
+solution:
+```python
+def count_components(graph):
+    seen = set()
+    count = 0
+    for start in graph:
+        if start not in seen:
+            count += 1
+            seen.add(start)
+            waiting = [start]
+            while waiting:
+                v = waiting.pop()
+                for w in graph[v]:
+                    if w not in seen:
+                        seen.add(w)
+                        waiting.append(w)
+    return count
+```
+tests:
+- count_components({"1": ["2"], "2": ["1", "3"], "3": ["2"], "4": ["5"], "5": ["4"], "6": []})
+- count_components({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]})
+- count_components({})
+- count_components({"a": [], "b": []})
+fail[1]: {1, 2, 3}, {4, 5} and {6}: 3 pieces.
+fail[3]: An empty graph has no pieces: 0.
+fail[4]: Two vertices with no edges are two separate pieces.
+hint: Keep one `seen` set for the whole graph.
+hint: For each vertex not yet seen, add 1 to the count, then search from it, adding everything it reaches to `seen`.
+hint: The search: a `waiting` list holding the start; while it isn't empty, pop a vertex and push its unseen neighbours.
+right: Every vertex and edge is handled once across all the searches, so counting the pieces is O(V + E).
+wrong: Loop over the vertices. Each one that hasn't been seen starts a new piece: count it and mark everything it can reach.
+
+=== task: code hard
+title: Is it a tree?
+prompt: Write `is_tree(graph)` for an undirected graph with at least one vertex: it's a tree when it's connected and has exactly V − 1 edges. Count the edges (half the total of the list lengths), and check that a search from any one vertex reaches all of them.
+starter:
+```python
+def is_tree(graph):
+    # your code here
+    return True
+```
+solution:
+```python
+def is_tree(graph):
+    edges = 0
+    for v in graph:
+        edges += len(graph[v])
+    edges = edges // 2
+    if edges != len(graph) - 1:
+        return False
+    start = list(graph)[0]
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return len(seen) == len(graph)
+```
+tests:
+- is_tree({"A": ["B"], "B": ["A", "C"], "C": ["B"]})
+- is_tree({"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]})
+- is_tree({"A": ["B", "C"], "B": ["A", "C"], "C": ["A", "B"], "D": []})
+- is_tree({"X": []})
+- is_tree({"H": ["a", "b", "c"], "a": ["H"], "b": ["H"], "c": ["H"]})
+fail[2]: 5 vertices and 6 edges: too many edges, so there's a cycle.
+fail[3]: 4 vertices and 3 edges, but the triangle has a cycle and D is cut off: the search from A doesn't reach D.
+error[IndexError]: The graph always has at least one vertex: `list(graph)[0]` is the first one.
+hint: Count the edges: add up `len(graph[v])` and halve it.
+hint: If that isn't `len(graph) - 1`, it's not a tree.
+hint: Otherwise search from any vertex and check that `seen` ends up holding every vertex.
+right: Connected with V − 1 edges means no room for a cycle: that's a tree. Counting is O(V) and the search is O(V + E).
+wrong: A tree is connected and has V − 1 edges. Check the edge count first, then search from one vertex and compare the number reached with `len(graph)`.
+
+=== task: code hard
+title: Make the matrix
+prompt: Write `to_matrix(graph, names)` that turns an adjacency list into an adjacency matrix. `names` lists the vertices in the order of the rows and columns: row i and column i belong to `names[i]`. Put 1 in row u, column v for every edge from u to v, and 0 everywhere else. The graph may be directed, so only fill in the edges that are in the lists.
+starter:
+```python
+def to_matrix(graph, names):
+    # your code here
+    return []
+```
+solution:
+```python
+def to_matrix(graph, names):
+    index = {}
+    for i in range(len(names)):
+        index[names[i]] = i
+    n = len(names)
+    matrix = [[0] * n for i in range(n)]
+    for u in graph:
+        for v in graph[u]:
+            matrix[index[u]][index[v]] = 1
+    return matrix
+```
+tests:
+- to_matrix({"A": ["B"], "B": ["A"]}, ["A", "B"])
+- to_matrix({"A": ["B"], "B": []}, ["A", "B"])
+- to_matrix({"A": ["B"], "B": ["A", "C"], "C": ["B"]}, ["C", "B", "A"])
+- to_matrix({}, [])
+fail[1]: One undirected edge fills two boxes: [[0, 1], [1, 0]].
+fail[2]: A directed edge A → B fills only row A, column B.
+fail[3]: The rows follow `names`: row 0 is C, row 1 is B, row 2 is A.
+error[KeyError]: Look up each vertex's row number in a dict built from `names`.
+hint: Build `index`, a dict from each name to its position in `names`.
+hint: Make n separate rows of zeros with `[[0] * n for i in range(n)]`.
+hint: For every u and every v in u's list, set `matrix[index[u]][index[v]] = 1`.
+right: The matrix takes O(V²) space to set up, and filling it in visits each edge once.
+wrong: Number the vertices with `index`, start from an n × n matrix of zeros, and put a 1 at row `index[u]`, column `index[v]` for each edge in the lists.
+
+=== task: code hard
+title: Friends of friends
+prompt: A social network suggests "people you may know": the friends of your friends who aren't you and aren't already your friends. Write `friends_of_friends(graph, person)` that returns them as a sorted list, without repeats.
+starter:
+```python
+def friends_of_friends(graph, person):
+    # your code here
+    return []
+```
+solution:
+```python
+def friends_of_friends(graph, person):
+    found = set()
+    for f in graph[person]:
+        for ff in graph[f]:
+            if ff != person and ff not in graph[person]:
+                found.add(ff)
+    return sorted(found)
+```
+tests:
+- friends_of_friends({"Ali": ["Bea", "Cam", "Dot"], "Bea": ["Ali", "Cam"], "Cam": ["Ali", "Bea", "Dot", "Eli"], "Dot": ["Ali", "Cam"], "Eli": ["Cam"]}, "Ali")
+- friends_of_friends({"Ali": ["Bea", "Cam", "Dot"], "Bea": ["Ali", "Cam"], "Cam": ["Ali", "Bea", "Dot", "Eli"], "Dot": ["Ali", "Cam"], "Eli": ["Cam"]}, "Eli")
+- friends_of_friends({"Ali": ["Bea", "Cam", "Dot"], "Bea": ["Ali", "Cam"], "Cam": ["Ali", "Bea", "Dot", "Eli"], "Dot": ["Ali", "Cam"], "Eli": ["Cam"]}, "Bea")
+- friends_of_friends({"x": []}, "x")
+fail[1]: Ali's friends' friends are Ali, Cam, Bea, Dot and Eli. Leave out Ali and his friends: ['Eli'].
+fail[2]: Eli's only friend is Cam, whose other friends are Ali, Bea and Dot.
+fail[3]: Bea's friends are Ali and Cam; their other friends are Dot and Eli.
+hint: Go through each friend f of `person`, and each friend ff of f.
+hint: Keep ff only if it isn't `person` and isn't already in `person`'s list.
+hint: Collect them in a set to avoid repeats, then return `sorted(...)`.
+right: Two levels of neighbour lists give everyone two steps away; the set removes repeats, and sorting makes the answer tidy.
+wrong: Look at the neighbours of each neighbour. Skip the person themselves and their direct friends, collect the rest in a set, and return it sorted.
+
+=== task: predict hard
+title: Directed or undirected?
+code:
+```python
+edges = [("a", "b"), ("b", "c"), ("c", "a"), ("c", "d")]
+und = {}
+dirg = {}
+for u, v in edges:
+    for d in [und, dirg]:
+        if u not in d:
+            d[u] = []
+        if v not in d:
+            d[v] = []
+    und[u].append(v)
+    und[v].append(u)
+    dirg[u].append(v)
+print([len(und[x]) for x in "abcd"], [len(dirg[x]) for x in "abcd"])
+```
+wrong[[2, 2, 3, 1] [2, 2, 3, 1]]: In `dirg`, each edge is added only to the list of the vertex it starts from.
+wrong[[1, 1, 2, 0] [2, 2, 3, 1]]: The two lists are the other way round: `und` gets both directions.
+wrong[[2, 2, 3, 1] [1, 1, 2, 1]]: The edge c → d goes into c's list only, so d has no edges out: 0.
+hint: `und` adds each edge to both lists; `dirg` adds it to the starting vertex's list only.
+hint: In `dirg`, c starts two edges: c → a and c → d.
+right: `[2, 2, 3, 1] [1, 1, 2, 0]`: in the undirected version every edge counts at both ends; in the directed one, each list holds only the edges going out.
+wrong: Undirected: a (b, c), b (a, c), c (b, a, d), d (c). Directed: a → b, b → c, c → a and c → d, d → nothing.
+
+=== task: predict hard
+title: Who can reach whom?
+code:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+follows = {"ana": ["ben"], "ben": ["cy"], "cy": [], "dee": ["ana"]}
+print(sorted(reachable(follows, "ana")), sorted(reachable(follows, "cy")), sorted(reachable(follows, "dee")))
+```
+wrong[['ana', 'ben'] ['cy'] ['ana', 'dee']]: The search keeps following edges: ana reaches ben, and through ben, cy.
+wrong[['ana', 'ben', 'cy', 'dee'] ['cy'] ['ana', 'ben', 'cy', 'dee']]: The edges only go one way: nobody is followed by ana's chain back to dee.
+wrong[['ana', 'ben', 'cy'] ['ana', 'ben', 'cy', 'dee'] ['ana', 'ben', 'cy', 'dee']]: cy follows nobody, so a search from cy can't go anywhere.
+hint: Follow the arrows: ana → ben → cy, and dee → ana.
+hint: In a directed graph, reaching someone doesn't mean they can reach you.
+right: ana reaches ben and cy; cy reaches only itself; dee reaches everyone through ana. Direction decides what's reachable.
+wrong: From ana: ben, then cy. From cy: no edges out. From dee: ana, then ben, then cy.
+
+=== task: cells hard
+title: A directed matrix
+prompt: The directed edges P → Q, Q → R, R → P and P → R are put into an adjacency matrix with rows and columns in the order P, Q, R. What is in each row?
+labels: row P | row Q | row R
+answer: [0, 1, 1] | [0, 0, 1] | [1, 0, 0]
+wrong[[0, 1, 1] | [1, 0, 1] | [1, 1, 0]]: That fills in both directions. A directed edge u → v sets only row u, column v.
+wrong[[0, 1, 0] | [0, 0, 1] | [1, 0, 0]]: P has two edges out: P → Q and P → R.
+wrong[[0, 0, 1] | [1, 0, 0] | [1, 1, 0]]: That's the columns: row u lists the edges going **out** of u.
+hint: Row u, column v is 1 when there's an edge from u to v.
+hint: P has edges to Q and R; Q to R; R to P.
+right: `[0, 1, 1]`, `[0, 0, 1]`, `[1, 0, 0]`: each row marks where its vertex's edges go. The matrix isn't symmetric, because the graph is directed.
+wrong: Row P: edges to Q and R. Row Q: an edge to R. Row R: an edge to P. Write each row as P, Q, R columns.
+
+=== task: multi hard
+title: Choosing a storage
+prompt: Choose **every** statement that is true.
+* Checking whether u–v is an edge takes O(1) in an adjacency matrix :: Right. It's one look-up: `matrix[iu][iv]`.
+* An adjacency list uses O(V + E) space :: Right. One list per vertex, plus one entry per edge end.
+* Listing a vertex's neighbours from a matrix takes O(V) :: Right. You have to scan its whole row.
+* An edge list needs a full scan to check for an edge :: Right. O(E): every pair might be the one.
+- An adjacency matrix uses O(V + E) space :: It always has V × V boxes: O(V²), whatever the number of edges.
+- An adjacency list checks for an edge in O(1) :: It scans one neighbour list: O(degree).
+hint: How is each storage laid out in memory?
+hint: For each question, how many items might have to be looked at?
+right: Matrices answer "is u–v an edge?" in O(1) but cost O(V²) space; lists cost O(V + E) and take O(degree) to check; edge lists need a full scan.
+wrong: A matrix has V² boxes but checks an edge with one look-up. Adjacency lists hold only real edges and scan one list to check. An edge list has to be scanned whole.
+
+=== task: fill hard
+title: Rows of their own
+prompt: Fill in the blanks so that the program builds the adjacency matrix of the directed edges, and prints:
+
+```output
+[[0, 1, 0], [0, 0, 1], [0, 0, 0]]
+```
+code:
+```python
+names = ["A", "B", "C"]
+index = {"A": 0, "B": 1, "C": 2}
+matrix = [[0] * 3 for i in range(??)]
+for u, v in [("A", "B"), ("B", "C")]:
+    matrix[index[u]][index[v]] = ??
+print(matrix)
+```
+answer: 3 | 1
+wrong[1 | 1]: That makes only one row, so row B doesn't exist: IndexError.
+wrong[3 | 0]: The boxes start at 0, so writing 0 changes nothing: every box stays 0.
+hint: The matrix needs one row for each vertex.
+hint: A box holds 1 when the edge exists.
+right: Three separate rows, one per vertex, and a 1 at row u, column v for each edge.
+wrong: Build 3 rows with the comprehension, and set the box for each edge to 1.
+
+=== task: parsons hard
+title: Remove a vertex
+prompt: Arrange the lines so that `remove_vertex` deletes a vertex from an undirected graph: first take it out of each neighbour's list, then delete its own entry. The program prints:
+
+```output
+{'A': ['B', 'C'], 'B': ['A', 'C'], 'C': ['A', 'B'], 'E': []}
+```
+
+Not every line is needed.
+lines:
+```python
+def remove_vertex(graph, x):
+    for w in graph[x]:
+        graph[w].remove(x)
+    del graph[x]
+
+g = {"A": ["B", "C"], "B": ["A", "C", "D"], "C": ["A", "B", "D"], "D": ["B", "C", "E"], "E": ["D"]}
+remove_vertex(g, "D")
+print(g)
+```
+distractors:
+```python
+        graph[x].remove(w)
+    del graph[w]
+```
+hint: D appears in the lists of its neighbours B, C and E.
+hint: Remove D from each of those lists, then delete D's own key.
+right: Each edge D–w lives in two places: D's list, which goes when D's key is deleted, and w's list, which loses D. Afterwards, E has no neighbours left.
+wrong: Loop over D's neighbours and remove D from each of their lists, then `del graph[x]` removes D's own list.
