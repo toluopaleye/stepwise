@@ -1,0 +1,1073 @@
+=== lesson
+id: ds-graphs-directed
+title: Directed and undirected graphs
+summary: In a directed graph every edge points one way, like following someone online, a link from one web page to another, or a one-way street. You'll store directed edges, count in-degrees and out-degrees, find followers by reversing the edges, see that an undirected edge is a pair of directed ones, and follow directed paths and cycles to sources and sinks.
+
+=== learn
+### One-way edges
+In a **directed graph**, every edge has a direction: an edge u → v goes **from** u **to** v, and says nothing about v → u. Directed edges model one-way connections:
+
+| vertices | a directed edge u → v means |
+| --- | --- |
+| people | u follows v |
+| web pages | page u links to page v |
+| junctions | a one-way street runs from u to v |
+| tasks | u has to be done before v |
+
+This lesson uses this directed graph:
+```text
+  A ----> B ----> C
+  ^       |
+  |       v
+  E <---- D
+```
+Its edges are A → B, B → C, B → D, D → E and E → A. You can go from A to B, but not from B to A along that edge. An **undirected** graph is the case where every edge works both ways, like a friendship.
+
+### Storing a directed graph
+A directed graph is stored as a dictionary too, mapping each vertex to the list of vertices its edges **point to**. Each edge u → v is stored once, in u's list only. Every vertex needs a key, even one with no edges going out, like C:
+```python
+g = {"A": ["B"], "B": ["C", "D"], "C": [], "D": ["E"], "E": ["A"]}
+for v in g:
+    print(v, "->", g[v])
+print("D" in g["B"], "B" in g["D"])
+```
+```output
+A -> ['B']
+B -> ['C', 'D']
+C -> []
+D -> ['E']
+E -> ['A']
+True False
+```
+`"D" in g["B"]` asks "is there an edge B → D?": yes. `"B" in g["D"]` asks about the edge D → B, a different question: no. In a directed graph, the order of the two vertices matters.
+
+### Out-degree and in-degree
+A vertex in a directed graph has two degrees. Its **out-degree** is the number of edges leaving it: the length of its list. Its **in-degree** is the number of edges arriving at it, and those are spread over everyone else's lists, so counting them means going through every list:
+```python
+indeg = {}
+for v in g:
+    indeg[v] = 0
+for u in g:
+    for v in g[u]:
+        indeg[v] += 1
+for v in g:
+    print(v, "out", len(g[v]), "in", indeg[v])
+print(sum(len(g[v]) for v in g), sum(indeg.values()))
+```
+```output
+A out 1 in 1
+B out 2 in 1
+C out 0 in 1
+D out 1 in 1
+E out 1 in 1
+5 5
+```
+Every edge leaves one vertex and arrives at one vertex, so the out-degrees and the in-degrees both add up to the number of edges: 5. Counting in-degrees looks at every vertex and every edge once: O(V + E). Animation 1 counts them.
+
+### Followers and following
+In a social network where an edge u → v means "u follows v", u's list is the people u **follows**. u's **followers** are the people whose lists contain u: the edges coming in. Finding them by searching every list takes O(V + E) each time. If you need them often, build the **reverse graph** once, with every edge flipped:
+```python
+def reverse(g):
+    r = {}
+    for v in g:
+        r[v] = []
+    for u in g:
+        for v in g[u]:
+            r[v].append(u)
+    return r
+
+r = reverse(g)
+print(r)
+print("B's followers:", r["B"], "B follows:", g["B"])
+```
+```output
+{'A': ['E'], 'B': ['A'], 'C': ['B'], 'D': ['B'], 'E': ['D']}
+B's followers: ['A'] B follows: ['C', 'D']
+```
+The edge B → D becomes D → B, so B appears in D's list in `r`. Building the reverse graph takes O(V + E), and after that each vertex's in-neighbours are a single look-up. Animation 2 reverses the edges one by one.
+
+### An undirected edge is two directed edges
+An undirected edge between u and v works exactly like the two directed edges u → v and v → u. That's why building an undirected graph appends twice, and building a directed graph appends once:
+
+| | edge list item | stored as |
+| --- | --- | --- |
+| friendship (undirected) | (u, v) | v in u's list **and** u in v's list |
+| follow (directed) | (u, v) | v in u's list only |
+
+In a follow network, a pair who follow each other have both directed edges, which is how a friendship looks. This finds those **mutual** pairs:
+```python
+follows = {"ana": ["ben", "cy"], "ben": ["ana"], "cy": ["dee"], "dee": ["cy", "ana"]}
+pairs = []
+for u in follows:
+    for v in follows[u]:
+        if u < v and u in follows[v]:
+            pairs.append((u, v))
+print(pairs)
+```
+```output
+[('ana', 'ben'), ('cy', 'dee')]
+```
+Ana follows Ben and Ben follows Ana, so they're a mutual pair. Ana follows Cy, but Cy doesn't follow her back. `u < v` keeps each pair once: without it, ("ben", "ana") would be added too.
+
+### Directed paths and reachability
+A **directed path** follows the arrows: A → B → D → E is one. Going against an arrow isn't allowed, so reaching is no longer two-way. The search from the Graphs lesson works unchanged, because it only ever follows the lists:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+print(sorted(reachable(g, "A")), sorted(reachable(g, "C")))
+```
+```output
+['A', 'B', 'C', 'D', 'E'] ['C']
+```
+A reaches everything, but C reaches only itself: no edge leaves C. In an undirected graph, if u reaches v then v reaches u; in a directed graph, that's not guaranteed.
+
+### Directed cycles
+A **directed cycle** follows the arrows back to where it started: A → B → D → E → A. Going round the same loop the other way, A → E → D → B → A, isn't a cycle, because none of those edges exist in that direction:
+```python
+def is_directed_cycle(g, route):
+    if len(route) < 3 or route[0] != route[-1]:
+        return False
+    for i in range(len(route) - 1):
+        if route[i + 1] not in g[route[i]]:
+            return False
+    return True
+
+print(is_directed_cycle(g, ["A", "B", "D", "E", "A"]), is_directed_cycle(g, ["A", "E", "D", "B", "A"]))
+```
+```output
+True False
+```
+A directed graph with no directed cycles is called a **DAG**, a directed acyclic graph. Tasks with "do this before that" rules form a DAG, and Unit 4's topological sort puts their vertices in an order that respects every arrow.
+
+### Sources and sinks
+A vertex with in-degree 0 is a **source**: nothing points to it, so it can come first, like a task with nothing to wait for. A vertex with out-degree 0 is a **sink**: it leads nowhere, like the last task, or a web page with no links:
+```python
+tasks = {"shop": ["cook"], "cook": ["eat"], "set table": ["eat"], "eat": ["wash up"], "wash up": []}
+ind = {}
+for v in tasks:
+    ind[v] = 0
+for u in tasks:
+    for v in tasks[u]:
+        ind[v] += 1
+print([v for v in tasks if ind[v] == 0], [v for v in tasks if not tasks[v]])
+```
+```output
+['shop', 'set table'] ['wash up']
+```
+Shopping and setting the table can start straight away; washing up is the end. The lesson's graph `g` has a sink, C, but no source: every vertex there has an edge coming in, because A, B, D and E sit on a cycle.
+
+### Directed or undirected?
+| situation | kind | why |
+| --- | --- | --- |
+| friendships | undirected | a friendship goes both ways |
+| following, subscribing | directed | you can follow someone who doesn't follow you |
+| two-way roads | undirected | traffic goes both ways |
+| one-way streets | directed | traffic goes one way only |
+| web links | directed | a page can link to another without a link back |
+| prerequisites and task orders | directed | "before" only goes one way |
+
+| job | cost |
+| --- | --- |
+| list u's out-neighbours | O(out-degree): read u's list |
+| list u's in-neighbours | O(V + E) by scanning every list, or O(in-degree) after building the reverse graph |
+| count every in-degree | O(V + E) |
+| reverse the graph | O(V + E) |
+
+=== keypoints
+- In a directed graph each edge u → v goes one way. Store it once, in u's list, and give every vertex a key, even with no edges out.
+- Out-degree is the length of a vertex's list; in-degree counts the edges arriving, found by going through every list: O(V + E). Both kinds add up to the number of edges.
+- Following = out-neighbours; followers = in-neighbours. The reverse graph flips every edge, O(V + E), so in-neighbours become a look-up.
+- An undirected edge is the pair of directed edges u → v and v → u: build undirected graphs by appending both ways.
+- Directed paths and cycles must follow the arrows, so reachability is one-way. A directed graph with no directed cycle is a DAG.
+- A source has in-degree 0 and a sink has out-degree 0.
+
+=== example: Followers and following
+intro: A small follow network. For each person the program counts who they follow and who follows them, and suggests people to follow back.
+```python
+follows = {
+    "ana": ["ben", "cy", "dee"],
+    "ben": ["ana"],
+    "cy": ["dee"],
+    "dee": ["ana", "cy"],
+    "eli": ["ana"],
+}
+followers = {}
+for p in follows:
+    followers[p] = []
+for u in follows:
+    for v in follows[u]:
+        followers[v].append(u)
+
+for p in follows:
+    back = [f for f in followers[p] if f not in follows[p]]
+    print(p, "follows", len(follows[p]), "- followers", len(followers[p]), "- follow back:", back)
+```
+1-7: Each list holds the people that person follows: the directed edges going out.
+8-13: Build the reverse graph: for every edge u → v, u is one of v's followers.
+15-17: Someone who follows p but whom p doesn't follow is a "follow back" suggestion.
+17: Ana has 3 followers (ben, dee and eli) and already follows ben and dee, so eli is suggested. Cy is followed by ana and dee but follows only dee, so ana is suggested.
+
+=== example: Course prerequisites
+intro: An edge u → v means course u must be taken before course v. The program finds the courses with no prerequisites, then checks two study plans against every arrow.
+```python
+before = {
+    "Intro": ["Data", "Web"],
+    "Data": ["AI"],
+    "Web": ["Apps"],
+    "Maths": ["AI"],
+    "AI": [],
+    "Apps": [],
+}
+needs = {}
+for c in before:
+    needs[c] = 0
+for u in before:
+    for v in before[u]:
+        needs[v] += 1
+print("start with:", [c for c in before if needs[c] == 0])
+
+def respects(plan):
+    position = {}
+    for i in range(len(plan)):
+        position[plan[i]] = i
+    for u in before:
+        for v in before[u]:
+            if position[u] > position[v]:
+                return False
+    return True
+
+print(respects(["Intro", "Maths", "Data", "Web", "AI", "Apps"]))
+print(respects(["Maths", "Data", "Intro", "Web", "AI", "Apps"]))
+```
+1-8: A DAG of courses: Intro comes before Data and Web, and AI needs both Data and Maths.
+9-14: `needs` counts the in-degree of each course: how many courses must come before it.
+15: The sources, with in-degree 0, can be taken first: Intro and Maths.
+17-25: A plan respects the rules if, for every edge u → v, u comes earlier in the plan than v.
+27-28: The second plan puts Data before Intro, breaking the edge Intro → Data.
+
+=== animation: Counting in-degrees
+view: graph g pos=A:60,40;B:200,40;C:340,40;D:200,160;E:60,160 directed=1 current=v
+dict indeg hit=v
+intro: Every vertex starts with in-degree 0. Then each edge u → v adds 1 to the in-degree of the vertex it points to, v. Watch the counts fill in as the loop goes through each list.
+```python
+g = {"A": ["B"], "B": ["C", "D"], "C": [], "D": ["E"], "E": ["A"]}
+indeg = {}
+for v in g:
+    indeg[v] = 0
+for u in g:
+    for v in g[u]:
+        indeg[v] += 1
+print(indeg)
+```
+1: Five vertices and five one-way edges.
+2: The in-degree of each vertex will go here.
+3: Go through the vertices.
+4: {v} starts with in-degree 0.
+5: Go through the vertices again, this time looking at their lists.
+6: {'Go through ' + u + "'s list: " + str(g[u]) + '.' if g[u] else u + "'s list is empty: no edges leave it."}
+7: The edge {u} → {v} arrives at {v}: its in-degree goes up from {indeg[v]} to {indeg[v] + 1}.
+8: Every vertex has in-degree 1: each one has exactly one edge arriving.
+
+=== animation: Reversing the edges
+view: graph g pos=A:60,40;B:200,40;C:340,40;D:200,160;E:60,160 directed=1 title=original
+graph r pos=A:60,40;B:200,40;C:340,40;D:200,160;E:60,160 directed=1 title=reversed
+vars u v
+intro: Building the reverse graph: every edge u → v becomes v → u. The top picture is the original graph, and the bottom one fills up with the flipped edges.
+```python
+g = {"A": ["B"], "B": ["C", "D"], "C": [], "D": ["E"], "E": ["A"]}
+r = {}
+for v in g:
+    r[v] = []
+for u in g:
+    for v in g[u]:
+        r[v].append(u)
+print(r)
+```
+1: The original directed graph.
+2: The reverse graph starts empty.
+3: Go through the vertices.
+4: {v} gets an empty list in the reverse graph.
+5: Go through the original lists.
+6: {'Go through ' + u + "'s list: " + str(g[u]) + '.' if g[u] else u + "'s list is empty."}
+7: The edge {u} → {v} becomes {v} → {u}: add {u} to {v}'s list.
+8: Each list now holds a vertex's in-neighbours: the vertices that point to it.
+
+=== task: predict easy
+title: One way only
+code:
+```python
+g = {"A": ["B", "C"], "B": ["C"], "C": ["A"], "D": ["C"]}
+print("B" in g["A"], "A" in g["B"], len(g["C"]), len(g["D"]))
+```
+wrong[True True 1 1]: The edge A → B is in A's list only. B's list holds C, so there's no edge B → A.
+wrong[True False 3 1]: `len(g["C"])` counts the edges leaving C: only C → A. The edges arriving at C don't count.
+wrong[True False 1 0]: D has one edge going out, D → C.
+hint: `x in g[u]` asks whether there's an edge u → x.
+hint: A list only holds the edges leaving its own vertex.
+right: `True False 1 1`: there's an edge A → B but none B → A; C and D each have one edge going out.
+wrong: A's list contains B, so A → B exists. B's list doesn't contain A. C's list and D's list each have one item.
+
+=== task: mcq easy
+title: Following someone
+prompt: In a directed graph of a social network, an edge u → v means "u follows v". What does the edge tell you?
+* u follows v, and nothing about whether v follows u :: Right. A directed edge only goes one way. v following u would be a separate edge, v → u.
+- u and v follow each other :: That would take two edges, u → v and v → u.
+- v follows u :: The edge points from u to v: u is the one doing the following.
+- u and v are friends, so the edge works both ways :: Two-way edges belong to undirected graphs.
+hint: Which way does the arrow point?
+hint: Does a one-way street let you drive back the other way?
+right: u follows v. Whether v follows u back is a different edge, which may or may not exist.
+wrong: A directed edge u → v only says something from u to v. A follow back would be the separate edge v → u.
+
+=== task: cells easy
+title: Out and in
+prompt: What are the out-degree and in-degree of these vertices?
+
+```text
+  P ----> Q ----> R
+  |               ^
+  v               |
+  S ------------> T
+```
+labels: P out | P in | R out | R in | T out | T in
+answer: 2 | 0 | 0 | 2 | 1 | 1
+wrong[2 | 0 | 2 | 0 | 1 | 1]: Both of R's edges arrive at it: Q → R and T → R. Nothing leaves R.
+wrong[0 | 2 | 0 | 2 | 1 | 1]: P's two edges point away from it, to Q and S: out-degree 2, in-degree 0.
+wrong[2 | 0 | 0 | 2 | 2 | 0]: T has one edge arriving (from S) and one leaving (to R).
+hint: Out-degree counts arrows leaving a vertex; in-degree counts arrows arriving.
+hint: Follow each arrowhead to see which vertex it arrives at.
+right: P sends 2 edges and gets none; R gets 2 and sends none; T gets 1 and sends 1.
+wrong: P → Q and P → S leave P. Q → R and T → R arrive at R. S → T arrives at T and T → R leaves it.
+
+=== task: code easy
+title: Who follows me?
+prompt: In a follow graph, `g[u]` is the list of people u follows. Write `followers_of(g, p)` that returns a list of everyone who follows p, in the order they appear in the dictionary. You'll have to look through every list.
+starter:
+```python
+def followers_of(g, p):
+    # your code here
+    return g[p]
+```
+solution:
+```python
+def followers_of(g, p):
+    out = []
+    for u in g:
+        if p in g[u]:
+            out.append(u)
+    return out
+```
+tests:
+- followers_of({"ana": ["ben", "cy", "dee"], "ben": ["ana"], "cy": ["dee"], "dee": ["ana", "cy"], "eli": ["ana"]}, "ana")
+- followers_of({"ana": ["ben", "cy", "dee"], "ben": ["ana"], "cy": ["dee"], "dee": ["ana", "cy"], "eli": ["ana"]}, "eli")
+- followers_of({"ana": ["ben", "cy", "dee"], "ben": ["ana"], "cy": ["dee"], "dee": ["ana", "cy"], "eli": ["ana"]}, "dee")
+- followers_of({"x": []}, "x")
+fail[1]: ben, dee and eli all have ana in their lists.
+fail[2]: Nobody follows eli: [].
+fail[3]: ana and cy have dee in their lists. `g["dee"]` is who dee follows, not who follows dee.
+hint: p's followers are the vertices u whose list contains p.
+hint: Loop over every u in `g` and check `p in g[u]`.
+right: The edges arriving at p are spread over everyone's lists, so finding them means checking every list: O(V + E).
+wrong: Go through every person u, and keep u if p appears in u's list.
+
+=== task: fill easy
+title: One append
+prompt: Fill in the blanks so that each route becomes a one-way edge, and the program prints:
+
+```output
+{'X': ['Y'], 'Y': ['Z'], 'Z': []}
+```
+code:
+```python
+routes = [("X", "Y"), ("Y", "Z")]
+g = {}
+for u, v in routes:
+    if u not in g:
+        g[u] = []
+    if ?? not in g:
+        g[v] = []
+    g[u].append(??)
+print(g)
+```
+answer: v | v
+wrong[u | v]: Then a vertex that only appears as a destination, like Z, never gets a key, so it's missing from the dictionary.
+wrong[v | u]: X's list would get X itself, not Y.
+hint: Every vertex needs a key, including the one the edge points to.
+hint: The edge u → v goes into u's list.
+right: Both ends get a key, and only `g[u].append(v)` runs: the edge goes from u to v and not back.
+wrong: Make sure v has a list too, then append v to u's list, once.
+
+=== task: multi easy
+title: True of directed graphs
+prompt: Choose **every** statement that is true of directed graphs.
+* An edge u → v doesn't mean there's an edge v → u :: Right. Each direction is a separate edge.
+* Each edge is stored in one list: the list of the vertex it leaves :: Right. That's u's list for u → v.
+* The out-degrees add up to the number of edges :: Right. Every edge leaves exactly one vertex.
+- A vertex's list holds the vertices that point to it :: It holds the vertices it points to. The ones pointing to it are spread over other lists.
+- If u can reach v, then v can reach u :: Only in undirected graphs. Following the arrows may not lead back.
+- Every vertex has at least one edge going out :: A sink, like C in the lesson's graph, has none.
+hint: Think of one-way streets.
+hint: Which list does the edge u → v go into?
+right: Edges are one-way, stored once in the list of the vertex they leave, so out-degrees add up to the number of edges. Reachability isn't symmetric, and sinks have no edges out.
+wrong: A directed edge goes one way and lives in the list of its starting vertex. Lists hold out-neighbours, not in-neighbours; reaching isn't two-way; and some vertices may have no edges out.
+
+=== task: parsons easy
+title: Counting in-degrees
+prompt: Arrange the lines so that the program counts the edges arriving at each vertex, and prints:
+
+```output
+{'w': 1, 'x': 1, 'y': 3, 'z': 0}
+```
+
+Not every line is needed.
+lines:
+```python
+g = {"w": ["x", "y"], "x": ["y"], "y": [], "z": ["y", "w"]}
+indeg = {}
+for v in g:
+    indeg[v] = 0
+for u in g:
+    for v in g[u]:
+        indeg[v] += 1
+print(indeg)
+```
+distractors:
+```python
+        indeg[u] += 1
+    indeg[v] = len(g[v])
+```
+hint: Every vertex starts at 0, including those with no edges arriving.
+hint: For each edge u → v, the vertex it arrives at, v, gets 1 more.
+right: Every edge adds 1 to the vertex it points to: y is the target of three edges, and z of none.
+wrong: First set every in-degree to 0. Then for each u and each v in u's list, add 1 to `indeg[v]`.
+
+=== task: order easy
+title: Follow the arrows
+prompt: Put the vertices in order to make a directed path from A to E that follows the arrows and uses every vertex once.
+
+```text
+  A ----> B     E
+          |     ^
+          v     |
+          C --> D
+```
+items:
+- A
+- B
+- C
+- D
+- E
+hint: From A, only one arrow leaves.
+hint: Each step must go the way its arrow points.
+right: A → B → C → D → E: every step follows an arrow forwards.
+wrong: A's only edge goes to B. From B, the arrow points down to C, then across to D, then up to E.
+
+=== task: predict easy
+title: In-degrees
+code:
+```python
+g = {"w": ["x", "y"], "x": ["y"], "y": [], "z": ["y", "w"]}
+indeg = {}
+for v in g:
+    indeg[v] = 0
+for u in g:
+    for v in g[u]:
+        indeg[v] += 1
+print(indeg)
+```
+wrong[{'w': 2, 'x': 1, 'y': 0, 'z': 2}]: Those are the out-degrees, the lengths of the lists. In-degrees count the edges arriving.
+wrong[{'w': 0, 'x': 1, 'y': 3, 'z': 0}]: z → w is an edge arriving at w, so w's in-degree is 1.
+wrong[{'x': 1, 'y': 3, 'w': 1}]: z gets a key in the first loop, set to 0, even though no edge arrives at it.
+hint: Every vertex starts at 0.
+hint: y appears in three lists: w's, x's and z's.
+right: `{'w': 1, 'x': 1, 'y': 3, 'z': 0}`: z → w, w → x, three edges into y, and none into z.
+wrong: Count where each vertex appears in the lists: w once (in z's), x once (in w's), y three times, z never.
+
+=== task: mcq easy
+title: An undirected edge
+prompt: An undirected edge joins u and v. Which directed edges behave exactly like it?
+* u → v and v → u :: Right. Two one-way edges, one in each direction, make a two-way connection.
+- u → v only :: That lets you go from u to v but not back.
+- v → u only :: That lets you go from v to u but not back.
+- No directed edges can behave like it :: A pair of edges, one each way, works exactly like one undirected edge.
+hint: An undirected edge can be followed from either end.
+hint: How many one-way streets make a two-way road?
+right: u → v and v → u: that's why building an undirected graph appends each edge to both lists.
+wrong: An undirected edge works both ways, which is the same as one directed edge in each direction.
+
+=== task: code medium
+title: Build a directed graph
+prompt: Write `build_directed(edges)` that turns a list of `(u, v)` pairs into a directed adjacency list: each pair is an edge from u to v only. Every vertex that appears in a pair needs a key, even if no edges leave it, and the lists keep the order of the pairs.
+starter:
+```python
+def build_directed(edges):
+    g = {}
+    # your code here
+    return g
+```
+solution:
+```python
+def build_directed(edges):
+    g = {}
+    for u, v in edges:
+        if u not in g:
+            g[u] = []
+        if v not in g:
+            g[v] = []
+        g[u].append(v)
+    return g
+```
+tests:
+- build_directed([("a", "b"), ("b", "c"), ("a", "c")])
+- build_directed([])
+- build_directed([("x", "y"), ("y", "x")])
+- build_directed([(1, 2), (3, 2)])
+fail[1]: c has no edges out, but it still needs a key: {'a': ['b', 'c'], 'b': ['c'], 'c': []}.
+fail[3]: Two edges, one each way: x and y each have the other in their list.
+fail[4]: 2 only ever appears as a destination, so its list is empty.
+error[KeyError]: Give every vertex a list before appending to it, including the vertex an edge points to.
+hint: For each pair, make sure both u and v have a list.
+hint: Then append v to u's list, and nothing else.
+right: One append per edge, so each edge goes one way, and building takes O(E).
+wrong: Create missing lists for both ends of each pair, then append v to u's list only.
+
+=== task: code medium
+title: Reverse the graph
+prompt: Write `reverse(g)` that returns a new directed graph with every edge flipped: for each edge u → v in `g`, the result has v → u. Every vertex of `g` gets a key, and each list keeps the order the edges are found in, going through `g` vertex by vertex.
+starter:
+```python
+def reverse(g):
+    r = {}
+    # your code here
+    return r
+```
+solution:
+```python
+def reverse(g):
+    r = {}
+    for v in g:
+        r[v] = []
+    for u in g:
+        for v in g[u]:
+            r[v].append(u)
+    return r
+```
+tests:
+- reverse({"A": ["B"], "B": []})
+- reverse({})
+- reverse({"1": ["2", "3"], "2": ["3"], "3": ["1"]})
+- reverse({"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": ["A"]})
+fail[1]: The edge A → B becomes B → A: {'A': [], 'B': ['A']}.
+fail[3]: 3 is pointed to by 1 and 2, so its list is ['1', '2'].
+fail[4]: D is pointed to by B and C: {'A': ['D'], 'B': ['A'], 'C': ['A'], 'D': ['B', 'C']}.
+error[KeyError]: Give every vertex an empty list first, before appending.
+hint: Start every vertex with an empty list.
+hint: For each u and each v in `g[u]`, append u to `r[v]`.
+right: Each edge is visited once, so reversing takes O(V + E). Afterwards, `r[p]` lists everyone who points to p.
+wrong: Make an empty list for every vertex, then for each edge u → v put u in v's list.
+
+=== task: predict medium
+title: Reaching along the arrows
+code:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+g = {"1": ["2"], "2": ["3"], "3": ["1", "4"], "4": [], "5": ["4"]}
+print(sorted(reachable(g, "1")), sorted(reachable(g, "4")), sorted(reachable(g, "5")))
+```
+wrong[['1', '2', '3', '4', '5'] ['4'] ['4', '5']]: No edge points to 5, so a search from 1 can't reach it.
+wrong[['1', '2', '3', '4'] ['3', '4', '5'] ['4', '5']]: 4 has no edges out, so a search from 4 reaches only 4.
+wrong[['1', '2', '3', '4'] ['4'] ['1', '2', '3', '4', '5']]: 5 → 4 leads to a dead end: nothing leaves 4.
+hint: Follow the arrows only: 1 → 2 → 3 → 1, and 3 → 4.
+hint: Edges arriving at 4 don't help a search that starts at 4.
+right: 1 reaches 2, 3 and 4 around and out of its cycle; 4 reaches only itself; 5 reaches 4.
+wrong: From 1: 2, 3, then 4 (and back to 1). From 4: no edges out. From 5: 4, then nothing more.
+
+=== task: cells medium
+title: Sources and sinks
+prompt: For each vertex of this graph, write `source` (in-degree 0), `sink` (out-degree 0), `both` or `neither`.
+
+```python
+g = {"A": ["B"], "B": ["C"], "C": [], "D": [], "E": ["C"]}
+```
+labels: A | B | C | D | E
+answer: source | neither | sink | both | source
+wrong[source | neither | sink | neither | source]: D has no edges at all: nothing arrives and nothing leaves, so it's both a source and a sink.
+wrong[sink | neither | source | both | sink]: A source has nothing arriving (in-degree 0); a sink has nothing leaving (out-degree 0).
+wrong[source | source | sink | both | source]: A → B arrives at B, so B isn't a source.
+hint: Work out each vertex's in-degree and out-degree.
+hint: B has one edge arriving (from A) and one leaving (to C).
+right: A and E only send edges, C only receives them, D does neither, and B does both.
+wrong: In-degrees: A 0, B 1, C 2, D 0, E 0. Out-degrees: A 1, B 1, C 0, D 0, E 1. So A and E are sources, C is a sink, D is both and B is neither.
+
+=== task: fill medium
+title: Following each other
+prompt: Fill in the blanks so that the program lists the pairs who follow each other, each pair once, and prints:
+
+```output
+[('ana', 'ben'), ('cy', 'dee')]
+```
+code:
+```python
+follows = {"ana": ["ben", "cy"], "ben": ["ana"], "cy": ["dee"], "dee": ["cy", "ana"]}
+pairs = []
+for u in follows:
+    for v in follows[u]:
+        if u < v and ?? in follows[??]:
+            pairs.append((u, v))
+print(pairs)
+```
+answer: u | v
+wrong[v | u]: `v in follows[u]` is always True here, because v came from u's list, so every follow counts as mutual.
+wrong[u | u]: That asks whether u follows itself, which is never true: `[]`.
+hint: u follows v already. What else must be true for the follow to be mutual?
+hint: Look in v's list.
+right: `u in follows[v]` checks the edge back, v → u. With `u < v`, each mutual pair is added once.
+wrong: The pair is mutual when v also follows u: u must be in `follows[v]`.
+
+=== task: mcq medium
+title: Finding followers
+prompt: A follow graph has V people and E follows, stored as lists of who each person follows. Without any other structure, how long does it take to list the followers of one person?
+* O(V + E): every list has to be checked :: Right. The edges arriving at a person can be in anyone's list.
+- O(1) :: That's the time to get the list of people someone follows, not their followers.
+- O(out-degree) :: Reading their own list gives who they follow.
+- O(log V) :: Nothing is sorted or arranged to allow a quicker search.
+hint: Where are the edges arriving at a person stored?
+hint: How many lists might contain that person?
+right: O(V + E). Building the reverse graph once, also O(V + E), turns every later followers look-up into a single dictionary access.
+wrong: Followers are the in-neighbours, and they're spread across every list, so finding them means looking at all of them.
+
+=== task: predict medium
+title: Directed cycles
+code:
+```python
+def is_directed_cycle(g, route):
+    if len(route) < 3 or route[0] != route[-1]:
+        return False
+    for i in range(len(route) - 1):
+        if route[i + 1] not in g[route[i]]:
+            return False
+    return True
+
+g = {"A": ["B"], "B": ["C"], "C": ["A", "D"], "D": ["B"]}
+print(is_directed_cycle(g, ["A", "B", "C", "A"]), is_directed_cycle(g, ["A", "C", "B", "A"]))
+print(is_directed_cycle(g, ["B", "C", "D", "B"]), is_directed_cycle(g, ["C", "D", "B"]))
+```
+wrong[True True\nTrue False]: A → C isn't an edge (only C → A is), so going round the other way fails.
+wrong[True False\nFalse False]: B → C, C → D and D → B are all edges: that's a cycle too.
+wrong[True False\nTrue True]: C, D, B doesn't come back to C, so it's a path, not a cycle.
+hint: Every step must follow an arrow forwards.
+hint: A cycle must end where it started.
+right: A → B → C → A and B → C → D → B follow the arrows back to the start. The reversed loop uses edges that don't exist, and C, D, B never returns.
+wrong: Check each step against the lists: A, B, C, A works; A, C fails at A → C; B, C, D, B works; C, D, B doesn't end at C.
+
+=== task: multi medium
+title: Directed or undirected?
+prompt: Choose **every** situation that is best modelled with **directed** edges.
+* Web pages and the links between them :: Right. A page can link to another without a link back.
+* Course prerequisites :: Right. "A comes before B" only goes one way.
+* Subscribers to video channels :: Right. You can subscribe to a channel that doesn't subscribe to you.
+* One-way streets in a town centre :: Right. Traffic goes only one way.
+- Friendships :: A friendship is mutual: one undirected edge.
+- Two-way roads between towns :: Traffic goes both ways: undirected.
+hint: Ask whether the connection could exist in one direction without the other.
+hint: Friends are friends of each other.
+right: Links, prerequisites, subscriptions and one-way streets can each go one way only. Friendships and two-way roads go both ways.
+wrong: Use directed edges when the connection can hold one way without the other. Friendships and two-way roads are symmetric, so they're undirected.
+
+=== task: parsons medium
+title: Check a directed cycle
+prompt: Arrange the lines so that `is_directed_cycle` returns True only for routes that follow the arrows back to their start, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+def is_directed_cycle(g, route):
+    if len(route) < 3 or route[0] != route[-1]:
+        return False
+    for i in range(len(route) - 1):
+        if route[i + 1] not in g[route[i]]:
+            return False
+    return True
+
+g = {"A": ["B"], "B": ["C"], "C": ["A"]}
+print(is_directed_cycle(g, ["A", "B", "C", "A"]), is_directed_cycle(g, ["A", "C", "B", "A"]))
+```
+distractors:
+```python
+        if route[i] not in g[route[i + 1]]:
+    if route[0] == route[-1]:
+```
+hint: First check the route is long enough and ends where it starts.
+hint: Then check that every step u → v is in u's list: `route[i + 1] in g[route[i]]`.
+right: The route must close up, and every step must go along an arrow, not against it. The second route goes A → C, which doesn't exist.
+wrong: Return False for short or open routes; then return False at the first step that isn't an edge in the forward direction; otherwise return True.
+
+=== task: order medium
+title: Followers with a reverse graph
+prompt: Put the steps for listing p's followers with a reverse graph in order.
+items:
+- Make an empty list for every vertex
+- Go through every vertex u of the original graph
+- Go through every vertex v in u's list
+- Add u to v's list in the reverse graph
+- Read p's list in the reverse graph
+hint: The reverse graph needs a list for every vertex before anything is added.
+hint: p's followers can be read only once every edge has been flipped.
+right: Set up empty lists, flip every edge u → v by adding u to v's list, then read p's list: those are p's followers.
+wrong: Create the lists, then loop over each u and each v in u's list, putting u into v's list. When that's done, the reverse graph's list for p holds everyone who follows p.
+
+=== task: code hard
+title: Mutual follows
+prompt: Write `mutual_pairs(follows)` that returns a sorted list of `(u, v)` tuples, one for every pair of people who follow each other, with u < v so each pair appears once.
+starter:
+```python
+def mutual_pairs(follows):
+    # your code here
+    return []
+```
+solution:
+```python
+def mutual_pairs(follows):
+    out = []
+    for u in follows:
+        for v in follows[u]:
+            if u < v and u in follows[v]:
+                out.append((u, v))
+    return sorted(out)
+```
+tests:
+- mutual_pairs({"ana": ["ben", "cy"], "ben": ["ana"], "cy": ["dee"], "dee": ["cy", "ana"]})
+- mutual_pairs({"a": [], "b": []})
+- mutual_pairs({"x": ["y"], "y": ["x", "z"], "z": ["y"]})
+- mutual_pairs({"p": ["q"], "q": ["r"], "r": ["p"]})
+fail[1]: ana ↔ ben and cy ↔ dee. Ana follows cy, but cy doesn't follow her back.
+fail[3]: x ↔ y and y ↔ z.
+fail[4]: A loop of one-way follows has no mutual pairs: [].
+hint: For each follow u → v, check whether v → u also exists: `u in follows[v]`.
+hint: Keep the pair only when u < v, so it isn't added twice.
+hint: Return the pairs sorted.
+right: Each follow is checked once against the other person's list: a mutual pair is the two directed edges that make an undirected one.
+wrong: Look at every edge u → v. If v's list contains u and u < v, record (u, v). Sort at the end.
+
+=== task: code hard
+title: Does the plan respect the arrows?
+prompt: In a prerequisite graph, an edge u → v means u must come before v. Write `respects(plan, before)` that returns True if the list `plan` puts every u before its v, and False otherwise. Every course appears in the plan exactly once. Record each course's position in the plan first, so each edge can be checked in O(1). `courses()` builds the example graph for the tests.
+starter:
+```python
+def courses():
+    return {"Intro": ["Data", "Web"], "Data": ["AI"], "Web": ["Apps"], "Maths": ["AI"], "AI": [], "Apps": []}
+
+def respects(plan, before):
+    # your code here
+    return True
+```
+solution:
+```python
+def courses():
+    return {"Intro": ["Data", "Web"], "Data": ["AI"], "Web": ["Apps"], "Maths": ["AI"], "AI": [], "Apps": []}
+
+def respects(plan, before):
+    position = {}
+    for i in range(len(plan)):
+        position[plan[i]] = i
+    for u in before:
+        for v in before[u]:
+            if position[u] > position[v]:
+                return False
+    return True
+```
+tests:
+- respects(["Intro", "Maths", "Data", "Web", "AI", "Apps"], courses())
+- respects(["Maths", "Data", "Intro", "Web", "AI", "Apps"], courses())
+- respects(["Intro", "Web", "Apps", "Data", "Maths", "AI"], courses())
+- respects(["Intro", "Data", "AI", "Maths", "Web", "Apps"], courses())
+- respects(["b", "a"], {"a": ["b"], "b": []})
+fail[2]: Data comes before Intro, but Intro → Data says Intro must be first.
+fail[4]: AI comes before Maths, but Maths → AI.
+fail[5]: a → b, so a must come before b.
+hint: Build a dict from each course to its index in the plan.
+hint: For every edge u → v, compare `position[u]` with `position[v]`.
+hint: Return False if some u comes after its v.
+right: The positions dict makes each edge check O(1), so checking the whole plan takes O(V + E). Searching the plan for every edge would be much slower.
+wrong: Record where each course sits in the plan. Then, for every edge u → v, u's position must be smaller than v's.
+
+=== task: code hard
+title: Can everyone reach everyone?
+prompt: A directed graph is **strongly connected** if every vertex can reach every other vertex along the arrows. Write `strongly_connected(g)` for a graph with at least one vertex. A quick test: pick any vertex s. Every vertex reaches every other exactly when s reaches every vertex in `g`, **and** s reaches every vertex in the reverse graph (which means every vertex can reach s). `reachable` and `reverse` are provided.
+starter:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+def reverse(g):
+    r = {}
+    for v in g:
+        r[v] = []
+    for u in g:
+        for v in g[u]:
+            r[v].append(u)
+    return r
+
+def strongly_connected(g):
+    # your code here
+    return True
+```
+solution:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+def reverse(g):
+    r = {}
+    for v in g:
+        r[v] = []
+    for u in g:
+        for v in g[u]:
+            r[v].append(u)
+    return r
+
+def strongly_connected(g):
+    s = list(g)[0]
+    if len(reachable(g, s)) != len(g):
+        return False
+    return len(reachable(reverse(g), s)) == len(g)
+```
+tests:
+- strongly_connected({"A": ["B"], "B": ["C", "D"], "C": [], "D": ["E"], "E": ["A"]})
+- strongly_connected({"A": ["B"], "B": ["C"], "C": ["A"]})
+- strongly_connected({"A": ["B"], "B": []})
+- strongly_connected({"X": []})
+- strongly_connected({"A": ["B"], "B": ["A", "C"], "C": ["B"]})
+- strongly_connected({"A": [], "B": ["A"]})
+fail[1]: A reaches everyone, but C has no edges out, so C can't reach anyone.
+fail[3]: A reaches B, but B can't get back to A.
+fail[6]: B reaches A, but the search starts from A, which reaches nothing else.
+hint: Pick `s = list(g)[0]`.
+hint: If `reachable(g, s)` doesn't hold every vertex, the answer is False.
+hint: Otherwise check that `reachable(reverse(g), s)` holds every vertex too.
+right: Everyone reaches s (the reverse search) and s reaches everyone, so any u can go u → s → v. Two searches and one reversal: O(V + E).
+wrong: Search from one vertex in the graph and in its reverse. Both searches must find every vertex.
+
+=== task: code hard
+title: Forget the directions
+prompt: Write `to_undirected(g)` that turns a directed graph into an undirected one: for every edge u → v, the result joins u and v both ways. If u → v and v → u both exist, they become one undirected edge, so no neighbour may appear twice in a list. Return each list sorted.
+starter:
+```python
+def to_undirected(g):
+    # your code here
+    return g
+```
+solution:
+```python
+def to_undirected(g):
+    u2 = {}
+    for v in g:
+        u2[v] = []
+    for u in g:
+        for v in g[u]:
+            if v not in u2[u]:
+                u2[u].append(v)
+            if u not in u2[v]:
+                u2[v].append(u)
+    for v in u2:
+        u2[v] = sorted(u2[v])
+    return u2
+```
+tests:
+- to_undirected({"A": ["B"], "B": ["C"], "C": []})
+- to_undirected({"x": ["y"], "y": ["x"]})
+- to_undirected({"1": ["2", "3"], "2": ["3"], "3": ["1"]})
+- to_undirected({})
+fail[1]: A–B and B–C both work both ways now: B's list is ['A', 'C'].
+fail[2]: x → y and y → x become a single edge: each list holds the other once.
+fail[3]: 1–3 appears in both directions but only once in each list.
+error[KeyError]: Give every vertex an empty list before adding neighbours.
+hint: Start every vertex with an empty list.
+hint: For each edge u → v, add v to u's list and u to v's list, unless it's already there.
+hint: Sort each list at the end.
+right: Every directed edge becomes a two-way connection, and the "already there" checks stop a pair of opposite edges from counting twice.
+wrong: For every edge u → v, make sure v is in u's list and u is in v's list, without adding repeats. Then sort the lists.
+
+=== task: predict hard
+title: How much can each vertex reach?
+code:
+```python
+def reachable(graph, start):
+    seen = {start}
+    waiting = [start]
+    while waiting:
+        v = waiting.pop()
+        for w in graph[v]:
+            if w not in seen:
+                seen.add(w)
+                waiting.append(w)
+    return seen
+
+g = {"A": ["B"], "B": ["C", "D"], "C": [], "D": ["E"], "E": ["A"]}
+print([len(reachable(g, v)) for v in g])
+```
+wrong[[5, 4, 1, 2, 1]]: The cycle A → B → D → E → A lets each of those four go all the way round, and from B, on to C.
+wrong[[5, 5, 5, 5, 5]]: C has no edges out, so it reaches only itself: 1.
+wrong[[1, 2, 0, 1, 1]]: `seen` starts with the start vertex, so every count includes the vertex itself.
+hint: A, B, D and E sit on a cycle, and B also points to C.
+hint: C is a sink.
+right: `[5, 5, 1, 5, 5]`: every vertex on the cycle can go round it and then out to C, so they reach all 5. C reaches only itself.
+wrong: From A, B, D or E you can follow the cycle to any of the four, and from B on to C: 5 each. From C, nothing: 1.
+
+=== task: predict hard
+title: Who should I follow back?
+code:
+```python
+follows = {"ana": ["ben", "cy"], "ben": ["cy"], "cy": ["ana"], "dee": ["ana", "cy"]}
+followers = {}
+for p in follows:
+    followers[p] = []
+for u in follows:
+    for v in follows[u]:
+        followers[v].append(u)
+for p in follows:
+    back = [f for f in followers[p] if f not in follows[p]]
+    print(p, back)
+```
+wrong[ana ['cy', 'dee']\nben []\ncy ['ana', 'ben', 'dee']\ndee []]: Ana already follows cy, so cy isn't suggested to her. And cy already follows ana.
+wrong[ana ['dee']\nben []\ncy ['ben', 'dee']\ndee []]: Ben is followed by ana, and ben doesn't follow ana back, so ana is suggested to ben.
+wrong[ana ['dee']\nben ['ana']\ncy ['ana', 'ben', 'dee']\ndee []]: Cy already follows ana, so ana isn't suggested to cy.
+hint: First list each person's followers: ana ← cy, dee; ben ← ana; cy ← ana, ben, dee; dee ← nobody.
+hint: Then drop the followers each person already follows.
+right: Ana: dee. Ben: ana. Cy: ben and dee (cy follows ana already). Dee: no followers, so nobody.
+wrong: Followers: ana (cy, dee), ben (ana), cy (ana, ben, dee), dee (none). Remove the ones each person follows: ana follows cy, cy follows ana, ben follows cy.
+
+=== task: cells hard
+title: Flip every edge
+prompt: What is each vertex's list in the reverse of this graph?
+
+```python
+g = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": ["A"]}
+```
+labels: A | B | C | D
+answer: ['D'] | ['A'] | ['A'] | ['B', 'C']
+wrong[['B', 'C'] | ['D'] | ['D'] | ['A']]: That's the original graph. In the reverse, each list holds the vertices that pointed **to** that vertex.
+wrong[['D'] | ['A'] | ['A'] | ['C', 'B']]: The edges are flipped in the order they're found: B's list comes before C's, so B is added to D's list first.
+wrong[['D'] | ['A', 'D'] | ['A'] | ['B', 'C']]: Only A points to B. D points to A, not to B.
+hint: For each edge u → v, the reverse has v → u.
+hint: D is pointed to by both B and C.
+right: A ← D, B ← A, C ← A and D ← B, C: each list now holds the in-neighbours.
+wrong: Flip each edge: A → B becomes B → A, A → C becomes C → A, B → D becomes D → B, C → D becomes D → C, and D → A becomes A → D.
+
+=== task: multi hard
+title: Sources, sinks and DAGs
+prompt: Choose **every** statement that is true.
+* A vertex with in-degree 0 is a source :: Right. Nothing points to it.
+* Every DAG with at least one vertex has at least one source :: Right. Follow the arrows backwards from any vertex: without cycles, you must stop somewhere with nothing arriving.
+* A vertex on a directed cycle can't be a sink :: Right. The cycle leaves it along one of its edges.
+- A graph with a sink can't have a cycle :: The lesson's graph has the sink C and the cycle A → B → D → E → A.
+- In a DAG, every vertex is a source or a sink :: A middle task, like "cook", has edges both arriving and leaving.
+- Reversing a graph turns its sources into sources :: Reversing swaps them: sources become sinks and sinks become sources.
+hint: What happens to in-degrees and out-degrees when every edge is flipped?
+hint: Think of the chores example: shop → cook → eat.
+right: Sources have in-degree 0; a DAG always has one; a vertex on a cycle has an edge out. Reversal swaps sources and sinks, and DAGs can have middle vertices.
+wrong: In-degree 0 means source, out-degree 0 means sink, and reversing swaps them. A DAG always has at least one source and usually has middle vertices too. A cycle and a sink can sit in the same graph.
+
+=== task: fill hard
+title: Positions in the plan
+prompt: Fill in the blanks so that `respects` checks every edge against the plan, and the program prints:
+
+```output
+True False
+```
+code:
+```python
+def respects(plan, before):
+    position = {}
+    for i in range(len(plan)):
+        position[plan[i]] = ??
+    for u in before:
+        for v in before[u]:
+            if position[u] ?? position[v]:
+                return False
+    return True
+
+before = {"shop": ["cook"], "cook": ["eat"], "eat": []}
+print(respects(["shop", "cook", "eat"], before), respects(["cook", "shop", "eat"], before))
+```
+answer: i | >
+wrong[0 | >]: Every course gets position 0, so no edge ever looks wrong: `True True`.
+wrong[i | <]: That flags the edges that are in the right order, so both plans come out False.
+hint: Each course's position is its index in the plan.
+hint: The plan is wrong when u comes after v.
+right: `position[plan[i]] = i` records where each course is, and `position[u] > position[v]` catches an edge whose u comes too late.
+wrong: Store the index i for each course. An edge u → v breaks the plan when u's position is greater than v's.
+
+=== task: parsons hard
+title: Follow-back suggestions
+prompt: Arrange the lines so that the program builds each person's followers and suggests the followers they don't follow back, and prints:
+
+```output
+ana ['dee']
+ben ['ana']
+cy ['ben', 'dee']
+dee []
+```
+
+Not every line is needed.
+lines:
+```python
+follows = {"ana": ["ben", "cy"], "ben": ["cy"], "cy": ["ana"], "dee": ["ana", "cy"]}
+followers = {}
+for p in follows:
+    followers[p] = []
+for u in follows:
+    for v in follows[u]:
+        followers[v].append(u)
+for p in follows:
+    back = [f for f in followers[p] if f not in follows[p]]
+    print(p, back)
+```
+distractors:
+```python
+        followers[u].append(v)
+    back = [f for f in follows[p] if f not in followers[p]]
+```
+hint: The followers dictionary is the reverse graph: every edge u → v puts u in v's list.
+hint: A suggestion is a follower that p doesn't already follow.
+right: Reversing the edges gives each person's followers, and filtering out the people they already follow leaves the follow-back suggestions.
+wrong: Give everyone an empty followers list, add u to v's list for every follow u → v, then for each p keep the followers not in `follows[p]`.
