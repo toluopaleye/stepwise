@@ -1,0 +1,1124 @@
+=== lesson
+id: algo-sliding
+title: Sliding window
+summary: A window is a run of items next to each other, like 3 days in a row. Instead of adding up every window from scratch, a sliding window adds the item that enters and removes the item that leaves, so each move costs O(1) and the whole scan is O(n). You'll slide fixed-size windows, grow and shrink variable-size ones, and learn when each kind works.
+
+=== learn
+### Windows
+A **window** is a run of items that sit next to each other in a list or a string: `items[i:i + k]` is the window of k items starting at index i. Many questions are about windows: which 3 days in a row sold the most, what's the longest stretch of days under a rain limit, which 5 letters in a row contain the most vowels. The direct way works out every window from scratch:
+```python
+def best_window_slow(nums, k):
+    best = sum(nums[:k])
+    for start in range(1, len(nums) - k + 1):
+        best = max(best, sum(nums[start:start + k]))
+    return best
+
+sales = [4, 2, 7, 1, 8, 3]
+print(best_window_slow(sales, 3))
+```
+```output
+16
+```
+The windows of 3 are [4, 2, 7], [2, 7, 1], [7, 1, 8] and [1, 8, 3], with sums 13, 10, 16 and 12. There are n − k + 1 windows, and summing each one costs k steps, so this is O(n × k). For a year of sales with k = 30, that's about 10,000 additions.
+
+### Slide instead of starting again
+Two neighbouring windows share all but two items. Moving the window one place to the right, one item **leaves** at the left and one **enters** at the right, so the new total is the old total minus the item that leaves plus the item that enters:
+
+| window | leaves | enters | total |
+| --- | --- | --- | --- |
+| [4, 2, 7] | | | 4 + 2 + 7 = 13 |
+| [2, 7, 1] | 4 | 1 | 13 − 4 + 1 = 10 |
+| [7, 1, 8] | 2 | 8 | 10 − 2 + 8 = 16 |
+| [1, 8, 3] | 7 | 3 | 16 − 7 + 3 = 12 |
+
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        best = max(best, total)
+    return best
+
+print(best_window(sales, 3), best_window(sales, 1), best_window(sales, 6))
+```
+```output
+16 8 25
+```
+`right` is the index of the item entering, and `right - k` the index of the item leaving. Only the first window is summed in full; every slide after it is O(1). So the whole scan is O(n), whatever k is. Animation 1 slides this window.
+
+### Two edges, both moving forward
+A window has two edges, and they behave like two pointers that only move forward: `left` is the first index in the window and `right` the last, so the window is `items[left:right + 1]` and holds `right - left + 1` items.
+
+| kind | right edge | left edge | size |
+| --- | --- | --- | --- |
+| fixed-size window | moves one place every step | moves one place every step, right behind | always k |
+| variable-size window | moves one place every step: the window **grows** | moves only when the window breaks a rule: the window **shrinks** | changes |
+
+A fixed window answers questions about runs of exactly k items. A variable window looks for the longest, or shortest, run that follows a rule, such as "the total is at most 7".
+
+### A variable window: the longest run under a limit
+How many days in a row can the rainfall add up to at most 7? The right edge takes in one more day at each step. If the total goes over the limit, the left edge drops days until the total fits again. After that, the window is a valid run, and its length is a candidate for the answer:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+rain = [2, 1, 5, 1, 3, 2, 6, 1]
+print(longest_under(rain, 7))
+```
+```output
+3
+```
+| right | day added | total | days dropped from the left | window | length |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 2 | 2 | none | [2] | 1 |
+| 1 | 1 | 3 | none | [2, 1] | 2 |
+| 2 | 5 | 8 → 6 | the 2 | [1, 5] | 2 |
+| 3 | 1 | 7 | none | [1, 5, 1] | 3 |
+| 4 | 3 | 10 → 4 | the 1 and the 5 | [1, 3] | 2 |
+| 5 | 2 | 6 | none | [1, 3, 2] | 3 |
+| 6 | 6 | 12 → 6 | the 1, the 3 and the 2 | [6] | 1 |
+| 7 | 1 | 7 | none | [6, 1] | 2 |
+
+The longest run is 3 days. Animation 2 runs this search.
+
+### Why shrinking works, and why it's O(n)
+Dropping days from the left is only safe because rainfall is never negative: a longer window can't have a smaller total. So once the window from `left` to `right` is over the limit, any window that starts at `left` and ends at `right` or later is over the limit too, and `left` can be dropped for good.
+
+The `while` loop inside the `for` loop looks like O(n²), but it isn't. `right` moves forward n times in all. `left` also only moves forward, and it can't pass the end, so it moves at most n times **in all**, across every turn of the `for` loop. That's at most 2n moves together: O(n). Checking every start and end instead would be O(n²).
+
+### Fixed or variable?
+| | fixed-size window | variable-size window |
+| --- | --- | --- |
+| size | always k | grows and shrinks |
+| when left moves | every step, with right | only while the window breaks the rule |
+| typical questions | best sum of k in a row, moving averages, counting windows that pass a test | longest or shortest run that meets a condition |
+| needs | a value you can update as items enter and leave | also a rule that shrinking can fix |
+| time | O(n) | O(n) |
+
+The next two lessons go deeper into each kind.
+
+### Windows over strings
+A string is a sequence too, so windows slide over strings the same way. To find the most vowels in any 3 letters in a row, keep a count, add 1 when a vowel enters, and take 1 away when a vowel leaves:
+```python
+def max_vowels(s, k):
+    vowels = "aeiou"
+    count = 0
+    for ch in s[:k]:
+        if ch in vowels:
+            count += 1
+    best = count
+    for right in range(k, len(s)):
+        if s[right] in vowels:
+            count += 1
+        if s[right - k] in vowels:
+            count -= 1
+        best = max(best, count)
+    return best
+
+print(max_vowels("abciiidef", 3), max_vowels("rhythm", 2))
+```
+```output
+3 0
+```
+The window "iii" has 3 vowels; "rhythm" has none at all. Each slide checks two letters, the one entering and the one leaving: O(n).
+
+### When sliding works
+Sliding needs a value that can be **updated** as items enter and leave. Sums and counts can: add what enters, subtract what leaves. The largest item in a window can't: when the largest item leaves, nothing tells you which of the rest is now the largest, short of looking at them all again.
+
+A variable window also needs a rule that shrinking can fix. "The total is at most 7" works when every number is 0 or more. With negative numbers it breaks: dropping a −5 from the left makes the total **bigger**, so shrinking might never bring it back under the limit, and the search can miss the answer.
+
+=== keypoints
+- A window is a run of neighbouring items, `items[left:right + 1]`, holding `right - left + 1` items. Recomputing every window of size k costs O(n × k).
+- Sliding updates the window's value with the item that enters and the item that leaves: `total += nums[right] - nums[right - k]`. Each slide is O(1), so the scan is O(n).
+- Fixed-size window: both edges move together, k apart. Variable-size window: right moves every step to grow it; left moves only while the window breaks the rule.
+- For "longest run with total at most a limit" (numbers 0 or more): add `nums[right]`, then `while total > limit:` subtract `nums[left]` and move left; then record `right - left + 1`.
+- left and right each move at most n times in all, so a variable window is O(n), even with a `while` inside the `for`.
+- Sliding needs a value you can update (sums, counts), and for variable windows a rule that shrinking fixes (numbers that aren't negative).
+
+=== example: A moving average
+intro: A fitness tracker smooths daily step counts by averaging each run of 3 days. The window slides one day at a time, so each new average costs one subtraction and one addition.
+```python
+steps = [4000, 6000, 5000, 9000, 7000, 3000, 8000]
+k = 3
+
+total = sum(steps[:k])
+averages = [total / k]
+for right in range(k, len(steps)):
+    total += steps[right] - steps[right - k]
+    averages.append(total / k)
+
+for i in range(len(averages)):
+    print(f"days {i + 1}-{i + k}: {averages[i]:.0f} steps a day")
+```
+1-2: Seven days of steps, averaged 3 days at a time.
+4-5: The first window, days 1 to 3, is summed in full: 15,000 steps, an average of 5,000.
+6-8: Each slide adds the new day and removes the day that drops out. Seven days give 7 − 3 + 1 = 5 windows.
+10-11: `:.0f` shows each average with no decimal places.
+
+=== example: Songs that fit
+intro: A playlist is to be played in order, and a 15-minute slot is free. What's the longest run of songs in a row that fits? Song lengths are never negative, so a variable window works.
+```python
+songs = [4, 3, 6, 2, 3, 7, 1, 2, 5]
+
+left = 0
+total = 0
+best = 0
+best_start = 0
+for right in range(len(songs)):
+    total += songs[right]
+    while total > 15:
+        total -= songs[left]
+        left += 1
+    if right - left + 1 > best:
+        best = right - left + 1
+        best_start = left
+
+print(best, "songs:", songs[best_start:best_start + best], "=", sum(songs[best_start:best_start + best]), "minutes")
+```
+1: Nine song lengths, in minutes, in playing order.
+3-6: The window starts empty. `best_start` remembers where the best run begins.
+7-11: Each song joins the window; songs leave from the left while the total is over 15.
+12-14: A longer valid window replaces the best one, and its start is saved.
+16: Songs 4 to 8 (2, 3, 7, 1 and 2 minutes) fill exactly 15 minutes: the longest run that fits is 5 songs.
+
+=== animation: Sliding a fixed window
+view: array nums ptr=left,right window=left:right
+vars total best
+intro: A window of 3 days slides along the sales. At each slide, the day that leaves is subtracted and the day that enters is added: the window is never summed again.
+```python
+nums = [4, 2, 7, 1, 8, 3]
+k = 3
+left = 0
+right = k - 1
+total = sum(nums[left:right + 1])
+best = total
+while right + 1 < len(nums):
+    total -= nums[left]
+    left += 1
+    right += 1
+    total += nums[right]
+    best = max(best, total)
+print(best)
+```
+1: Six days of sales.
+2: Windows of 3 days.
+3: The window starts at index 0.
+4: The window ends at index {k - 1}, so it holds {k} items.
+5: The first window is summed in full: {nums[left]} + {nums[left + 1]} + {nums[left + 2]} = {sum(nums[left:right + 1])}.
+6: The best window so far is the first one.
+7: Is there another day to slide onto? {right + 1 < len(nums)}.
+8: {nums[left]} leaves the window: {total} − {nums[left]} = {total - nums[left]}.
+9: The left edge moves to {left + 1}.
+10: The right edge moves to {right + 1}.
+11: {nums[right]} enters the window: {total} + {nums[right]} = {total + nums[right]}.
+12: The best so far is max({best}, {total}) = {max(best, total)}.
+13: The best 3 days in a row sold {best}.
+
+=== animation: Growing and shrinking a window
+view: array nums ptr=left,right window=left:right
+vars limit left right total best
+intro: The longest run of days with total rain at most 7. The right edge takes in one day at each step; when the total goes over 7, the left edge drops days until it fits again.
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+rain = [2, 1, 5, 1, 3, 2, 6, 1]
+print(longest_under(rain, 7))
+```
+1: Defines longest_under. Nothing runs yet.
+2: The window starts at index 0, empty.
+3: Nothing in it yet.
+4: No run measured yet.
+5: The right edge moves on to the next day.
+6: Day {right} joins the window: {total} + {nums[right]} = {total + nums[right]}.
+7: Is the total, {total}, over the limit, {limit}? {total > limit}.
+8: Too much: day {left} leaves, {total} − {nums[left]} = {total - nums[left]}.
+9: The left edge moves to {left + 1}.
+10: The window from {left} to {right} fits, with a length of {right - left + 1}. The best length so far is {max(best, right - left + 1)}.
+11: The longest run is {best} days.
+13: Eight days of rainfall, never negative.
+14: Find the longest run with at most 7 in total.
+
+=== task: predict easy
+title: Best pairs and triples
+code:
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        best = max(best, total)
+    return best
+
+print(best_window([1, 5, 2, 8, 3], 2), best_window([1, 5, 2, 8, 3], 3))
+```
+wrong[10 15]: The last pair, 8 + 3 = 11, beats 2 + 8 = 10.
+wrong[11 13]: 5 + 2 + 8 = 15 is the best window of 3; 13 is only the last one.
+wrong[11 8]: 8 is the first window of 3. Sliding on, the window 5 + 2 + 8 = 15 is bigger.
+hint: The windows of 2 are 1 + 5, 5 + 2, 2 + 8 and 8 + 3.
+hint: The windows of 3 are 1 + 5 + 2, 5 + 2 + 8 and 2 + 8 + 3.
+right: `11 15`: the best pair is 8 + 3 and the best three in a row are 5 + 2 + 8.
+wrong: Pairs: 6, 7, 10, 11, so 11. Windows of 3: 8, 15, 13, so 15. best keeps the largest total seen.
+
+=== task: mcq easy
+title: One slide
+prompt: A window of 4 items has a total of 20. It slides one place to the right: 4 leaves and 9 enters. What's the new total?
+* 25 :: Right. 20 − 4 + 9 = 25.
+- 29 :: That adds the 9 but forgets to remove the 4.
+- 16 :: That removes the 4 but forgets to add the 9.
+- 33 :: That adds both. The 4 leaves the window, so it must be taken away.
+hint: One item leaves and one enters.
+hint: Subtract what leaves, add what enters.
+right: 25: the window keeps three items and swaps 4 for 9, so the total changes by 9 − 4 = 5.
+wrong: Sliding takes away the item that leaves and adds the item that enters: 20 − 4 + 9 = 25.
+
+=== task: cells easy
+title: Windows of three
+prompt: `nums = [3, 1, 4, 1, 5, 9]`. Fill in the total of each window of 3 items in a row, from left to right, and the best total.
+labels: window 1 | window 2 | window 3 | window 4 | best
+answer: 8 | 6 | 10 | 15 | 15
+wrong[8 | 6 | 10 | 15 | 10]: The last window, 1 + 5 + 9 = 15, is the biggest.
+wrong[8 | 5 | 10 | 15 | 15]: The second window is 1 + 4 + 1 = 6.
+wrong[8 | 6 | 10 | 14 | 14]: 1 + 5 + 9 = 15.
+hint: Window 1 is 3 + 1 + 4.
+hint: Each next window drops its first item and adds the next one.
+right: 8, 6, 10 and 15, and the best is 15. Six items have 6 − 3 + 1 = 4 windows of 3.
+wrong: 3 + 1 + 4 = 8, 1 + 4 + 1 = 6, 4 + 1 + 5 = 10, 1 + 5 + 9 = 15. The best of these is 15.
+
+=== task: code easy
+title: Write best_window
+prompt: Write `best_window(nums, k)` that returns the largest total of k items in a row (1 ≤ k ≤ len(nums)). Slide the window instead of summing each one from scratch: the speed check uses long lists with big windows.
+starter:
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    # your code here
+    return best
+```
+solution:
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        best = max(best, total)
+    return best
+```
+tests:
+- best_window([4, 2, 7, 1, 8, 3], 3)
+- best_window([4, 2, 7, 1, 8, 3], 1)
+- best_window([4, 2, 7, 1, 8, 3], 6)
+- best_window([-1, -2, -3], 2)
+- best_window([5, 5, 5, 5], 2)
+speed: setup=nums = list(range(n)); k = n // 2 | call=best_window(nums, k) | target=O(n)
+slow:
+```python
+def best_window(nums, k):
+    best = sum(nums[:k])
+    for start in range(1, len(nums) - k + 1):
+        best = max(best, sum(nums[start:start + k]))
+    return best
+```
+fail[1]: The best 3 in a row are 7 + 1 + 8 = 16.
+fail[2]: With k = 1, the best window is the largest item, 8.
+fail[4]: All the numbers are negative; the best window is −1 + −2 = −3.
+hint: Loop `right` from k to the end of the list.
+hint: Each step: `total += nums[right] - nums[right - k]`.
+hint: Keep the largest total in best.
+right: The first window costs k additions; every slide after it costs O(1). So the scan is O(n), where summing every window is O(n × k).
+wrong: Sum the first window, then slide: add the item entering at `right`, subtract the one leaving at `right - k`, and keep the best total.
+
+=== task: fill easy
+title: Entering and leaving
+prompt: Fill in the blanks so that the window slides correctly, and the program prints:
+
+```output
+16
+```
+code:
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    for right in range(??, len(nums)):
+        total += nums[right] - nums[??]
+        best = max(best, total)
+    return best
+
+print(best_window([4, 2, 7, 1, 8, 3], 3))
+```
+answer: k | right - k
+wrong[k | right - k + 1]: That subtracts an item that's still inside the window, not the one leaving it. The totals come out wrong, and the best is 15.
+wrong[0 | right - k]: Starting at 0 adds the first window's items a second time, and `nums[right - k]` then reads from the end of the list with negative indexes.
+hint: The first window covers indexes 0 to k − 1, so the first item to enter is at index k.
+hint: When the item at `right` enters, the item k places back leaves.
+right: `right` starts at k, the first item after the first window, and the item leaving is at `right - k`, k places behind it.
+wrong: Loop `right` from k, and subtract `nums[right - k]`: the window always holds the k items ending at `right`.
+
+=== task: multi easy
+title: True of sliding windows
+prompt: Choose **every** true statement.
+* A window is a run of items that sit next to each other :: Right. Like 3 days in a row.
+* Sliding a fixed window one place changes two items: one leaves and one enters :: Right. Everything else in the window stays.
+* Summing every window of size k from scratch is O(n × k) :: Right. There are about n windows, each summed in k steps.
+- Sliding windows need a sorted list :: No order is needed: windows follow the positions in the list.
+- A window can skip items in the middle :: A window is a run of neighbouring items; nothing inside it is skipped.
+- Each slide costs O(k) :: One subtraction and one addition: O(1).
+hint: What changes between two neighbouring windows?
+hint: How much work is one slide?
+right: Windows are runs of neighbours; a slide swaps one item out and one in, at O(1) cost, while recomputing every window costs O(n × k).
+wrong: Sliding replaces k additions per window with one subtraction and one addition. Windows don't need sorted data, and they never skip items.
+
+=== task: parsons easy
+title: Arrange best_window
+prompt: Arrange the lines so that `best_window` slides a window of k items, and the program prints:
+
+```output
+17
+```
+
+Not every line is needed.
+lines:
+```python
+def best_window(nums, k):
+    total = sum(nums[:k])
+    best = total
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        best = max(best, total)
+    return best
+
+print(best_window([1, 2, 8, 9, 3], 2))
+```
+distractors:
+```python
+        total += nums[right] - nums[right - k + 1]
+    for right in range(k + 1, len(nums)):
+```
+hint: Sum the first window, then slide.
+hint: The item that leaves is k places behind the item that enters.
+right: The pairs total 3, 10, 17 and 12, and best keeps 17, from 8 + 9.
+wrong: Sum the first k items, then loop `right` from k: add `nums[right]`, subtract `nums[right - k]`, and keep the best total.
+
+=== task: order easy
+title: Sliding a window of two
+prompt: The best total of 2 items in a row is found in `[5, 1, 3, 6]` by sliding. Put the steps in order.
+items:
+- Sum the first window: 5 + 1 = 6
+- 5 leaves and 3 enters: 6 − 5 + 3 = 4
+- 1 leaves and 6 enters: 4 − 1 + 6 = 9
+- The best total is 9
+hint: Only the first window is summed in full.
+hint: Each slide removes the leftmost item of the window.
+right: Three windows (6, 4 and 9), with only the first one summed in full: the best is 9.
+wrong: Start with 5 + 1 = 6. Slide: 5 leaves and 3 enters (4). Slide again: 1 leaves and 6 enters (9). The best is 9.
+
+=== task: predict easy
+title: Vowels in a window
+code:
+```python
+def max_vowels(s, k):
+    vowels = "aeiou"
+    count = 0
+    for ch in s[:k]:
+        if ch in vowels:
+            count += 1
+    best = count
+    for right in range(k, len(s)):
+        if s[right] in vowels:
+            count += 1
+        if s[right - k] in vowels:
+            count -= 1
+        best = max(best, count)
+    return best
+
+print(max_vowels("banana", 3), max_vowels("strength", 3))
+```
+wrong[3 1]: No 3 letters in a row of "banana" are all vowels: "ana" has 2.
+wrong[2 0]: The window "tre" contains the e.
+wrong[1 1]: The window "ana" in "banana" holds two vowels.
+hint: List the windows of 3 letters: "ban", "ana", "nan", "ana".
+hint: "strength" has only one vowel.
+right: `2 1`: "ana" has two vowels, and the best any window of "strength" can do is the single e.
+wrong: In "banana", the windows have 1, 2, 1 and 2 vowels, so the best is 2. "strength" has one vowel, e, so the best is 1.
+
+=== task: mcq easy
+title: How fast is sliding?
+prompt: A sliding window finds the best total of k items in a row in a list of n items. How long does it take?
+* O(n), whatever k is :: Right. The first window costs k, and each of the other slides costs O(1).
+- O(n × k) :: That's summing every window from scratch.
+- O(k) :: It still has to slide past every item in the list.
+- O(n²) :: Only checking every start and every end would be that slow.
+hint: How much work does one slide take?
+hint: How many slides are there?
+right: O(n): k additions for the first window and one update per slide after it, and k is at most n.
+wrong: Each slide is one subtraction and one addition, and there are fewer than n slides. Together with the first window, that's O(n).
+
+=== task: code medium
+title: Write longest_under
+prompt: Write `longest_under(nums, limit)`: the length of the longest run of neighbouring items whose total is at most `limit`. Every number is 0 or more. Use a variable window: grow it on the right, and shrink it from the left while the total is over the limit. The speed check uses long lists, so checking every start and end is too slow.
+starter:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+```
+tests:
+- longest_under([2, 1, 5, 1, 3, 2, 6, 1], 7)
+- longest_under([1, 1, 1, 1], 10)
+- longest_under([8, 9], 5)
+- longest_under([], 3)
+- longest_under([3, 0, 0, 3], 3)
+- longest_under([5, 1, 1, 1, 5], 3)
+speed: setup=nums = [1] * n; limit = n // 2 | call=longest_under(nums, limit) | target=O(n)
+slow:
+```python
+def longest_under(nums, limit):
+    best = 0
+    for start in range(len(nums)):
+        total = 0
+        for end in range(start, len(nums)):
+            total += nums[end]
+            if total > limit:
+                break
+            best = max(best, end - start + 1)
+    return best
+```
+fail[1]: [1, 5, 1] and [1, 3, 2] both fit: 3 days.
+fail[3]: Each item alone is over 5, so no run fits: 0.
+fail[5]: 3 + 0 + 0 = 3 is at most 3: a run of 3.
+fail[6]: [1, 1, 1] totals 3: a run of 3.
+hint: For each right, add `nums[right]` to total.
+hint: Then, `while total > limit:` subtract `nums[left]` and move left on.
+hint: Finally record `right - left + 1` in best.
+right: right and left each move at most n times, so the whole search is O(n), where trying every start and end is O(n²).
+wrong: Grow the window by adding `nums[right]`. While the total is over the limit, drop `nums[left]` and move left. The window then fits, so compare its length with the best.
+
+=== task: code medium
+title: Write moving_averages
+prompt: Write `moving_averages(nums, k)` that returns a list with the average of every window of k items in a row, in order. Slide the window instead of summing each one again: the speed check uses long lists and big windows.
+starter:
+```python
+def moving_averages(nums, k):
+    total = sum(nums[:k])
+    out = [total / k]
+    # your code here
+    return out
+```
+solution:
+```python
+def moving_averages(nums, k):
+    total = sum(nums[:k])
+    out = [total / k]
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        out.append(total / k)
+    return out
+```
+tests:
+- moving_averages([4, 8, 6, 2], 2)
+- moving_averages([3, 3, 3], 3)
+- moving_averages([1, 2, 3, 4, 5], 1)
+- moving_averages([10, 20, 30, 40], 3)
+speed: setup=nums = list(range(n)); k = n // 2 | call=moving_averages(nums, k) | target=O(n)
+slow:
+```python
+def moving_averages(nums, k):
+    out = []
+    for start in range(len(nums) - k + 1):
+        out.append(sum(nums[start:start + k]) / k)
+    return out
+```
+fail[1]: The windows [4, 8], [8, 6] and [6, 2] average 6, 7 and 4.
+fail[3]: With k = 1, each average is the item itself.
+fail[4]: Two windows of 3: [10, 20, 30] and [20, 30, 40].
+hint: Loop right from k to the end.
+hint: Update `total += nums[right] - nums[right - k]`, then append `total / k`.
+hint: n items give n − k + 1 averages.
+right: One update and one division per window: O(n), where summing each window again would be O(n × k).
+wrong: Keep the window's total. After the first window, each slide adds the entering item, subtracts the leaving one, and appends the new total divided by k.
+
+=== task: predict medium
+title: Runs under 6
+code:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_under([4, 2, 2, 7, 1, 1, 1], 6), longest_under([7, 7], 6))
+```
+wrong[2 0]: The last three items, 1 + 1 + 1 = 3, fit: a run of 3.
+wrong[3 2]: Each 7 alone is over 6, so no run fits: 0.
+wrong[4 0]: [4, 2, 2] totals 8, which is over 6, so no run of 4 fits.
+hint: Look for the longest run of neighbours with a total of 6 or less.
+hint: When the 7 enters, the window has to drop everything, the 7 included.
+right: `3 0`: [1, 1, 1] is the longest run that fits; for [7, 7], no single item fits, so the answer is 0.
+wrong: [4, 2] fits (2 items), [4, 2, 2] doesn't; the 7 empties the window; then [1, 1, 1] fits (3 items). In [7, 7], each 7 is too big on its own.
+
+=== task: cells medium
+title: Tracing the window
+prompt: `longest_under([3, 1, 2, 4, 1], 5)` runs. Fill in the values.
+labels: total after adding index 2 | left once index 2 is handled | left once index 3 is handled | the answer
+answer: 6 | 1 | 3 | 2
+wrong[6 | 0 | 3 | 2]: 6 is over 5, so the 3 is dropped and left moves to 1.
+wrong[6 | 1 | 2 | 2]: After dropping the 1, the total is 6, still over 5, so the 2 is dropped too: left = 3.
+wrong[6 | 1 | 3 | 3]: No 3 items in a row fit: 3 + 1 + 2 = 6 and 1 + 2 + 4 = 7. The best run has 2 items.
+hint: Add each item to the total, then drop items from the left while the total is over 5.
+hint: When 4 enters, the total is 3 + 4 = 7 after dropping 3, then 6 after dropping 1.
+right: Adding 2 makes 6, so 3 is dropped (left = 1). Adding 4 makes 7, so 1 and 2 are dropped (left = 3). The best length is 2.
+wrong: Index 2: total 6, drop the 3, left = 1. Index 3: total 7, drop the 1 (6), drop the 2 (4), left = 3. Windows of 2, like [3, 1] or [4, 1], are the longest that fit.
+
+=== task: fill medium
+title: Shrink and measure
+prompt: Fill in the blanks so that `longest_under` shrinks the window only when it's over the limit, and measures it from its left edge. The program should print:
+
+```output
+3 2
+```
+code:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total ?? limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - ?? + 1)
+    return best
+
+print(longest_under([2, 1, 5, 1, 3, 2, 6, 1], 7), longest_under([4, 3], 7))
+```
+answer: > | left
+wrong[>= | left]: `>=` also shrinks a window whose total equals the limit, so [4, 3], which totals exactly 7, is never counted.
+wrong[> | 0]: `right - 0 + 1` counts from the start of the list, not from the window's left edge, so long windows seem to fit.
+hint: "At most the limit" is fine; only "over the limit" needs fixing.
+hint: The window runs from left to right.
+right: Shrink while `total > limit`, and the window's length is `right - left + 1`: 3 for the rain, and 2 for [4, 3].
+wrong: Use `>`, so a total equal to the limit is allowed, and measure with `right - left + 1`, from the window's own left edge.
+
+=== task: mcq medium
+title: Why O(n)?
+prompt: `longest_under` has a `while` loop inside a `for` loop. Why is it O(n), not O(n²)?
+* left only moves forward, so the `while` loop runs at most n times in total, across the whole search :: Right. Together the two edges move at most 2n times.
+- The `while` loop never runs :: It runs whenever the total goes over the limit.
+- The list is sorted :: It doesn't need to be, and isn't, in the examples.
+- Each window holds at most k items :: There's no fixed k in a variable window.
+hint: How many times can left move during the whole search?
+hint: Does left ever move back?
+right: Each turn of the `while` loop moves left forward one place. left starts at 0 and can't pass n, so all the `while` turns together number at most n.
+wrong: Count the moves of each edge over the whole search: right moves n times and left at most n times, never backwards. That's at most 2n moves: O(n).
+
+=== task: predict medium
+title: Counting good windows
+code:
+```python
+nums = [2, 5, 4, 1, 6, 3]
+k = 3
+total = sum(nums[:k])
+count = 0
+if total >= 10:
+    count += 1
+for right in range(k, len(nums)):
+    total += nums[right] - nums[right - k]
+    if total >= 10:
+        count += 1
+print(count, total)
+```
+wrong[3 10]: 10 counts too, because the test is `>= 10`: all four windows pass.
+wrong[4 11]: total ends as the last window's sum: 1 + 6 + 3 = 10.
+wrong[2 10]: The windows total 11, 10, 11 and 10. All are at least 10.
+hint: The windows are [2, 5, 4], [5, 4, 1], [4, 1, 6] and [1, 6, 3].
+hint: total holds the last window's sum when the loop ends.
+right: `4 10`: all four windows total 10 or more, and the last one is 1 + 6 + 3 = 10.
+wrong: The window totals are 11, 10, 11 and 10, and each is at least 10, so count is 4. total is left at the last window's sum, 10.
+
+=== task: multi medium
+title: Questions for a fixed window
+prompt: Choose **every** question that a **fixed-size** window answers.
+* The best total of 7 days in a row :: Right. Every window has exactly 7 days.
+* The average of every 5 readings in a row :: Right. A moving average uses windows of 5.
+* How many runs of 4 letters contain at least 2 vowels :: Right. Slide a window of 4 and count.
+- The longest run of days with total rain at most 10 :: The run's length isn't fixed: that's a variable window.
+- The shortest run of items with a total of at least 50 :: The length varies again: a variable window.
+- The largest item in the whole list :: No window is needed: one pass with `max`.
+hint: In a fixed window, the size is known before you start.
+hint: Questions that ask for the longest or shortest run need a window that changes size.
+right: Best 7 days, moving averages and counting runs of 4 all use a known size. Longest and shortest runs need a variable window; the largest item needs no window.
+wrong: A fixed window has its size given, like 7 days or 5 readings. When the question asks how long the run can be, the size isn't given: that's a variable window.
+
+=== task: parsons medium
+title: The first window that's enough
+prompt: Arrange the lines so that `first_window` returns the start index of the first window of k items whose total is at least `target`, or -1, and the program prints:
+
+```output
+2 -1
+```
+
+Not every line is needed.
+lines:
+```python
+def first_window(nums, k, target):
+    total = sum(nums[:k])
+    if total >= target:
+        return 0
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        if total >= target:
+            return right - k + 1
+    return -1
+
+print(first_window([1, 2, 3, 4, 5], 2, 7), first_window([1, 2, 3], 2, 10))
+```
+distractors:
+```python
+            return right
+        total += nums[right] - nums[right - k + 1]
+```
+hint: The first window is checked before any sliding.
+hint: The window ending at `right` starts at `right - k + 1`.
+right: The pairs total 3, 5 and 7; the window [3, 4] reaches 7 and starts at index 2. In [1, 2, 3] no pair reaches 10.
+wrong: Check the first window, then slide. When a window's total reaches the target, return its start, `right - k + 1`. If none does, return -1.
+
+=== task: order medium
+title: Least work first
+prompt: A list has 10,000 items. Put these jobs in order of the work they do, least first.
+items:
+- Sliding a window of 100 along the list
+- Summing every window of 100 from scratch
+- Trying every start and end to find the longest run under a limit
+hint: Sliding does about one update per item.
+hint: Every window from scratch is about 10,000 × 100; every start and end is about 10,000 × 10,000 ÷ 2.
+right: About 10,000 steps, then about 1,000,000, then up to about 50,000,000: O(n), O(n × k) and O(n²).
+wrong: Sliding is O(n): about 10,000 steps. Recomputing windows of 100 is O(n × k): about a million. Checking every start and end is O(n²): tens of millions.
+
+=== task: code hard
+title: Count the anagram windows
+prompt: Write `count_anagrams(s, p)`: how many windows of `s`, as long as `p`, use exactly the same letters as `p`, in any order. Keep a dictionary of letter counts for the window, and update it as the window slides: add the letter that enters, and take away the letter that leaves, deleting it when its count reaches 0. The speed check uses long strings.
+starter:
+```python
+def count_anagrams(s, p):
+    k = len(p)
+    if k > len(s):
+        return 0
+    need = {}
+    for ch in p:
+        need[ch] = need.get(ch, 0) + 1
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_anagrams(s, p):
+    k = len(p)
+    if k > len(s):
+        return 0
+    need = {}
+    for ch in p:
+        need[ch] = need.get(ch, 0) + 1
+    have = {}
+    for ch in s[:k]:
+        have[ch] = have.get(ch, 0) + 1
+    count = 0
+    if have == need:
+        count += 1
+    for right in range(k, len(s)):
+        ch = s[right]
+        have[ch] = have.get(ch, 0) + 1
+        old = s[right - k]
+        have[old] -= 1
+        if have[old] == 0:
+            del have[old]
+        if have == need:
+            count += 1
+    return count
+```
+tests:
+- count_anagrams("cbaebabacd", "abc")
+- count_anagrams("abab", "ab")
+- count_anagrams("aaaa", "aa")
+- count_anagrams("abc", "abcd")
+- count_anagrams("hello", "xyz")
+speed: setup=s = "ab" * n; p = "ab" * (n // 4) | call=count_anagrams(s, p) | target=O(n)
+slow:
+```python
+def count_anagrams(s, p):
+    k = len(p)
+    need = {}
+    for ch in p:
+        need[ch] = need.get(ch, 0) + 1
+    count = 0
+    for start in range(len(s) - k + 1):
+        have = {}
+        for ch in s[start:start + k]:
+            have[ch] = have.get(ch, 0) + 1
+        if have == need:
+            count += 1
+    return count
+```
+fail[1]: "cba", at index 0, and "bac", at index 6, use the letters a, b and c.
+fail[2]: "ab", "ba" and "ab" all match.
+fail[3]: Every window "aa" matches: there are 3 of them.
+hint: Count the letters of the first window into a dictionary, `have`.
+hint: When the window slides, add 1 for the entering letter and take 1 away for the leaving letter; delete a letter whose count reaches 0.
+hint: After each slide, compare `have == need`.
+right: Each slide changes two counts, and comparing two dictionaries of a few letters is quick, so the scan is O(n) for a fixed alphabet. Counting every window again would be O(n × k).
+wrong: Keep `have`, the letter counts of the current window. Slide by adding the new letter and removing the old one (deleting zero counts), and count the windows where `have == need`.
+
+=== task: code hard
+title: Turn up to k zeros
+prompt: `bits` is a list of 0s and 1s, and you may turn at most `k` of the 0s into 1s. Write `longest_ones(bits, k)` that returns the length of the longest run of 1s you can make. Use a variable window that holds at most k zeros: grow it on the right, and shrink it from the left while it holds too many. The speed check uses long lists.
+starter:
+```python
+def longest_ones(bits, k):
+    left = 0
+    zeros = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_ones(bits, k):
+    left = 0
+    zeros = 0
+    best = 0
+    for right in range(len(bits)):
+        if bits[right] == 0:
+            zeros += 1
+        while zeros > k:
+            if bits[left] == 0:
+                zeros -= 1
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+```
+tests:
+- longest_ones([1, 1, 0, 0, 1, 1, 1, 0, 1], 1)
+- longest_ones([1, 1, 0, 0, 1, 1, 1, 0, 1], 2)
+- longest_ones([0, 0, 0], 0)
+- longest_ones([0, 0, 0], 2)
+- longest_ones([1, 1, 1], 0)
+- longest_ones([], 1)
+speed: setup=bits = [1, 0] * n; k = n // 2 | call=longest_ones(bits, k) | target=O(n)
+slow:
+```python
+def longest_ones(bits, k):
+    best = 0
+    for start in range(len(bits)):
+        zeros = 0
+        for end in range(start, len(bits)):
+            if bits[end] == 0:
+                zeros += 1
+            if zeros > k:
+                break
+            best = max(best, end - start + 1)
+    return best
+```
+fail[1]: Turn the 0 at index 7 into a 1: indexes 4 to 8 make 5 ones.
+fail[2]: Turn both 0s at indexes 2 and 3: indexes 0 to 6 make 7 ones.
+fail[4]: Only two of the three 0s can be turned: 2.
+hint: Count the zeros inside the window.
+hint: While `zeros > k`: if `bits[left]` is 0, take 1 off zeros; then move left on.
+hint: Record `right - left + 1` after shrinking.
+right: A window with at most k zeros can be turned into all 1s. Both edges only move forward: O(n).
+wrong: Grow the window and count its zeros. While there are more than k, drop items from the left (taking 1 off zeros for each 0 dropped). Each window that's left is a run you could make, so keep the longest.
+
+=== task: code hard
+title: The best window of different values
+prompt: Write `best_distinct(nums, k)`: the largest total of k items in a row whose values are **all different**, or 0 if there's no such window. Slide a window of k, keeping its total and a dictionary of how many times each value appears in it. The speed check uses long lists with big windows.
+starter:
+```python
+def best_distinct(nums, k):
+    counts = {}
+    total = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def best_distinct(nums, k):
+    counts = {}
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        total += x
+        if right >= k:
+            old = nums[right - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+            total -= old
+        if right >= k - 1 and len(counts) == k:
+            best = max(best, total)
+    return best
+```
+tests:
+- best_distinct([1, 5, 4, 2, 9, 9, 9], 3)
+- best_distinct([4, 4, 4], 3)
+- best_distinct([3, 1, 3, 2], 2)
+- best_distinct([7], 1)
+- best_distinct([1, 2], 3)
+speed: setup=nums = list(range(n)); k = n // 2 | call=best_distinct(nums, k) | target=O(n)
+slow:
+```python
+def best_distinct(nums, k):
+    best = 0
+    for start in range(len(nums) - k + 1):
+        window = nums[start:start + k]
+        if len(set(window)) == k:
+            best = max(best, sum(window))
+    return best
+```
+fail[1]: [4, 2, 9] totals 15; the windows with two or three 9s don't count.
+fail[2]: Every window repeats the 4: 0.
+fail[3]: [3, 2] totals 5, and its values are different.
+fail[5]: The list is shorter than k, so there's no window at all: 0.
+hint: Add the entering value to counts and total. Once the window is longer than k, remove the leaving value from both.
+hint: Delete a value whose count drops to 0, so `len(counts)` is the number of different values.
+hint: A full window counts only when `len(counts) == k`.
+right: Each slide updates two counts and the total, and `len(counts)` tells at once whether all k values differ: O(n), where checking each window with a set is O(n × k).
+wrong: Keep the window's total and value counts. After each slide, a window of k items with k different values (`len(counts) == k`) is a candidate for the best total.
+
+=== task: code hard
+title: Diet points
+prompt: For every k days in a row, add up the calories: a total below `lower` scores −1 point, a total above `upper` scores +1, and anything from lower to upper scores 0. Write `diet_points(calories, k, lower, upper)` that returns the total score over every window, sliding the window instead of summing each one again. The speed check uses long lists with big windows.
+starter:
+```python
+def diet_points(calories, k, lower, upper):
+    total = sum(calories[:k])
+    points = 0
+    # your code here
+    return points
+```
+solution:
+```python
+def diet_points(calories, k, lower, upper):
+    total = sum(calories[:k])
+    points = 0
+    for right in range(k - 1, len(calories)):
+        if right >= k:
+            total += calories[right] - calories[right - k]
+        if total < lower:
+            points -= 1
+        elif total > upper:
+            points += 1
+    return points
+```
+tests:
+- diet_points([1, 2, 3, 4, 5], 1, 3, 3)
+- diet_points([3, 2], 2, 0, 1)
+- diet_points([6, 5, 0, 0], 2, 1, 5)
+- diet_points([2, 2, 2, 2], 3, 7, 9)
+speed: setup=calories = list(range(n)); k = n // 2 | call=diet_points(calories, k, 0, 1) | target=O(n)
+slow:
+```python
+def diet_points(calories, k, lower, upper):
+    points = 0
+    for start in range(len(calories) - k + 1):
+        total = sum(calories[start:start + k])
+        if total < lower:
+            points -= 1
+        elif total > upper:
+            points += 1
+    return points
+```
+fail[2]: One window, 3 + 2 = 5, is above 1: +1.
+fail[3]: 11 scores +1, 5 scores 0 and 0 scores −1: 0 in all.
+fail[4]: Both windows total 6, which is below 7: −2.
+hint: Start with the sum of the first k days.
+hint: Loop over the last day of each window; after the first window, add the new day and subtract the day that drops out.
+hint: Score each window: −1 below lower, +1 above upper, 0 otherwise.
+right: Every window is scored after an O(1) update, so the whole scan is O(n).
+wrong: Slide a window of k days, keeping its total. Score each window, the first included, by comparing its total with lower and upper.
+
+=== task: predict hard
+title: Negative numbers
+code:
+```python
+def longest_under(nums, limit):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_under([6, -5, 4], 5), sum([6, -5, 4]))
+```
+wrong[3 5]: The whole list totals 5, which fits, but the window drops the 6 as soon as the total is over 5, before the −5 can bring it back down.
+wrong[2 6]: 6 − 5 + 4 = 5.
+wrong[0 5]: After dropping the 6, the window grows again: [−5, 4] has length 2.
+hint: When 6 enters, the total is 6, over the limit.
+hint: Once 6 has been dropped, it never comes back.
+right: `2 5`: the true answer is 3, because the whole list totals 5, but the window throws the 6 away at once. With negative numbers, shrinking isn't safe.
+wrong: The 6 alone is over 5, so it's dropped. Then [−5] and [−5, 4] fit, so the answer is 2, though all three items together total 5. That's why the method needs numbers that aren't negative.
+
+=== task: predict hard
+title: Windows of different letters
+code:
+```python
+s = "abcabcbb"
+count = 0
+for i in range(len(s) - 2):
+    if len(set(s[i:i + 3])) == 3:
+        count += 1
+print(count, len(s) - 2)
+```
+wrong[3 6]: "abc" appears twice, at indexes 0 and 3, and both count.
+wrong[4 8]: A string of 8 letters has 8 − 3 + 1 = 6 windows of 3.
+wrong[6 6]: "bcb" and "cbb" repeat a letter, so their sets have only 2 letters.
+hint: The windows are abc, bca, cab, abc, bcb and cbb.
+hint: A set keeps one copy of each letter.
+right: `4 6`: four of the six windows have three different letters; "bcb" and "cbb" don't.
+wrong: There are 6 windows of 3. abc, bca, cab and abc have 3 different letters; bcb and cbb have only 2.
+
+=== task: cells hard
+title: Counting windows and work
+prompt: A list has 10 items. Fill in the counts.
+labels: windows of 3 | windows of 10 | windows of 1 | numbers added up when every window of 3 is summed from scratch | slides after the first window of 3
+answer: 8 | 1 | 10 | 24 | 7
+wrong[7 | 1 | 10 | 21 | 7]: 10 − 3 + 1 = 8 windows: they start at indexes 0 to 7.
+wrong[8 | 0 | 10 | 24 | 7]: The whole list is one window of 10.
+wrong[8 | 1 | 10 | 24 | 8]: After the first window, the start moves from 0 to 7: 7 slides.
+hint: n items have n − k + 1 windows of k.
+hint: Summing 8 windows of 3 adds up 8 × 3 numbers.
+right: 8, 1, 10, 24 and 7: n − k + 1 windows, k numbers each from scratch, and one slide for each window after the first.
+wrong: Windows of 3 start at indexes 0 to 7 (8 windows), of 10 only at 0 (1), of 1 at 0 to 9 (10). From scratch that's 8 × 3 = 24 numbers; sliding needs 7 slides after the first window.
+
+=== task: multi hard
+title: When sliding works
+prompt: Choose **every** job that a sliding window does correctly.
+* Keeping the total of a window as items enter and leave :: Right. Add what enters, subtract what leaves.
+* Counting the vowels in every window of a string :: Right. Add 1 for a vowel entering, take 1 away for one leaving.
+* Finding the longest run with a total at most a limit, when no number is negative :: Right. Shrinking then never makes the total bigger.
+- Finding the largest item in every window by subtracting the item that leaves :: You can't subtract a maximum: when the largest item leaves, nothing tells you which item is now the largest.
+- Finding the longest run with a total at most a limit, when numbers can be negative :: Dropping a negative number makes the total bigger, so the window can throw away items it needed.
+- Finding two numbers anywhere in the list that add up to a target :: The two numbers needn't be next to each other, so they don't form a window.
+hint: Sliding needs a value you can update as items enter and leave.
+hint: A variable window also needs shrinking to make the window "better".
+right: Totals and counts update with one addition and one subtraction, and non-negative numbers make shrinking safe. Maximums can't be "subtracted", negatives break shrinking, and a pair anywhere isn't a window.
+wrong: Sliding works when the window's value can be updated item by item (sums, counts), and for variable windows when shrinking moves the total the right way. A maximum, negative numbers or items that aren't neighbours break it.
+
+=== task: fill hard
+title: Where the best run starts
+prompt: Fill in the blanks so that the program finds the longest run of songs, in playing order, that fits into a 15-minute slot, and prints it:
+
+```output
+[2, 3, 7, 1, 2]
+```
+code:
+```python
+songs = [4, 3, 6, 2, 3, 7, 1, 2, 5]
+left = 0
+total = 0
+best = 0
+best_start = 0
+for right in range(len(songs)):
+    total += songs[right]
+    while total > ??:
+        total -= songs[left]
+        left += 1
+    if right - left + 1 > best:
+        best = right - left + 1
+        best_start = ??
+print(songs[best_start:best_start + best])
+```
+answer: 15 | left
+wrong[15 | right]: best_start must be the first song of the window, left. right is its last song, so the slice starts too late.
+wrong[14 | left]: The slot is 15 minutes, and a run of exactly 15 minutes fits; with 14 the best run is a different one.
+hint: The window shrinks while it's over the slot's length.
+hint: The best run starts at the window's left edge.
+right: Shrinking while the total is over 15 keeps every window within the slot, and saving `left` remembers where the longest one starts: songs 4 to 8, exactly 15 minutes.
+wrong: Use `total > 15` for the shrinking, and save `best_start = left` whenever a longer window is found.
+
+=== task: parsons hard
+title: Counting good windows
+prompt: Arrange the lines so that `count_good` counts the windows of k items whose average is at least `threshold`, and the program prints:
+
+```output
+3
+```
+
+Not every line is needed.
+lines:
+```python
+def count_good(nums, k, threshold):
+    total = sum(nums[:k])
+    count = 0
+    if total >= threshold * k:
+        count += 1
+    for right in range(k, len(nums)):
+        total += nums[right] - nums[right - k]
+        if total >= threshold * k:
+            count += 1
+    return count
+
+print(count_good([2, 2, 2, 2, 5, 5, 5, 8], 3, 4))
+```
+distractors:
+```python
+        if total > threshold * k:
+    count = 1
+```
+hint: An average of at least 4 over 3 items means a total of at least 12, so there's no need to divide.
+hint: The first window is checked before the loop, and every slide after it inside the loop.
+right: The windows total 6, 6, 9, 12, 15 and 18; the last three reach 12, so 3 windows have an average of at least 4.
+wrong: Compare each window's total with `threshold * k`, the first window before the loop and the others after each slide. Start count at 0.
