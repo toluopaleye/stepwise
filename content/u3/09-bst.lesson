@@ -1,0 +1,1832 @@
+=== lesson
+id: ds-bst
+title: Binary search trees
+summary: A binary search tree keeps its values in order: at every node, smaller values go left and bigger values go right. That rule lets search, insert and delete walk a single path from the root, O(h) steps. You'll check the rule, search, insert, find the smallest and largest values, delete in all three cases, and see why a balanced tree gives O(log n) while inserting sorted data builds a line that makes everything O(n).
+
+=== learn
+### The search tree rule
+A **binary search tree** (BST) is a binary tree that keeps its values in order. At **every** node:
+- every value in its left subtree is **smaller** than the node's value, and
+- every value in its right subtree is **bigger**.
+
+In this lesson the values are all different: adding a value that's already there changes nothing. This lesson uses this tree:
+```text
+          8
+        /   \
+       3     10
+      / \      \
+     1   6      14
+        / \    /
+       4   7  13
+```
+Check the rule at 3: its left subtree holds 1, which is smaller, and its right subtree holds 4, 6 and 7, which are all bigger. At 8: everything on the left (1, 3, 4, 6, 7) is smaller, and everything on the right (10, 13, 14) is bigger. The rule holds at every node, so this is a search tree.
+
+The rule is about whole subtrees, not only a node's children. In this tree, every child is on the correct side of its parent:
+```text
+      8
+     / \
+    3   10
+     \
+      9
+```
+But 9 is in 8's left subtree, and 9 is bigger than 8, so this is **not** a search tree.
+> Checking each node only against its own children misses mistakes like this one.
+
+### Checking the rule with limits
+The Inorder lesson tested the rule by checking that the inorder list is sorted. Another way passes **limits** down the tree. Every node in 8's left subtree must be below 8. Every node in 3's right subtree must be above 3 and also below 8. So each call carries the range its node's value must fall in, and narrows the range for each child:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+root = Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+bad = Node(8, Node(3, None, Node(9)), Node(10))
+
+def is_bst(node, lo, hi):
+    if node is None:
+        return True
+    if not (lo < node.val < hi):
+        return False
+    return is_bst(node.left, lo, node.val) and is_bst(node.right, node.val, hi)
+
+inf = float("inf")
+print(is_bst(root, -inf, inf), is_bst(bad, -inf, inf))
+```
+```output
+True False
+```
+The root may hold anything, so it gets the limits `-inf` and `inf`. Going left, the node's value becomes the new upper limit; going right, it becomes the new lower limit. Here is the check on `bad`:
+
+| node | must be between | inside? |
+| --- | --- | --- |
+| 8 | −inf and inf | yes |
+| 3 | −inf and 8 | yes |
+| 9 | 3 and 8 | no: 9 is bigger than 8 |
+| 10 | 8 and inf | not checked: `and` stopped at the first False |
+
+Each node is checked at most once, so this takes O(n) steps.
+
+### Searching: one path down
+To find a value, start at the root and compare it with the node:
+- equal: found it;
+- smaller: it can only be in the left subtree, so go left;
+- bigger: it can only be in the right subtree, so go right.
+
+If you step off the tree, onto None, the value isn't there:
+```python
+def contains(node, target):
+    while node is not None:
+        if target == node.val:
+            return True
+        if target < node.val:
+            node = node.left
+        else:
+            node = node.right
+    return False
+
+print(contains(root, 7), contains(root, 5))
+```
+```output
+True False
+```
+| at | looking for 7 | looking for 5 |
+| --- | --- | --- |
+| 8 | smaller: go left | smaller: go left |
+| 3 | bigger: go right | bigger: go right |
+| 6 | bigger: go right | smaller: go left |
+| 7 or 4 | 7: found | 4, bigger: go right, onto None. Not there |
+
+Each comparison throws away a whole subtree: at 8, going left skips 10, 13 and 14 without looking at them. A search looks at no more than one node per level, so it takes at most h + 1 steps, where h is the tree's height: **O(h)**. It's binary search, on a tree.
+
+### Inserting a value
+A new value goes exactly where a search for it falls off the tree. A search for 5 goes 8, 3, 6, 4, then onto 4's right child, which is None. So 5 becomes 4's right child, and the rule still holds everywhere. This recursive version returns the root of the subtree it was given, with the new node attached:
+```python
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+t = None
+for v in [8, 3, 10, 1, 6, 14, 4, 7, 13]:
+    t = insert(t, v)
+print(contains(t, 13), contains(t, 5))
+t = insert(t, 5)
+print(contains(t, 5), t.left.right.left.right.val)
+```
+```output
+True False
+True 5
+```
+When `node` is None, the search has fallen off the tree: `return Node(val)` makes the new node, and the call above stores it in its `left` or `right`. Every other call returns its own `node`, so a line like `node.left = insert(node.left, val)` puts back the link that was already there. If `val` is already in the tree, neither branch runs, and nothing changes.
+
+The order of the inserts decides the shape. Inserting 8, 3, 10, 1, 6, 14, 4, 7, 13 rebuilds the lesson's tree, because each value settles below the values that came before it. Animation 1 inserts two values step by step.
+
+### Smallest, largest and sorted order
+The smallest value is as far left as you can go: follow left links until there are none. The largest is as far right as you can go:
+```python
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def largest(node):
+    while node.right is not None:
+        node = node.right
+    return node.val
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+out = []
+inorder(root, out)
+print(smallest(root), largest(root), out)
+```
+```output
+1 14 [1, 3, 4, 6, 7, 8, 10, 13, 14]
+```
+From 8, go left to 3, then left to 1, which has no left child: 1 is the smallest. From 8, go right to 10, then right to 14, which has no right child: 14 is the largest, even though it has a left child, 13. Both walk a single path, so they're O(h).
+
+As the Inorder lesson showed, inorder lists a search tree's values in sorted order, in O(n). So inserting values one at a time and then reading them back in inorder sorts them. That's called **tree sort**.
+
+### Deleting a leaf or a node with one child
+Deleting starts like a search: walk down to the node. What happens then depends on how many children it has:
+
+| the node has | what happens |
+| --- | --- |
+| no children (it's a leaf) | it's removed: its parent's link becomes None |
+| one child | the child takes its place, bringing its whole subtree |
+| two children | see the next step |
+
+Like `insert`, `delete` returns the root of the subtree it was given, and each caller stores the result in its `left` or `right`. To remove a node, its call returns something else instead of the node: its only child, or None.
+```python
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.right)
+        node.right = delete(node.right, node.val)
+    return node
+
+t = None
+for v in [8, 3, 10, 1, 6, 14, 4, 7, 13]:
+    t = insert(t, v)
+for v in [7, 14]:
+    t = delete(t, v)
+    out = []
+    inorder(t, out)
+    print("delete", v, out)
+```
+```output
+delete 7 [1, 3, 4, 6, 8, 10, 13, 14]
+delete 14 [1, 3, 4, 6, 8, 10, 13]
+```
+7 is a leaf. Its call finds that `node.left` is None and returns `node.right`, which is also None, so 6's right link becomes None. 14 has one child, 13. Its call returns 13, so 10's right link now points straight at 13. The rule still holds, because 13 was already in 10's right subtree. If `val` isn't in the tree, the walk reaches None and returns None, which puts the missing link back as it was.
+
+### Deleting a node with two children
+A node with two children can't hand its place to one child: the other child's subtree would have nowhere to go. So the node stays, and its **value** changes. The new value is the node's **successor**: the smallest value in its right subtree, which is the next bigger value in the whole tree. It's bigger than everything in the left subtree and smaller than everything else in the right subtree, so the rule still holds. Then the successor is deleted from the right subtree. The successor has no left child (that child would be even smaller), so removing it is one of the cases from the last step.
+
+After the last step, 3 has two children, 1 and 6:
+```text
+          8
+        /   \
+       3     10
+      / \      \
+     1   6      13
+        /
+       4
+```
+```python
+t = delete(t, 3)
+out = []
+inorder(t, out)
+print("delete 3", out)
+print(t.left.val, t.left.left.val, t.left.right.val, t.left.right.left)
+```
+```output
+delete 3 [1, 4, 6, 8, 10, 13]
+4 1 6 None
+```
+The successor of 3 is 4: from 6, go left to 4, which has no left child. `node.val = smallest(node.right)` copies 4 into the node, and `delete(node.right, node.val)` removes the old 4, a leaf, from below 6:
+```text
+          8
+        /   \
+       4     10
+      / \      \
+     1   6      13
+```
+Deleting is O(h) too: one path down to the node, then on down to its successor. Animation 2 deletes a node with two children.
+
+### Height decides the speed
+Search, insert and delete each walk one path down, so they take O(h) steps. How tall a search tree grows depends on the order of the inserts. Insert values that are already sorted, and each one is bigger than everything before it, so it goes right at every node, all the way to the bottom. The tree becomes a line: a **degenerate** tree, of height n − 1.
+```python
+import random
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+def from_inserts(values):
+    t = None
+    for v in values:
+        t = insert(t, v)
+    return t
+
+for n in [15, 63, 127]:
+    in_order = list(range(n))
+    shuffled = list(range(n))
+    random.seed(1)
+    random.shuffle(shuffled)
+    print(n, height(from_inserts(in_order)), height(from_inserts(shuffled)))
+```
+```output
+15 14 7
+63 62 11
+127 126 15
+```
+`random.shuffle(xs)` puts the items of `xs` in a random order (the same order every run, after `random.seed`).
+
+| n | height after sorted inserts | after shuffled inserts | smallest possible |
+| --- | --- | --- | --- |
+| 15 | 14 | 7 | 3 |
+| 63 | 62 | 11 | 5 |
+| 127 | 126 | 15 | 6 |
+
+After sorted inserts, finding the largest of 127 values takes 127 steps instead of 7, and building the line costs 1 + 2 + 3 + ... + n steps: O(n²). Shuffled inserts give a tree that's taller than the shortest possible, but nothing like a line.
+
+### Keeping the tree short
+When you have all the values up front, sort them and build the tree from the middle out, like `build` in the Kinds of binary trees lesson. The middle value becomes the root, the smaller half builds the left subtree, and the bigger half builds the right. Every subtree gets the middle of its own values, so the tree is balanced, with height O(log n). And it's a search tree, because the smaller half always goes left:
+```python
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+b = build(list(range(1, 16)))
+print(b.val, b.left.val, b.right.val, height(b), is_bst(b, -inf, inf))
+```
+```output
+8 4 12 3 True
+```
+15 values give a perfect tree of height 3, so a search looks at no more than 4 nodes.
+
+When values keep arriving one at a time, the tree has to fix its own shape as it grows. **Self-balancing** search trees, such as AVL trees and red-black trees, rearrange a few links after each insert or delete so that h stays O(log n), whatever the order of the values. They're beyond this course, but many languages build their sorted maps and sets on them.
+
+### Search trees, sorted lists and hash sets
+| job | sorted list | hash set | balanced search tree | degenerate search tree |
+| --- | --- | --- | --- | --- |
+| is x there? | O(log n): binary search | O(1) on average | O(log n) | O(n) |
+| insert or delete | O(n): items shift | O(1) on average | O(log n) | O(n) |
+| smallest and largest | O(1): the two ends | O(n): look at every item | O(log n) | O(n) |
+| every value in sorted order | O(n) | O(n log n): sort first | O(n): inorder | O(n): inorder |
+
+A hash set is the fastest when the only question is "is x there?". A search tree pays O(log n) per operation to keep everything in order, which makes the smallest, the largest and the sorted listing cheap. A sorted list answers those questions too, but every insert or delete in the middle shifts items along. Python's `set` and `dict` are hash tables; Python has no built-in search tree.
+
+=== keypoints
+- A binary search tree keeps, at every node, smaller values in the left subtree and bigger values in the right subtree. The rule covers whole subtrees, not only children.
+- To check the rule, pass limits down: a node must lie between `lo` and `hi`; going left, its value becomes the new `hi`, and going right, the new `lo`. A sorted inorder list also proves it.
+- Search compares with the node and goes left if smaller, right if bigger, until it finds the value or falls onto None. Insert puts the new value exactly where the search falls off.
+- The smallest value is at the end of the left links from the root, the largest at the end of the right links. Inorder gives every value in sorted order.
+- Delete: a leaf is removed, and a node with one child is replaced by that child. A node with two children takes its successor's value (the smallest in its right subtree), and then the successor is deleted from the right subtree.
+- Search, insert, delete, smallest and largest are O(h): O(log n) when balanced, but O(n) after sorted inserts build a line. Building from sorted values middle-first gives a balanced tree.
+
+=== example: A phone book in a search tree
+intro: Each node holds a name and a phone number, ordered by name. Adding finds a name's place, looking up walks one path, and inorder lists the book in alphabetical order.
+```python
+class Entry:
+    def __init__(self, name, number):
+        self.name = name
+        self.number = number
+        self.left = None
+        self.right = None
+
+def add(node, name, number):
+    if node is None:
+        return Entry(name, number)
+    if name < node.name:
+        node.left = add(node.left, name, number)
+    elif name > node.name:
+        node.right = add(node.right, name, number)
+    else:
+        node.number = number
+    return node
+
+def lookup(node, name):
+    while node is not None:
+        if name == node.name:
+            return node.number
+        if name < node.name:
+            node = node.left
+        else:
+            node = node.right
+    return None
+
+def listing(node):
+    if node is None:
+        return
+    listing(node.left)
+    print(node.name, node.number)
+    listing(node.right)
+
+book = None
+for name, number in [("Maya", "555-0142"), ("Dev", "555-0199"), ("Zoe", "555-0108"), ("Ali", "555-0175"), ("Kim", "555-0123")]:
+    book = add(book, name, number)
+book = add(book, "Dev", "555-0111")
+print(lookup(book, "Kim"), lookup(book, "Bo"))
+listing(book)
+```
+1-6: Each entry is a node: a name, a number, and links to the entries before and after it in alphabetical order.
+8-17: Insert, comparing names: `"Dev" < "Maya"` is True because D comes before M. A name that's already there gets its number replaced.
+19-27: Search by name: one path down, None if the name isn't there.
+29-34: Inorder prints the entries in alphabetical order.
+36-38: Maya goes in first and becomes the root. Dev goes left of Maya and Zoe right. Ali ends up left of Dev, and Kim right of Dev: K comes after D but before M.
+39: Dev is already in the book, so only the number changes.
+40: Kim is found; Bo isn't, so `lookup` returns None.
+41: Alphabetical order, whatever order the names were added in.
+
+=== example: Top scores, highest first
+intro: Scores go into a search tree as they come in. Walking right subtree, node, left subtree (inorder backwards) gives them from highest to lowest, and the walk stops once it has the top 3.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+def top(node, k, out):
+    if node is None or len(out) == k:
+        return
+    top(node.right, k, out)
+    if len(out) < k:
+        out.append(node.val)
+    top(node.left, k, out)
+
+def lowest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+scores = None
+for s in [72, 95, 64, 88, 99, 51, 80]:
+    scores = insert(scores, s)
+best = []
+top(scores, 3, best)
+print("top 3:", best)
+print("lowest:", lowest(scores))
+```
+7-14: The usual insert.
+16-22: Inorder backwards: the right subtree (bigger values) first, then the node, then the left subtree. That's descending order.
+17-18: Once `out` holds k scores, every call returns straight away, so the rest of the tree is never walked.
+20-21: A score is added only while there's room: the right subtree may have filled `out` already.
+24-27: The lowest score is at the end of the left links.
+29-31: 72 is the root; 95 and 64 below it; 88 and 99 below 95; 51 below 64; 80 below 88.
+32-34: 99, then 95, then 88 fill `out`. 80, 72, 64 and 51 are never added.
+35: The lowest score, 51, two steps left from 72.
+
+=== animation: Inserting into a search tree
+view: tree root ptr=node
+callstack
+intro: `insert` walks down the same path a search would and attaches the new node where it falls off the tree. On the way back up, each call hands back its own node. Watch 4 and then 7 find their places.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+root = Node(5, Node(3), Node(8))
+root = insert(root, 4)
+root = insert(root, 7)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines insert. Nothing runs yet.
+8: {'At ' + str(node.val) + '.' if node is not None else 'Fell off the tree: this is where ' + str(val) + ' goes.'}
+9: Make the new node {val} and hand it back to the call above.
+10: Is {val} smaller than {node.val}? {val < node.val}.
+11: Go left. Whatever comes back becomes {node.val}'s left child.
+12: Is {val} bigger than {node.val}? {val > node.val}.
+13: Go right. Whatever comes back becomes {node.val}'s right child.
+14: Hand {node.val} back to the call above, with its links up to date.
+16: A small search tree: 5 at the root, 3 on its left and 8 on its right.
+17: Insert 4: smaller than 5, then bigger than 3.
+18: Insert 7: bigger than 5, then smaller than 8.
+
+=== animation: Deleting a node with two children
+view: tree root ptr=node
+callstack
+intro: Deleting 5, the root, which has two children. Its successor, 6, is the smallest value in its right subtree. Watch 6 get copied into the root, and then the old 6 removed from below 8, with its child 7 moving up into its place.
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.right)
+        node.right = delete(node.right, node.val)
+    return node
+
+root = Node(5, Node(3), Node(8, Node(6, None, Node(7)), Node(9)))
+root = delete(root, 5)
+```
+1: The binary tree node class.
+3: A new node {val}.
+4: Its left child: {left.val if left is not None else 'None'}.
+5: Its right child: {right.val if right is not None else 'None'}.
+7: Defines smallest. Nothing runs yet.
+8: Does {node.val} have a left child? {node.left is not None}.
+9: Go left, to {node.left.val}: smaller values are on the left.
+10: {node.val} has no left child, so it's the smallest value here.
+12: Defines delete. Nothing runs yet.
+13: {'At ' + str(node.val) + '.' if node is not None else 'Fell off the tree: the value is not here.'}
+15: Is {val} smaller than {node.val}? {val < node.val}.
+16: Go left. Whatever comes back becomes {node.val}'s left child.
+17: Is {val} bigger than {node.val}? {val > node.val}.
+18: Go right. Whatever comes back becomes {node.val}'s right child.
+20: Found {node.val}. Is its left child missing? {node.left is None}.
+21: No left child, so its right child, {node.right.val if node.right is not None else 'None'}, takes its place.
+22: Is its right child missing? {node.right is None}.
+23: Only a left child: it takes the node's place.
+24: Two children. Find the successor: the smallest value in the right subtree, which starts at {node.right.val}.
+25: {node.val} has been copied in. Now delete the old {node.val} from the right subtree.
+26: Hand {node.val} back to the call above.
+28: 5 at the root, with 3 on its left and 8 on its right; 6 and 9 below 8, and 7 below 6.
+29: Delete 5, the root. It has two children.
+
+=== task: predict easy
+title: The search path
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def path(node, target):
+    seen = []
+    while node is not None:
+        seen.append(node.val)
+        if target == node.val:
+            return seen
+        if target < node.val:
+            node = node.left
+        else:
+            node = node.right
+    return seen
+
+root = Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+print(path(root, 13))
+print(path(root, 5))
+```
+wrong[[8, 10, 14, 13]\n[8, 3, 6, 4, 5]]: 5 isn't in the tree. The walk falls off after 4, so 5 is never added to `seen`.
+wrong[[8, 10, 13]\n[8, 3, 6, 4]]: 13 hangs below 14: 13 is bigger than 10, so the walk goes right to 14, and smaller than 14, so it goes left to 13.
+wrong[[8, 10, 14, 13]\n[8, 3, 6, 7]]: 5 is smaller than 6, so the walk goes left to 4, not right to 7.
+hint: At each node: a smaller target goes left, a bigger one goes right.
+hint: 13 is bigger than 8, bigger than 10 and smaller than 14. 5 is smaller than 8, bigger than 3, smaller than 6 and bigger than 4.
+right: Each search looks at one node per level: 8, 10, 14, 13 finds 13. For 5, the walk ends after 4, whose right child is None.
+wrong: Compare at each node and move one way only. 13: right, right, left: [8, 10, 14, 13]. 5: left, right, left, then right onto None: [8, 3, 6, 4].
+
+=== task: mcq easy
+title: Is it a search tree?
+prompt: Is this a binary search tree?
+
+```text
+       10
+      /  \
+     5    15
+    / \
+   2   12
+```
+* No: 12 is in 10's left subtree, but it's bigger than 10 :: Right. The rule covers the whole of 10's left subtree, not only its child 5.
+- Yes: every child is on the correct side of its parent :: Each child is, but the rule is about whole subtrees: 12 is below 10 on the left.
+- No: 15 should be on the left of 10 :: 15 is bigger than 10, so the right is the correct side.
+- No: 5 can't have two children :: A node in a search tree can have 0, 1 or 2 children.
+hint: Check every value in 10's left subtree against 10.
+hint: 12 is 5's right child, and 5 is 10's left child.
+right: Not a search tree: 12 sits in 10's left subtree, where every value must be smaller than 10.
+wrong: The rule is about whole subtrees. 10's left subtree holds 5, 2 and 12, and 12 is bigger than 10, so the tree breaks the rule.
+
+=== task: cells easy
+title: Where would it go?
+prompt: Each value below is inserted, on its own, into the lesson's tree. Which node becomes its parent?
+
+```text
+          8
+        /   \
+       3     10
+      / \      \
+     1   6      14
+        / \    /
+       4   7  13
+```
+labels: 5 | 9 | 12 | 0
+answer: 4 | 10 | 13 | 1
+wrong[6 | 10 | 13 | 1]: 5 is smaller than 6, so the walk goes on to 4. 5 is bigger than 4, so it becomes 4's right child.
+wrong[4 | 14 | 13 | 1]: 9 is smaller than 10, and 10 has no left child, so 9 becomes 10's left child.
+wrong[4 | 10 | 14 | 1]: 12 is smaller than 14, so the walk goes left to 13. 12 is smaller than 13 too: it becomes 13's left child.
+hint: Walk down as if searching: left when the value is smaller, right when it's bigger.
+hint: The parent is the last node before the walk falls onto None.
+right: 5 below 4, 9 below 10, 12 below 13 and 0 below 1: each value goes where its search falls off the tree.
+wrong: Follow each value's search. 5: 8, 3, 6, 4, then right of 4. 9: 8, 10, then left of 10. 12: 8, 10, 14, 13, then left of 13. 0: 8, 3, 1, then left of 1.
+
+=== task: code easy
+title: Search the tree
+prompt: Write `contains(node, target)` that returns True if `target` is in the binary search tree and False if it isn't. Use the rule: go left when the target is smaller than the node, right when it's bigger. The speed check runs your function on big balanced trees made by `build`, so looking at every node is too slow.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def contains(node, target):
+    # your code here
+    return False
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def contains(node, target):
+    while node is not None:
+        if target == node.val:
+            return True
+        if target < node.val:
+            node = node.left
+        else:
+            node = node.right
+    return False
+```
+tests:
+- contains(build([1, 3, 5, 7, 9]), 7)
+- contains(build([1, 3, 5, 7, 9]), 4)
+- contains(None, 1)
+- contains(Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13)))), 13)
+- contains(Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13)))), 9)
+speed: setup=root = build(list(range(n))) | call=contains(root, n - 1) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def contains(node, target):
+    if node is None:
+        return False
+    return node.val == target or contains(node.left, target) or contains(node.right, target)
+```
+fail[1]: 7 is in the tree: True.
+fail[4]: 13 is in the tree: 8, 10, 14, 13.
+error[AttributeError]: Stop when `node` is None: the value isn't there.
+hint: Loop while `node is not None`.
+hint: If the target equals `node.val`, return True. If it's smaller, move to `node.left`; otherwise move to `node.right`.
+hint: When the loop ends, the walk has fallen off the tree: return False.
+right: Each comparison throws away a whole subtree, so a search looks at one node per level: O(h), which is O(log n) on a balanced tree.
+wrong: Walk down from the root: left for smaller targets and right for bigger ones, True on a match, and False once you reach None. Searching both subtrees ignores the rule and looks at every node: O(n).
+
+=== task: fill easy
+title: Going right
+prompt: Fill in the blanks so that `insert` puts bigger values into the right subtree, and the program prints:
+
+```output
+[1, 3, 5, 7, 9]
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(??, val)
+    return ??
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+t = None
+for v in [5, 3, 9, 7, 1]:
+    t = insert(t, v)
+out = []
+inorder(t, out)
+print(out)
+```
+answer: node.right | node
+wrong[node.left | node]: Bigger values then go into the left subtree, and 5's right link ends up pointing at that same subtree, so inorder repeats values: `[1, 3, 7, 5, 1, 3, 7]`.
+wrong[node.right | None]: Every call that doesn't make a new node returns None, so each insert into a non-empty tree loses the tree. Only the last value survives: `[1]`.
+hint: A bigger value belongs somewhere in the right subtree.
+hint: Every call hands back the root of the subtree it was given.
+right: `insert(node.right, val)` puts the bigger value into the right subtree, and `return node` hands the subtree's root back, so the caller's link stays the same.
+wrong: Bigger values go into `node.right`, and each call returns `node`, so the caller's link is put back unchanged.
+
+=== task: multi easy
+title: The smallest value
+prompt: Choose **every** statement that is true about the smallest value in a non-empty binary search tree.
+* You reach it by following left links from the root until there are none :: Right. Smaller values are always further left.
+* Its node has no left child :: Right. A left child would hold an even smaller value.
+* Inorder lists it first :: Right. Inorder lists the values from smallest to largest.
+- Its node is always a leaf :: It can have a right child, holding values that are bigger but still smaller than its parent.
+- It's always on the deepest level :: In the lesson's tree, 1 is at depth 2, while 4, 7 and 13 are deeper.
+- It's always the root's left child :: Only when the root's left child has no left child of its own.
+hint: Where do smaller values go, at every node?
+hint: Can the smallest node have a right child?
+right: Follow left links to the end. That node has no left child, and inorder starts with it, but it may still have a right child.
+wrong: The smallest value is at the end of the left links from the root, so it has no left child and comes first in inorder. It can have a right child, and it doesn't have to be deep.
+
+=== task: parsons easy
+title: Search with recursion
+prompt: Arrange the lines so that `contains` searches the tree recursively, and the program prints:
+
+```output
+True False
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def contains(node, target):
+    if node is None:
+        return False
+    if target == node.val:
+        return True
+    if target < node.val:
+        return contains(node.left, target)
+    return contains(node.right, target)
+
+root = Node(8, Node(3, Node(1), Node(6)), Node(10))
+print(contains(root, 6), contains(root, 7))
+```
+distractors:
+```python
+    if target > node.val:
+        return node.val
+```
+hint: An empty subtree can't hold the target.
+hint: Check for a match before deciding which way to go.
+right: An empty subtree means the target isn't there; a match means True; otherwise the search carries on in the one subtree that can hold the target.
+wrong: Return False at None and True on a match. Otherwise recurse into the left subtree if the target is smaller, or into the right subtree if not.
+
+=== task: order easy
+title: Searching for 12
+prompt: Put the steps of a search for 12 in this tree in order.
+
+```text
+         20
+       /    \
+     10      30
+    /  \    /  \
+   5   15  25   35
+       /
+      12
+```
+items:
+- 12 < 20: go left
+- 12 > 10: go right
+- 12 < 15: go left
+- 12 == 12: found
+hint: Every search starts at the root.
+hint: At each node, compare 12 with the node's value.
+right: Left at 20, right at 10, left at 15, then a match: one node per level.
+wrong: Start at 20: 12 is smaller, so go left to 10. 12 is bigger, so go right to 15. 12 is smaller, so go left to 12: a match.
+
+=== task: predict easy
+title: Smallest and largest
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def largest(node):
+    while node.right is not None:
+        node = node.right
+    return node.val
+
+t = None
+for v in [50, 30, 70, 20, 40, 60, 80, 65]:
+    t = insert(t, v)
+print(smallest(t), largest(t), t.right.left.right.val)
+```
+wrong[20 80 60]: `t.right` is 70, its left child is 60, and 60's right child is 65.
+wrong[30 70 65]: `smallest` follows left links all the way: 50, 30, then 20. `largest` goes 50, 70, then 80.
+wrong[20 65 65]: 65 is smaller than 70, so it's in 70's left subtree. The right links from 50 go to 70, then 80.
+hint: The smallest value is at the end of the left links; the largest at the end of the right links.
+hint: 65 is bigger than 50, smaller than 70 and bigger than 60.
+right: `20 80 65`: left links 50, 30, 20; right links 50, 70, 80; and 65 hangs to the right of 60.
+wrong: Follow the left links from 50: 30, then 20. The right links: 70, then 80. 65 is bigger than 50, smaller than 70 and bigger than 60, so it's 60's right child.
+
+=== task: mcq easy
+title: The tallest tree
+prompt: The values 1 to 7 are inserted one at a time into an empty search tree. Which insert order builds the tallest tree?
+* 1, 2, 3, 4, 5, 6, 7 :: Right. Each value is bigger than all the ones before it, so it goes right at every node: a line of height 6.
+- 4, 2, 6, 1, 3, 5, 7 :: That puts the middle value first: a perfect tree of height 2, the shortest possible.
+- 4, 6, 2, 7, 5, 3, 1 :: Also middle first: a perfect tree of height 2.
+- 3, 5, 1, 4, 2, 6, 7 :: That one has height 3: the longest path is 3, 5, 6, 7.
+hint: When is a new value bigger than every value already in the tree?
+hint: A value bigger than everything goes right at every node.
+right: Sorted inserts build a line: 1 at the root, 2 on its right, 3 on 2's right, continuing down to 7, for a height of 6.
+wrong: Sorted input makes every insert go right at every node, so the tree becomes a line of height 6. Orders that start with the middle value give height 2.
+
+=== task: code medium
+title: Write insert
+prompt: Write `insert(node, val)` that adds `val` to a binary search tree and returns the root of the tree. An empty tree (None) becomes a single node, and a value that's already there changes nothing. `preorder` is there for the tests: it lists the values root first, so it shows the tree's shape.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def insert(node, val):
+    # your code here
+    return node
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+```
+tests:
+- preorder(insert(None, 5))
+- preorder(insert(Node(8, Node(3), Node(10)), 6))
+- preorder(insert(Node(8, Node(3), Node(10)), 12))
+- preorder(insert(Node(8, Node(3, Node(1), Node(6)), Node(10)), 7))
+- preorder(insert(Node(8, Node(3), Node(10)), 3))
+- preorder(insert(insert(insert(None, 2), 1), 3))
+fail[1]: An empty tree becomes a single node: [5].
+fail[2]: 6 is smaller than 8, so it goes left, and bigger than 3, so it becomes 3's right child.
+fail[3]: 12 is bigger than 8 and bigger than 10: it becomes 10's right child.
+fail[4]: 7 goes 8, 3, 6, then becomes 6's right child.
+fail[6]: Each insert must return the root, so the next insert can use it: [2, 1, 3].
+error[AttributeError]: Handle None first: that's where the new node goes.
+hint: If `node` is None, return `Node(val)`.
+hint: If `val < node.val`, set `node.left = insert(node.left, val)`; if it's bigger, do the same on the right.
+hint: Finally `return node`, so the caller's link stays the same.
+right: The new node is made where the search falls off the tree, and every call returns its own node, so the links above stay connected. O(h).
+wrong: Return a new node at None. Otherwise insert into the left or right subtree, store the result in `node.left` or `node.right`, and return `node`.
+
+=== task: code medium
+title: Check the rule
+prompt: Write `is_bst(root)` that returns True if a binary tree follows the search tree rule at every node, and False if it doesn't. The rule covers whole subtrees, so pass down the limits each node's value must lie between. An empty tree counts as a search tree, and the values are all different.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def is_bst(root):
+    # your code here
+    return True
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def check(node, lo, hi):
+    if node is None:
+        return True
+    if not (lo < node.val < hi):
+        return False
+    return check(node.left, lo, node.val) and check(node.right, node.val, hi)
+
+def is_bst(root):
+    return check(root, -float("inf"), float("inf"))
+```
+tests:
+- is_bst(None)
+- is_bst(Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13)))))
+- is_bst(Node(8, Node(3, None, Node(9)), Node(10)))
+- is_bst(Node(10, Node(5, Node(2), Node(12)), Node(15)))
+- is_bst(Node(5, Node(6)))
+- is_bst(Node(20, Node(10), Node(30, Node(15))))
+- is_bst(Node(2, Node(1), Node(3)))
+fail[3]: 9 is in 8's left subtree, but it's bigger than 8.
+fail[4]: 12 is in 10's left subtree, but it's bigger than 10.
+fail[5]: 6 is 5's left child, but it's bigger than 5.
+fail[6]: 15 is in 20's right subtree, but it's smaller than 20.
+hint: Write a helper `check(node, lo, hi)`: True for None, and False if `node.val` isn't strictly between `lo` and `hi`.
+hint: The left child must lie between `lo` and `node.val`; the right child between `node.val` and `hi`.
+hint: Start with `check(root, -float("inf"), float("inf"))`.
+right: Each call narrows the range for its children, so a value deep down is checked against all of its ancestors at once. Each node is checked once: O(n).
+wrong: Checking only a node's children misses values further down. Pass limits: going left, the node's value becomes the upper limit; going right, it becomes the lower limit.
+
+=== task: predict medium
+title: Delete the root
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.right)
+        node.right = delete(node.right, node.val)
+    return node
+
+t = None
+for v in [50, 30, 70, 20, 40, 60, 80]:
+    t = insert(t, v)
+t = delete(t, 50)
+print(t.val, t.right.val, t.right.left)
+```
+wrong[40 70 60]: 40 is the largest value on the left. This `delete` uses the successor: the smallest value on the right.
+wrong[70 80 60]: The root isn't replaced by its right child. The node stays, and its value becomes the successor's, 60.
+wrong[60 70 60]: After 60 is copied into the root, the old 60 is deleted from below 70, so 70's left child is None.
+hint: 50 has two children, so it takes its successor's value.
+hint: The successor is the smallest value in 50's right subtree: start at 70 and go left.
+right: `60 70 None`: 60 is copied into the root, and the old 60, a leaf below 70, is removed. The root's right child is still 70, which has no left child now.
+wrong: Deleting 50 copies its successor, 60, into the root, then deletes the leaf 60 from below 70. So the root holds 60, its right child is 70, and 70's left link is None.
+
+=== task: cells medium
+title: What takes its place?
+prompt: Each value below is deleted, on its own, from the lesson's tree. Which value ends up where the deleted value was? Write None if nothing does.
+
+```text
+          8
+        /   \
+       3     10
+      / \      \
+     1   6      14
+        / \    /
+       4   7  13
+```
+labels: delete 4 | delete 14 | delete 3 | delete 8
+answer: None | 13 | 4 | 10
+wrong[None | 13 | 6 | 10]: 3's successor is the smallest value in its right subtree. From 6, going left reaches 4, so the successor is 4.
+wrong[None | 13 | 4 | 13]: 8's right subtree starts at 10, which has no left child, so 10 is already the smallest value there.
+wrong[6 | 13 | 4 | 10]: 4 is a leaf. Deleting it leaves 6's left link empty: None.
+hint: A leaf leaves None behind. A node with one child is replaced by that child.
+hint: A node with two children takes the smallest value in its right subtree.
+right: None, 13, 4, 10: the leaf 4 leaves a gap, 14 is replaced by its only child 13, and 3 and 8 take their successors, 4 and 10.
+wrong: 4 is a leaf, so 6's left becomes None. 14 has one child, so 13 takes its place. 3 has two children: its successor is 4. 8 has two children: its successor is 10, the smallest value in its right subtree.
+
+=== task: fill medium
+title: Narrowing the limits
+prompt: Fill in the blanks so that `is_bst` narrows the limits for each child, and the program prints:
+
+```output
+True False
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def is_bst(node, lo, hi):
+    if node is None:
+        return True
+    if not (lo < node.val < hi):
+        return False
+    return is_bst(node.left, lo, ??) and is_bst(node.right, ??, hi)
+
+inf = float("inf")
+good = Node(20, Node(10, Node(5), Node(15)), Node(30, Node(25)))
+bad = Node(20, Node(10, Node(5), Node(25)), Node(30))
+print(is_bst(good, -inf, inf), is_bst(bad, -inf, inf))
+```
+answer: node.val | node.val
+wrong[hi | lo]: The limits never change, so they stay −inf and inf, and every tree passes: `True True`.
+wrong[lo | hi]: The left child must then lie between `lo` and `lo`, which no value can: `False False`.
+hint: Everything in the left subtree must be smaller than this node.
+hint: Everything in the right subtree must be bigger than this node.
+right: Going left, the node's value becomes the upper limit; going right, the lower limit. In `bad`, 25 is in 20's left subtree, so it must be below 20, and it isn't.
+wrong: The left child's range is from `lo` up to `node.val`, and the right child's is from `node.val` up to `hi`. That's what catches 25 in `bad`.
+
+=== task: mcq medium
+title: The successor of the root
+prompt: Deleting 8 from the lesson's tree needs 8's successor. Which value is it?
+
+```text
+          8
+        /   \
+       3     10
+      / \      \
+     1   6      14
+        / \    /
+       4   7  13
+```
+* 10 :: Right. The successor is the smallest value in 8's right subtree. That subtree starts at 10, which has no left child, so 10 is the smallest there.
+- 13 :: 13 is the smallest value below 14, but 10 is smaller still, and it's in 8's right subtree too.
+- 7 :: 7 is the largest value in 8's left subtree: the value right before 8 in sorted order, not the one after it.
+- 14 :: 14 is the largest value in the right subtree. The successor is the smallest.
+hint: The successor is the next bigger value: the smallest in the right subtree.
+hint: Start at 8's right child and go left as far as you can.
+right: 10: start at 8's right child, 10, and go left as far as possible. 10 has no left child, so it's already the smallest there.
+wrong: The successor is the smallest value in the right subtree. From 10 there's no left child to follow, so the successor is 10.
+
+=== task: predict medium
+title: Insert order and height
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+for order in [[1, 2, 3, 4, 5, 6, 7], [4, 2, 6, 1, 3, 5, 7], [4, 1, 2, 3, 5, 6, 7]]:
+    t = None
+    for v in order:
+        t = insert(t, v)
+    print(height(t))
+```
+wrong[6\n2\n2]: In the third order, 1, 2 and 3 form a chain below 4: 4, 1, 2, 3 is 3 edges long.
+wrong[7\n3\n4]: Height counts edges, not nodes: a line of 7 nodes has height 6.
+wrong[2\n2\n2]: The same values in a different order build a different shape. Sorted inserts build a line.
+hint: Sorted inserts build a line. Middle-first inserts build a perfect tree.
+hint: In the third order, 1 goes left of 4, then 2 right of 1, then 3 right of 2.
+right: 6, 2 and 3: the same seven values make a line, a perfect tree, or something in between, depending only on the order of the inserts.
+wrong: 1 to 7 in order: a line, height 6. 4, 2, 6, 1, 3, 5, 7: a perfect tree, height 2. 4, 1, 2, 3, 5, 6, 7: 4-1-2-3 on the left and 4-5-6-7 on the right, both 3 edges long: height 3.
+
+=== task: multi medium
+title: Which take O(h)?
+prompt: Choose **every** operation on a binary search tree of height h that takes O(h) steps.
+* Searching for a value :: Right. It looks at no more than one node per level.
+* Inserting a value :: Right. It walks the search path and attaches the new node at the end.
+* Finding the largest value :: Right. One path of right links.
+* Deleting a value :: Right. One path down to the node, then on down to its successor.
+- Listing every value in sorted order :: Inorder visits all n nodes: O(n).
+- Checking that the tree follows the rule :: Every node has to be checked: O(n).
+- Counting the nodes :: Every node is counted: O(n).
+hint: Which operations walk a single path from the root?
+hint: Which ones have to look at every node?
+right: Search, insert, delete and finding the largest each walk one path: O(h). Anything that must touch every node, like listing, checking or counting, is O(n).
+wrong: Path operations (search, insert, delete, largest) cost O(h). Listing, checking the rule and counting have to visit all n nodes.
+
+=== task: parsons medium
+title: Build it balanced
+prompt: Arrange the lines so that `build` makes a balanced search tree from a sorted list, middle value first, and the program prints:
+
+```output
+4 2 6 2
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def height(node):
+    if node is None:
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+t = build([1, 2, 3, 4, 5, 6, 7])
+print(t.val, t.left.val, t.right.val, height(t))
+```
+distractors:
+```python
+    return Node(values[0], None, build(values[1:]))
+    mid = len(values) - 1
+```
+hint: An empty list gives an empty tree.
+hint: The middle item becomes the node; the items before it build the left subtree, and the items after it the right.
+right: Middle first at every level: 4 at the root, 2 and 6 below it, and the halves below those. Seven values give a perfect tree of height 2, and it's a search tree because the smaller half always goes left.
+wrong: Return None for an empty list. Otherwise make the middle value the node, build the left subtree from the values before it and the right subtree from the values after it.
+
+=== task: order medium
+title: Two children, step by step
+prompt: Put the steps for deleting a node that has two children in order.
+items:
+- Walk down from the root to the node holding the value
+- See that the node has two children
+- Step to the node's right child
+- Follow left links until a node has no left child: that's the successor
+- Copy the successor's value into the node
+- Delete the successor's value from the node's right subtree
+hint: You can't look for the successor until you know which node is being deleted.
+hint: The successor's old node is removed last, after its value has been copied.
+right: Find the node and see that it has two children. Find the successor by going right once and then left as far as possible. Copy its value up, then delete it from the right subtree.
+wrong: Walk to the node first. Then find its successor: right once, then left to the end. Copy the successor's value into the node, and finally remove the successor from the right subtree.
+
+=== task: code hard
+title: Delete a value
+prompt: Write `delete(node, val)` that removes `val` from a binary search tree and returns the root of the tree. If `val` isn't there, the tree stays the same. Handle all three cases: a leaf, a node with one child, and a node with two children (copy in the smallest value of its right subtree, then delete that value from the right subtree). `preorder` lists the values root first, so the tests can check the tree's shape, and `make()` builds the lesson's tree.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def delete(node, val):
+    # your code here
+    return node
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.right)
+        node.right = delete(node.right, node.val)
+    return node
+```
+tests:
+- preorder(delete(make(), 4))
+- preorder(delete(make(), 14))
+- preorder(delete(make(), 10))
+- preorder(delete(make(), 3))
+- preorder(delete(make(), 8))
+- preorder(delete(make(), 5))
+- preorder(delete(Node(5), 5))
+fail[1]: 4 is a leaf: 6's left link becomes None.
+fail[2]: 14 has one child, 13, which takes its place below 10.
+fail[3]: 10 has only a right child, 14, which moves up under 8, bringing 13 with it.
+fail[4]: 3 has two children: its successor 4 is copied in, and the old 4 is removed.
+fail[5]: Deleting the root: its successor, 10, is copied in, and 14 moves up into 10's old place.
+fail[7]: Deleting the only node leaves an empty tree.
+error[AttributeError]: Return None when `node` is None: the value isn't in the tree.
+hint: Walk down as in insert: `node.left = delete(node.left, val)`, or the same on the right, then `return node`.
+hint: When you find the value: if `node.left` is None, return `node.right`; if `node.right` is None, return `node.left`.
+hint: With two children: set `node.val` to the smallest value in the right subtree, then `node.right = delete(node.right, node.val)`.
+right: Every call returns the root of its subtree, so returning a child or None removes a node, and the two-children case becomes a simpler delete further down. O(h).
+wrong: Walk down like insert. At the node: no left child, return the right child; no right child, return the left child; two children, copy the successor's value in and delete the successor from the right subtree.
+
+=== task: code hard
+title: The lowest common ancestor
+prompt: The **lowest common ancestor** of two values is the deepest node that has both of them in its subtree (a node counts as part of its own subtree). Write `lca(root, a, b)` that returns the value of that node in a binary search tree. a and b are both in the tree, and a < b. Use the rule: while both values are smaller than the node, the answer is in the left subtree; while both are bigger, it's in the right; otherwise this node splits them, so it's the answer. The speed check uses big balanced trees made by `build`, and `make()` builds the lesson's tree.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def lca(root, a, b):
+    # your code here
+    return root.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def lca(root, a, b):
+    node = root
+    while node is not None:
+        if b < node.val:
+            node = node.left
+        elif a > node.val:
+            node = node.right
+        else:
+            return node.val
+    return None
+```
+tests:
+- lca(make(), 4, 7)
+- lca(make(), 1, 7)
+- lca(make(), 4, 13)
+- lca(make(), 13, 14)
+- lca(make(), 3, 6)
+- lca(make(), 10, 13)
+speed: setup=root = build(list(range(n))) | call=lca(root, n - 2, n - 1) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def path(node, x):
+    if node is None:
+        return None
+    if node.val == x:
+        return [node.val]
+    for child in [node.left, node.right]:
+        p = path(child, x)
+        if p is not None:
+            return [node.val] + p
+    return None
+
+def lca(root, a, b):
+    pa = path(root, a)
+    pb = path(root, b)
+    last = None
+    for i in range(min(len(pa), len(pb))):
+        if pa[i] == pb[i]:
+            last = pa[i]
+    return last
+```
+fail[1]: 4 and 7 are on either side of 6, so 6 splits them.
+fail[2]: 1 is left of 3 and 7 is right of 3: the answer is 3.
+fail[4]: 13 is below 14, so 14 is above both of them.
+fail[5]: 3 is one of the two values, and 6 is below it: the answer is 3.
+fail[6]: 13 is in 10's right subtree, and 10 counts as part of its own subtree: the answer is 10.
+hint: Start at the root. If both values are smaller than the node, move left.
+hint: If both are bigger, move right.
+hint: Otherwise one is on each side, or one of them is the node itself: return `node.val`.
+right: The first node where a and b stop going the same way is the deepest node above both. It's one path down: O(h).
+wrong: Walk down from the root: left while both values are smaller, right while both are bigger. The first node that's neither bigger than both nor smaller than both is the answer. Finding both paths by searching every node is O(n).
+
+=== task: code hard
+title: The k-th largest
+prompt: Write `kth_largest(root, k)` that returns the k-th largest value in a binary search tree (k = 1 is the largest). k is never bigger than the number of nodes. Walk the tree in reverse inorder (right subtree, node, left subtree), like the top-scores example, and stop as soon as you've collected k values. The speed check uses big balanced trees and a small k, so walking every node is too slow. `make()` builds the lesson's tree.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def kth_largest(root, k):
+    # your code here
+    return root.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def walk(node, k, out):
+    if node is None or len(out) == k:
+        return
+    walk(node.right, k, out)
+    if len(out) < k:
+        out.append(node.val)
+    walk(node.left, k, out)
+
+def kth_largest(root, k):
+    out = []
+    walk(root, k, out)
+    return out[-1]
+```
+tests:
+- kth_largest(make(), 1)
+- kth_largest(make(), 3)
+- kth_largest(make(), 4)
+- kth_largest(make(), 9)
+- kth_largest(Node(5, Node(2)), 2)
+- kth_largest(make(), 6)
+speed: setup=root = build(list(range(n))) | call=kth_largest(root, 3) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+def kth_largest(root, k):
+    out = []
+    inorder(root, out)
+    return out[-k]
+```
+fail[1]: The largest value is at the end of the right links: 14.
+fail[2]: From the top: 14, 13, 10.
+fail[4]: The 9th largest of 9 values is the smallest: 1.
+fail[5]: 5 is the largest, then 2.
+fail[6]: From the top: 14, 13, 10, 8, 7, 6.
+error[IndexError]: The list is empty or too short: make sure the walk adds values before you read `out[-1]`.
+hint: Write a helper that walks the right subtree, then the node, then the left subtree, adding values to a list.
+hint: Stop as soon as the list holds k values: return straight away, and add a value only while there's room.
+hint: The answer is the last value added: `out[-1]`.
+right: Reverse inorder meets the values from largest to smallest, and stopping at k leaves the rest of the tree unvisited: about O(h + k) steps.
+wrong: Walk right, node, left. Add each value to a list while it holds fewer than k, return early once it's full, and answer with the k-th value added. Listing the whole tree first takes O(n).
+
+=== task: code hard
+title: The closest value
+prompt: Write `closest(root, target)` that returns the value in a non-empty binary search tree that's closest to `target`, a number that may not be in the tree (it can be a float). If two values are equally close, return the smaller one. Walk one path down, as if searching for the target, and keep the best value seen so far. The speed check uses big balanced trees made by `build`, and `make()` builds the lesson's tree.
+starter:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def closest(root, target):
+    # your code here
+    return root.val
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def closest(root, target):
+    best = root.val
+    node = root
+    while node is not None:
+        gap = abs(node.val - target)
+        best_gap = abs(best - target)
+        if gap < best_gap or (gap == best_gap and node.val < best):
+            best = node.val
+        if target < node.val:
+            node = node.left
+        elif target > node.val:
+            node = node.right
+        else:
+            return node.val
+    return best
+```
+tests:
+- closest(make(), 5)
+- closest(make(), 12)
+- closest(make(), 8.4)
+- closest(make(), 100)
+- closest(make(), -3)
+- closest(make(), 11.6)
+- closest(make(), 7)
+speed: setup=root = build(list(range(n))) | call=closest(root, n // 3 + 0.4) | target=O(log n)
+slow:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def build(values):
+    if not values:
+        return None
+    mid = len(values) // 2
+    return Node(values[mid], build(values[:mid]), build(values[mid + 1:]))
+
+def make():
+    return Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+
+def everything(node, out):
+    if node is None:
+        return
+    everything(node.left, out)
+    out.append(node.val)
+    everything(node.right, out)
+
+def closest(root, target):
+    values = []
+    everything(root, values)
+    best = values[0]
+    for v in values:
+        if abs(v - target) < abs(best - target):
+            best = v
+    return best
+```
+fail[1]: 4 and 6 are both 1 away from 5: return the smaller one, 4.
+fail[2]: 13 is 1 away from 12, and 10 is 2 away.
+fail[4]: Everything is smaller than 100, so the largest value, 14, is the closest.
+fail[5]: Everything is bigger than −3, so the smallest value, 1, is the closest.
+fail[6]: 13 is 1.4 away from 11.6, and 10 is 1.6 away.
+fail[7]: 7 is in the tree, so it's the closest.
+hint: Keep `best`, starting with the root's value, and walk down as if searching for the target.
+hint: At each node, replace `best` if this node is closer (or equally close and smaller).
+hint: Move left if the target is smaller than the node and right if it's bigger. An exact match is the answer.
+right: The closest value is either the biggest value below the target or the smallest value above it, and both lie on the target's search path, so one walk down finds it: O(h).
+wrong: Search for the target as if it were in the tree, and compare every node on the path with the best so far. The nearest values below and above the target are both on that path.
+
+=== task: predict hard
+title: Shape after a delete
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def insert(node, val):
+    if node is None:
+        return Node(val)
+    if val < node.val:
+        node.left = insert(node.left, val)
+    elif val > node.val:
+        node.right = insert(node.right, val)
+    return node
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.right)
+        node.right = delete(node.right, node.val)
+    return node
+
+def preorder(node):
+    if node is None:
+        return []
+    return [node.val] + preorder(node.left) + preorder(node.right)
+
+t = None
+for v in [6, 2, 9, 1, 4, 7, 3, 5]:
+    t = insert(t, v)
+print(preorder(t))
+t = delete(t, 2)
+print(preorder(t))
+```
+wrong[[6, 2, 1, 4, 3, 5, 9, 7]\n[6, 4, 1, 3, 5, 9, 7]]: 2's right child, 4, doesn't move up. The node stays, and its value becomes the successor's: 3, the smallest value below 4.
+wrong[[6, 2, 1, 4, 3, 5, 9, 7]\n[6, 3, 1, 4, 3, 5, 9, 7]]: After 3 is copied up, the old 3 is deleted from below 4.
+wrong[[6, 2, 4, 1, 3, 5, 9, 7]\n[6, 3, 4, 1, 5, 9, 7]]: Preorder visits the whole left subtree before the right one: 2's left child 1 comes before 4.
+wrong[[6, 2, 1, 4, 3, 5, 9, 7]\n[6, 1, 4, 3, 5, 9, 7]]: 2 has two children, so it can't be replaced by one of them: its value becomes its successor's, 3.
+hint: Draw the tree first: 6 at the root; 2 and 9 below it; then 1, 4 and 7; then 3 and 5 below 4.
+hint: 2 has two children. Its successor is the smallest value in its right subtree.
+right: The first line is the tree, root first. Deleting 2 copies its successor, 3, into its node and removes the leaf 3 from below 4.
+wrong: Inserting gives 6; 2 (with 1, and 4 with 3 and 5); 9 (with 7), so preorder is 6 2 1 4 3 5 9 7. Deleting 2: its successor is 3 (from 4, go left). 3 is copied in, and the old 3 is removed: 6 3 1 4 5 9 7.
+
+=== task: predict hard
+title: Checking children only
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def children_ok(node):
+    if node is None:
+        return True
+    if node.left is not None and node.left.val > node.val:
+        return False
+    if node.right is not None and node.right.val < node.val:
+        return False
+    return children_ok(node.left) and children_ok(node.right)
+
+def is_bst(node, lo, hi):
+    if node is None:
+        return True
+    if not (lo < node.val < hi):
+        return False
+    return is_bst(node.left, lo, node.val) and is_bst(node.right, node.val, hi)
+
+inf = float("inf")
+t1 = Node(10, Node(5, Node(2), Node(7)), Node(15, Node(12), Node(20)))
+t2 = Node(10, Node(5, Node(2), Node(11)), Node(15))
+t3 = Node(10, Node(5), Node(15, Node(9), Node(20)))
+for t in [t1, t2, t3]:
+    print(children_ok(t), is_bst(t, -inf, inf))
+```
+wrong[True True\nTrue True\nTrue True]: `is_bst` checks every value against all of its ancestors through the limits: 11 must be below 10, and 9 must be above 10.
+wrong[True True\nFalse False\nFalse False]: Every child is on the correct side of its own parent, so `children_ok` passes all three trees.
+wrong[True True\nTrue False\nTrue True]: In t3, 9 is in 10's right subtree, so it must be bigger than 10.
+hint: `children_ok` compares each node only with its two children.
+hint: In t2, 11 is 5's right child, but it's also in 10's left subtree. In t3, 9 is in 10's right subtree.
+right: `children_ok` is fooled by t2 and t3, because each mistake is two levels away from the node it breaks the rule for. The limits in `is_bst` catch both.
+wrong: Every child in all three trees is on the correct side of its parent, so `children_ok` prints True each time. But 11 is in 10's left subtree and 9 is in 10's right subtree, so `is_bst` says False for t2 and t3.
+
+=== task: cells hard
+title: How many nodes does a search look at?
+prompt: What is the most nodes a search can look at in each of these search trees? Write the numbers without commas.
+labels: perfect, 1,023 nodes | line, 1,023 nodes | perfect, 1,048,575 nodes | line, 1,048,575 nodes
+answer: 10 | 1023 | 20 | 1048575
+wrong[9 | 1022 | 19 | 1048574]: That's the height, which counts edges. A search looks at the nodes on a path: one more than the edges.
+wrong[10 | 10 | 20 | 20]: A line built by sorted inserts has one node per level, so a search may have to look at every node.
+wrong[512 | 1023 | 524288 | 1048575]: 512 is how many leaves the perfect tree has. A search walks one path: one node per level.
+hint: A search looks at no more than one node per level.
+hint: A perfect tree of height h has 2^(h+1) − 1 nodes and h + 1 levels. 1,023 is 2^10 − 1.
+right: 10, 1023, 20 and 1048575: a balanced tree needs about log2 n steps, while a line needs up to n. For a million values, that's 20 steps against a million.
+wrong: A search looks at one node per level. A perfect tree of 1,023 nodes has 10 levels, and one of 1,048,575 nodes has 20. A line of n nodes has n levels.
+
+=== task: multi hard
+title: Orders that build a short tree
+prompt: The values 1 to 7 are inserted one at a time into an empty search tree. Choose **every** insert order that builds a tree of height 2, the shortest possible.
+* 4, 2, 6, 1, 3, 5, 7 :: Right. 4 is the root, 2 and 6 are its children, and the rest fill the bottom level.
+* 4, 6, 2, 7, 5, 3, 1 :: Right. The same shape: 4 first, then 6 and 2 before any of their children.
+* 4, 2, 1, 3, 6, 5, 7 :: Right. 2 arrives before 1 and 3, and 6 before 5 and 7, so every value lands on the right level.
+- 1, 2, 3, 4, 5, 6, 7 :: Sorted inserts build a line of height 6.
+- 2, 4, 6, 1, 3, 5, 7 :: 2 becomes the root, with 4 and then 6 going right below it: the path 2, 4, 6, 7 makes the height 3.
+- 4, 1, 2, 3, 6, 5, 7 :: 1 arrives before 2 and 3, so they chain below it: the path 4, 1, 2, 3 makes the height 3.
+hint: For height 2, the root must be the middle value, 4.
+hint: Then each side's middle value (2 or 6) must arrive before the other values on its side.
+right: The root must be 4, and 2 and 6 must each arrive before the values that belong below them. Any order with both properties builds the perfect tree.
+wrong: A tree of 7 values with height 2 is perfect: 4 at the root, 2 and 6 below it, and 1, 3, 5 and 7 at the bottom. That needs 4 first, and 2 and 6 each inserted before the values that go below them.
+
+=== task: fill hard
+title: Finding the replacement
+prompt: Fill in the blanks in the two-children case of `delete`, so that the program prints:
+
+```output
+[1, 4, 6, 7, 8, 10, 13, 14]
+4
+```
+code:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def smallest(node):
+    while node.left is not None:
+        node = node.left
+    return node.val
+
+def delete(node, val):
+    if node is None:
+        return None
+    if val < node.val:
+        node.left = delete(node.left, val)
+    elif val > node.val:
+        node.right = delete(node.right, val)
+    else:
+        if node.left is None:
+            return node.right
+        if node.right is None:
+            return node.left
+        node.val = smallest(node.??)
+        node.right = delete(node.right, ??)
+    return node
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+
+root = Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+root = delete(root, 3)
+out = []
+inorder(root, out)
+print(out)
+print(root.left.val)
+```
+answer: right | node.val
+wrong[left | node.val]: `smallest(node.left)` copies 1 from the left subtree, so the node holds 1 with another 1 below it, and nothing is removed from the right: `[1, 1, 4, 6, 7, 8, 10, 13, 14]`.
+wrong[right | val]: `val` is 3, which isn't in the right subtree, so nothing is deleted there and the old 4 stays: 4 appears twice.
+hint: The replacement is the next bigger value: the smallest in which subtree?
+hint: After the copy, the successor's old node has to go. Which value does `node.val` hold now?
+right: `smallest(node.right)` finds the successor, 4, and `delete(node.right, node.val)` removes the old 4, which now matches the node's new value.
+wrong: The successor is the smallest value in the right subtree: `smallest(node.right)`. Once it's copied in, `node.val` holds it, so delete `node.val` from the right subtree.
+
+=== task: parsons hard
+title: The floor of a value
+prompt: The **floor** of x in a search tree is the largest value that is less than or equal to x, or None if there isn't one. Arrange the lines so that `floor` walks one path down: a value smaller than x is a candidate, and anything better can only be in its right subtree; a value bigger than x can't be the answer, so go left. The program prints:
+
+```output
+4 10 None 7
+```
+
+Not every line is needed.
+lines:
+```python
+class Node:
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def floor(node, x):
+    best = None
+    while node is not None:
+        if node.val == x:
+            return x
+        if node.val < x:
+            best = node.val
+            node = node.right
+        else:
+            node = node.left
+    return best
+
+root = Node(8, Node(3, Node(1), Node(6, Node(4), Node(7))), Node(10, None, Node(14, Node(13))))
+print(floor(root, 5), floor(root, 12), floor(root, 0), floor(root, 7))
+```
+distractors:
+```python
+        if node.val > x:
+    return node.val
+```
+hint: A value smaller than x could be the answer, but something bigger in its right subtree might be closer to x.
+hint: Save it in `best` and go right. A value bigger than x can't be the answer: go left.
+right: The walk only moves right after saving a candidate, so every later candidate is bigger than the one before. The last one saved is the floor: O(h).
+wrong: Start with `best = None`. On a match, return x. If the node is smaller than x, save it and go right; otherwise go left. When the walk falls off the tree, `best` is the floor.
