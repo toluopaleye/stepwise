@@ -1,0 +1,1136 @@
+=== lesson
+id: algo-bt-combos
+title: Combinations
+summary: A combination is a choice of exactly k of the items, where the order doesn't matter: a team, a hand of cards, a set of toppings. Backtracking builds each combination with its items in list order, so each one is built once. You'll count them with n choose k, prune branches that can't reach k items, find combinations that add up to a total, and allow items to be reused.
+
+=== learn
+### Choosing k of n
+A **combination** is a group of exactly k items chosen from n, where the order doesn't matter. Choosing 2 of `[a, b, c, d]` gives six: `ab`, `ac`, `ad`, `bc`, `bd` and `cd`. `ab` and `ba` are the same combination.
+
+Combinations sit between the other two families. A combination is a subset with a fixed size: the subsets of size 2. And each combination of k items can be put in k! orders, so there are k! times as many ordered picks as combinations. That gives the count, written C(n, k) and read "n choose k":
+
+C(n, k) = n! ÷ (k! × (n − k)!)
+
+For 2 of 4: 4! ÷ (2! × 2!) = 24 ÷ 4 = 6.
+
+### The search
+The search is the choose-the-next-item search from the subsets lesson, with one change: a path is recorded only when it has exactly k items, and it stops growing there:
+```python
+def combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        combos(items, k, i + 1, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3, 4], 2, 0, [], results)
+print(results)
+```
+```output
+[[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+```
+As with subsets, `start` makes each combination be built with its items in list order, so `[2, 1]` is never built as well as `[1, 2]`. The results come out in sorted order when the items are sorted. Animation 1 runs this search.
+
+### Counting combinations
+C(n, k) grows fast, but much more slowly than n! when k is small:
+
+| choose | count |
+| --- | --- |
+| 2 of 5 | 10 |
+| 3 of 10 | 120 |
+| 5 of 52, a poker hand | 2,598,960 |
+| 10 of 20 | 184,756 |
+| 6 of 49, a lottery ticket | 13,983,816 |
+
+Two facts help when checking counts. Choosing k items is the same as choosing the n − k to leave out, so C(n, k) = C(n, n − k). And every combination either includes the first item or doesn't: C(n, k) = C(n − 1, k − 1) + C(n − 1, k). That second rule is the include-or-exclude search, turned into a count.
+
+### Pruning: not enough items left
+When the path still needs `k - len(path)` items, but fewer items than that are left after `i`, the branch can't be completed. Stopping the loop early removes those dead ends. The last useful start for the next item is `len(items) - (k - len(path))`:
+```python
+def combos(items, k, start, path, results, calls):
+    calls[0] += 1
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items) - (k - len(path)) + 1):
+        path.append(items[i])
+        combos(items, k, i + 1, path, results, calls)
+        path.pop()
+
+results = []
+calls = [0]
+combos([1, 2, 3, 4, 5], 3, 0, [], results, calls)
+print(len(results), calls[0])
+```
+```output
+10 20
+```
+Without the bound, the same search makes 26 calls: the 6 extra calls start paths that can never reach 3 items, like `[4]`, `[5]` or `[1, 5]`. The saving grows with n and k. Animation 2 shows the loop stopping early.
+
+### Combinations that add up
+Often the combination must also meet a total, like three different numbers from 1 to 9 that add up to 15. Carry the total along, and since the numbers are tried in increasing order, `break` as soon as one is too big:
+```python
+def triples(k, target, start, path, total, results):
+    if len(path) == k:
+        if total == target:
+            results.append(path[:])
+        return
+    for x in range(start, 10):
+        if total + x > target:
+            break
+        path.append(x)
+        triples(k, target, x + 1, path, total + x, results)
+        path.pop()
+
+results = []
+triples(3, 15, 1, [], 0, results)
+print(len(results), results[:3])
+```
+```output
+8 [[1, 5, 9], [1, 6, 8], [2, 4, 9]]
+```
+The numbers 1 to 9 aren't in a list here: the loop counts through them directly, and `x + 1` keeps each triple in increasing order. These 8 triples are exactly the lines of a 3 × 3 magic square.
+
+### Using items more than once
+Some problems let the same item be chosen again, like coins: 5 can be made as 1 + 2 + 2, using the 2 twice. To allow that, the next call starts at `i` instead of `i + 1`, so the current item is still on offer, but earlier items aren't, which keeps each combination in one order:
+```python
+def change(coins, amount, start, path, results):
+    if amount == 0:
+        results.append(path[:])
+        return
+    for i in range(start, len(coins)):
+        if coins[i] > amount:
+            break
+        path.append(coins[i])
+        change(coins, amount - coins[i], i, path, results)
+        path.pop()
+
+results = []
+change([1, 2, 5], 5, 0, [], results)
+print(results)
+```
+```output
+[[1, 1, 1, 1, 1], [1, 1, 1, 2], [1, 2, 2], [5]]
+```
+The coins must be sorted for the `break`. Here there's no fixed size: the path is complete when the amount left is 0, and each step makes the amount smaller, so the search always ends.
+
+### Repeated items
+If the list itself has repeats, like `[1, 1, 2]`, choosing 2 would build `[1, 2]` twice, once with each 1. The fix is the same as for subsets: sort the items, and skip an item equal to the one before it in the same loop:
+```python
+def unique_combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        if i > start and items[i] == items[i - 1]:
+            continue
+        path.append(items[i])
+        unique_combos(items, k, i + 1, path, results)
+        path.pop()
+
+results = []
+unique_combos(sorted([2, 1, 1, 2]), 2, 0, [], results)
+print(results)
+```
+```output
+[[1, 1], [1, 2], [2, 2]]
+```
+
+### Subsets, permutations, combinations
+The three families use the same choose, explore, undo pattern, with different options and different ends:
+
+| property | subsets | permutations | combinations |
+| --- | --- | --- | --- |
+| what's chosen | any number of items | all the items | exactly k items |
+| does order matter? | no | yes | no |
+| how many | 2ⁿ | n! | C(n, k) |
+| next options | items after the last one | every unused item | items after the last one |
+| recorded when | every path, or every leaf | the path has n items | the path has k items |
+
+Recognising which family a problem belongs to tells you how many answers to expect and which search to write.
+
+=== keypoints
+- A combination is a choice of exactly k of n items, where order doesn't matter. There are C(n, k) = n! ÷ (k! × (n − k)!) of them.
+- The search: record the path when it has k items; otherwise for each i from `start`, append `items[i]`, recurse from `i + 1`, pop.
+- Prune when too few items are left: loop i only up to `len(items) - (k - len(path))`.
+- With a target total and sorted items, `break` as soon as an item makes the total too big.
+- To allow reusing an item, recurse from `i` instead of `i + 1`.
+- Repeated items: sort, and skip `items[i]` when `i > start` and it equals `items[i - 1]`.
+
+=== example: Teams of three
+intro: Five people volunteer, and the club needs a team of three. The search lists every possible team, with names in the order they volunteered.
+```python
+people = ["Ana", "Ben", "Cy", "Dee", "Eli"]
+
+def teams(start, path, results):
+    if len(path) == 3:
+        results.append(", ".join(path))
+        return
+    for i in range(start, len(people)):
+        path.append(people[i])
+        teams(i + 1, path, results)
+        path.pop()
+
+results = []
+teams(0, [], results)
+print(len(results))
+for team in results[:4]:
+    print(team)
+```
+1: Five people, so C(5, 3) teams.
+3-6: A team is complete with three names; joining them makes a new string, so no copy is needed.
+7-10: Each name is followed only by names after it in the list, so no team is listed twice.
+12-16: C(5, 3) = 10 teams. The first four all include Ana.
+
+=== example: Two toppings within a price
+intro: A pizza deal includes exactly two different toppings, as long as together they cost at most 4. The search lists every pair that qualifies.
+```python
+toppings = [("corn", 1), ("olives", 2), ("onion", 2), ("ham", 3), ("prawns", 4)]
+
+def pairs(start, path, cost, results):
+    if len(path) == 2:
+        results.append(path[:])
+        return
+    for i in range(start, len(toppings)):
+        name, price = toppings[i]
+        if cost + price > 4:
+            break
+        path.append(name)
+        pairs(i + 1, path, cost + price, results)
+        path.pop()
+
+results = []
+pairs(0, [], 0, results)
+print(results)
+```
+1: The toppings are sorted by price, cheapest first, which makes `break` safe.
+3-6: A pair is complete with two toppings.
+7-10: Once a topping is too expensive, every topping after it is too, so the loop stops.
+11-13: Choose, explore the second topping, undo.
+15-17: Four pairs fit the price: corn with olives, onion or ham, and olives with onion. Every pair with prawns costs at least 5.
+
+=== animation: Choosing 2 of 3
+view: array items ptr=start,i
+array path
+array results
+intro: Each call adds one more item, chosen from the items after the last one added. When the path has 2 items, it's recorded. `start` marks the first item a call may choose.
+```python
+def combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        combos(items, k, i + 1, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3], 2, 0, [], results)
+```
+1: Defines combos. Nothing runs yet.
+2: {'The path has ' + str(k) + ' items: complete.' if len(path) == k else 'The path has ' + str(len(path)) + ' of ' + str(k) + ' items.'}
+3: Record {path}.
+4: Back to the previous call.
+5: Next item, from index {start} on. When none are left, this call is finished.
+6: Add {items[i]}.
+7: Choose the rest from the items after {items[i]}.
+8: Undo: remove {items[i]}.
+10: No results yet.
+11: Choose 2 of [1, 2, 3].
+
+=== animation: Stopping when too few are left
+view: array items ptr=start,i
+array path
+intro: The same search choosing 3 of 5, with the loop's end pulled in: a call only tries items that leave enough after them to complete the path. To keep it short, it starts with 2 already chosen.
+```python
+def combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items) - (k - len(path)) + 1):
+        path.append(items[i])
+        combos(items, k, i + 1, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3, 4, 5], 3, 2, [2], results)
+```
+1: Defines combos. Nothing runs yet.
+2: {'Complete: ' + str(path) + '.' if len(path) == k else 'The path needs ' + str(k - len(path)) + ' more, and the loop stops at index ' + str(len(items) - (k - len(path))) + '.'}
+3: Record {path}.
+4: Back to the previous call.
+5: Next item, up to the last one that leaves enough items after it.
+6: Add {items[i]}.
+7: Choose the rest from the items after {items[i]}.
+8: Undo: remove {items[i]}.
+10: No results yet.
+11: Choose 3 of [1, 2, 3, 4, 5], starting from a path that already has 2.
+
+=== task: predict easy
+title: Pairs of letters
+code:
+```python
+def combos(items, k, start, path):
+    if len(path) == k:
+        print("".join(path))
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        combos(items, k, i + 1, path)
+        path.pop()
+
+combos(["a", "b", "c"], 2, 0, [])
+```
+wrong[ab\nac\nba\nbc\nca\ncb]: Those are ordered pairs. Each call only offers items after the last one added, so ba, ca and cb are never built.
+wrong[ab\nbc]: ac is a pair too: a, then c, skipping b.
+wrong[ab\nac\nbc\ncc]: The same item can't be chosen twice: the next call starts after it.
+hint: After choosing a, the next letter can be b or c.
+hint: After choosing b, only c comes after it.
+right: `ab`, `ac`, `bc`: C(3, 2) = 3 pairs, each with its letters in list order.
+wrong: Choose a, then b or c: ab, ac. Choose b, then c: bc. Choosing c first leaves nothing after it.
+
+=== task: mcq easy
+title: Two of five
+prompt: How many ways are there to choose 2 of 5 different items, when the order doesn't matter?
+* 10 :: Right. 5 × 4 ordered picks, divided by the 2 orders of each pair: 20 ÷ 2 = 10.
+- 20 :: That counts ab and ba separately. A combination ignores order, so divide by 2.
+- 25 :: That's 5 × 5, which allows choosing the same item twice.
+- 32 :: That's 2⁵, the number of subsets of any size.
+hint: There are 5 × 4 = 20 ordered pairs.
+hint: Each combination of 2 appears in 2 orders.
+right: C(5, 2) = 5! ÷ (2! × 3!) = 10.
+wrong: Count ordered pairs, 5 × 4 = 20, then divide by the 2! orders of each pair: 10.
+
+=== task: cells easy
+title: n choose k
+prompt: Fill in each count of combinations.
+labels: C(4, 2) | C(5, 3) | C(6, 1) | C(6, 6) | C(6, 0)
+answer: 6 | 10 | 6 | 1 | 1
+wrong[6 | 10 | 6 | 1 | 0]: Choosing nothing can be done in exactly one way: the empty combination.
+wrong[6 | 60 | 6 | 1 | 1]: 5 × 4 × 3 = 60 counts orders. Divide by 3! = 6: 10.
+wrong[6 | 10 | 6 | 720 | 1]: Choosing all 6 items can be done in only one way.
+hint: C(n, k) = n! ÷ (k! × (n − k)!).
+hint: C(n, k) = C(n, n − k), so C(5, 3) = C(5, 2).
+right: 6, 10, 6, 1 and 1. Choosing all of the items, or none of them, can each be done in exactly one way.
+wrong: Use n! ÷ (k! × (n − k)!): 24/4, 120/12, 720/120, 720/720 and 720/720.
+
+=== task: code easy
+title: Every combination
+prompt: Write `choose(items, k)` that returns every combination of k of the items, each as a list with its items in list order, in the order the search finds them. Use a helper `build(items, k, start, path, results)`.
+starter:
+```python
+def build(items, k, start, path, results):
+    # your code here
+    pass
+
+def choose(items, k):
+    results = []
+    build(items, k, 0, [], results)
+    return results
+```
+solution:
+```python
+def build(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        build(items, k, i + 1, path, results)
+        path.pop()
+
+def choose(items, k):
+    results = []
+    build(items, k, 0, [], results)
+    return results
+```
+tests:
+- choose([1, 2, 3, 4], 2)
+- choose([1, 2, 3], 3)
+- choose([1, 2, 3], 0)
+- choose([1, 2], 3)
+- (lambda: len(choose(list(range(6)), 3)))()
+fail[1]: [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]].
+fail[2]: Choosing all three: [[1, 2, 3]].
+fail[3]: Choosing none: [[]].
+fail[4]: There aren't 3 items to choose: [].
+fail[5]: C(6, 3) = 20.
+hint: When the path has k items, record `path[:]` and return.
+hint: Otherwise, for i from start: append `items[i]`, recurse with `i + 1`, pop.
+hint: Recursing with `i + 1` keeps each combination in list order, so none is built twice.
+right: Each call offers only the items after the last one added, so every combination of k items is built exactly once, in sorted order for sorted items.
+wrong: Record the path at length k. Otherwise loop i from start, choosing `items[i]`, recursing from `i + 1`, and undoing.
+
+=== task: fill easy
+title: Size and start
+prompt: Fill in the blanks so that the search records combinations of exactly k items, each built once, and the program prints:
+
+```output
+[[1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]]
+```
+code:
+```python
+def combos(items, k, start, path, results):
+    if len(path) == ??:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        combos(items, k, ??, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3, 4], 3, 0, [], results)
+print(results)
+```
+answer: k | i + 1
+wrong[len(items) | i + 1]: The path would only be recorded with all 4 items, so the only result is [[1, 2, 3, 4]].
+wrong[k | start + 1]: The next call must start after the item that was added. With `start + 1`, items can repeat or come back in another order.
+hint: A combination has exactly k items.
+hint: After adding `items[i]`, only items after it are options.
+right: `len(path) == k` records each complete combination, and `i + 1` offers only later items, so each one is built once, in order.
+wrong: Record at `len(path) == k`, and recurse with `i + 1`.
+
+=== task: multi easy
+title: True of combinations
+prompt: Choose **every** true statement.
+* [1, 3] and [3, 1] are the same combination :: Right. Order doesn't matter in a combination.
+* There are as many ways to choose 2 of 10 as to choose 8 of 10 :: Right. Choosing 2 to take is the same as choosing 8 to leave.
+* Every combination of k items is a subset with k items :: Right. Combinations are the subsets of a fixed size.
+- A combination of k items can include the same item twice :: Each item is chosen at most once, unless a problem explicitly allows reuse.
+- There are n! combinations of n items :: n! is the number of orders. Combinations of size k number C(n, k).
+- C(n, k) is bigger than the number of ordered picks of k items :: Each combination has k! orders, so there are more ordered picks.
+hint: C(n, k) = C(n, n − k).
+hint: How many orders does a combination of k items have?
+right: Combinations ignore order, are subsets of a fixed size, and C(n, k) = C(n, n − k).
+wrong: A combination is a set of k different items with no order. Each one can be ordered k! ways, which is why ordered picks outnumber combinations.
+
+=== task: parsons easy
+title: Pairs without undo
+prompt: Arrange the lines so that `pairs` records every pair of names, passing a new list to each call instead of appending and popping, and the program prints:
+
+```output
+[['a', 'b'], ['a', 'c'], ['b', 'c']]
+```
+
+Not every line is needed.
+lines:
+```python
+def pairs(names, start, path, results):
+    if len(path) == 2:
+        results.append(path)
+        return
+    for i in range(start, len(names)):
+        pairs(names, i + 1, path + [names[i]], results)
+
+results = []
+pairs(["a", "b", "c"], 0, [], results)
+print(results)
+```
+distractors:
+```python
+        pairs(names, i, path + [names[i]], results)
+        pairs(names, start + 1, path + [names[i]], results)
+```
+hint: `path + [names[i]]` is a new list, so the path that's recorded never changes again.
+hint: The next name must come after the one that was added: `i + 1`.
+right: Each call gets its own new list, so no undo is needed, and `i + 1` keeps every pair in list order.
+wrong: Record the path when it has 2 names. Otherwise, for each i from start, recurse with `i + 1` and a new list with `names[i]` added.
+
+=== task: order easy
+title: In what order?
+prompt: The combinations search runs on `[1, 2, 3, 4]` with k = 2. Put these pairs in the order it records them.
+items:
+- [1, 3]
+- [1, 4]
+- [2, 3]
+- [2, 4]
+- [3, 4]
+hint: All the pairs starting with 1 come first.
+hint: For the same first item, the second item increases.
+right: The full order is [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]: sorted, like words in a dictionary.
+wrong: The first item changes slowest: 1 with 2, 3 and 4, then 2 with 3 and 4, then 3 with 4.
+
+=== task: predict easy
+title: Three of six
+code:
+```python
+def combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        combos(items, k, i + 1, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3, 4, 5, 6], 3, 0, [], results)
+print(len(results), results[0], results[-1])
+```
+wrong[120 [1, 2, 3] [6, 5, 4]]: 120 counts every order of 3 items. Combinations keep their items in list order, so there are 120 ÷ 3! = 20, and the last one is [4, 5, 6].
+wrong[20 [1, 2, 3] [6, 5, 4]]: Each combination's items are in list order, so the last one is [4, 5, 6].
+wrong[18 [1, 2, 3] [4, 5, 6]]: C(6, 3) = 6! ÷ (3! × 3!) = 720 ÷ 36 = 20.
+hint: C(6, 3) = 20.
+hint: The first combination takes the first three items, and the last takes the last three.
+right: `20 [1, 2, 3] [4, 5, 6]`: 20 combinations, from the first three items to the last three.
+wrong: There are C(6, 3) = 20 combinations, found in sorted order: [1, 2, 3] first and [4, 5, 6] last.
+
+=== task: mcq easy
+title: Why i + 1?
+prompt: In the combinations search, why does each call recurse with `i + 1` as the next start?
+* So the next item comes after the one that was added, which builds each combination once, in list order :: Right. Without it, [2, 1] would be built as well as [1, 2].
+- To make the search run faster, though the results would be the same with 0 :: Starting at 0 would give wrong results: repeats, and items used twice.
+- So that the last item is never chosen :: The last item can still be chosen, as the final item of a combination.
+- Because Python lists start at index 1 :: Lists start at 0; `i + 1` is about which items come next.
+hint: What if, after choosing 2, the search could choose 1?
+hint: Can an item be chosen twice if the next call starts at i?
+right: Starting after the item that was chosen means each combination is built with its items in list order, so it's built once, and no item is used twice.
+wrong: Recursing from `i + 1` offers only later items, which rules out both other orders of the same combination and choosing the same item again.
+
+=== task: code medium
+title: Choosing with repeats
+prompt: Write `with_reuse(items, k)` that returns every way to choose k items when the same item may be chosen more than once, like 3 scoops of ice cream from a few flavours, where order doesn't matter. Each result lists its items in list order. Use a helper `build(items, k, start, path, results)`.
+starter:
+```python
+def build(items, k, start, path, results):
+    # your code here
+    pass
+
+def with_reuse(items, k):
+    results = []
+    build(items, k, 0, [], results)
+    return results
+```
+solution:
+```python
+def build(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items)):
+        path.append(items[i])
+        build(items, k, i, path, results)
+        path.pop()
+
+def with_reuse(items, k):
+    results = []
+    build(items, k, 0, [], results)
+    return results
+```
+tests:
+- with_reuse([1, 2], 3)
+- with_reuse(["a", "b", "c"], 2)
+- with_reuse([5], 3)
+- with_reuse([1, 2], 0)
+- (lambda: len(with_reuse(list(range(4)), 3)))()
+fail[1]: [[1, 1, 1], [1, 1, 2], [1, 2, 2], [2, 2, 2]].
+fail[2]: [['a', 'a'], ['a', 'b'], ['a', 'c'], ['b', 'b'], ['b', 'c'], ['c', 'c']].
+fail[3]: One flavour, three scoops: [[5, 5, 5]].
+fail[5]: 20 ways to choose 3 from 4 with repeats.
+hint: The only change from plain combinations: recurse with `i`, not `i + 1`, so the same item is offered again.
+hint: Earlier items still aren't offered, so each choice keeps its items in list order.
+right: Starting the next call at i allows repeats of the current item but never goes back, so each multiset is built once.
+wrong: Use the combinations search, recursing with `start = i` instead of `i + 1`.
+
+=== task: code medium
+title: Hands that add up
+prompt: Write `hands_with_sum(cards, k, target)` that returns every choice of exactly k of the cards whose values add up to `target`. The cards are different positive numbers. Sort them first, and `break` as soon as a card would push the total over the target. Each hand lists its cards in increasing order. Use a helper `build(cards, k, target, start, path, total, results)`.
+starter:
+```python
+def build(cards, k, target, start, path, total, results):
+    # your code here
+    pass
+
+def hands_with_sum(cards, k, target):
+    results = []
+    build(sorted(cards), k, target, 0, [], 0, results)
+    return results
+```
+solution:
+```python
+def build(cards, k, target, start, path, total, results):
+    if len(path) == k:
+        if total == target:
+            results.append(path[:])
+        return
+    for i in range(start, len(cards)):
+        if total + cards[i] > target:
+            break
+        path.append(cards[i])
+        build(cards, k, target, i + 1, path, total + cards[i], results)
+        path.pop()
+
+def hands_with_sum(cards, k, target):
+    results = []
+    build(sorted(cards), k, target, 0, [], 0, results)
+    return results
+```
+tests:
+- hands_with_sum([1, 2, 3, 4, 5], 2, 6)
+- hands_with_sum([1, 2, 3, 4, 5], 3, 6)
+- hands_with_sum([2, 4, 6], 2, 5)
+- hands_with_sum([5, 1, 3], 2, 4)
+- hands_with_sum([1, 2, 3], 0, 0)
+fail[1]: [[1, 5], [2, 4]].
+fail[2]: Only [[1, 2, 3]].
+fail[3]: Even cards can't add up to 5: [].
+fail[4]: After sorting, [[1, 3]].
+fail[5]: Choosing no cards totals 0: [[]].
+hint: When the path has k cards, record it only if the total equals the target.
+hint: Sorted cards mean that once one card is too big, every later card is too.
+hint: Recurse with `i + 1`, so each card is used at most once.
+right: The size check, the target check and the sorted break together keep the search to hands that can still work.
+wrong: Use the combinations search on the sorted cards, carrying the total, breaking when a card is too big, and recording a full hand only if it hits the target.
+
+=== task: predict medium
+title: Two kinds of coin
+code:
+```python
+def change(coins, amount, start, path, results):
+    if amount == 0:
+        results.append(path[:])
+        return
+    for i in range(start, len(coins)):
+        if coins[i] > amount:
+            break
+        path.append(coins[i])
+        change(coins, amount - coins[i], i, path, results)
+        path.pop()
+
+a = []
+change([2, 3], 7, 0, [], a)
+b = []
+change([2, 3], 6, 0, [], b)
+print(a, b)
+```
+wrong[[[2, 2, 3], [2, 3, 2], [3, 2, 2]] [[2, 2, 2], [3, 3]]]: Each call only offers the current coin and later ones, so the coins in each result are in order: [2, 2, 3] is built once.
+wrong[[[2, 2, 3]] [[3, 3]]]: Three 2s also make 6: [2, 2, 2].
+wrong[[] [[2, 2, 2], [3, 3]]]: 7 = 2 + 2 + 3.
+hint: Which combinations of 2s and 3s make 7, and which make 6?
+hint: Coins appear in each result in the order of the list: 2s before 3s.
+right: `[[2, 2, 3]] [[2, 2, 2], [3, 3]]`: one way to make 7, and two ways to make 6.
+wrong: 7 needs an odd number of 3s: one 3 and two 2s. 6 can be three 2s or two 3s. Each is listed once, 2s first.
+
+=== task: cells medium
+title: Pascal's rule
+prompt: Every combination of k of n items either includes the first item or doesn't, so C(n, k) = C(n − 1, k − 1) + C(n − 1, k). Fill in the numbers.
+labels: C(4, 1) | C(4, 2) | C(5, 2) | C(10, 8)
+answer: 4 | 6 | 10 | 45
+wrong[4 | 6 | 24 | 45]: Pascal's rule adds the two counts: C(5, 2) = C(4, 1) + C(4, 2) = 4 + 6 = 10.
+wrong[4 | 6 | 10 | 90]: C(10, 8) = C(10, 2) = 10 × 9 ÷ 2 = 45.
+wrong[4 | 12 | 16 | 45]: C(4, 2) = 4 × 3 ÷ 2 = 6: each pair counted once.
+hint: C(n, 1) = n.
+hint: C(10, 8) is the same as C(10, 2).
+right: 4, 6, 10 = 4 + 6, and 45. The rule is the include-or-exclude search, turned into a count.
+wrong: C(4, 1) = 4 and C(4, 2) = 6 add up to C(5, 2) = 10. Choosing 8 of 10 is choosing the 2 to leave out: 45.
+
+=== task: fill medium
+title: Enough left?
+prompt: Fill in the blanks so that the loop only tries items that leave enough items after them to complete the combination, and the program prints:
+
+```output
+[[1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]]
+```
+code:
+```python
+def combos(items, k, start, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    for i in range(start, len(items) - (k - len(path)) + ??):
+        path.append(items[i])
+        combos(items, k, ??, path, results)
+        path.pop()
+
+results = []
+combos([1, 2, 3, 4], 3, 0, [], results)
+print(results)
+```
+answer: 1 | i + 1
+wrong[0 | i + 1]: Without the + 1, `range` stops one item too early, so the last useful item is never tried and combinations like [2, 3, 4] are lost.
+wrong[1 | i]: Starting the next call at i offers the same item again, so items repeat: [1, 1, 1].
+hint: `range` stops before its end, so the last allowed index needs a + 1.
+hint: The next item comes after the one added.
+right: With k − len(path) items still needed, the last useful index is `len(items) - (k - len(path))`, and `range` needs + 1 to include it. `i + 1` moves past the added item.
+wrong: Loop to `len(items) - (k - len(path)) + 1`, and recurse with `i + 1`.
+
+=== task: mcq medium
+title: Lottery odds
+prompt: A lottery draws 6 numbers from 1 to 49, in any order. About how many different tickets are possible?
+* About 14 million :: Right. C(49, 6) = 13,983,816.
+- About 10 billion :: That's 49 × 48 × 47 × 46 × 45 × 44, which counts every order of each ticket.
+- About 300 :: That's 49 × 6, as if the choices added up instead of multiplying.
+- About 560 billion :: That's 2⁴⁹, the number of subsets of any size.
+hint: Count the ordered draws, then divide by the 6! = 720 orders of each ticket.
+hint: 49 × 48 × 47 × 46 × 45 × 44 ≈ 10 billion.
+right: About 10 billion ordered draws ÷ 720 orders per ticket ≈ 14 million tickets.
+wrong: The ticket ignores order, so divide the ordered count by 6! = 720: about 14 million.
+
+=== task: predict medium
+title: Repeats in the list
+code:
+```python
+def count(items, k, start, size, skip):
+    if size == k:
+        return 1
+    total = 0
+    for i in range(start, len(items)):
+        if skip and i > start and items[i] == items[i - 1]:
+            continue
+        total += count(items, k, i + 1, size + 1, skip)
+    return total
+
+items = [1, 1, 1, 2]
+print(count(items, 2, 0, 0, True), count(items, 2, 0, 0, False))
+```
+wrong[6 6]: With the skip, equal items at the same level start only one branch, so [1, 1] and [1, 2] are each counted once.
+wrong[2 4]: Without the skip, every pair of positions counts: C(4, 2) = 6.
+wrong[3 6]: The different pairs are only [1, 1] and [1, 2]: 2.
+hint: With the skip, which different pairs can be made from three 1s and a 2?
+hint: Without the skip, the four positions are treated as four different items.
+right: `2 6`: the skip counts the 2 different pairs, [1, 1] and [1, 2], while without it all C(4, 2) = 6 pairs of positions are counted.
+wrong: With the skip: [1, 1] and [1, 2], 2 in all. Without it: every pair of the 4 positions, 6 in all, with [1, 1] three times and [1, 2] three times.
+
+=== task: multi medium
+title: Is it a combination problem?
+prompt: Choose **every** problem whose answers are combinations: a fixed number of items, chosen without regard to order.
+* Choosing 5 cards for a poker hand :: Right. Exactly 5 cards, and the hand doesn't depend on the order they were dealt.
+* Picking 3 people for a committee :: Right. Exactly 3, and a committee has no order.
+* Choosing 2 toppings out of 8 :: Right. Exactly 2, in no order.
+- Deciding the running order of 6 acts in a show :: The order is the answer: that's a permutation.
+- Choosing any number of books to take on holiday :: The number isn't fixed: that's a subset.
+- Awarding gold, silver and bronze among 10 runners :: Which runner gets which medal matters: those are ordered picks.
+hint: Is the number of items fixed, and does the order not matter?
+hint: Medals have an order: gold isn't the same as bronze.
+right: Hands, committees and toppings choose a fixed number with no order. Running orders and medals care about order, and holiday books have no fixed size.
+wrong: Combinations need both a fixed size and no order. If order matters, use permutations or ordered picks; if the size can vary, it's a subset.
+
+=== task: parsons medium
+title: Counting with Pascal's rule
+prompt: Arrange the lines so that `count` works out C(n, k) with Pascal's rule, without listing any combinations, and the program prints:
+
+```output
+10 20
+```
+
+Not every line is needed.
+lines:
+```python
+def count(n, k):
+    if k == 0 or k == n:
+        return 1
+    return count(n - 1, k - 1) + count(n - 1, k)
+
+print(count(5, 2), count(6, 3))
+```
+distractors:
+```python
+    return count(n - 1, k - 1) * count(n - 1, k)
+    if k == 0:
+```
+hint: Choosing none, or all, can be done in exactly one way.
+hint: Either the first item is in (choose k − 1 of the rest) or it's out (choose k of the rest).
+right: The two branches are the include-or-exclude choice for the first item, so their counts add up to C(n, k).
+wrong: Base case: k is 0 or n, one way. Otherwise return the ways that include the first item plus the ways that leave it out.
+
+=== task: order medium
+title: Smallest count first
+prompt: Put these counts in order, smallest first.
+items:
+- C(5, 1)
+- C(5, 2)
+- C(6, 3)
+- C(10, 3)
+hint: Work out each: C(n, k) = n! ÷ (k! × (n − k)!).
+hint: C(10, 3) = 10 × 9 × 8 ÷ 6.
+right: 5, 10, 20 and 120.
+wrong: C(5, 1) = 5, C(5, 2) = 10, C(6, 3) = 20, and C(10, 3) = 720 ÷ 6 = 120.
+
+=== task: code hard
+title: Each number once, no repeats
+prompt: Write `sum_combos(nums, target)` that returns every **different** combination of the numbers that adds up to `target`, using each number in the list at most once. The list may contain repeats, but no combination may be listed twice. Sort the numbers, skip a number equal to the one before it in the same loop, and `break` when a number is too big. The numbers are positive. Use a helper `build(nums, target, start, path, total, results)`.
+starter:
+```python
+def build(nums, target, start, path, total, results):
+    # your code here
+    pass
+
+def sum_combos(nums, target):
+    results = []
+    build(sorted(nums), target, 0, [], 0, results)
+    return results
+```
+solution:
+```python
+def build(nums, target, start, path, total, results):
+    if total == target:
+        results.append(path[:])
+        return
+    for i in range(start, len(nums)):
+        if i > start and nums[i] == nums[i - 1]:
+            continue
+        if total + nums[i] > target:
+            break
+        path.append(nums[i])
+        build(nums, target, i + 1, path, total + nums[i], results)
+        path.pop()
+
+def sum_combos(nums, target):
+    results = []
+    build(sorted(nums), target, 0, [], 0, results)
+    return results
+```
+tests:
+- sum_combos([10, 1, 2, 7, 6, 1, 5], 8)
+- sum_combos([2, 5, 2, 1, 2], 5)
+- sum_combos([1, 1], 3)
+- sum_combos([], 0)
+- sum_combos([3], 3)
+fail[1]: [[1, 1, 6], [1, 2, 5], [1, 7], [2, 6]].
+fail[2]: [[1, 2, 2], [5]]: [1, 2, 2] only once, though there are three 2s.
+fail[3]: Two 1s can't make 3: [].
+fail[4]: The empty combination makes 0: [[]].
+hint: Record the path as soon as the total equals the target.
+hint: Skip `nums[i]` when `i > start` and it equals `nums[i - 1]`; break when `total + nums[i] > target`.
+hint: Recurse with `i + 1`: each number is used at most once.
+right: Sorting lets two checks work together: the skip builds each different combination once, and the break stops at the first number that's too big.
+wrong: Sort, then search with a start index. Skip repeated values at the same level, stop the loop at the first number that overshoots, and record when the total hits the target.
+
+=== task: code hard
+title: Factor combinations
+prompt: Write `factor_combos(n)` that returns every way to write n as a product of two or more whole numbers, each at least 2, with the factors in non-decreasing order, like [2, 2, 3] and [2, 6] for 12. Use a helper `build(n, start, path, results)`: for each factor f from `start` while `f * f <= n`, if f divides n, record `path + [f, n // f]`, then search for more ways to split `n // f`, with factors from f up.
+starter:
+```python
+def build(n, start, path, results):
+    # your code here
+    pass
+
+def factor_combos(n):
+    results = []
+    build(n, 2, [], results)
+    return results
+```
+solution:
+```python
+def build(n, start, path, results):
+    f = start
+    while f * f <= n:
+        if n % f == 0:
+            results.append(path + [f, n // f])
+            path.append(f)
+            build(n // f, f, path, results)
+            path.pop()
+        f += 1
+
+def factor_combos(n):
+    results = []
+    build(n, 2, [], results)
+    return results
+```
+tests:
+- factor_combos(12)
+- factor_combos(8)
+- factor_combos(7)
+- factor_combos(16)
+- factor_combos(1)
+fail[1]: [[2, 6], [2, 2, 3], [3, 4]].
+fail[2]: [[2, 4], [2, 2, 2]].
+fail[3]: 7 is prime, so it can't be split: [].
+fail[4]: [[2, 8], [2, 2, 4], [2, 2, 2, 2], [4, 4]].
+fail[5]: [].
+hint: `f * f <= n` keeps f no bigger than `n // f`, so the factors never decrease.
+hint: Recording `path + [f, n // f]` makes a new list, so the path can keep changing.
+hint: Then choose f (append), split `n // f` further starting at f, and undo.
+right: Each result is the path so far plus one last split into f and n // f, and recursing from f keeps every result in non-decreasing order, so each is found once.
+wrong: For each divisor f from start with f × f ≤ n: record the split [f, n // f] after the path, then append f and look for splits of n // f from f up, then pop.
+
+=== task: code hard
+title: Splitting a number into k parts
+prompt: Write `partitions(n, k)` that returns every way to write n as a sum of exactly k positive whole numbers, with the parts in non-decreasing order, like [1, 1, 4], [1, 2, 3] and [2, 2, 2] for n = 6, k = 3. Use a helper `build(n, k, start, path, results)`, where n is what's left to make, parts may repeat, and each part is at least the one before. Prune: if even k − len(path) copies of the next part are more than what's left, stop the loop.
+starter:
+```python
+def build(n, k, start, path, results):
+    # your code here
+    pass
+
+def partitions(n, k):
+    results = []
+    build(n, k, 1, [], results)
+    return results
+```
+solution:
+```python
+def build(n, k, start, path, results):
+    if len(path) == k:
+        if n == 0:
+            results.append(path[:])
+        return
+    for x in range(start, n + 1):
+        if x * (k - len(path)) > n:
+            break
+        path.append(x)
+        build(n - x, k, x, path, results)
+        path.pop()
+
+def partitions(n, k):
+    results = []
+    build(n, k, 1, [], results)
+    return results
+```
+tests:
+- partitions(5, 2)
+- partitions(6, 3)
+- partitions(4, 4)
+- partitions(3, 4)
+- partitions(7, 1)
+fail[1]: [[1, 4], [2, 3]].
+fail[2]: [[1, 1, 4], [1, 2, 3], [2, 2, 2]].
+fail[3]: Four 1s: [[1, 1, 1, 1]].
+fail[4]: 3 can't be split into 4 positive parts: [].
+fail[5]: One part: [[7]].
+hint: A path with k parts is a result only if nothing is left: n == 0.
+hint: The next part goes from start up; recurse with start = x, so parts never decrease.
+hint: If x × (parts still needed) > n, every later x is too big as well: break.
+right: Recursing from x keeps the parts in order, so each partition is built once, and the bound stops as soon as the remaining parts can't fit.
+wrong: Choose parts in non-decreasing order, subtracting each from what's left. Record when there are k parts and nothing left, and break once x times the parts still needed is more than what's left.
+
+=== task: code hard
+title: The m-th combination, directly
+prompt: The combinations of k numbers from 1 to n come in sorted order: for n = 5 and k = 3, [1, 2, 3], [1, 2, 4], …, [3, 4, 5]. Write `kth_combo(n, k, m)` that returns the m-th one (m = 1 is the first) **without** listing the others. Decide one number at a time: the combinations that start with x, with `left` numbers still to choose after it, number C(n − x, left). If m is at most that, x is in; otherwise skip all of them by subtracting that count from m. `C(n, k)` is given. The speed check asks for a combination in the middle of all C(n, 3).
+starter:
+```python
+def C(n, k):
+    if k < 0 or k > n:
+        return 0
+    result = 1
+    for i in range(k):
+        result = result * (n - i) // (i + 1)
+    return result
+
+def kth_combo(n, k, m):
+    path = []
+    x = 1
+    # your code here
+    return path
+```
+solution:
+```python
+def C(n, k):
+    if k < 0 or k > n:
+        return 0
+    result = 1
+    for i in range(k):
+        result = result * (n - i) // (i + 1)
+    return result
+
+def kth_combo(n, k, m):
+    path = []
+    x = 1
+    while len(path) < k:
+        left = k - len(path) - 1
+        block = C(n - x, left)
+        if m <= block:
+            path.append(x)
+        else:
+            m -= block
+        x += 1
+    return path
+```
+tests:
+- kth_combo(5, 3, 1)
+- kth_combo(5, 3, 7)
+- kth_combo(5, 3, 10)
+- kth_combo(4, 2, 4)
+- kth_combo(6, 1, 6)
+- kth_combo(3, 3, 1)
+speed: setup=m = n * (n - 1) * (n - 2) // 12 | call=kth_combo(n, 3, m) | target=O(n)
+slow:
+```python
+def C(n, k):
+    if k < 0 or k > n:
+        return 0
+    result = 1
+    for i in range(k):
+        result = result * (n - i) // (i + 1)
+    return result
+
+def walk(n, k, start, path, m, count, found):
+    if len(path) == k:
+        count[0] += 1
+        if count[0] == m:
+            found.append(path[:])
+        return
+    for x in range(start, n + 1):
+        if found:
+            return
+        path.append(x)
+        walk(n, k, x + 1, path, m, count, found)
+        path.pop()
+
+def kth_combo(n, k, m):
+    found = []
+    walk(n, k, 1, [], m, [0], found)
+    return found[0]
+```
+fail[1]: The first combination: [1, 2, 3].
+fail[2]: After the 6 that start with 1 come [2, 3, 4], ...: the 7th is [2, 3, 4].
+fail[3]: The last of C(5, 3) = 10: [3, 4, 5].
+fail[4]: [1, 2], [1, 3], [1, 4], [2, 3]: the 4th is [2, 3].
+fail[5]: [6].
+hint: With `left = k - len(path) - 1` numbers still to choose after x, there are C(n − x, left) combinations that start with x here.
+hint: If m ≤ that block, choose x; otherwise subtract the block from m. Either way, move on to x + 1.
+hint: Listing the combinations one by one until the m-th would take about n³ steps here.
+right: Each step either takes x or jumps over a whole block of combinations at once, so the loop runs at most n times, however big m is.
+wrong: Walk x from 1 up. If the m-th combination is among those that start with x (m ≤ C(n − x, left)), add x; otherwise subtract that block from m. Stop when k numbers are chosen.
+
+=== task: predict hard
+title: Unsorted coins
+code:
+```python
+def change(coins, amount, start, path, results):
+    if amount == 0:
+        results.append(path[:])
+        return
+    for i in range(start, len(coins)):
+        if coins[i] > amount:
+            break
+        path.append(coins[i])
+        change(coins, amount - coins[i], i, path, results)
+        path.pop()
+
+results = []
+change([3, 1, 2], 4, 0, [], results)
+print(results)
+```
+wrong[[[1, 1, 1, 1], [1, 1, 2], [1, 3], [2, 2]]]: That's what sorted coins give. Here, after choosing 3, the next loop starts at index 0 with 1 left to make: 3 is too big, and the break stops the loop before 1 is tried.
+wrong[[[3, 1], [1, 1, 1, 1], [1, 1, 2], [2, 2]]]: 3 + 1 is never found. After choosing 3, the loop meets 3 first, which is too big for the 1 that's left, and breaks.
+wrong[[[1, 1, 1, 1], [1, 1, 2]]]: [2, 2] is found too: the branch that starts with 2 offers only 2s, and two of them make 4.
+hint: The break assumes that every coin after a too-big coin is also too big. With unsorted coins, is that true?
+hint: Follow the branch that starts with 3: what's left to make, and which coin does its loop try first?
+right: `[[1, 1, 1, 1], [1, 1, 2], [2, 2]]`: 3 + 1 is lost, because after choosing 3 the loop tries 3 first, finds it too big, and breaks before reaching 1. Sorting the coins fixes it.
+wrong: The branch that starts with 3 has 1 left to make, and its loop starts at index 0, the 3. That's too big, so the break ends the loop before 1 is tried. The other branches still work.
+
+=== task: predict hard
+title: Starting from start
+prompt: This version passes `start` instead of `i` to the recursive call. What does it print?
+code:
+```python
+def change(coins, amount, start, path, results):
+    if amount == 0:
+        results.append(path[:])
+        return
+    for i in range(start, len(coins)):
+        if coins[i] > amount:
+            break
+        path.append(coins[i])
+        change(coins, amount - coins[i], start, path, results)
+        path.pop()
+
+results = []
+change([1, 2], 3, 0, [], results)
+print(results)
+```
+wrong[[[1, 1, 1], [1, 2]]]: That's what passing `i` gives. With `start`, every call offers every coin again, so the order of coins starts to matter.
+wrong[[[1, 1, 1], [1, 2], [2, 1], [2, 1]]]: Each order is built exactly once: [2, 1] comes from choosing 2, then 1.
+wrong[[[1, 2], [2, 1]]]: Three 1s make 3 too.
+hint: start is always 0 here, so every call can choose a 1 or a 2.
+hint: Choosing 2 first and then 1 is now possible.
+right: `[[1, 1, 1], [1, 2], [2, 1]]`: with every coin always on offer, the search counts orders, so [1, 2] and [2, 1] are both found.
+wrong: Since the next call starts at 0 again, after a 2 it can still choose a 1. That gives [2, 1] as a separate result, as well as [1, 1, 1] and [1, 2].
+
+=== task: cells hard
+title: Ways to make change
+prompt: With coins of 1, 2 and 5, each usable any number of times, and order not mattering, how many ways are there to make each amount?
+labels: 4 | 5 | 10
+answer: 3 | 4 | 10
+wrong[5 | 8 | 10]: Order doesn't matter: 1 + 1 + 2 and 2 + 1 + 1 are the same way. For 4 there are 3: 1+1+1+1, 1+1+2, 2+2.
+wrong[3 | 3 | 10]: 5 can also be one 5 coin: 4 ways.
+wrong[3 | 4 | 8]: For 10, with no 5s: 6 ways (0 to 5 twos); with one 5: 3 ways; with two 5s: 1 way. That's 10.
+hint: Count by the number of the biggest coin used, then the next biggest.
+hint: For 10: how many ways with zero, one and two 5s?
+right: 3, 4 and 10. Counting by the number of 5s, then 2s, is the same as the search: decide the coins in order, any number of each.
+wrong: Fix how many 5s, then how many 2s; the 1s make up the rest. For 10: no 5s gives 6 ways, one 5 gives 3, two 5s give 1.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the combinations search from this lesson. Choose **every** change that gives wrong results.
+* Recursing with `start + 1` instead of `i + 1` :: Right. The next call can offer the item that was added, or one before it, so combinations repeat and items are reused.
+* Recording when `len(path) >= 1` instead of `== k` :: Right. Paths of every size are recorded, and they keep growing past k.
+* In the pruned loop, ending the range at `len(items) - (k - len(path))` without + 1 :: Right. The last useful start is never tried, so combinations are lost.
+- Passing `path + [items[i]]` to the call instead of append and pop :: Each call gets a new list, so nothing needs undoing.
+- Leaving out the pruning bound and looping to `len(items)` :: The extra branches can't complete, so they record nothing; the results are the same, only slower.
+- Looping over the items with indexes from start, but naming the loop variable j :: A different name changes nothing.
+hint: Which changes record the wrong paths, or never reach some of the right ones?
+hint: A bound that's too loose only wastes time; one that's too tight loses answers.
+right: Restarting from `start + 1`, recording the wrong sizes and an off-by-one bound all break the search. A new list per call, a missing bound or a renamed variable don't.
+wrong: The next start must be `i + 1`, a path is recorded only at k items, and a pruning bound must never cut off a branch that can still complete.
+
+=== task: fill hard
+title: In or out, with a size
+prompt: Combinations can also be searched by include or exclude: decide each item in turn, and stop as soon as the path has k items. Prune when the items that are left can't fill the path. Fill in the blanks so that the program prints:
+
+```output
+[[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+```
+code:
+```python
+def pick(items, k, i, path, results):
+    if len(path) == k:
+        results.append(path[:])
+        return
+    if len(items) - i < k - ??:
+        return
+    path.append(items[i])
+    pick(items, k, i + 1, path, results)
+    path.pop()
+    pick(items, k, ??, path, results)
+
+results = []
+pick([1, 2, 3, 4], 2, 0, [], results)
+print(results)
+```
+answer: len(path) | i + 1
+wrong[0 | i + 1]: `len(items) - i < k` ignores the items already in the path, so it prunes branches that only need one more item, and combinations are lost.
+wrong[len(path) | i]: The exclude call must move on to the next item. With `i`, it decides the same item again, forever: a RecursionError.
+hint: The path still needs `k - len(path)` items, and there are `len(items) - i` items left to decide.
+hint: Excluding an item still moves on to the next one.
+right: The prune compares the items left with the items still needed, and both calls move on with `i + 1`. The include call comes first, so the results come out in sorted order.
+wrong: Prune when `len(items) - i < k - len(path)`, and in the exclude branch recurse with `i + 1`.
+
+=== task: parsons hard
+title: Sums of different numbers
+prompt: Arrange the lines so that `distinct_sums` records every way to write n as a sum of **different** positive whole numbers in increasing order, and the program prints:
+
+```output
+[[1, 2, 3], [1, 5], [2, 4], [6]]
+```
+
+Not every line is needed.
+lines:
+```python
+def distinct_sums(n, start, path, results):
+    if n == 0:
+        results.append(path[:])
+        return
+    for x in range(start, n + 1):
+        path.append(x)
+        distinct_sums(n - x, x + 1, path, results)
+        path.pop()
+
+results = []
+distinct_sums(6, 1, [], results)
+print(results)
+```
+distractors:
+```python
+        distinct_sums(n - x, x, path, results)
+    for x in range(start, n):
+```
+hint: The next number must be bigger than the one that was added, so the numbers stay different.
+hint: x can be as big as n itself: the whole of what's left in one number.
+right: Each number is followed only by bigger ones, so every set of different numbers that adds up to 6 is found once: 1+2+3, 1+5, 2+4 and 6.
+wrong: Record when nothing is left. Otherwise, for x from start up to n: append x, recurse on n − x with numbers from x + 1, pop.
