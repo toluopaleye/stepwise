@@ -1,0 +1,1261 @@
+=== lesson
+id: algo-sliding-variable
+title: Variable-size windows
+summary: A variable-size window grows on the right and shrinks on the left, so it can find the longest or shortest run that follows a rule. You'll find the longest stretch without a repeated letter, the shortest run that reaches a target total, the longest run with at most k different values, and count every valid window, each in O(n).
+
+=== learn
+### Grow on the right, shrink on the left
+A variable window answers questions like "what's the longest run that follows a rule?" At each step the right edge takes in one more item, so the window **grows**. If the window now breaks the rule, the left edge drops items until it follows the rule again: the window **shrinks**. Then the window is valid, and its length, `right - left + 1`, is a candidate. For each `right`:
+
+1. Add `items[right]` to the window.
+2. While the window breaks the rule, remove `items[left]` from it and move `left` on.
+3. The window from `left` to `right` now follows the rule: compare its length with the best.
+
+| question | the rule | what the window keeps |
+| --- | --- | --- |
+| longest stretch with no repeated letter | no letter twice | a set of the letters in it |
+| longest run with total at most a limit | total ≤ limit | the total |
+| longest run with at most k different values | at most k keys | a dictionary of counts |
+
+This works when shrinking a window that breaks the rule eventually fixes it, and a valid window stays valid when it shrinks.
+
+### The longest stretch without a repeat
+How long is the longest run of letters in "abcabcbb" with no letter twice? The window keeps its letters in a set. Before a letter enters, the window drops letters from the left until that letter isn't in it any more:
+```python
+def longest_unique(s):
+    seen = set()
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        while s[right] in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(s[right])
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_unique("abcabcbb"), longest_unique("bbbbb"), longest_unique("pwwkew"), longest_unique(""))
+```
+```output
+3 1 3 0
+```
+| right | letter | dropped from the left | window | length |
+| --- | --- | --- | --- | --- |
+| 0 | a | | a | 1 |
+| 1 | b | | ab | 2 |
+| 2 | c | | abc | 3 |
+| 3 | a | a | bca | 3 |
+| 4 | b | b | cab | 3 |
+| 5 | c | c | abc | 3 |
+| 6 | b | a, b | cb | 2 |
+| 7 | b | c, b | b | 1 |
+
+The best is 3. Animation 1 runs this search.
+
+### Jumping the left edge
+Instead of dropping letters one at a time, the window can remember where each letter was **last seen**, in a dictionary. When the entering letter was last seen inside the window, `left` jumps straight past that place:
+```python
+def longest_unique_jump(s):
+    last = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        ch = s[right]
+        if ch in last and last[ch] >= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_unique_jump("abcabcbb"), longest_unique_jump("abba"))
+```
+```output
+3 2
+```
+The test `last[ch] >= left` matters. In "abba", when the last "a" enters, its earlier copy at index 0 is already outside the window, which starts at index 2. Without the test, `left` would jump **back** to 1, and the window "bba" would count, though it repeats b. Both versions are O(n); this one moves `left` in one jump instead of one step at a time.
+
+### The shortest run that reaches a target
+Now the question is the opposite: what's the **shortest** run whose total is at least a target? Every number is 0 or more. Grow the window until the total reaches the target; then, **while** it still does, record its length and shrink it, looking for a shorter run:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total >= target:
+            length = right - left + 1
+            if best is None or length < best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+
+print(shortest_at_least([2, 3, 1, 2, 4, 3], 7), shortest_at_least([1, 4, 4], 4), shortest_at_least([1, 1, 1], 11))
+```
+```output
+2 1 0
+```
+| right | total after adding | windows recorded while total ≥ 7 | best |
+| --- | --- | --- | --- |
+| 0 to 2 | 2, 5, 6 | none | none |
+| 3 | 8 | [2, 3, 1, 2]: 4 | 4 |
+| 4 | 6 + 4 = 10 | [3, 1, 2, 4]: 4, then [1, 2, 4]: 3 | 3 |
+| 5 | 6 + 3 = 9 | [2, 4, 3]: 3, then [4, 3]: 2 | 2 |
+
+The shortest run is [4, 3]. If no run ever reaches the target, best stays None and the function returns 0. Animation 2 runs this search.
+
+### Longest or shortest: where to record
+The two searches differ in one place: **when** the window is measured.
+
+| question | the while loop runs | measure the window |
+| --- | --- | --- |
+| longest valid run | while the window is **invalid** | after the loop, when it's valid again |
+| shortest run that meets a goal | while the window **meets** the goal | inside the loop, before each shrink |
+
+For the longest run, shrinking only happens to fix the window, so it is measured once it's valid. For the shortest, shrinking is how you look for something shorter, so the window is measured at every size while it still meets the goal.
+
+### At most k different values
+How long is the longest run with **at most k different** letters? The window keeps a dictionary of letter counts. When a new letter makes it hold more than k different letters, letters leave from the left, and a letter is deleted when its count drops to 0:
+```python
+def longest_k_distinct(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        counts[s[right]] = counts.get(s[right], 0) + 1
+        while len(counts) > k:
+            old = s[left]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_k_distinct("eceba", 2), longest_k_distinct("aabbcc", 1), longest_k_distinct("aabbcc", 3))
+```
+```output
+3 2 6
+```
+In "eceba" with k = 2, the window "ece" has 2 different letters; when "b" enters, the window drops letters until only 2 kinds are left, "eb". Deleting a letter at 0 keeps `len(counts)` equal to the number of different letters in the window.
+
+### Counting every valid window
+Some questions ask **how many** runs follow the rule. When the window from `left` to `right` is valid, so is every shorter window that ends at `right`, and those are new windows that no earlier step counted. There are `right - left + 1` of them, so add that at every step:
+```python
+def count_under(nums, limit):
+    left = 0
+    total = 0
+    count = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        count += right - left + 1
+    return count
+
+print(count_under([1, 2, 3], 3), count_under([1, 2, 3], 6))
+```
+```output
+4 6
+```
+With limit 3, the runs [1], [2], [1, 2] and [3] fit, but [2, 3] and [1, 2, 3] don't: 4. With limit 6, all 6 runs fit. Listing every run would take O(n²) time; counting them takes O(n).
+
+### Why it's O(n), and when it works
+`right` moves forward n times. `left` only moves forward and can't pass `right + 1`, so in the whole search it moves at most n times, however the moves are spread across the steps. Each move does O(1) work, so a variable window is O(n), even with a `while` loop inside the `for`.
+
+| needs | why | breaks when |
+| --- | --- | --- |
+| shrinking fixes a window that breaks the rule | so the `while` loop ends with a valid window | numbers can be negative: dropping a −3 makes the total bigger |
+| a valid window stays valid when it shrinks | so dropping items from the left never loses an answer | the rule is "total at least 10" for the **longest** run: shrinking can make it fail |
+
+For a "longest" question, the rule must be the kind that a shorter window still follows: no repeats, total at most a limit, at most k kinds.
+
+=== keypoints
+- A variable window grows by one item on the right at each step and shrinks from the left while it breaks the rule; `right - left + 1` is its length.
+- Longest run with no repeated letter: before adding `s[right]`, drop letters from the left while `s[right]` is in the set. Or jump `left` to one past the letter's last position, if that's inside the window.
+- Shortest run with total at least a target: while `total >= target`, record the length, then drop `nums[left]`. Return 0 if nothing reaches the target.
+- Longest: shrink while invalid, then measure. Shortest: measure while valid, then shrink.
+- At most k different values: keep counts in a dictionary, shrink while `len(counts) > k`, and delete a key when its count reaches 0.
+- Counting valid runs: add `right - left + 1` at each step. Every variable window is O(n), because left and right each move at most n times.
+
+=== example: The longest run of different songs
+intro: A playlist repeats some songs. The program finds the longest run of plays in which no song repeats, and prints it.
+```python
+plays = ["Aria", "Blue", "Coda", "Aria", "Dawn", "Echo", "Blue", "Coda"]
+
+seen = set()
+left = 0
+best = 0
+best_start = 0
+for right in range(len(plays)):
+    while plays[right] in seen:
+        seen.remove(plays[left])
+        left += 1
+    seen.add(plays[right])
+    if right - left + 1 > best:
+        best = right - left + 1
+        best_start = left
+
+print(best, plays[best_start:best_start + best])
+```
+1: Eight plays, some songs repeating.
+3-6: An empty window, with nothing best yet.
+7-10: Before a song joins, songs leave from the left until no copy of it is in the window.
+11-14: A longer window replaces the best, and its start is saved.
+16: "Blue, Coda, Aria, Dawn, Echo" is the first run of 5 different songs. Later windows also reach 5, but only a longer one would replace it.
+
+=== example: Saving up
+intro: A student saves different amounts each day and wants to know the fewest days in a row that would cover a 40-dollar ticket. The amounts are never negative, so a variable window can shrink safely.
+```python
+saved = [5, 12, 0, 8, 15, 20, 3, 9, 14]
+target = 40
+
+left = 0
+total = 0
+best = None
+best_left = 0
+for right in range(len(saved)):
+    total += saved[right]
+    while total >= target:
+        if best is None or right - left + 1 < best:
+            best = right - left + 1
+            best_left = left
+        total -= saved[left]
+        left += 1
+
+days = saved[best_left:best_left + best]
+print(best, "days:", days, "total", sum(days))
+```
+1-2: Nine days of savings, and the goal.
+4-7: An empty window; `best_left` remembers where the shortest run starts.
+8-9: Each day joins the window.
+10-15: While the window covers 40, measure it, then drop its first day to look for a shorter run.
+17-18: Days 4 to 6 save 8 + 15 + 20 = 43. No 2 days in a row reach 40: the best pair, 15 + 20, makes 35.
+
+=== animation: The longest stretch without a repeat
+view: array s ptr=left,right window=left:right
+set seen
+vars left right best
+intro: The window keeps its letters in a set. Before each letter enters, letters leave from the left until it isn't in the window any more.
+```python
+def longest_unique(s):
+    seen = set()
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        while s[right] in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(s[right])
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_unique("abcabcbb"))
+```
+1: Defines longest_unique. Nothing runs yet.
+2: The letters in the window.
+3: The window starts at index 0.
+4: No window measured yet.
+5: The right edge moves on to the next letter.
+6: Is "{s[right]}" already in the window? {s[right] in seen}.
+7: Drop "{s[left]}" from the left of the window.
+8: The left edge moves to {left + 1}.
+9: "{s[right]}" joins the window.
+10: The window from {left} to {right} has no repeats: length {right - left + 1}. The best so far is {max(best, right - left + 1)}.
+11: The longest stretch without a repeated letter has {best} letters.
+13: Search "abcabcbb".
+
+=== animation: The shortest run that reaches 7
+view: array nums ptr=left,right window=left:right
+vars target total best left right
+intro: The window grows until its total reaches 7. While it still reaches 7, it's measured and then shrunk from the left, looking for something shorter.
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total >= target:
+            length = right - left + 1
+            if best is None or length < best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+
+print(shortest_at_least([2, 3, 1, 2, 4, 3], 7))
+```
+1: Defines shortest_at_least. Nothing runs yet.
+2: The window starts at index 0.
+3: Nothing in it yet.
+4: No run has reached the target yet.
+5: The right edge moves on to the next item.
+6: {nums[right]} joins the window: {total} + {nums[right]} = {total + nums[right]}.
+7: Does the total, {total}, reach {target}? {total >= target}.
+8: It does: this window has {right - left + 1} items.
+9: Is that shorter than the best so far? {best is None or length < best}.
+10: The new shortest run has {length} items.
+11: Drop {nums[left]} from the left, to look for a shorter run: {total} − {nums[left]} = {total - nums[left]}.
+12: The left edge moves to {left + 1}.
+13: Did any run reach the target? {best is not None}.
+15: The shortest run has {best} items.
+17: Find the shortest run with a total of at least 7.
+
+=== task: predict easy
+title: No repeats
+code:
+```python
+def longest_unique(s):
+    seen = set()
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        while s[right] in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(s[right])
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_unique("abcdd"), longest_unique("aab"), longest_unique("dvdf"))
+```
+wrong[5 2 3]: The second d repeats, so the whole of "abcdd" can't count: the longest run is "abcd".
+wrong[4 1 3]: In "aab", the window "ab" has no repeat: 2.
+wrong[4 2 2]: After the second d the window is "vd", and f makes "vdf": 3.
+hint: Look for the longest stretch of letters in a row with no letter twice.
+hint: In "dvdf", the stretch can't include both d's.
+right: `4 2 3`: "abcd", "ab" and "vdf" are the longest stretches without a repeated letter.
+wrong: "abcdd": "abcd" (4) before the repeat. "aab": "ab" (2). "dvdf": when the second d arrives, the first d leaves, giving "vd" and then "vdf" (3).
+
+=== task: mcq easy
+title: When to measure
+prompt: In the search for the longest run with no repeated letter, when is the window's length compared with the best?
+* After the `while` loop has removed the repeat, when the window is valid :: Right. Only a window with no repeats may count.
+- Before the `while` loop :: The window might still hold a repeat at that moment.
+- Inside the `while` loop, after each removal :: The window can still hold the repeat during the loop.
+- Only once, at the very end :: Then only the last window would be measured.
+hint: Which windows are allowed to count?
+hint: When is the window guaranteed to have no repeats?
+right: After the `while` loop: by then every repeat has been removed, so the window is valid and its length can count.
+wrong: The `while` loop's job is to make the window valid again. Measure after it, never before or during it.
+
+=== task: cells easy
+title: Tracing "abba"
+prompt: `longest_unique("abba")` runs. Fill in the values.
+labels: left after right = 2 | window length after right = 2 | left after right = 3 | the answer
+answer: 2 | 1 | 2 | 2
+wrong[1 | 2 | 1 | 2]: Removing "a" isn't enough: the "b" at index 1 is still in the window, so it leaves too, and left becomes 2.
+wrong[2 | 1 | 3 | 2]: The last "a" isn't in the window "b", so nothing leaves: left stays at 2.
+wrong[2 | 1 | 2 | 3]: No stretch of 3 is free of repeats; "ab" and "ba" have length 2.
+hint: When the second "b" arrives, the window is "ab".
+hint: Letters leave from the left until no "b" is left in the window.
+right: The second b forces both "a" and "b" out (left = 2). The last "a" joins the window "b" without trouble, making "ba". The best is 2.
+wrong: At right = 2, "a" and then "b" leave, so left = 2 and the window is "b". At right = 3, "a" joins: "ba", length 2, the same as "ab" earlier.
+
+=== task: code easy
+title: Write longest_unique
+prompt: Write `longest_unique(s)` that returns the length of the longest run of items in a row, in a string or a list, with no item twice. Keep the window's items in a set; before an item enters, drop items from the left while it's in the set. The speed check uses long lists, so checking every start is too slow.
+starter:
+```python
+def longest_unique(s):
+    seen = set()
+    left = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_unique(s):
+    seen = set()
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        while s[right] in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(s[right])
+        best = max(best, right - left + 1)
+    return best
+```
+tests:
+- longest_unique("abcabcbb")
+- longest_unique("bbbbb")
+- longest_unique("pwwkew")
+- longest_unique("")
+- longest_unique("abcdef")
+- longest_unique(["x", "y", "x"])
+speed: setup=items = list(range(n)) | call=longest_unique(items) | target=O(n)
+slow:
+```python
+def longest_unique(s):
+    best = 0
+    for start in range(len(s)):
+        seen = set()
+        for end in range(start, len(s)):
+            if s[end] in seen:
+                break
+            seen.add(s[end])
+            best = max(best, end - start + 1)
+    return best
+```
+fail[1]: "abc" is the longest stretch without a repeat: 3.
+fail[3]: "wke" has 3 letters with no repeat.
+fail[5]: No letter repeats, so the whole string counts: 6.
+hint: For each right: `while s[right] in seen:` remove `s[left]` from the set and move left on.
+hint: Then add `s[right]` to the set.
+hint: Record `right - left + 1` in best.
+right: Each item enters the set once and leaves it at most once, so the search is O(n). Checking every start is O(n²).
+wrong: Before an item joins, drop items from the left until no copy of it is in the window. Then add it and measure the window.
+
+=== task: fill easy
+title: Reaching the target
+prompt: Fill in the blanks so that `shortest_at_least` finds the shortest run with a total of at least the target, and the program prints:
+
+```output
+2 1
+```
+code:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total ?? target:
+            length = right - left + 1
+            if best is None or length ?? best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+
+print(shortest_at_least([2, 3, 1, 2, 4, 3], 7), shortest_at_least([1, 4, 4], 4))
+```
+answer: >= | <
+wrong[> | <]: `>` skips runs whose total is exactly the target, like [4, 3] = 7 and [4] = 4, so the answers come out longer.
+wrong[>= | >]: `length > best` keeps the **longest** run that reaches the target, not the shortest.
+hint: "At least" includes the target itself.
+hint: A new run replaces the best only if it's shorter.
+right: `total >= target` keeps measuring while the window still reaches the target, and `length < best` keeps the shortest one.
+wrong: Shrink and measure while `total >= target`, and replace best when `length < best`.
+
+=== task: multi easy
+title: True of variable windows
+prompt: Choose **every** true statement about variable-size windows.
+* The right edge moves one place at every step :: Right. Each step takes in one more item.
+* The left edge moves only when the window has to shrink :: Right. It waits until the rule says so.
+* Each edge moves at most n times in the whole search :: Right. That's what makes it O(n).
+- The window always holds the same number of items :: That's a fixed-size window.
+- The left edge can move back to the left :: It only ever moves forward.
+- A `while` inside the `for` makes it O(n²) :: Across the whole search, the `while` loop runs at most n times.
+hint: Which edge moves at every step, and which only sometimes?
+hint: Count the moves of each edge over the whole search.
+right: Right moves every step, left only when needed, and each moves at most n times: about 2n moves, O(n).
+wrong: A variable window changes size: right grows it every step, left shrinks it when the rule is broken. Neither edge ever moves back, so the total work is O(n), even with a `while` inside.
+
+=== task: parsons easy
+title: Count the runs that fit
+prompt: Arrange the lines so that `count_under` counts every run of neighbours with a total of at most `limit`, and the program prints:
+
+```output
+4 0
+```
+
+Not every line is needed.
+lines:
+```python
+def count_under(nums, limit):
+    left = 0
+    total = 0
+    count = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        count += right - left + 1
+    return count
+
+print(count_under([1, 2, 3], 3), count_under([4], 3))
+```
+distractors:
+```python
+        count += right - left
+        while total >= limit:
+```
+hint: Shrink only while the total is over the limit.
+hint: Every run from left, or later, to right fits: there are `right - left + 1` of them.
+right: With limit 3, the runs [1], [2], [1, 2] and [3] fit. [4] alone is already over 3, so nothing fits.
+wrong: Add each item, shrink while the total is over the limit, then add `right - left + 1`: the number of runs that end at right and fit.
+
+=== task: order easy
+title: The shortest run that reaches 6
+prompt: `shortest_at_least([1, 2, 3, 4], 6)` runs. Put the steps in order.
+items:
+- 1, 2 and 3 join: the total reaches 6 with 3 items
+- 1 leaves: the total is 5, too small
+- 4 joins: the total is 9, still with 3 items
+- 2 leaves: [3, 4] totals 7 with 2 items, the new best
+- 3 leaves: the total is 4, too small, and the search ends
+hint: The window first reaches 6 when 3 joins.
+hint: While the total still reaches 6, the window is measured and shrunk.
+right: The first run to reach 6 has 3 items; after 4 joins, shrinking finds [3, 4], with 2 items.
+wrong: [1, 2, 3] reaches 6 (3 items), then 1 leaves (5). 4 joins (9), 2 leaves ([3, 4] = 7, 2 items), 3 leaves (4) and the list is finished.
+
+=== task: predict easy
+title: Short runs
+code:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total >= target:
+            length = right - left + 1
+            if best is None or length < best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+
+print(shortest_at_least([5, 1, 3], 5), shortest_at_least([1, 2, 3], 7))
+```
+wrong[3 0]: [5] on its own already reaches 5: a run of 1.
+wrong[1 3]: 1 + 2 + 3 = 6 never reaches 7, so the function returns 0.
+wrong[1 None]: When best is still None at the end, the function returns 0.
+hint: Does any single item reach the target?
+hint: What does the function return when no run reaches the target?
+right: `1 0`: [5] reaches 5 by itself, and nothing in [1, 2, 3] adds up to 7.
+wrong: 5 reaches 5 on its own, so the shortest run has 1 item. The whole of [1, 2, 3] totals 6, short of 7, so best stays None and the function returns 0.
+
+=== task: mcq easy
+title: When is the answer 0?
+prompt: When does `shortest_at_least` return 0?
+* When no run of items reaches the target :: Right. best stays None, and the function turns that into 0.
+- When the shortest run has a total of exactly the target :: Then it returns that run's length.
+- When the list is sorted :: Order doesn't matter to it.
+- When the first item reaches the target :: Then the answer is 1.
+hint: 0 can't be the length of a real run that reaches a positive target.
+hint: What is best if the while loop never runs?
+right: 0 means "no run at all": the total never reached the target, so best stayed None.
+wrong: The function measures runs only inside the while loop, which needs `total >= target`. If that never happens, best stays None, and the function returns 0.
+
+=== task: code medium
+title: Write shortest_at_least
+prompt: Write `shortest_at_least(nums, target)`: the length of the shortest run of neighbours whose total is at least `target`, or 0 if there's none. Every number is 0 or more. Grow the window, and while it reaches the target, measure it and shrink it. The speed check uses long lists.
+starter:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    # your code here
+    if best is None:
+        return 0
+    return best
+```
+solution:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total >= target:
+            length = right - left + 1
+            if best is None or length < best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+```
+tests:
+- shortest_at_least([2, 3, 1, 2, 4, 3], 7)
+- shortest_at_least([1, 4, 4], 4)
+- shortest_at_least([1, 1, 1], 11)
+- shortest_at_least([5], 5)
+- shortest_at_least([1, 2, 3, 4, 5], 11)
+- shortest_at_least([], 3)
+speed: setup=nums = [1] * n; target = n // 2 | call=shortest_at_least(nums, target) | target=O(n)
+slow:
+```python
+def shortest_at_least(nums, target):
+    best = 0
+    for start in range(len(nums)):
+        total = 0
+        for end in range(start, len(nums)):
+            total += nums[end]
+            if total >= target:
+                if best == 0 or end - start + 1 < best:
+                    best = end - start + 1
+                break
+    return best
+```
+fail[1]: [4, 3] reaches 7 with only 2 items.
+fail[2]: [4] on its own reaches 4.
+fail[3]: Nothing reaches 11: return 0.
+fail[5]: [3, 4, 5] totals 12; no 2 items in a row reach 11.
+hint: Add `nums[right]` to the total at every step.
+hint: `while total >= target:` measure `right - left + 1`, keep the smallest, then subtract `nums[left]` and move left.
+hint: If best is still None at the end, return 0.
+right: Each item joins once and leaves at most once: O(n), where trying every start is O(n²).
+wrong: Grow the window; while it reaches the target, it's a candidate, so measure it, then drop its first item to look for a shorter one. Return 0 if no window ever reached the target.
+
+=== task: code medium
+title: At most k different values
+prompt: Write `longest_k_distinct(s, k)`: the length of the longest run of neighbours, in a string or a list, with at most `k` different values. Keep a dictionary of counts; shrink while it holds more than k keys, deleting a value when its count reaches 0. The speed check uses long lists.
+starter:
+```python
+def longest_k_distinct(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_k_distinct(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        counts[s[right]] = counts.get(s[right], 0) + 1
+        while len(counts) > k:
+            old = s[left]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+```
+tests:
+- longest_k_distinct("eceba", 2)
+- longest_k_distinct("aa", 1)
+- longest_k_distinct("aabbcc", 1)
+- longest_k_distinct("aabbcc", 3)
+- longest_k_distinct("abc", 0)
+- longest_k_distinct([1, 2, 1, 2, 3], 2)
+speed: setup=items = list(range(n)); k = n // 2 | call=longest_k_distinct(items, k) | target=O(n)
+slow:
+```python
+def longest_k_distinct(s, k):
+    best = 0
+    for start in range(len(s)):
+        kinds = set()
+        for end in range(start, len(s)):
+            kinds.add(s[end])
+            if len(kinds) > k:
+                break
+            best = max(best, end - start + 1)
+    return best
+```
+fail[1]: "ece" has two different letters: 3.
+fail[3]: With one kind allowed, the longest run is "aa", "bb" or "cc": 2.
+fail[5]: With 0 kinds allowed, no letter fits: 0.
+fail[6]: [1, 2, 1, 2] has two different values: 4.
+hint: Add 1 to the count of `s[right]`.
+hint: While `len(counts) > k`: take 1 from the count of `s[left]`, delete it at 0, and move left on.
+hint: Record `right - left + 1`.
+right: Each item enters the dictionary once and leaves at most once: O(n). Checking every start would be O(n × k) or worse.
+wrong: Grow the window and count its values. While there are more than k kinds, drop items from the left, deleting a value whose count reaches 0. Each window that's left is valid, so keep the longest.
+
+=== task: predict medium
+title: Jumping too far back
+code:
+```python
+def jump_ok(s):
+    last = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        ch = s[right]
+        if ch in last and last[ch] >= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best
+
+def jump_bug(s):
+    last = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        ch = s[right]
+        if ch in last:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best
+
+print(jump_ok("abba"), jump_bug("abba"))
+```
+wrong[2 2]: Without the `>= left` check, the last "a" sends left back to 1, and the window "bba", which repeats b, is counted: 3.
+wrong[3 3]: `jump_ok` only jumps when the earlier copy is inside the window, so it never counts "bba": 2.
+wrong[2 4]: left jumps back to 1, so the last window is indexes 1 to 3: length 3, not 4.
+hint: When the last "a" arrives, where is the window, and where was the first "a"?
+hint: In `jump_bug`, left can move backwards.
+right: `2 3`: the first "a" at index 0 is already outside the window (which starts at 2). `jump_ok` ignores it; `jump_bug` moves left back to 1 and counts "bba".
+wrong: Both reach left = 2 after the second b. Then "a" arrives: `jump_ok` sees that index 0 is before left and leaves left alone (window "ba", 2), while `jump_bug` sets left to 1 (window "bba", 3).
+
+=== task: cells medium
+title: Tracing "eceba"
+prompt: `longest_k_distinct("eceba", 2)` runs. Fill in the values.
+labels: best after right = 2 | left after right = 3 | different letters after right = 3 | left after right = 4 | the answer
+answer: 3 | 2 | 2 | 3 | 3
+wrong[2 | 2 | 2 | 3 | 3]: "ece" holds only two different letters, e and c, so after right = 2 the best is 3.
+wrong[3 | 1 | 2 | 3 | 3]: After the first "e" leaves, the window "ceb" still has 3 kinds, so "c" leaves too: left = 2.
+wrong[3 | 2 | 3 | 3 | 3]: The loop ends when only 2 kinds are left: "eb".
+hint: When "b" enters, the window "eceb" has 3 kinds of letter.
+hint: Letters leave from the left until only 2 kinds are left.
+right: "ece" gives 3. "b" forces "e" and "c" out (left = 2, window "eb"). "a" forces "e" out (left = 3, window "ba"). The best stays 3.
+wrong: After right = 2 the window "ece" has 2 kinds: best 3. When b enters, the window drops "e" (still 3 kinds) and "c" (2 kinds): left = 2. When a enters, it drops "e": left = 3.
+
+=== task: fill medium
+title: Too many kinds
+prompt: Fill in the blanks so that `longest_k_distinct` shrinks the window only when it holds too many kinds, and deletes a value once none of it is left. The program should print:
+
+```output
+3 2
+```
+code:
+```python
+def longest_k_distinct(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        counts[s[right]] = counts.get(s[right], 0) + 1
+        while len(counts) ?? k:
+            old = s[left]
+            counts[old] -= 1
+            if counts[old] == ??:
+                del counts[old]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_k_distinct("eceba", 2), longest_k_distinct("aabbcc", 1))
+```
+answer: > | 0
+wrong[>= | 0]: `>=` also shrinks a window that has exactly k kinds, so windows with k kinds are never measured: the answers drop to 1 and 0.
+wrong[> | 1]: Deleting at 1 removes a value that's still in the window, so `len(counts)` comes out too small and the window grows past k kinds.
+hint: Exactly k kinds is allowed.
+hint: A value is gone from the window when its count is 0.
+right: Shrink while `len(counts) > k`, and delete a value when its count reaches 0, so the keys are exactly the values in the window.
+wrong: Use `>` so k kinds are allowed, and delete at 0, when none of that value is left.
+
+=== task: mcq medium
+title: Measuring the shortest run
+prompt: In `shortest_at_least`, why is the window measured **inside** the `while` loop, before each shrink?
+* Each size the window passes through while it still reaches the target is a possible answer, and the smallest comes last :: Right. Shrinking is how the search looks for a shorter run.
+- Because the window is invalid inside the loop :: Inside the loop, the window reaches the target: that's the condition of the loop.
+- To save time :: It isn't about speed; measuring after the loop would measure a window that's too small.
+- Because the loop never ends otherwise :: The loop ends once the total drops below the target.
+hint: What's true of the window while the loop runs?
+hint: What's true of it after the loop?
+right: Inside the loop, the window reaches the target, so every length there is a candidate. After the loop, it no longer reaches the target, so it mustn't be counted.
+wrong: The loop runs exactly while the window reaches the target. Measuring there records each valid size; after the loop the window has dropped below the target and doesn't count.
+
+=== task: predict medium
+title: Counting runs
+code:
+```python
+def count_under(nums, limit):
+    left = 0
+    total = 0
+    count = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        count += right - left + 1
+    return count
+
+print(count_under([2, 2, 2], 4), count_under([5], 3))
+```
+wrong[6 0]: [2, 2, 2] totals 6, over 4, so not every run fits: 3 single 2s and 2 pairs make 5.
+wrong[5 1]: 5 alone is over 3, so no run fits: 0.
+wrong[3 0]: Runs of two 2s total 4, which is allowed: they count too.
+hint: List the runs of [2, 2, 2]: three singles, two pairs, one triple.
+hint: Which of them total 4 or less?
+right: `5 0`: the three singles and the two pairs fit, the triple doesn't, and [5] has nothing that fits.
+wrong: At each step, `right - left + 1` runs end at right and fit: 1, then 2, then 2 (after dropping the first 2). That's 5. For [5], the window empties, so 0 runs are added.
+
+=== task: multi medium
+title: Rules for a longest-run window
+prompt: A "longest run" variable window only works if a window that follows the rule still follows it after shrinking. Choose **every** rule that works.
+* No letter appears twice :: Right. Removing letters can't create a repeat.
+* The total is at most a limit, with no negative numbers :: Right. Removing items can only lower the total.
+* At most k different values :: Right. Removing items can't add new kinds.
+- The total is at least a target :: Removing items can make the total too small. That rule fits a "shortest run" search instead.
+- Exactly k different values :: Removing items can drop a kind, leaving fewer than k.
+- The run contains the letter "z" :: Removing the "z" breaks it.
+hint: For each rule: if a window follows it, does every shorter window inside it follow it too?
+hint: "At most" rules usually survive shrinking; "at least" and "exactly" rules don't.
+right: No repeats, a total at most a limit (without negatives) and at most k kinds all survive shrinking. "At least", "exactly" and "contains" rules can break when items leave.
+wrong: Shrinking removes items. Rules about having too much of something (repeats, total, kinds) stay true; rules about having enough of something (a total, k kinds, a "z") can stop being true.
+
+=== task: parsons medium
+title: Jumping the left edge
+prompt: Arrange the lines so that `longest_unique_jump` jumps `left` past the last copy of a letter, but only when that copy is inside the window, and the program prints:
+
+```output
+2 5
+```
+
+Not every line is needed.
+lines:
+```python
+def longest_unique_jump(s):
+    last = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        ch = s[right]
+        if ch in last and last[ch] >= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best
+
+print(longest_unique_jump("abba"), longest_unique_jump("tmmzuxt"))
+```
+distractors:
+```python
+        if ch in last:
+            left = last[ch]
+```
+hint: An earlier copy before left is outside the window and doesn't matter.
+hint: The window must start one place after the earlier copy.
+right: "abba" gives 2 ("ab" or "ba"), and "tmmzuxt" gives 5 ("mzuxt"): its first "t" is outside the window by the time the last "t" arrives.
+wrong: Remember each letter's last index. If the entering letter was last seen at or after left, move left to one past that index. Update the last index, then measure.
+
+=== task: order medium
+title: A jump in "abcb"
+prompt: `longest_unique_jump("abcb")` runs. Put the steps in order.
+items:
+- a, b and c join: the window "abc" has length 3
+- b arrives; it was last seen at index 1, inside the window
+- left jumps to index 2
+- The window "cb" has length 2, and the best stays 3
+hint: The first repeat is the second b.
+hint: left jumps to one past the first b.
+right: The window grows to "abc", the second b makes left jump past the first b, and "cb" is shorter than the best, 3.
+wrong: First "abc" (3). Then b arrives: its last copy, at 1, is inside the window, so left jumps to 2. The window "cb" has length 2.
+
+=== task: code hard
+title: Change up to k letters
+prompt: You may change at most `k` letters of `s`. Write `longest_same(s, k)`: the length of the longest run that you can turn into one repeated letter. A window works if its length minus the count of its most common letter is at most k, because the other letters are the ones you'd change. Grow the window; while it doesn't work, shrink it. `max(counts.values())` gives the count of the most common letter. The speed check uses long strings.
+starter:
+```python
+def longest_same(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def longest_same(s, k):
+    counts = {}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        counts[s[right]] = counts.get(s[right], 0) + 1
+        while (right - left + 1) - max(counts.values()) > k:
+            counts[s[left]] -= 1
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+```
+tests:
+- longest_same("ABAB", 2)
+- longest_same("AABABBA", 1)
+- longest_same("AAAA", 0)
+- longest_same("ABC", 0)
+- longest_same("", 2)
+- longest_same("ABCDE", 1)
+speed: setup=s = "AB" * n; k = n // 2 | call=longest_same(s, k) | target=O(n)
+slow:
+```python
+def longest_same(s, k):
+    best = 0
+    for start in range(len(s)):
+        counts = {}
+        for end in range(start, len(s)):
+            counts[s[end]] = counts.get(s[end], 0) + 1
+            if (end - start + 1) - max(counts.values()) > k:
+                break
+            best = max(best, end - start + 1)
+    return best
+```
+fail[1]: Change both Bs, or both As: all 4 letters match.
+fail[2]: One change turns "AABA" into "AAAA": 4 letters.
+fail[4]: With no changes, every run longer than 1 has two different letters.
+fail[6]: One change makes any 2 letters in a row match.
+hint: Keep the letter counts of the window.
+hint: The window works if `length - max(counts.values()) <= k`.
+hint: While it doesn't, take `s[left]` out of counts and move left on; then record the length.
+right: The letters to change are the ones that aren't the most common letter. With a fixed alphabet, each step is O(1), so the whole search is O(n).
+wrong: For each window, the cheapest plan keeps its most common letter and changes the rest: `length - max count` changes. Shrink while that's more than k, and keep the longest window that works.
+
+=== task: code hard
+title: The shortest run with a, b and c
+prompt: Write `shortest_with_abc(s)`: the length of the shortest run of letters that contains at least one "a", one "b" and one "c", or 0 if there's none. Count the three letters in the window; while all three are there, measure the window and shrink it. The speed check uses long strings.
+starter:
+```python
+def shortest_with_abc(s):
+    counts = {"a": 0, "b": 0, "c": 0}
+    left = 0
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def shortest_with_abc(s):
+    counts = {"a": 0, "b": 0, "c": 0}
+    left = 0
+    best = 0
+    for right in range(len(s)):
+        if s[right] in counts:
+            counts[s[right]] += 1
+        while counts["a"] > 0 and counts["b"] > 0 and counts["c"] > 0:
+            length = right - left + 1
+            if best == 0 or length < best:
+                best = length
+            if s[left] in counts:
+                counts[s[left]] -= 1
+            left += 1
+    return best
+```
+tests:
+- shortest_with_abc("abc")
+- shortest_with_abc("aabcbcdbca")
+- shortest_with_abc("xaybzc")
+- shortest_with_abc("aaa")
+- shortest_with_abc("cxxxbxxxa")
+- shortest_with_abc("ccbbaa")
+speed: setup=s = "a" * n + "b" + "c" | call=shortest_with_abc(s) | target=O(n)
+slow:
+```python
+def shortest_with_abc(s):
+    best = 0
+    for start in range(len(s)):
+        found = set()
+        for end in range(start, len(s)):
+            if s[end] in "abc":
+                found.add(s[end])
+            if len(found) == 3:
+                if best == 0 or end - start + 1 < best:
+                    best = end - start + 1
+                break
+    return best
+```
+fail[2]: "abc" appears right at index 1: 3 letters.
+fail[3]: "aybzc" is the shortest run with an a, a b and a c: 5.
+fail[4]: There's no b or c at all: 0.
+fail[6]: "cbba" has all three; nothing shorter does.
+hint: Count the a's, b's and c's in the window.
+hint: While all three counts are above 0, measure the window, then remove `s[left]` from the counts (if it's an a, b or c) and move left on.
+hint: Return 0 if no window ever contained all three.
+right: A "shortest run" search: measure while the window meets the goal, then shrink. Each letter enters and leaves once: O(n).
+wrong: Grow the window and count a, b and c. While all three are in it, it's a candidate: keep its length if it's the shortest, then drop its first letter and check again.
+
+=== task: code hard
+title: Products below k
+prompt: Every number in `nums` is at least 1. Write `count_product_below(nums, k)`: how many runs of neighbours have a product (all their numbers multiplied together) less than `k`. Keep the window's product: multiply when a number enters, and divide with `//` when one leaves, which is exact. While the product is k or more, shrink; then add `right - left + 1`. If k is 1 or less, no product is small enough: return 0 first.
+starter:
+```python
+def count_product_below(nums, k):
+    if k <= 1:
+        return 0
+    product = 1
+    left = 0
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+def count_product_below(nums, k):
+    if k <= 1:
+        return 0
+    product = 1
+    left = 0
+    count = 0
+    for right in range(len(nums)):
+        product *= nums[right]
+        while product >= k:
+            product //= nums[left]
+            left += 1
+        count += right - left + 1
+    return count
+```
+tests:
+- count_product_below([10, 5, 2, 6], 100)
+- count_product_below([1, 2, 3], 0)
+- count_product_below([1, 1, 1], 2)
+- count_product_below([5], 5)
+- count_product_below([2, 3], 7)
+speed: setup=nums = [1] * n; k = 2 | call=count_product_below(nums, k) | target=O(n)
+slow:
+```python
+def count_product_below(nums, k):
+    count = 0
+    for start in range(len(nums)):
+        product = 1
+        for end in range(start, len(nums)):
+            product *= nums[end]
+            if product >= k:
+                break
+            count += 1
+    return count
+```
+fail[1]: [10], [5], [2], [6], [10, 5], [5, 2], [2, 6] and [5, 2, 6] are below 100: 8 runs.
+fail[3]: Every run of 1s has a product of 1: 6 runs.
+fail[4]: 5 isn't less than 5: 0.
+fail[5]: [2], [3] and [2, 3] (product 6) are below 7.
+hint: Multiply the entering number into product.
+hint: While `product >= k`, divide by `nums[left]` with `//` and move left on.
+hint: Add `right - left + 1`: every shorter run that ends at right is below k too.
+right: Products of numbers that are at least 1 only grow as a window grows, so shrinking works, and counting `right - left + 1` per step counts every run in O(n).
+wrong: Keep the product of the window. Shrink while it's k or more, then every run from left to right (and shorter ones ending at right) is below k: add `right - left + 1`.
+
+=== task: code hard
+title: Exactly k different values
+prompt: Write `count_exactly(nums, k)`: how many runs of neighbours contain exactly k different values. Counting "exactly" directly is awkward, but "at most" isn't. Write `at_most(nums, k)`, which counts the runs with at most k different values (shrink while there are more than k, then add `right - left + 1`). Then exactly k is at_most(k) − at_most(k − 1). The speed check uses long lists.
+starter:
+```python
+def at_most(nums, k):
+    # your code here
+    return 0
+
+def count_exactly(nums, k):
+    return at_most(nums, k) - at_most(nums, k - 1)
+```
+solution:
+```python
+def at_most(nums, k):
+    counts = {}
+    left = 0
+    count = 0
+    for right in range(len(nums)):
+        counts[nums[right]] = counts.get(nums[right], 0) + 1
+        while len(counts) > k:
+            old = nums[left]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+            left += 1
+        count += right - left + 1
+    return count
+
+def count_exactly(nums, k):
+    return at_most(nums, k) - at_most(nums, k - 1)
+```
+tests:
+- count_exactly([1, 2, 1, 2, 3], 2)
+- count_exactly([1, 2, 1, 3, 4], 3)
+- count_exactly([5, 5, 5], 1)
+- count_exactly([1, 2], 3)
+- count_exactly([], 1)
+speed: setup=nums = [0, 1] * n | call=count_exactly(nums, 2) | target=O(n)
+slow:
+```python
+def at_most(nums, k):
+    count = 0
+    for start in range(len(nums)):
+        kinds = set()
+        for end in range(start, len(nums)):
+            kinds.add(nums[end])
+            if len(kinds) > k:
+                break
+            count += 1
+    return count
+
+def count_exactly(nums, k):
+    return at_most(nums, k) - at_most(nums, k - 1)
+```
+fail[1]: Seven runs have exactly two different values, such as [1, 2], [2, 1] and [1, 2, 1, 2].
+fail[2]: [1, 2, 1, 3], [2, 1, 3] and [1, 3, 4] have exactly three.
+fail[3]: All 6 runs of 5s have exactly one value.
+fail[4]: Two values can't make three different ones: 0.
+hint: `at_most` is a counting window: shrink while `len(counts) > k`, then add `right - left + 1`.
+hint: Delete a value from counts when its count reaches 0.
+hint: The runs with exactly k values are the runs with at most k, minus those with at most k − 1.
+right: Two counting windows of O(n) each: O(n) in all. "Exactly" is a difference of two "at most" counts, because "at most" rules survive shrinking and "exactly" rules don't.
+wrong: Write the at-most counter with a dictionary of counts, shrinking while it has more than k keys and adding `right - left + 1` each step. count_exactly then subtracts the two at-most counts.
+
+=== task: predict hard
+title: Negative numbers break it
+code:
+```python
+def shortest_at_least(nums, target):
+    left = 0
+    total = 0
+    best = None
+    for right in range(len(nums)):
+        total += nums[right]
+        while total >= target:
+            length = right - left + 1
+            if best is None or length < best:
+                best = length
+            total -= nums[left]
+            left += 1
+    if best is None:
+        return 0
+    return best
+
+print(shortest_at_least([1, -1, 5, 1], 5))
+```
+wrong[1]: [5] on its own reaches 5, but the window never holds 5 alone. After dropping the 1, the total falls to 4, so shrinking stops, though dropping the −1 next would raise it back to 5.
+wrong[3]: Later, [5, 1] reaches 6 with only 2 items.
+wrong[0]: Some runs do reach 5, such as [1, −1, 5].
+hint: Trace the window when 5 joins: [1, −1, 5].
+hint: After the 1 leaves, is the total still at least 5?
+right: `2`: the true answer is 1, the run [5], but the window misses it. With a −1 in the list, dropping items can make the total go **up**, so "shrink until it's too small" stops too early.
+wrong: [1, −1, 5] reaches 5 (3 items). Dropping the 1 leaves 4, so shrinking stops. When the last 1 joins, [−1, 5, 1] = 5 (3 items), then [5, 1] = 6 (2 items), then [1] = 1. The answer comes out as 2, though [5] alone has length 1.
+
+=== task: predict hard
+title: How many runs fit?
+code:
+```python
+def count_under(nums, limit):
+    left = 0
+    total = 0
+    count = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > limit:
+            total -= nums[left]
+            left += 1
+        count += right - left + 1
+    return count
+
+print(count_under([1, 1, 1, 1], 2), count_under([3, 1, 1], 2))
+```
+wrong[10 3]: Runs of three or four 1s total more than 2, so only the 4 singles and 3 pairs fit: 7.
+wrong[7 5]: 3 is over 2 on its own, so only [1], [1] and [1, 1] fit: 3.
+wrong[4 2]: Pairs of 1s total 2, which is allowed: they count too.
+hint: For [1, 1, 1, 1], list the singles and the pairs.
+hint: The window drops the 3 at once, so nothing that includes it is counted.
+right: `7 3`: four single 1s and three pairs fit the first list; in the second, [1], [1] and [1, 1] fit, and nothing with the 3 does.
+wrong: The first list adds 1, 2, 2 and 2 runs at its four steps: 7. The second adds 0 (the 3 is dropped), then 1, then 2: 3.
+
+=== task: cells hard
+title: Runs added at each step
+prompt: `count_under([1, 2, 3, 4], 5)` runs. Fill in how many runs are added at each step, and the total count.
+labels: added at right = 0 | added at right = 1 | added at right = 2 | added at right = 3 | total count
+answer: 1 | 2 | 2 | 1 | 6
+wrong[1 | 2 | 3 | 1 | 7]: At right = 2 the total is 6, over 5, so the 1 leaves first: the window [2, 3] adds 2 runs.
+wrong[1 | 2 | 2 | 2 | 7]: At right = 3, the 2 and the 3 both leave (9, then 7, then 4), so only [4] remains: 1 run.
+wrong[1 | 2 | 2 | 1 | 4]: The count adds up the runs added at every step: 1 + 2 + 2 + 1 = 6.
+hint: After shrinking, `right - left + 1` runs end at right and fit.
+hint: The runs that fit are [1], [2], [3], [4], [1, 2] and [2, 3].
+right: 1, 2, 2 and 1 runs: [1]; [2] and [1, 2]; [3] and [2, 3]; [4]. Six runs in all.
+wrong: right = 0: [1]. right = 1: [1, 2] fits, so 2 runs. right = 2: drop the 1, [2, 3] fits, 2 runs. right = 3: drop 2 and 3, [4], 1 run. Total 6.
+
+=== task: multi hard
+title: Changes that break longest_unique
+prompt: Each change is made to `longest_unique`. Choose **every** change that gives a wrong answer for some string.
+* Using `if` instead of `while` for the shrinking :: Right. Only one letter leaves, so a repeat can stay: "abcbd" gives 4 instead of 3.
+* Adding `s[right]` to the set before the `while` loop :: Right. Then the new letter is always "in the window", so the loop drops letters until it removes that letter itself, and the window comes out too short.
+* Measuring `right - left + 1` before the `while` loop :: Right. At that moment the window can still hold a repeat.
+- Using `seen.discard(...)` instead of `seen.remove(...)` :: The letter being removed is always in the set, so both do the same.
+- Keeping counts in a dictionary instead of a set, deleting a letter at 0 :: The same window, tracked in another way.
+- Writing `best = max(right - left + 1, best)` :: `max` doesn't care about the order of its arguments.
+hint: Try "abcbd" and "ab" with each change.
+hint: Which changes leave the window exactly the same at every step?
+right: `if` leaves repeats behind, adding first makes the loop chase the new letter, and measuring early counts invalid windows. `discard`, a dictionary of counts, and swapping `max`'s arguments change nothing.
+wrong: The search must remove repeats completely (a `while`), add the new letter only after, and measure only after. The other three changes do the same steps in another way.
+
+=== task: fill hard
+title: Counting runs, again
+prompt: Fill in the blanks so that `count_under` counts every run with a total of at most `limit`, and the program prints:
+
+```output
+4 7
+```
+code:
+```python
+def count_under(nums, limit):
+    left = 0
+    total = 0
+    count = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total ?? limit:
+            total -= nums[left]
+            left += 1
+        count += right - ?? + 1
+    return count
+
+print(count_under([1, 2, 3], 3), count_under([1, 1, 1, 1], 2))
+```
+answer: > | left
+wrong[>= | left]: `>=` throws out runs whose total equals the limit, such as [3] and [1, 2]: 2 and 4.
+wrong[> | 0]: `right - 0 + 1` counts runs that start before the window, which are over the limit: 6 and 10.
+hint: A total equal to the limit is allowed.
+hint: The runs counted at each step start at left or later.
+right: Shrink only while the total is over the limit, then count the `right - left + 1` runs from left (or later) to right.
+wrong: Use `total > limit` for the shrinking, and `right - left + 1` for the number of valid runs that end at right.
+
+=== task: parsons hard
+title: Delete one, then count the 1s
+prompt: `bits` is a list of 0s and 1s, and you **must** delete exactly one item. Arrange the lines so that `longest_after_delete` returns the longest run of 1s you can get: a window with at most one 0 in it, minus the one item you delete. The program should print:
+
+```output
+3 5 2
+```
+
+Not every line is needed.
+lines:
+```python
+def longest_after_delete(bits):
+    left = 0
+    zeros = 0
+    best = 0
+    for right in range(len(bits)):
+        if bits[right] == 0:
+            zeros += 1
+        while zeros > 1:
+            if bits[left] == 0:
+                zeros -= 1
+            left += 1
+        best = max(best, right - left)
+    return best
+
+print(longest_after_delete([1, 1, 0, 1]), longest_after_delete([0, 1, 1, 1, 0, 1, 1, 0, 1]), longest_after_delete([1, 1, 1]))
+```
+distractors:
+```python
+        best = max(best, right - left + 1)
+        while zeros > 0:
+```
+hint: The window may hold one 0: the item you delete.
+hint: Deleting one item makes the run one shorter than the window: `right - left`.
+right: [1, 1, 0, 1] deletes the 0: 3. The long list deletes the 0 between 1, 1, 1 and 1, 1: 5. [1, 1, 1] must still delete a 1: 2.
+wrong: Keep a window with at most one 0 (shrink while there are more), and measure it as `right - left`: its length minus the one item that gets deleted.
