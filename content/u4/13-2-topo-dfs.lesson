@@ -1,0 +1,1320 @@
+=== lesson
+id: algo-topo-dfs
+title: DFS-based topological sort
+summary: The DFS-based sort runs depth-first search along the edges and records each job when its call finishes. A job finishes only after every job that waits for it, so the reversed finishing order is a topological order. Giving each job one of three states, new, active or done, also finds cycles: an edge to an active job closes a loop. You'll write the sort, trace finishing orders and states, find cycles and the jobs on them, sort without recursion, and compare the method with Kahn's algorithm.
+
+=== learn
+### Finishing order
+In the DFS lesson, a vertex **finishes** when its call returns, which happens only after everything it leads to has been explored. Here's DFS on the dinner graph, recording each job as it finishes:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+finished = []
+visit(dinner, "buy", set(), finished)
+print(finished)
+```
+```output
+['serve', 'cook', 'chop', 'buy']
+```
+It's the DFS from the DFS lesson with one change: a job is recorded after its loop, not before. buy calls chop, chop calls cook, and cook calls serve. serve leads nowhere, so its call ends first; then cook's loop is over, then chop's, then buy's.
+
+Every job in this list comes **after** all the jobs that wait for it. That's a topological order, backwards.
+
+### Every job, then reversed
+A search reaches only the jobs that can be reached from where it starts: boil and table are missing. As with connected pieces, start a new search from each job that isn't seen yet, with one `seen` set and one `finished` list for all the searches. Then reverse the list:
+```python
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    finished.reverse()
+    return finished
+
+print(dfs_order(dinner))
+```
+```output
+['table', 'boil', 'buy', 'chop', 'cook', 'serve']
+```
+The search from buy finishes serve, cook, chop and buy. chop is seen by then, so the next search starts at boil: cook is already seen, so boil finishes at once, and table does the same with serve. `finished` ends as serve, cook, chop, buy, boil, table, and reversed, every edge points forward. Animation 1 runs this search.
+
+### Why reversing works
+Take any edge u → v. When u's loop gets to v, there are two cases:
+- v isn't seen yet. Then u calls `visit` for v, and that call returns, so v finishes, before u's loop can end.
+- v is already seen. With no cycles, v's call has already returned. (If it were still running, u's call would be somewhere inside it, so v would lead to u, and the edge u → v would complete a cycle.)
+
+Either way, v finishes before u. So in `finished` every edge points backwards, and in the reversed list every edge points forward.
+
+It has to be the finishing order. The visiting order, the order the calls start, is buy, chop, cook, serve, boil, table here: cook comes before boil, although boil must come before cook. Example 1 shows the same thing with clothes.
+
+### Following the prerequisites instead
+If each job lists its **prerequisites** rather than the jobs that wait for it, every edge is turned round, and so is the finishing order. Each job finishes after everything it needs, so `finished` is a topological order as it stands, with no reversing:
+```python
+needs = {"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"],
+         "table": [], "serve": ["cook", "table"]}
+
+seen = set()
+finished = []
+for u in needs:
+    if u not in seen:
+        visit(needs, u, seen, finished)
+print(finished)
+```
+```output
+['buy', 'chop', 'boil', 'cook', 'table', 'serve']
+```
+That's how a package installer works: to install a package, install what it needs, then the package itself.
+
+### Cycles go unnoticed
+`seen` only says whether a job's call has started. On a graph with a cycle, `dfs_order` still returns an order:
+```python
+loop = {"a": ["b"], "b": ["c"], "c": ["a"], "d": ["a"]}
+print(dfs_order(loop))
+```
+```output
+['d', 'a', 'b', 'c']
+```
+The edge c → a points backwards, and nothing complained. When c's call looked at a, a had been seen but hadn't finished: its call was still waiting, further down the call stack. That's the sign of a cycle, and `seen` can't tell it apart from a job that has finished.
+
+### Three states
+So each job gets one of three states instead:
+
+| state | meaning |
+| --- | --- |
+| `"new"` | not visited yet |
+| `"active"` | its call has started but hasn't returned: it's on the call stack |
+| `"done"` | its call has returned: it's in `finished`, and so is every job it leads to |
+
+They're often called colours: white, grey and black. `explore` marks u active and looks at each job u leads to. It returns False as soon as it meets an active one, skips a done one, and explores a new one, passing False back up if the call below found a cycle. When the loop is over, u is done:
+```python
+def explore(graph, u, state, finished):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not explore(graph, v, state, finished):
+                return False
+    state[u] = "done"
+    finished.append(u)
+    return True
+
+def topo_dfs(graph):
+    state = {v: "new" for v in graph}
+    finished = []
+    for u in graph:
+        if state[u] == "new":
+            if not explore(graph, u, state, finished):
+                return None
+    finished.reverse()
+    return finished
+
+print(topo_dfs(dinner))
+print(topo_dfs(loop))
+```
+```output
+['table', 'boil', 'buy', 'chop', 'cook', 'serve']
+None
+```
+Animation 2 follows `explore` into a cycle.
+
+### Why active means a cycle
+The active jobs are the calls waiting on the call stack: the path the search has followed from where it started to u. If u has an edge to an active job v, then v leads along that path to u, and the edge u → v leads back to v: a cycle. The active jobs from v to u are the cycle itself; Example 2 reports one.
+
+A done job is different. It has finished, along with everything it leads to, so in the reversed list it ends up after u, as it should.
+
+And if there is a cycle, the search always finds such an edge. The first job of the cycle to be visited, call it v, stays active until everything it leads to has been explored, and that includes the rest of the cycle. So the job before v on the cycle is explored while v is still active, and its edge to v is caught.
+
+### O(V + E), and how deep?
+Each job gets one call, and each call goes through its list once: O(V + E), plus O(V) for the reverse. Like any recursive DFS, the calls pile up as deep as the longest path the search follows, and Python stops at about 1,000 nested calls: a chain of 5,000 jobs raises a RecursionError. A stack of your own, as in the iterative DFS lesson, avoids that.
+
+### DFS sort or Kahn's?
+| | Kahn's algorithm | DFS-based sort |
+| --- | --- | --- |
+| keeps track of | each job's count of unfinished prerequisites | each job's state: new, active or done |
+| builds the order | front to back, as jobs become free | back to front, as jobs finish, then reversed |
+| a cycle shows up as | jobs left over when the queue is empty | an edge to an active job |
+| names the jobs on the cycle | not directly: the leftovers include jobs that wait for it | yes: the active jobs from v to u |
+| recursion | none | as deep as the longest path it follows |
+| time | O(V + E) | O(V + E) |
+
+Kahn's algorithm can hand out rounds of jobs that run together, or the alphabetically smallest order, and copes with chains of any length. The DFS sort is short to write once you have DFS, names a cycle when it finds one, and can start from a single job, doing only what that job leads to or needs.
+
+=== keypoints
+- A job finishes when its DFS call returns, after every job it leads to has finished.
+- Search from every job that isn't seen yet, appending each job to `finished` when its call ends. Reversed, `finished` is a topological order.
+- For every edge u → v, v finishes before u: either u's call visits v, or v has already finished. The visiting order doesn't work.
+- If each job lists its prerequisites instead, the finishing order is already a topological order.
+- Three states find cycles: new, active (on the call stack) and done. An edge to an active job closes a cycle; an edge to a done job is fine.
+- O(V + E), like Kahn's algorithm, but the recursion goes as deep as the longest path it follows.
+
+=== example: Getting dressed
+intro: Some clothes have to go on before others. The DFS-based sort finds a dressing order, and the visiting order shows why it has to be the finishing order.
+```python
+before = {
+    "socks": ["shoes"],
+    "pants": ["shoes", "belt"],
+    "shirt": ["belt", "tie"],
+    "belt": ["jacket"],
+    "tie": ["jacket"],
+    "shoes": [],
+    "jacket": [],
+}
+
+def visit(item, seen, visited, finished):
+    seen.add(item)
+    visited.append(item)
+    for later in before[item]:
+        if later not in seen:
+            visit(later, seen, visited, finished)
+    finished.append(item)
+
+seen = set()
+visited = []
+finished = []
+for item in before:
+    if item not in seen:
+        visit(item, seen, visited, finished)
+
+print("visiting order:", ", ".join(visited))
+print("dressing order:", ", ".join(finished[::-1]))
+```
+1-9: Each item lists the items that have to go on after it: socks before shoes, the shirt before the belt and the tie.
+11-17: DFS that records each item twice: when its call starts, and when it finishes.
+19-24: One search from each item that no earlier search has reached.
+26: The visiting order puts the shoes on before the pants: no good.
+27: The reversed finishing order works: every item comes before the items that go on after it. The jacket before the socks is fine, since nothing links them.
+
+=== example: A circular import
+intro: A Python module can import other modules, which have to load first. If the imports go round in a circle, the modules can't load. The three states find the loop.
+```python
+imports = {
+    "main": ["app", "utils"],
+    "app": ["models", "utils"],
+    "models": ["db"],
+    "db": ["config"],
+    "config": ["models"],
+    "utils": [],
+}
+
+state = {m: "new" for m in imports}
+
+def check(m):
+    state[m] = "active"
+    for other in imports[m]:
+        if state[other] == "active":
+            print(m, "imports", other + ", which is still loading")
+            return False
+        if state[other] == "new" and not check(other):
+            return False
+    state[m] = "done"
+    return True
+
+print("ok" if check("main") else "circular import")
+```
+1-8: Each module lists the modules it imports: models imports db, db imports config, and config imports models.
+10: Every module starts new.
+12-21: A module is active while its imports are checked, and done afterwards. An import of an active module leads back along the current chain of imports.
+23: Check everything main needs. The search goes main, app, models, db, config, and config's import of models closes the loop models, db, config.
+
+=== animation: Finishing, then reversing
+view: graph g pos=A:60,40;B:60,160;C:180,100;D:300,40;E:300,160 directed=1 visited=finished current=u vlabel=finished
+callstack u
+vars finished
+intro: Green jobs have finished, and the yellow one is being visited. The call stack shows the calls that are waiting. A job goes into `finished` only when its call ends, after everything it leads to.
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+g = {"A": ["C"], "B": ["C", "E"], "C": ["D", "E"], "D": [], "E": []}
+seen = set()
+finished = []
+for u in g:
+    if u not in seen:
+        visit(g, u, seen, finished)
+finished.reverse()
+```
+1: Defines visit. Nothing runs yet.
+2: Visiting {u}: mark it as seen.
+3: Next job that {u} leads to. When there are none left, {u}'s call is about to end.
+4: {'Has ' + str(v) + ' been seen? ' + ('Yes: skip it.' if v in seen else 'No: visit it.')}
+5: Visit {v}. The call for {u} waits until that call ends.
+6: Everything {u} leads to has finished, so {u} finishes now: add it to finished.
+8: A and B lead to C; B and C lead to E; C leads to D.
+9: Nothing has been seen yet.
+10: The finishing order starts empty.
+11: Go through the jobs in the dictionary's order.
+12: {'Has ' + str(u) + ' been seen? ' + ('Yes: an earlier search reached it.' if u in seen else 'No: start a new search from it.')}
+13: Search from {u}.
+14: Every job is in finished, each one after all the jobs that wait for it. Reversed, it's a topological order.
+
+=== animation: Three states
+view: graph g pos=A:50,50;B:150,50;C:250,50;D:350,50;E:250,150 directed=1 visited=state=done frontier=state=active current=u vlabel=done flabel=active
+callstack u
+vars v finished
+intro: Dashed jobs are active: their calls have started and are still waiting on the call stack. Green jobs are done. An edge to a done job is fine, but E also leads back to B, which is still active: a cycle.
+```python
+def explore(graph, u, state, finished):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not explore(graph, v, state, finished):
+                return False
+    state[u] = "done"
+    finished.append(u)
+    return True
+
+g = {"A": ["B"], "B": ["C"], "C": ["D", "E"], "D": [], "E": ["D", "B"]}
+state = {"A": "new", "B": "new", "C": "new", "D": "new", "E": "new"}
+finished = []
+ok = explore(g, "A", state, finished)
+print(ok, finished)
+```
+1: Defines explore. Nothing runs yet.
+2: Exploring {u}: it's active until its call returns.
+3: Next job that {u} leads to. When there are none left, {u} is finished.
+4: {'Is ' + str(v) + ' active? ' + ('Yes: its call is still waiting on the stack.' if state[v] == 'active' else 'No, it is ' + state[v] + '.')}
+5: {v} leads to {u} along the current path, and {u} leads back to {v}: a cycle. Return False.
+6: {'Is ' + str(v) + ' new? ' + ('Yes: explore it.' if state[v] == 'new' else 'No, it is done: it and everything after it have finished, so skip it.')}
+7: Explore {v}, and stop if that search finds a cycle.
+8: The search below found a cycle: pass False back.
+9: Everything {u} leads to is done, so {u} is done too.
+10: Add {u} to finished.
+11: No cycle below {u}: return True.
+13: A leads to B, B to C, and C to D and E. E leads to D, and back to B.
+14: Every job starts new.
+15: The finishing order starts empty.
+16: Explore from A.
+17: explore returned {ok}: there's a cycle, and only {finished} finished.
+
+=== task: predict easy
+title: When does each job finish?
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
+
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+finished = []
+visit(graph, "A", set(), finished)
+print(finished)
+```
+wrong[['A', 'B', 'D', 'C']]: That's the order the calls start. A job is appended only when its call ends, after everything it leads to.
+wrong[['D', 'C', 'B', 'A']]: B comes first in A's list, so B's search runs first and ends first: D, then B. C comes after.
+wrong[['D', 'B', 'D', 'C', 'A']]: D is seen by the time C looks at it, so C skips it: each job finishes once.
+hint: A calls B, and B calls D. Which of those calls ends first?
+hint: When C looks at D, D is already seen.
+right: `['D', 'B', 'C', 'A']`. D leads nowhere, so it finishes first; then B; then C, whose only job, D, is already seen; and A last, after everything it leads to.
+wrong: A calls B, B calls D: D finishes, then B. Back in A, C is visited; D is seen, so C finishes, and then A.
+
+=== task: mcq easy
+title: Why reverse?
+prompt: `dfs_order` appends each job to `finished` when its call ends, and then reverses the list. Why reverse it?
+* Each job finishes after every job that waits for it, so in `finished` every edge points backwards :: Right. Reversing the list makes every edge point forward.
+- DFS visits the jobs from the last one to the first :: DFS visits along the edges, starting wherever the dictionary starts. It's the finishing that happens back to front.
+- To put the jobs in alphabetical order :: Reversing doesn't sort anything: it only turns the list round.
+- Because the job that finishes first has no prerequisites :: The job that finishes first leads nowhere: nothing has to come after it, so it belongs at the end of the order.
+hint: In the dinner example, which job finished first?
+hint: Where does a job that leads nowhere belong in a topological order?
+right: Jobs finish deepest first: a call returns only after the calls for the jobs it leads to. Reversing puts every job before the jobs that wait for it.
+wrong: `finished` is a topological order backwards: for each edge u → v, v finishes before u. Reversing it turns every edge to point forward.
+
+=== task: cells easy
+title: Finishing order by hand
+prompt: `dfs_order` runs on this graph, starting a search from each job that isn't seen yet, in the dictionary's order. In what order do the four jobs finish, before the list is reversed?
+code:
+```python
+graph = {"P": ["Q"], "Q": ["R"], "S": ["Q"], "R": []}
+```
+labels: 1st | 2nd | 3rd | 4th
+answer: R | Q | P | S
+wrong[P | Q | R | S]: That's the order the calls start. A job finishes only when everything it leads to has finished.
+wrong[R | Q | S | P]: The search from P, going P, Q, R, is over before S's search starts, so P finishes before S.
+wrong[S | P | Q | R]: That's the reversed list, the topological order. The question asks for the finishing order.
+hint: The search from P goes P, Q, R. Which call ends first?
+hint: Q and R are already seen when S's search starts.
+right: R, Q, P and S. P's search finishes R, Q and P; S's search finds Q seen, so S finishes at once. Reversed: S, P, Q, R.
+wrong: Start at P: P calls Q, and Q calls R. R ends, then Q, then P. Then S starts its own search and finishes straight away.
+
+=== task: code easy
+title: The DFS-based sort
+prompt: Write `dfs_order(graph)` that returns a topological order of a graph with no cycles, using a helper `visit(graph, u, seen, finished)` that marks u as seen, visits each job u leads to that isn't seen yet, and then appends u to `finished`. `dfs_order` starts a search from every job that isn't seen yet, in the dictionary's order, and returns `finished` reversed. The speed check uses a graph where one job leads to all the others.
+starter:
+```python
+def visit(graph, u, seen, finished):
+    # your code here
+    pass
+
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    # your code here
+    return finished
+```
+solution:
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    finished.reverse()
+    return finished
+```
+tests:
+- dfs_order({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- dfs_order({"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []})
+- dfs_order({3: [1], 2: [1], 1: []})
+- dfs_order({"x": []})
+- dfs_order({})
+fail[1]: `finished` is serve, cook, chop, buy, boil, table; reversed: ['table', 'boil', 'buy', 'chop', 'cook', 'serve'].
+fail[2]: D, B, C and A finish in that order, so the answer is ['A', 'C', 'B', 'D'].
+fail[3]: 3's search finishes 1 and then 3; then 2 finishes. Reversed: [2, 3, 1].
+fail[4]: One job: ['x'].
+fail[5]: No jobs: [].
+speed: setup=graph = {i: [] for i in range(n)}; graph[0] = list(range(1, n)) | call=dfs_order(graph) | target=O(n)
+slow:
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.insert(0, u)
+
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    return finished
+```
+hint: In `visit`: `seen.add(u)`, then for each v in `graph[u]` that isn't in `seen`, call `visit(graph, v, seen, finished)`. Append u after the loop.
+hint: In `dfs_order`: go through the jobs, call `visit` on each one that isn't seen, then `finished.reverse()`.
+hint: Append, and reverse once at the end. Inserting each job at the front instead would be O(V²) on the speed check's graph.
+right: Each job gets one call and each edge is looked at once, so it's O(V + E), plus O(V) for the reverse.
+wrong: Recursive DFS that appends each job after its loop, started from every job that isn't seen yet; reverse the list at the end.
+
+=== task: fill easy
+title: Spotting a cycle
+prompt: Fill in the blanks so that `has_cycle` uses the three states to report whether a graph has a cycle, and the program prints:
+
+```output
+False True
+```
+code:
+```python
+def cycle_from(graph, u, state):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == ??:
+            return True
+        if state[v] == "new" and cycle_from(graph, v, state):
+            return True
+    state[u] = ??
+    return False
+
+def has_cycle(graph):
+    state = {v: "new" for v in graph}
+    for u in graph:
+        if state[u] == "new" and cycle_from(graph, u, state):
+            return True
+    return False
+
+diamond = {"a": ["b", "c"], "b": ["c"], "c": []}
+ring = {"a": ["b"], "b": ["c"], "c": ["a"]}
+print(has_cycle(diamond), has_cycle(ring))
+```
+answer: "active" | "done"
+wrong["done" | "done"]: An edge to a done job is fine: in the diamond, c is done when a looks at it, so the diamond would get True. And the ring's edge c → a goes to a job that's active, not done, so the ring would get False.
+wrong["active" | "active"]: No job would ever be done. In the diamond, c would still look active when a reaches it, so the diamond would get True as well.
+hint: Which state means a job's call is still waiting on the call stack?
+hint: When u's loop is over, what's u's state?
+right: An edge to an active job leads back along the current path: a cycle. When a job's call ends without finding one, it's done, and edges into it later are harmless.
+wrong: Report a cycle when v is `"active"`, and mark u `"done"` after its loop.
+
+=== task: multi easy
+title: True of the DFS-based sort
+prompt: Choose **every** true statement about the DFS-based topological sort.
+* A job's call ends only after the calls for every job it leads to have ended :: Right. That's why the finishing order runs backwards.
+* With no cycles, reversing the finishing order gives a topological order :: Right. For every edge u → v, v finishes before u.
+* An edge to an active job means there's a cycle :: Right. The active job leads along the current path to the job being explored, and the edge leads back.
+- The visiting order is a topological order too :: In the dinner graph, cook is visited before boil, although boil must come first.
+- An edge to a done job means there's a cycle :: A done job has finished, along with everything after it. Edges into it are normal, as in a diamond.
+- The searches have to start from jobs with no prerequisites :: Any job can start a search: v finishes before u for every edge u → v, wherever the searches start.
+hint: When does a job finish, compared with the jobs it leads to?
+hint: Which state does a job on the current path have?
+right: Calls end deepest first, so the reversed finishing order works from any starting jobs, and an edge back to an active job is the sign of a cycle. The visiting order and edges to done jobs prove nothing.
+wrong: Finishing order reversed is topological, wherever the searches start. Active means a cycle; done is harmless; the visiting order can break edges.
+
+=== task: parsons easy
+title: Install what's needed
+prompt: Each package lists the packages it **needs**. Arrange the lines so that `install_order` returns the order to install `target` in: every package it needs, directly or not, each after the packages it needs, and `target` last. The lists point to prerequisites, so the finishing order is the answer as it stands, with no reversing. The program prints:
+
+```output
+['http', 'json', 'web', 'db', 'app']
+```
+
+Not every line is needed.
+lines:
+```python
+def install(needs, pkg, seen, order):
+    seen.add(pkg)
+    for dep in needs[pkg]:
+        if dep not in seen:
+            install(needs, dep, seen, order)
+    order.append(pkg)
+
+def install_order(needs, target):
+    order = []
+    install(needs, target, set(), order)
+    return order
+```
+distractors:
+```python
+    order.insert(0, pkg)
+        if dep in seen:
+```
+after:
+```python
+needs = {"app": ["web", "db"], "web": ["http", "json"], "db": ["json"],
+         "http": [], "json": [], "tests": ["app"]}
+print(install_order(needs, "app"))
+```
+hint: A package is installed after everything it needs.
+hint: Append the package after its loop, when everything it needs is already in `order`.
+right: Following the needs lists, a package finishes after everything it needs, so the finishing order is an install order as it stands. tests isn't needed by app, so the search never reaches it.
+wrong: DFS from the target along the needs lists, appending each package after its loop; return the list as it is.
+
+=== task: order easy
+title: The DFS-based sort, step by step
+prompt: Put the steps of `topo_dfs` in order.
+items:
+- Give every job the state "new".
+- Take each job in turn, and explore it if it's still new.
+- Exploring a job: mark it active, then explore each new job it leads to, stopping if one is active.
+- When a job's loop is over: mark it done and append it to `finished`.
+- When every job has been explored, reverse `finished`.
+hint: Nothing can be explored until every job has a state.
+hint: Reversing comes last, when every job is in `finished`.
+right: Set every state to new, explore each new job, marking it active on the way in and done on the way out, and reverse the finishing list at the end.
+wrong: Start every job as new, run the search from every new job (active when its call starts, done and appended when it ends), then reverse.
+
+=== task: predict easy
+title: No cycle check
+prompt: This graph has a cycle: y and z each wait for the other. What does `dfs_order` print?
+code:
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    finished.reverse()
+    return finished
+
+graph = {"x": ["y"], "y": ["z"], "z": ["y"]}
+print(dfs_order(graph))
+```
+wrong[None]: `dfs_order` has no cycle check. `seen` only says whether a call has started, so it returns an order anyway.
+wrong[['x', 'z', 'y']]: x calls y, y calls z, and z finds y seen. So z finishes first, then y, then x: reversed, x, y, z.
+wrong[['z', 'y', 'x']]: That's the finishing order. The list is reversed before it's returned.
+hint: Can `dfs_order` ever return None?
+hint: When z looks at y, y is in `seen`.
+right: `['x', 'y', 'z']`. It looks like an order, but the edge z → y points backwards. Only the three states can tell that y was still active.
+wrong: x calls y, y calls z, and z's edge to y is skipped because y is seen. Finished: z, y, x; reversed: x, y, z. No cycle is reported.
+
+=== task: mcq easy
+title: A very long chain
+prompt: A project has 5,000 jobs in one long chain, listed in the dictionary from the first job to the last: each job leads to the next. Recursive `topo_dfs` raises a RecursionError on it. Why?
+* The search goes 5,000 calls deep, and Python stops at about 1,000 nested calls :: Right. Kahn's algorithm, or DFS with a stack of its own, has no such limit.
+- The chain has a cycle :: A chain has no cycle. The error comes from how deep the calls go.
+- O(V + E) is too slow for 5,000 jobs :: 5,000 jobs and 4,999 edges take about 10,000 steps: quick.
+- Reversing a list of 5,000 jobs uses too much memory :: Reversing is O(V) and doesn't recurse at all.
+hint: How many calls are waiting when the last job of the chain is explored?
+hint: What's Python's limit on nested calls?
+right: Every job in the chain is active at once, each call inside the one before, 5,000 deep. That's past Python's limit, although nothing is wrong with the graph.
+wrong: The recursion is as deep as the path the search follows, here 5,000 jobs, and Python allows about 1,000 nested calls.
+
+=== task: code medium
+title: What has to be redone?
+prompt: Each job lists the jobs it **needs**. When a job changes, it has to be redone, and so does every job that needs it, directly or not. Write `rebuild_order(needs, changed)` that returns those jobs, `changed` included, in an order where every job comes after the jobs it needs. First build `unlocks`, the lists the other way round: go through `needs` in order, and for each job v and each job u in `needs[v]`, append v to `unlocks[u]`. Then DFS from `changed` alone along `unlocks`, appending each job when its call ends, and reverse.
+starter:
+```python
+def rebuild_order(needs, changed):
+    unlocks = {v: [] for v in needs}
+    # your code here
+    return []
+```
+solution:
+```python
+def finish_from(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            finish_from(graph, v, seen, finished)
+    finished.append(u)
+
+def rebuild_order(needs, changed):
+    unlocks = {v: [] for v in needs}
+    for v in needs:
+        for u in needs[v]:
+            unlocks[u].append(v)
+    finished = []
+    finish_from(unlocks, changed, set(), finished)
+    finished.reverse()
+    return finished
+```
+tests:
+- rebuild_order({"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"], "table": [], "serve": ["cook", "table"]}, "chop")
+- rebuild_order({"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"], "table": [], "serve": ["cook", "table"]}, "buy")
+- rebuild_order({"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"], "table": [], "serve": ["cook", "table"]}, "serve")
+- rebuild_order({"app": ["api", "cli"], "api": ["util"], "cli": ["util"], "util": [], "docs": []}, "util")
+- rebuild_order({"app": ["api", "cli"], "api": ["util"], "cli": ["util"], "util": [], "docs": []}, "cli")
+fail[1]: cook needs chop, and serve needs cook: ['chop', 'cook', 'serve']. buy, boil and table don't depend on chop.
+fail[2]: Everything on buy's chain: ['buy', 'chop', 'cook', 'serve'].
+fail[3]: Nothing needs serve: ['serve'].
+fail[4]: `unlocks["util"]` is ['api', 'cli'], and both unlock app. The answer is ['util', 'cli', 'api', 'app']; docs is untouched.
+fail[5]: Only app needs cli: ['cli', 'app'].
+hint: For each job v and each u in `needs[v]`: `unlocks[u].append(v)`.
+hint: Write a helper for recursive DFS that appends each job after its loop. Call it on `changed` only, then reverse the list.
+right: The jobs reachable from `changed` along `unlocks` are exactly the ones that depend on it, and the reversed finishing order of that one search puts each after what it needs. Build tools use this to redo only what's affected.
+wrong: Turn the needs lists round into `unlocks`, run a single DFS from `changed`, append each job when its call ends, and reverse the result.
+
+=== task: code medium
+title: Prerequisites first, with a cycle check
+prompt: Each job lists the jobs it **needs**. Write `order_from_needs(needs)` that returns an order to do every job in, or None if the needs go round in a cycle. Use the three states, with DFS along the needs lists from every new job in the dictionary's order. A job is appended when its call ends, after everything it needs, so the finishing order is the answer as it stands.
+starter:
+```python
+def order_from_needs(needs):
+    state = {v: "new" for v in needs}
+    order = []
+    # your code here
+    return order
+```
+solution:
+```python
+def need_first(needs, u, state, order):
+    state[u] = "active"
+    for v in needs[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not need_first(needs, v, state, order):
+                return False
+    state[u] = "done"
+    order.append(u)
+    return True
+
+def order_from_needs(needs):
+    state = {v: "new" for v in needs}
+    order = []
+    for u in needs:
+        if state[u] == "new":
+            if not need_first(needs, u, state, order):
+                return None
+    return order
+```
+tests:
+- order_from_needs({"buy": [], "chop": ["buy"], "boil": [], "cook": ["chop", "boil"], "table": [], "serve": ["cook", "table"]})
+- order_from_needs({"c": ["a", "b"], "b": ["a"], "a": []})
+- order_from_needs({"x": ["y"], "y": ["x"]})
+- order_from_needs({"p": ["p"]})
+- order_from_needs({"a": [], "b": ["a"], "c": ["d"], "d": ["c"]})
+- order_from_needs({})
+fail[1]: Each job comes after what it needs: ['buy', 'chop', 'boil', 'cook', 'table', 'serve'].
+fail[2]: c needs a and b, and b needs a: ['a', 'b', 'c'].
+fail[3]: x and y each need the other: None.
+fail[4]: p needs itself: None.
+fail[5]: a and b are fine, but c and d need each other: None.
+fail[6]: No jobs: [].
+hint: A helper explores u: mark it active; for each job it needs, return False if that job is active, and explore it if it's new; then mark u done and append it.
+hint: Pass False back up as soon as a call below finds a cycle, and return None from `order_from_needs`. Don't reverse.
+right: Following the prerequisites, each job finishes after everything it needs, so the finishing order is already an order to do them in. The three states catch any job that needs itself, directly or not.
+wrong: Three-state DFS along the needs lists from every new job; append each job when it's done; return None if any call meets an active job; no reversing.
+
+=== task: predict medium
+title: Starting from the end
+prompt: This is the dinner graph with its jobs listed in the opposite order. What does `dfs_order` print now?
+code:
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+def dfs_order(graph):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    finished.reverse()
+    return finished
+
+dinner = {"serve": [], "table": ["serve"], "cook": ["serve"],
+          "boil": ["cook"], "chop": ["cook"], "buy": ["chop"]}
+print(dfs_order(dinner))
+```
+wrong[['table', 'boil', 'buy', 'chop', 'cook', 'serve']]: That's the answer with the jobs listed the usual way. Here the first search starts at serve, so every later search finds the jobs after it already finished.
+wrong[['serve', 'table', 'cook', 'boil', 'chop', 'buy']]: That's the finishing order, before it's reversed.
+wrong[['buy', 'boil', 'chop', 'cook', 'table', 'serve']]: Each job finishes in its own search, in the dictionary's order: serve, table, cook, boil, chop, buy. Reversed, chop comes before boil.
+hint: The first search starts at serve. What else does it reach?
+hint: When table's search starts, serve has already finished.
+right: `['buy', 'chop', 'boil', 'cook', 'table', 'serve']`. Every search finds the jobs after it already finished, so each job finishes in its own search, in the dictionary's order. Reversed, that's another valid order: a different listing gives a different answer, equally correct.
+wrong: serve finishes first. table and cook each find serve finished; boil and chop find cook finished; buy finds chop finished. Finished: serve, table, cook, boil, chop, buy; reversed: buy, chop, boil, cook, table, serve.
+
+=== task: cells medium
+title: States at one moment
+prompt: `topo_dfs` runs on this graph. Right before `explore` is called on w, what is each job's state?
+code:
+```python
+graph = {"s": ["t", "u"], "t": ["v"], "u": ["v", "w"], "v": [], "w": []}
+```
+labels: s | t | u | v | w
+answer: active | done | active | done | new
+wrong[active | active | active | done | new]: t's call has returned by now: it explored v, and then it finished.
+wrong[done | done | active | done | new]: s is still waiting for u's call to return, so it's active.
+wrong[active | done | active | active | new]: v leads nowhere, so its call ended right after it started: done.
+hint: The search goes s, t, v. Which of those calls have ended when u's loop gets to w?
+hint: Active means the call has started but hasn't returned.
+right: s and u are active: their calls are waiting on the call stack, the path s → u. t and v are done, and w hasn't been visited yet.
+wrong: s calls t, and t calls v: v is done, then t is done. Back in s, u is explored: v is done, so u moves on to w. Only s and u are on the call stack.
+
+=== task: fill medium
+title: How deep does it go?
+prompt: A call's **depth** is the number of calls on the call stack while it runs, itself included: the first call of a search has depth 1. Fill in the blanks so that `deepest` finds the largest depth reached while the DFS-based sort searches a graph, and the program prints:
+
+```output
+4 2
+```
+code:
+```python
+def deepest_from(graph, u, seen, depth):
+    seen.add(u)
+    best = depth
+    for v in graph[u]:
+        if v not in seen:
+            best = max(best, deepest_from(graph, v, seen, ??))
+    return ??
+
+def deepest(graph):
+    seen = set()
+    best = 0
+    for u in graph:
+        if u not in seen:
+            best = max(best, deepest_from(graph, u, seen, 1))
+    return best
+
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+fan = {"hub": ["a", "b", "c", "d"], "a": [], "b": [], "c": [], "d": []}
+print(deepest(dinner), deepest(fan))
+```
+answer: depth + 1 | best
+wrong[depth | best]: Every call would get the same depth as the one that called it, so each search would report 1.
+wrong[best + 1 | best]: `best` grows as the loop goes, so later jobs would be counted as deeper than they are: the fan's last job would get depth 5.
+hint: A call made from depth d runs at depth d + 1.
+hint: Return the largest depth found in this call or any call below it.
+right: The depth follows the path the search is on: buy, chop, cook, serve is 4 calls deep, while the fan never goes past 2. A long chain means deep recursion, and Python stops at about 1,000.
+wrong: Pass `depth + 1` to each call below, and return `best`, the largest depth seen from here down.
+
+=== task: mcq medium
+title: Why does active mean a cycle?
+prompt: While exploring u, the search finds an edge u → v where v is **active**. Why does that mean the graph has a cycle?
+* v's call is still waiting under u's, so the search got from v to u, and the edge u → v leads back to v :: Right. v leads to u along the current path, and u leads straight back.
+- Because v has been visited twice :: v was visited once; u is only looking at it. That alone is fine when v is done.
+- Because v has no prerequisites left :: That's Kahn's algorithm's count. Here the question is whether v's call is still running.
+- Because every edge into a job that has been visited closes a cycle :: An edge into a done job is normal, as in a diamond.
+hint: Which jobs are active at any moment?
+hint: Is there a path from v to u?
+right: The active jobs are the path from the search's start to u. An active v is on that path, so v reaches u, and u → v closes the loop.
+wrong: Active jobs are on the call stack: the search went from v down to u. With the edge u → v, the route comes back to where it started.
+
+=== task: predict medium
+title: A done job isn't a cycle
+code:
+```python
+def explore(graph, u, state, finished):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not explore(graph, v, state, finished):
+                return False
+    state[u] = "done"
+    finished.append(u)
+    return True
+
+def topo_dfs(graph):
+    state = {v: "new" for v in graph}
+    finished = []
+    for u in graph:
+        if state[u] == "new":
+            if not explore(graph, u, state, finished):
+                return None
+    finished.reverse()
+    return finished
+
+graph = {"p": ["q", "r"], "q": ["s"], "r": ["s", "q"], "s": []}
+print(topo_dfs(graph))
+```
+wrong[None]: When r looks at s and q, both are done, not active: their calls have returned. Edges to done jobs are fine.
+wrong[['p', 'q', 'r', 's']]: That's the order the calls start. The edge r → q means r must come before q.
+wrong[['p', 'q', 's', 'r']]: s and q finish first, then r, then p. Reversed: p, r, q, s.
+hint: When r's loop runs, what are the states of s and q?
+hint: The finishing order is s, q, r, p.
+right: `['p', 'r', 'q', 's']`. Two routes lead to q and s, but no route comes back, so there's no cycle: r finds them done and moves on.
+wrong: p explores q, and q explores s: s and q finish. Then p explores r: s and q are done, so r finishes, and then p. Reversed: p, r, q, s.
+
+=== task: multi medium
+title: Kahn's or DFS?
+prompt: Choose **every** true statement comparing Kahn's algorithm with the DFS-based sort.
+* Both take O(V + E) time :: Right. Each looks at every job and every edge a fixed number of times.
+* The DFS-based sort can name the jobs on a cycle it finds :: Right. They're the active jobs, from the one the edge points to, down to the current one.
+* Kahn's algorithm doesn't recurse, so a chain of 100,000 jobs is no problem for it :: Right. Recursive DFS would go 100,000 calls deep.
+- The DFS-based sort gives the alphabetically smallest order :: Its order depends on how the dictionary and the lists are ordered. Kahn's algorithm with a heap gives the smallest one.
+- Kahn's algorithm builds its order back to front :: Kahn's adds each job when it becomes free, front to back. The DFS-based sort builds back to front and reverses.
+- Only Kahn's algorithm can detect cycles :: The three states detect them too: an edge to an active job.
+hint: How does each one notice a cycle?
+hint: Which one uses recursion?
+right: Same speed, different strengths: Kahn's avoids recursion and can choose among free jobs; the DFS-based sort is short to write with DFS at hand and can point at the cycle.
+wrong: Both are O(V + E) and both detect cycles. Kahn's builds front to back without recursion; the DFS-based sort builds back to front and can name a cycle.
+
+=== task: parsons medium
+title: Is this job on a cycle?
+prompt: A job is on a cycle exactly when following edges from it can lead back to it. Arrange the lines so that `on_cycle` checks this with a DFS that starts along the job's own edges, and the program prints:
+
+```output
+True True False
+```
+
+Not every line is needed.
+lines:
+```python
+def reaches(graph, u, goal, seen):
+    for v in graph[u]:
+        if v == goal:
+            return True
+        if v not in seen:
+            seen.add(v)
+            if reaches(graph, v, goal, seen):
+                return True
+    return False
+
+def on_cycle(graph, job):
+    return reaches(graph, job, job, set())
+```
+distractors:
+```python
+        if v == u:
+        if v in seen:
+```
+after:
+```python
+graph = {"a": ["b"], "b": ["c"], "c": ["a", "d"], "d": []}
+print(on_cycle(graph, "a"), on_cycle(graph, "c"), on_cycle(graph, "d"))
+```
+hint: Search from the job's neighbours, and succeed as soon as an edge leads to the job itself.
+hint: `seen` stops the search going round some other loop forever.
+right: A cycle through the job is a route from the job back to itself, so a DFS that starts along its edges and looks for it answers the question. c is on the same cycle as a; d leads nowhere.
+wrong: `reaches` goes through u's edges: an edge to the goal means True; otherwise it searches on from each unseen neighbour. `on_cycle` asks whether the job reaches itself.
+
+=== task: order medium
+title: Active, then done
+prompt: `topo_dfs` runs on this graph:
+
+```python
+graph = {"A": ["B", "C"], "B": ["C"], "C": [], "D": ["A"]}
+```
+
+Put the state changes in the order they happen.
+items:
+- A becomes active
+- B becomes active
+- C becomes active
+- C becomes done
+- B becomes done
+- A becomes done
+- D becomes active
+- D becomes done
+hint: A explores B first, and B explores C.
+hint: When A's loop gets to C, C is already done.
+right: A, B and C become active, each call inside the one before; C, B and A finish in the opposite order; D's search finds A done and finishes at once. The reversed finishing order is D, A, B, C.
+wrong: The calls start A, B, C and end C, B, A. Then D's search starts, finds that A is done, and ends.
+
+=== task: code hard
+title: The longest chain
+prompt: Write `longest_chain(graph)` that returns the number of jobs on the longest chain of dependencies, a path following the edges, for a graph with no cycles (0 for no jobs). That's the fewest rounds the jobs can be done in. A job's chain is 1 more than the longest chain of the jobs it leads to, or 1 if it leads nowhere. Work it out when the job's DFS call ends, once the answers for the jobs it leads to are known, and store it in a dictionary so that no job is worked out twice. One test is a chain of 600 jobs, and one has so many routes that without the dictionary the work would never end.
+starter:
+```python
+def longest_chain(graph):
+    chain = {}
+    # your code here
+    return 0
+```
+solution:
+```python
+def chain_from(graph, u, chain):
+    best = 0
+    for v in graph[u]:
+        if v not in chain:
+            chain_from(graph, v, chain)
+        best = max(best, chain[v])
+    chain[u] = best + 1
+
+def longest_chain(graph):
+    chain = {}
+    for u in graph:
+        if u not in chain:
+            chain_from(graph, u, chain)
+    best = 0
+    for u in chain:
+        best = max(best, chain[u])
+    return best
+```
+tests:
+- longest_chain({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- longest_chain({"a": ["b", "c"], "b": ["d"], "c": [], "d": []})
+- longest_chain({"x": [], "y": []})
+- longest_chain({})
+- longest_chain({i: ([i + 1] if i < 599 else []) for i in range(600)})
+- longest_chain({i: [j for j in (i + 1, i + 2) if j < 60] for i in range(60)})
+fail[1]: buy, chop, cook, serve: 4.
+fail[2]: a, b, d: 3.
+fail[3]: Two jobs and no edges: each chain is 1 job long.
+fail[4]: No jobs: 0.
+fail[5]: A chain of 600 jobs: 600.
+fail[6]: Each job leads to the next two. Without storing each job's answer, the same jobs are worked out again and again, an astronomical number of times; with it, each is worked out once: 60.
+hint: When a job's call ends, every job it leads to already has its answer in the dictionary.
+hint: Call the helper on v only if v isn't in the dictionary yet; then `chain[u]` is 1 more than the largest `chain[v]`, or 1 if u leads nowhere.
+right: Working each job out when its call ends, from answers already known, takes O(V + E). It's the same number as the rounds of Kahn's batches.
+wrong: DFS from every job not worked out yet; after u's loop, set `chain[u]` to 1 more than the largest answer among the jobs it leads to (or 1). Return the largest answer.
+
+=== task: code hard
+title: Without recursion
+prompt: Write `topo_stack(graph)` that returns the same order as `topo_dfs`, or None if there's a cycle, without recursion, so that long chains work. Keep the three states, and a stack of pairs (u, expanded) as in the iterative DFS lesson. For each job that's still new, in the dictionary's order, push (job, False) and run the loop. Pop a pair. If it's (u, True), everything u leads to has finished: mark u done and append it to `finished`. If it's (u, False) and u isn't new, skip it. Otherwise mark u active, push (u, True), and go through u's list in reverse: return None for an active job, and push each new one as (v, False). Reverse `finished` at the end. One test is a chain of 3,000 jobs.
+starter:
+```python
+def topo_stack(graph):
+    state = {v: "new" for v in graph}
+    finished = []
+    # your code here
+    return finished
+```
+solution:
+```python
+def topo_stack(graph):
+    state = {v: "new" for v in graph}
+    finished = []
+    for start in graph:
+        if state[start] != "new":
+            continue
+        stack = [(start, False)]
+        while stack:
+            u, expanded = stack.pop()
+            if expanded:
+                state[u] = "done"
+                finished.append(u)
+            elif state[u] == "new":
+                state[u] = "active"
+                stack.append((u, True))
+                for v in reversed(graph[u]):
+                    if state[v] == "active":
+                        return None
+                    if state[v] == "new":
+                        stack.append((v, False))
+    finished.reverse()
+    return finished
+```
+tests:
+- topo_stack({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- topo_stack({"m": ["n"], "n": [], "o": ["m", "n"]})
+- topo_stack({"a": ["b"], "b": ["c"], "c": ["a"]})
+- topo_stack({"a": ["a"]})
+- (lambda g: topo_stack(g)[:3])({i: ([i + 1] if i < 2999 else []) for i in range(3000)})
+- topo_stack({i: ([i + 1] if i < 2999 else [0]) for i in range(3000)})
+fail[1]: The same as `topo_dfs`: ['table', 'boil', 'buy', 'chop', 'cook', 'serve'].
+fail[2]: n, m and o finish in that order: ['o', 'm', 'n'].
+fail[3]: A cycle: None.
+fail[4]: a leads to itself: None.
+fail[5]: A chain of 3,000 jobs, too deep for recursion: the order starts [0, 1, 2].
+fail[6]: A ring of 3,000 jobs: the last one leads back to the first, which is still active. None.
+hint: When (u, False) is popped and u is new: mark it active, push (u, True), then go through `reversed(graph[u])`.
+hint: In that loop, return None for an active v, and push (v, False) for a new one. When (u, True) comes off the stack, everything pushed after it has been dealt with.
+right: The (u, True) marker sits under everything u pushes, so it comes off exactly when the recursive call would return, and the active jobs are the ones whose markers are still on the stack: the same states as the recursive version, with no limit on depth.
+wrong: Push (start, False) for each new job. Pop: a marker finishes its job; a new job becomes active, pushes its marker, returns None on an active neighbour and pushes its new neighbours in reverse. Reverse at the end.
+
+=== task: code hard
+title: Name the cycle
+prompt: Write `find_cycle(graph)` that returns the jobs on a cycle, as a list that starts and ends with the same job, or None if there's no cycle. Use the three states, searching from each new job in the dictionary's order and through each job's list in order, and keep `path`, the active jobs in the order they became active: append a job when it becomes active, and remove it when it's done. When the search meets an edge u → v with v active, the cycle is the part of `path` from v to u, followed by v again.
+starter:
+```python
+def find_cycle(graph):
+    state = {v: "new" for v in graph}
+    path = []
+    # your code here
+    return None
+```
+solution:
+```python
+def walk(graph, u, state, path):
+    state[u] = "active"
+    path.append(u)
+    for v in graph[u]:
+        if state[v] == "active":
+            return path[path.index(v):] + [v]
+        if state[v] == "new":
+            found = walk(graph, v, state, path)
+            if found is not None:
+                return found
+    path.pop()
+    state[u] = "done"
+    return None
+
+def find_cycle(graph):
+    state = {v: "new" for v in graph}
+    path = []
+    for u in graph:
+        if state[u] == "new":
+            found = walk(graph, u, state, path)
+            if found is not None:
+                return found
+    return None
+```
+tests:
+- find_cycle({"a": ["b"], "b": ["c"], "c": ["a"], "d": ["a"]})
+- find_cycle({"main": ["app", "utils"], "app": ["models", "utils"], "models": ["db"], "db": ["config"], "config": ["models"], "utils": []})
+- find_cycle({"buy": ["chop"], "chop": ["cook"], "boil": ["cook"], "cook": ["serve"], "table": ["serve"], "serve": []})
+- find_cycle({"x": ["x"]})
+- find_cycle({"a": ["b", "c"], "b": ["d"], "c": ["d"], "d": ["e"], "e": ["c"]})
+- find_cycle({"p": [], "q": ["p"]})
+fail[1]: a, b, c and back to a: ['a', 'b', 'c', 'a'].
+fail[2]: The import loop: ['models', 'db', 'config', 'models']. main and app are on the path too, but they come before models.
+fail[3]: No cycle: None.
+fail[4]: x leads to itself: ['x', 'x'].
+fail[5]: `path` is a, b, d, e, c when c's edge to d is found; the cycle is the part from d: ['d', 'e', 'c', 'd'].
+fail[6]: No cycle: None.
+hint: In the helper: mark u active and append it to `path`; when its loop is over, `path.pop()` and mark it done.
+hint: On an edge to an active v, return `path[path.index(v):] + [v]`. Pass a cycle that's been found back up through every waiting call.
+right: The active jobs, in order, are the path the search followed, so the edge back to one of them closes a loop made of the path from there. Reporting it is far more useful than "impossible": it says which dependency to look at.
+wrong: Keep `path` in step with the active jobs. When an edge reaches an active job v, return the slice of `path` from v, plus v; otherwise pop u from `path` when it's done.
+
+=== task: code hard
+title: Arrows on a grid
+prompt: Each cell of `grid` holds an arrow: `>`, `<`, `^` or `v`. A token on a cell keeps moving one cell the way the arrow it's on points, until it moves off the grid, or forever if it goes round a loop. Write `escapes(grid)` that returns how many cells a token can start on and get off the grid. Each cell has one way out, so from each cell there's a single walk. Use three states, as in this lesson: a cell is unknown, on the current walk, or known, with `result[cell]` True if it escapes. Walk from each unknown cell, keeping the walk's cells in a list, until the walk leaves the grid (all its cells escape), reaches a known cell (all its cells get that cell's result), or reaches a cell on the current walk (it's going round a loop: all its cells are trapped).
+starter:
+```python
+def escapes(grid):
+    rows, cols = len(grid), len(grid[0])
+    step = {">": (0, 1), "<": (0, -1), "^": (-1, 0), "v": (1, 0)}
+    result = {}
+    # your code here
+    return 0
+```
+solution:
+```python
+def escapes(grid):
+    rows, cols = len(grid), len(grid[0])
+    step = {">": (0, 1), "<": (0, -1), "^": (-1, 0), "v": (1, 0)}
+    result = {}
+    for r in range(rows):
+        for c in range(cols):
+            if (r, c) in result:
+                continue
+            walk = []
+            on_walk = set()
+            cell = (r, c)
+            while True:
+                if not (0 <= cell[0] < rows and 0 <= cell[1] < cols):
+                    answer = True
+                    break
+                if cell in result:
+                    answer = result[cell]
+                    break
+                if cell in on_walk:
+                    answer = False
+                    break
+                walk.append(cell)
+                on_walk.add(cell)
+                dr, dc = step[grid[cell[0]][cell[1]]]
+                cell = (cell[0] + dr, cell[1] + dc)
+            for x in walk:
+                result[x] = answer
+    count = 0
+    for x in result:
+        if result[x]:
+            count += 1
+    return count
+```
+tests:
+- escapes([">>>"])
+- escapes(["><"])
+- escapes([">v", "^<"])
+- escapes(["v<>", ">^>"])
+- escapes(["v<>", ">^>", "^<^"])
+- escapes([">" * 50])
+fail[1]: Every token walks right and off the end: 3.
+fail[2]: The two cells point at each other: a loop, so 0.
+fail[3]: The four arrows go round in a square: 0.
+fail[4]: The walk from the top-left cell goes down, right, up, left and back: those 4 cells are trapped. The 2 cells pointing right, off the edge, escape: 2.
+fail[5]: The bottom row's walks run into cells already known: the left two into the loop, the right one into a cell that escapes. 3.
+fail[6]: A row of 50 arrows pointing right: 50.
+hint: Keep `walk` (a list) and `on_walk` (a set) for the current walk, and stop at the first cell that's off the grid, known, or on the walk.
+hint: When the walk stops, give every cell in `walk` the same answer, then count the True answers.
+right: It's the three states again: a cell on the current walk is active, and reaching one means a loop; a known cell is done, so the walk can stop and copy its answer. Each cell is walked once: O(rows × cols).
+wrong: For each unknown cell, follow the arrows, recording the walk, until you leave the grid (True), hit a known cell (its answer), or hit the walk itself (False). Store that answer for the whole walk, and count the True ones.
+
+=== task: predict hard
+title: Where it stopped
+code:
+```python
+def explore(graph, u, state, finished):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not explore(graph, v, state, finished):
+                return False
+    state[u] = "done"
+    finished.append(u)
+    return True
+
+graph = {"a": ["b"], "b": ["c", "d"], "c": [], "d": ["b"], "e": []}
+state = {v: "new" for v in graph}
+finished = []
+print(explore(graph, "a", state, finished))
+print(state)
+print(finished)
+```
+wrong[False\n{'a': 'done', 'b': 'done', 'c': 'done', 'd': 'done', 'e': 'new'}\n['c', 'd', 'b', 'a']]: Each call returns False at once when the call below finds a cycle, so `state[u] = "done"` is never reached for a, b and d.
+wrong[False\n{'a': 'active', 'b': 'active', 'c': 'done', 'd': 'active', 'e': 'done'}\n['c']]: e can't be reached from a, so the search never gets to it: it's still new.
+wrong[True\n{'a': 'done', 'b': 'done', 'c': 'done', 'd': 'done', 'e': 'new'}\n['c', 'd', 'b', 'a']]: d leads back to b, which is active: that's a cycle, so `explore` returns False.
+hint: Follow the calls: a, b, c, then d. What does d find?
+hint: When a call returns False, does it get to `state[u] = "done"`?
+right: `False`, then `{'a': 'active', 'b': 'active', 'c': 'done', 'd': 'active', 'e': 'new'}`, then `['c']`. The search stops where it finds the cycle: a, b and d are left active, the path a → b → d, and only c finished. e was never reached.
+wrong: a, b, c: c is done. Then b explores d, whose edge to b finds b active, so d, b and a each return False at once, staying active. finished holds only c, and e stays new.
+
+=== task: predict hard
+title: A stack of jobs isn't enough
+prompt: Someone tries to get a topological order from a stack: each job is recorded when it's popped, and marked as seen when it's pushed. What does it print?
+code:
+```python
+def stack_order(graph, start):
+    seen = {start}
+    stack = [start]
+    order = []
+    while stack:
+        u = stack.pop()
+        order.append(u)
+        for v in graph[u]:
+            if v not in seen:
+                seen.add(v)
+                stack.append(v)
+    return order
+
+graph = {"a": ["b", "c"], "b": ["c"], "c": []}
+order = stack_order(graph, "a")
+print(order)
+print(all([order.index(u) < order.index(v) for u in graph for v in graph[u]]))
+```
+wrong[['a', 'b', 'c']\nTrue]: b and c are pushed together, so c, on top, is popped first, before b.
+wrong[['a', 'c', 'b']\nTrue]: The edge b → c needs b before c, but c is at index 1 and b at index 2.
+wrong[['a', 'b', 'c', 'c']\nFalse]: c is marked as seen when it's pushed, so b doesn't push it again: each job appears once.
+hint: After a is popped, the stack is [b, c]. Which comes off first?
+hint: Check the edge b → c in the order.
+right: `['a', 'c', 'b']`, then `False`. c is taken as soon as a is done, although b must come before it. A job's place depends on when it **finishes**, which a plain stack of jobs doesn't track; the (job, expanded) markers do.
+wrong: a is popped and pushes b and c. c comes off next, then b, whose edge to c is ignored because c is seen. The order puts c before b, against the edge b → c.
+
+=== task: cells hard
+title: What does each edge find?
+prompt: This version of `explore` doesn't stop at a cycle: it notes the state of v every time it looks at an edge u → v, then carries on as usual. It runs from each new job in the dictionary's order. What state does each edge find?
+code:
+```python
+graph = {"A": ["B", "C"], "B": ["C"], "C": ["A"], "D": ["C"]}
+```
+labels: A → B | B → C | C → A | A → C | D → C
+answer: new | new | active | done | done
+wrong[new | new | active | new | done]: C was explored from B and finished before A's loop got to it: by then it's done.
+wrong[new | new | done | done | done]: A's call is still waiting when C looks at A, so A is active: that edge closes the cycle A, B, C.
+wrong[new | new | active | done | new]: D's search starts after A's has finished, so C is done by then.
+hint: The search from A goes A, B, C. Which calls are still running when C looks at A?
+hint: When A's loop gets to its second edge, has C's call ended?
+right: new, new, active, done and done. Only C → A finds an active job, so it's the one edge that closes a cycle; the edges into done jobs are harmless.
+wrong: A → B: B is new. B → C: new. C → A: A is still active. Back in A, A → C: C is done. D → C: done.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the lesson's `explore` or `topo_dfs`. Choose **every** change that can make `topo_dfs` give a wrong answer: an order with an edge pointing backwards, a missed cycle, or a cycle that isn't there.
+code:
+```python
+def explore(graph, u, state, finished):
+    state[u] = "active"
+    for v in graph[u]:
+        if state[v] == "active":
+            return False
+        if state[v] == "new":
+            if not explore(graph, v, state, finished):
+                return False
+    state[u] = "done"
+    finished.append(u)
+    return True
+
+def topo_dfs(graph):
+    state = {v: "new" for v in graph}
+    finished = []
+    for u in graph:
+        if state[u] == "new":
+            if not explore(graph, u, state, finished):
+                return None
+    finished.reverse()
+    return finished
+```
+* Setting `state[u] = "done"` at the start of `explore`, instead of "active" :: Right. Then no job is ever active, so an edge back along the path looks done, and the cycle is missed.
+* Returning False for an edge to a done job, as well as to an active one :: Right. In a diamond, the second edge into the bottom job finds it done, and a cycle that isn't there is reported.
+* Appending u to `finished` at the start of `explore`, instead of at the end :: Right. `finished` would hold the visiting order, and reversed, a chain like buy, chop, cook, serve comes out backwards.
+* Calling `explore` on a new v without checking what it returns :: Right. A cycle found deeper down is forgotten, and an order comes back as if nothing were wrong.
+- Going through each job's list in reverse :: That only changes which valid order comes out.
+- Going through the jobs in sorted order in `topo_dfs` :: Any order of starting jobs gives a valid order.
+hint: Which changes affect what "active" means, or when a job is recorded?
+hint: Which changes only decide which valid order comes out?
+right: The states, the moment a job is recorded, and passing False back are all essential. The order in which jobs and edges are tried only picks one valid order among several.
+wrong: Active must mean "on the call stack", only active jobs signal a cycle, a job is recorded when its call ends, and a cycle found below must be passed up. Search order doesn't matter.
+
+=== task: fill hard
+title: Shortest routes in a DAG
+prompt: In a graph with no cycles where each edge has a length, going through the vertices in topological order and trying every edge out of each one finds the shortest route from a start to every vertex: when a vertex's turn comes, every route into it has already been tried. Each vertex lists (neighbour, length) pairs, and None means "can't be reached". Fill in the blanks so that the program prints:
+
+```output
+{'s': 0, 'b': 1, 'a': 3, 'c': 4}
+```
+code:
+```python
+def visit(graph, u, seen, finished):
+    seen.add(u)
+    for v, w in graph[u]:
+        if v not in seen:
+            visit(graph, v, seen, finished)
+    finished.append(u)
+
+def shortest_from(graph, start):
+    seen = set()
+    finished = []
+    for u in graph:
+        if u not in seen:
+            visit(graph, u, seen, finished)
+    dist = {v: None for v in graph}
+    dist[start] = 0
+    for u in ??:
+        if dist[u] is None:
+            continue
+        for v, w in graph[u]:
+            if dist[v] is None or dist[u] + w < dist[v]:
+                dist[v] = ??
+    return dist
+
+roads = {"s": [("a", 4), ("b", 1)], "b": [("a", 2), ("c", 5)], "a": [("c", 1)], "c": []}
+print(shortest_from(roads, "s"))
+```
+answer: reversed(finished) | dist[u] + w
+wrong[finished | dist[u] + w]: In finishing order, s comes last, so every other vertex has its turn before any distance is known. Only a and b get distances, straight from s's edges.
+wrong[reversed(finished) | w]: That stores the length of the last edge only, not of the whole route from s.
+hint: The vertices have to be taken in topological order: the finishing order, reversed.
+hint: A route to v through u is as long as the route to u plus the edge from u to v.
+right: In topological order, every edge into a vertex comes from a vertex that has already had its turn, so its distance is final before its own edges are tried. That's O(V + E). The next lesson's Dijkstra's algorithm handles graphs with cycles.
+wrong: Loop over `reversed(finished)`, and when an edge u → v gives a shorter route, set `dist[v] = dist[u] + w`.
+
+=== task: parsons hard
+title: Earliest and latest place
+prompt: In every topological order, a job comes after all the jobs it needs, directly or not, and before all the jobs that need it. So its earliest possible place, counting from 0, is the number of jobs that must come before it, and its latest is n − 1 minus the number that must come after it; there are orders that put it in each of those places. Arrange the lines so that `places` returns each job's (earliest, latest), and the program prints:
+
+```output
+buy (0, 2)
+chop (1, 3)
+boil (0, 3)
+cook (3, 4)
+table (0, 4)
+serve (5, 5)
+```
+
+Not every line is needed.
+lines:
+```python
+def count_from(graph, u, seen):
+    for v in graph[u]:
+        if v not in seen:
+            seen.add(v)
+            count_from(graph, v, seen)
+    return len(seen)
+
+def places(graph):
+    needs = {v: [] for v in graph}
+    for u in graph:
+        for v in graph[u]:
+            needs[v].append(u)
+    n = len(graph)
+    result = {}
+    for v in graph:
+        before = count_from(needs, v, set())
+        after = count_from(graph, v, set())
+        result[v] = (before, n - 1 - after)
+    return result
+```
+distractors:
+```python
+        result[v] = (before, n - after)
+        after = count_from(needs, v, set())
+```
+after:
+```python
+dinner = {"buy": ["chop"], "chop": ["cook"], "boil": ["cook"],
+          "cook": ["serve"], "table": ["serve"], "serve": []}
+result = places(dinner)
+for job in result:
+    print(job, result[job])
+```
+hint: The jobs that must come before v are the ones v reaches along the needs lists; the jobs that must come after it, the ones it reaches along the graph.
+hint: `count_from` returns how many jobs it reached, not counting the job it started from.
+right: Two DFS counts per job: along the needs lists for the jobs that must come first, along the graph for those that must come after. serve has to be last; buy can be anywhere from first to third.
+wrong: Build the needs lists, then for each job count what it reaches in each direction: earliest = jobs before it, latest = n − 1 − jobs after it.

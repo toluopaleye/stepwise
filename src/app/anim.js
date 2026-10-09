@@ -516,6 +516,13 @@
     names.forEach((n, i) => { if (!pos[n]) { const a = (2 * Math.PI * i) / names.length; pos[n] = [160 + 120 * Math.cos(a), 130 + 100 * Math.sin(a)]; } });
     const setOf = (v) => {
       if (!v) return new Set();
+      // name=value picks the keys of dict `name` whose value is `value`, e.g. visited=state=done
+      if (v.includes('=')) {
+        const [dn, want] = v.split('=');
+        const dr = lookup(frame, dn);
+        if (!dr.found || !dr.v || !dr.v.$d) return new Set();
+        return new Set(dr.v.$d.filter(([, x]) => (typeof x === 'string' ? x : vrepr(x)) === want).map(([k]) => keyStr(k)));
+      }
       const r2 = lookup(frame, v);
       if (!r2.found) return new Set();
       let items = seq(r2.v);

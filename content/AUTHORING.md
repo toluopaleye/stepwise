@@ -328,7 +328,7 @@ Views (`view:` lines; you can stack several views, one per line):
 | `linked head` | linked list of objects with `.val`/`.next` | `ptr=cur,prev` |
 | `tree root` | binary tree of objects with `.val/.left/.right` | `ptr=node`, `visited=order_list`; `kids=children` draws an n-ary tree whose nodes keep a list of children |
 | `heap h` | list drawn as a binary heap + array | `ptr=i` |
-| `graph g` | dict of adjacency lists (or (nbr, weight) tuples) | `pos=A:60,40;B:160,40` (x,y), `visited=var`, `frontier=var`, `current=var`, `dist=var`, `directed=1`, `vlabel=`/`flabel=` rename the legend (underscores become spaces) |
+| `graph g` | dict of adjacency lists (or (nbr, weight) tuples) | `pos=A:60,40;B:160,40` (x,y), `visited=var`, `frontier=var`, `current=var`, `dist=var`, `directed=1`, `vlabel=`/`flabel=` rename the legend (underscores become spaces); `visited=state=done` takes the keys of dict `state` whose value is `"done"` |
 | `callstack` | the stack of function calls with their variables | `callstack v w` shows only those variables in each call |
 | `steps count` | a big step counter | `label=steps_so_far` (underscores become spaces) |
 | `chart` | growth curves (no code; frames are values of n) | `fns=1,log2(n),n,n*log2(n),n**2 labels=O(1),O(log_n),... n=1..64 scale=log` (no spaces inside options: write `_` for a space in labels) |
