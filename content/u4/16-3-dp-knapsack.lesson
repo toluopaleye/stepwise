@@ -1,0 +1,1047 @@
+=== lesson
+id: algo-dp-knapsack
+title: The knapsack problem
+summary: A bag holds at most W kilograms, and each item has a weight and a value. Which items should go in, to carry as much value as possible? Each item is taken whole or left behind, so this is the 0/1 knapsack problem. Its table has a row for each item and a column for each capacity, and each box decides whether the item is worth taking. You'll fill the table, read back which items were chosen, shrink it to one row updated from right to left, and see why taking the best value per kilogram first can fail.
+
+=== learn
+### Take it or leave it
+A bag can carry 7 kg. These items are available, and each one either goes in whole or stays behind:
+
+| item | weight | value |
+| --- | --- | --- |
+| 0 | 1 kg | 1 |
+| 1 | 3 kg | 4 |
+| 2 | 4 kg | 5 |
+| 3 | 5 kg | 7 |
+
+Item 3 has the best value per kilogram, 1.4, and the most value. Taking it first leaves 2 kg, room only for item 0: 7 + 1 = 8. But items 1 and 2 together weigh exactly 7 kg and are worth 9. Choosing by a simple rule can miss the best set, and trying every set of n items means 2ⁿ sets. A table does better.
+
+### A row per item, a column per capacity
+Let `best[i][w]` be the most value from the first i items with a bag that holds w kilograms. Row 0, with no items, is all 0. For item i − 1, the last of the first i items, there are two choices:
+- **Leave it**: the most from the first i − 1 items with the same capacity, `best[i - 1][w]`.
+- **Take it**, if its weight fits: its value, plus the most from the first i − 1 items in the room that's left, `best[i - 1][w - weight]`.
+```python
+weights = [1, 3, 4, 5]
+values = [1, 4, 5, 7]
+W = 7
+n = len(weights)
+best = [[0] * (W + 1) for _ in range(n + 1)]
+for i in range(1, n + 1):
+    wt, val = weights[i - 1], values[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+            best[i][w] = best[i - 1][w - wt] + val
+for row in best:
+    print(row)
+```
+```output
+[0, 0, 0, 0, 0, 0, 0, 0]
+[0, 1, 1, 1, 1, 1, 1, 1]
+[0, 1, 1, 4, 5, 5, 5, 5]
+[0, 1, 1, 4, 5, 6, 6, 9]
+[0, 1, 1, 4, 5, 7, 8, 9]
+```
+The answer is the bottom-right box: 9. Every other box answers a smaller question: with only the first two items and a 4 kg bag, the best is 5 (items 0 and 1). Animation 1 fills a table like this one.
+
+### Why the row above
+Taking item i − 1 reads `best[i - 1][w - wt]`, from the row **above**, where only the earlier items are available. That's what makes each item usable at most once: the room left over is filled without it.
+
+If the formula read the same row instead, `best[i][w - wt]`, the leftover room could hold item i − 1 again. That solves a different problem, where every item can be taken as many times as you like: the **unbounded** knapsack. Example 2 solves that one.
+
+### Which items?
+The table holds the best values, but the choices can be read back. Start at the bottom-right box. If `best[i][w]` equals `best[i - 1][w]`, item i − 1 wasn't needed: move up a row. If not, it was taken: note it, and subtract its weight from w before moving up.
+```python
+chosen = []
+w = W
+for i in range(n, 0, -1):
+    if best[i][w] != best[i - 1][w]:
+        chosen.append(i - 1)
+        w -= weights[i - 1]
+chosen.reverse()
+print(chosen, sum(values[i] for i in chosen), sum(weights[i] for i in chosen))
+```
+```output
+[1, 2] 9 7
+```
+
+### One row, right to left
+Each row reads only the row above, so one row is enough if it's updated in place, item by item. The update must go from **right to left**: then `best[w - wt]`, to the left of w, still holds the value from before this item, exactly what the formula needs.
+```python
+best = [0] * (W + 1)
+for wt, val in zip(weights, values):
+    for w in range(W, wt - 1, -1):
+        best[w] = max(best[w], best[w - wt] + val)
+print(best)
+```
+```output
+[0, 1, 1, 4, 5, 7, 8, 9]
+```
+The row ends up equal to the last row of the full table. Going from left to right instead would let an item be counted again: when `best[w]` reads `best[w - wt]`, that box might already include the item. Animation 2 shows the right-to-left updates. Reading the chosen items back needs the full table, though.
+
+### How much work?
+The table has (n + 1) × (W + 1) boxes, each filled in O(1): **O(n × W)** time, and O(W) memory with one row. That's fast when W is small, but it grows with the size of the number W, not the number of items: a bag measured in grams, holding 20,000,000 g, would need a row of twenty million boxes. Running time like this, polynomial in the numbers' values rather than in the length of the input, is called **pseudo-polynomial**.
+
+### Value per kilogram
+If items could be cut, taking the best value per kilogram first would be perfect: fill the bag with the best material, then the next best, and cut the last piece to fit. That's the **fractional** knapsack, which the greedy algorithms lesson solves. With whole items, the leftover space can be wasted, which is why the 0/1 knapsack needs the table.
+
+=== keypoints
+- 0/1 knapsack: each item is taken whole or left; maximise the value within a weight limit W.
+- `best[i][w]` is the most value from the first i items with capacity w: the larger of leaving item i − 1 (`best[i - 1][w]`) and taking it, if it fits (`best[i - 1][w - weight] + value`).
+- Reading the row above is what stops an item being taken twice; reading the same row gives the unbounded knapsack.
+- Read the items back from the bottom-right: where a box differs from the box above, that item was taken; subtract its weight.
+- One row works if updated from right to left. O(n × W) time: pseudo-polynomial.
+- Taking the best value per kilogram first can fail for whole items; it's right only when items can be cut.
+
+=== example: Packing for a hike
+intro: A backpack holds 10 kg. Each piece of kit has a weight and a "usefulness" score. The table picks the most useful set that fits, and reads it back.
+```python
+kit = [("tent", 5, 10), ("stove", 3, 6), ("camera", 2, 7),
+       ("book", 1, 2), ("first aid", 1, 8), ("chair", 4, 5)]
+W = 10
+n = len(kit)
+
+best = [[0] * (W + 1) for _ in range(n + 1)]
+for i in range(1, n + 1):
+    name, wt, val = kit[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w:
+            best[i][w] = max(best[i][w], best[i - 1][w - wt] + val)
+
+w = W
+packed = []
+for i in range(n, 0, -1):
+    if best[i][w] != best[i - 1][w]:
+        name, wt, val = kit[i - 1]
+        packed.append(name)
+        w -= wt
+packed.reverse()
+print("packed:", ", ".join(packed))
+print("usefulness:", best[n][W], "| weight:", W - w, "kg")
+```
+1-4: Six pieces of kit as (name, weight, usefulness), and a 10 kg limit.
+6-12: The knapsack table, one row per piece of kit.
+14-21: Walk back from the bottom-right box: a box that differs from the one above means that piece was packed.
+22-23: The tent, the camera, the book and the first aid kit: 27 points in 9 kg. The stove and the chair don't make the cut.
+
+=== example: As many as you like
+intro: A van holds 10 units of space, and boxes come in three sizes, with as many of each as you want. When items can be reused, the one-row table runs from left to right, so that a box can be added again on top of itself.
+```python
+sizes = [3, 4, 5]
+profits = [4, 5, 7]
+space = 10
+
+best = [0] * (space + 1)
+for s, p in zip(sizes, profits):
+    for w in range(s, space + 1):
+        best[w] = max(best[w], best[w - s] + p)
+print(best)
+print("most profit:", best[space])
+```
+1-3: Three box sizes, the profit of each, and the van's space.
+5-8: Left to right: when `best[w]` reads `best[w - s]`, that box may already include boxes of size s, so a box can be used any number of times.
+9-10: Two boxes of size 5 make 14. If each size could be used only once, the best would be one box of size 4 and one of size 5, for 12.
+
+=== animation: Filling the knapsack table
+view: grid best row=i col=w rows=none,1kg,3kg,4kg
+vars i w wt val
+intro: Rows are the items considered so far, columns the capacity. Each box keeps the value from the box above (leave the item), or takes the item if it fits and the box above-left, w − weight columns back, plus its value is better.
+```python
+weights = [1, 3, 4]
+values = [15, 20, 30]
+W = 4
+best = [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
+for i in range(1, 4):
+    wt, val = weights[i - 1], values[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+            best[i][w] = best[i - 1][w - wt] + val
+print(best[3][W])
+```
+1: The items weigh 1, 3 and 4 kg.
+2: They're worth 15, 20 and 30.
+3: The bag holds 4 kg.
+4: Row 0 means no items: all 0. The other rows are filled one at a time.
+5: Next item.
+6: Item {i - 1} weighs {weights[i - 1]} kg and is worth {values[i - 1]}.
+7: Go through the capacities 0 to 4.
+8: Leave the item: copy the box above, {best[i - 1][w]}.
+9: {("It weighs more than " + str(w) + " kg: it can't be taken.") if wt > w else ('Take it: ' + str(val) + ' + best[' + str(i - 1) + '][' + str(w - wt) + '] = ' + str(val + best[i - 1][w - wt]) + (', better than ' + str(best[i][w]) + '.' if best[i - 1][w - wt] + val > best[i][w] else ', not better than ' + str(best[i][w]) + '.'))}
+10: Taking it wins: {best[i - 1][w - wt] + val}.
+11: The most value in a 4 kg bag: {best[3][W]}.
+
+=== animation: One row, right to left
+view: array best ptr=w,w-wt
+vars wt val w
+intro: One row replaces the whole table. Each item updates it from right to left, so the box it reads, w − weight to the left, still holds the value from before this item.
+```python
+weights = [1, 3, 4]
+values = [15, 20, 30]
+W = 4
+best = [0, 0, 0, 0, 0]
+for wt, val in zip(weights, values):
+    for w in range(W, wt - 1, -1):
+        best[w] = max(best[w], best[w - wt] + val)
+print(best)
+```
+1: The same items.
+2: Their values.
+3: The same 4 kg bag.
+4: One row for capacities 0 to 4, starting with no items.
+5: Take the next item.
+6: This item weighs {wt} kg and is worth {val}. Go through the capacities from 4 down to {wt}; smaller ones can't hold it.
+7: best[{w}] = max(keep {best[w]}, take {val} + best[{w - wt}] = {val + best[w - wt]}) = {max(best[w], best[w - wt] + val)}.
+8: The row now matches the last row of the full table.
+
+=== task: predict easy
+title: Two items, a 5 kg bag
+prompt: The lesson's knapsack table runs with two items. What does it print?
+code:
+```python
+weights = [2, 3]
+values = [3, 4]
+W = 5
+best = [[0] * (W + 1) for _ in range(3)]
+for i in range(1, 3):
+    wt, val = weights[i - 1], values[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+            best[i][w] = best[i - 1][w - wt] + val
+print(best[1])
+print(best[2])
+```
+wrong[[0, 0, 3, 3, 3, 3]\n[0, 0, 3, 4, 4, 4]]: With 5 kg, both items fit together: 3 + 4 = 7.
+wrong[[0, 3, 3, 3, 3, 3]\n[0, 3, 3, 4, 7, 7]]: The 2 kg item doesn't fit a 1 kg bag: best[1][1] is 0.
+wrong[[0, 0, 3, 3, 6, 6]\n[0, 0, 3, 4, 6, 7]]: Each item can be taken only once: with only the first item, the best is 3, however big the bag.
+hint: Row 1: the 2 kg item, worth 3, fits from capacity 2 on.
+hint: Row 2: take the 3 kg item when best[1][w − 3] + 4 beats best[1][w].
+right: `[0, 0, 3, 3, 3, 3]` and `[0, 0, 3, 4, 4, 7]`. At capacity 5 both items fit: 7.
+wrong: Row 1 is 3 from capacity 2. Row 2: capacity 3 takes the second item (4), capacity 4 too, and capacity 5 adds it to best[1][2] = 3: 7.
+
+=== task: mcq easy
+title: The row above
+prompt: Taking item i − 1 in box (i, w) reads `best[i - 1][w - wt]`, from the row above. Why that row?
+* It holds the best from the earlier items only, so the leftover room is filled without item i − 1, which is then used at most once :: Right. Reading the same row could put the item in again.
+- Because the row above is always larger :: The row above can't be larger: each row can only add choices.
+- Because the current row isn't filled yet :: Part of it is: the boxes to the left are filled. Using them would allow the item twice.
+- To skip the item :: Skipping reads `best[i - 1][w]`; the take option reads the row above at w − wt.
+hint: Which items are available in row i − 1?
+hint: What would `best[i][w - wt]` already include?
+right: The row above knows nothing of item i − 1, so adding its value once gives a set that uses it exactly once. That's the 0/1 rule.
+wrong: The leftover room must be filled from earlier items only, which is what the row above holds.
+
+=== task: cells easy
+title: The table by hand
+prompt: Fill in these boxes of the knapsack table for weights [1, 2, 3] and values [6, 10, 12] with capacities up to 5. Box (i, w) is the most value from the first i items with capacity w.
+code:
+```python
+weights = [1, 2, 3]
+values = [6, 10, 12]
+# row 1 (first item only): [0, 6, 6, 6, 6, 6]
+```
+labels: best[2][3] | best[3][4] | best[3][5]
+answer: 16 | 18 | 22
+wrong[10 | 18 | 22]: With capacity 3, the first two items fit together: 6 + 10 = 16.
+wrong[16 | 16 | 22]: With capacity 4, the 1 kg and 3 kg items fit: 6 + 12 = 18.
+wrong[16 | 18 | 28]: Capacity 5 can't hold all three items (6 kg): the best is 10 + 12 = 22.
+hint: Row 2 is [0, 6, 10, 16, 16, 16].
+hint: Row 3, capacity 5: take the 3 kg item, 12, plus best[2][2] = 10.
+right: 16, 18 and 22. The best for 5 kg uses the second and third items.
+wrong: Row 2: [0, 6, 10, 16, 16, 16]. Row 3: capacity 4 = max(16, 12 + best[2][1] = 18); capacity 5 = max(16, 12 + best[2][2] = 22).
+
+=== task: code easy
+title: The knapsack table
+prompt: Write `knapsack(weights, values, W)` that returns the most value that fits in a bag of capacity W, each item taken whole or left. Use the lesson's table: row 0 is all 0, and box (i, w) is the larger of leaving item i − 1, `best[i - 1][w]`, and taking it if it fits, `best[i - 1][w - wt] + val`. The speed check uses many items and a 50 kg bag: trying every set of items would never finish.
+starter:
+```python
+def knapsack(weights, values, W):
+    n = len(weights)
+    best = [[0] * (W + 1) for _ in range(n + 1)]
+    # your code here
+    return best[n][W]
+```
+solution:
+```python
+def knapsack(weights, values, W):
+    n = len(weights)
+    best = [[0] * (W + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        wt, val = weights[i - 1], values[i - 1]
+        for w in range(W + 1):
+            best[i][w] = best[i - 1][w]
+            if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+                best[i][w] = best[i - 1][w - wt] + val
+    return best[n][W]
+```
+tests:
+- knapsack([1, 3, 4, 5], [1, 4, 5, 7], 7)
+- knapsack([1, 2, 3], [6, 10, 12], 5)
+- knapsack([5], [10], 4)
+- knapsack([], [], 10)
+- knapsack([4, 3, 2, 1], [10, 4, 3, 2], 6)
+- knapsack([10, 20, 30], [60, 100, 120], 50)
+fail[1]: Items 1 and 2: 4 + 5 = 9.
+fail[2]: The second and third items: 22.
+fail[3]: The only item doesn't fit: 0.
+fail[4]: No items: 0.
+fail[5]: The 4 kg item and the 2 kg one: 13.
+fail[6]: The 20 and 30 kg items: 220, more than the best value per kilogram would give.
+speed: setup=weights = [i % 7 + 1 for i in range(n // 10)]; values = [(i * 5) % 11 + 1 for i in range(n // 10)] | call=knapsack(weights, values, 50) | target=O(n)
+slow:
+```python
+def best_from(weights, values, i, room):
+    if i == len(weights):
+        return 0
+    leave = best_from(weights, values, i + 1, room)
+    if weights[i] <= room:
+        take = values[i] + best_from(weights, values, i + 1, room - weights[i])
+        return max(leave, take)
+    return leave
+
+def knapsack(weights, values, W):
+    return best_from(weights, values, 0, W)
+```
+hint: Loop over items i from 1 to n, and capacities w from 0 to W.
+hint: Start each box as the box above; replace it if the item fits and taking it is better.
+right: (n + 1) × (W + 1) boxes of O(1) each: O(n × W). Trying every set of items would be O(2ⁿ).
+wrong: Fill row by row: copy the box above, then try `best[i - 1][w - wt] + val` when the item fits. Return the bottom-right box.
+
+=== task: fill easy
+title: Leave it or take it
+prompt: Fill in the blanks so that each box is the better of leaving the item and taking it. The program prints the last row of the table:
+
+```output
+[0, 2, 7, 9, 9, 10, 12]
+```
+code:
+```python
+kit = [("tent", 5, 10), ("camera", 2, 7), ("book", 1, 2)]
+W = 6
+best = [[0] * (W + 1) for _ in range(len(kit) + 1)]
+for i in range(1, len(kit) + 1):
+    name, wt, val = kit[i - 1]
+    for w in range(W + 1):
+        leave = ??
+        take = 0
+        if wt <= w:
+            take = ??
+        best[i][w] = max(leave, take)
+print(best[len(kit)])
+```
+answer: best[i - 1][w] | best[i - 1][w - wt] + val
+wrong[0 | best[i - 1][w - wt] + val]: Leaving the item must keep the best from the earlier items. With 0, a box forgets every set that doesn't use this item.
+wrong[best[i - 1][w] | best[i][w - wt] + val]: Reading the same row lets an item be added again on top of itself, which the 0/1 rule doesn't allow.
+hint: Leaving the item: the best from the earlier items with the same capacity.
+hint: Taking it: its value plus the best from the earlier items in the room that's left.
+right: "Leave it" is the box above; "take it" is the item's value plus the box above, w − weight columns back. With 6 kg, the tent and the book make 12.
+wrong: `leave = best[i - 1][w]` and `take = best[i - 1][w - wt] + val`.
+
+=== task: multi easy
+title: True of the knapsack table
+prompt: Choose **every** true statement about the 0/1 knapsack table.
+* Box (i, w) is the most value from the first i items with capacity w :: Right. Every box answers a smaller version of the question.
+* Row 0 is all 0 :: Right. With no items, nothing can be carried.
+* An item heavier than w can't be taken in box (i, w), so that box copies the box above :: Right. Only "leave it" is possible.
+- Row 1 holds the best value for each capacity using all the items :: Row 1 can use only the first item. The last row is the one that can use them all.
+- The items must be sorted by weight first :: The table works in any item order.
+- Each item can be taken as often as you like :: That's the unbounded knapsack; the 0/1 table takes each item at most once.
+hint: What does row 0 stand for?
+hint: Which items can row 1 use?
+right: Boxes are best values for smaller bags and fewer items; row 0 and heavy items copy what's already there. Row 1 knows only the first item, the order of the items doesn't matter, and each is used at most once.
+wrong: Row 0 is 0, too-heavy items copy the box above, and every box is a smaller answer. Row i uses the first i items, in any order, each at most once.
+
+=== task: parsons easy
+title: Best value per kilogram first
+prompt: Arrange the lines so that `greedy_pack` takes items in order of value per kilogram, best first, putting each in the bag if it still fits. For the lesson's items it gets 8 instead of 9, and on the second set it gets 19 instead of 21. The program prints:
+
+```output
+8 19
+```
+
+Not every line is needed.
+lines:
+```python
+def greedy_pack(weights, values, W):
+    ratios = []
+    for i in range(len(weights)):
+        ratios.append((values[i] / weights[i], i))
+    ratios.sort(reverse=True)
+    total = 0
+    room = W
+    for ratio, i in ratios:
+        if weights[i] <= room:
+            room -= weights[i]
+            total += values[i]
+    return total
+```
+distractors:
+```python
+    ratios.sort()
+            total += weights[i]
+```
+after:
+```python
+print(greedy_pack([1, 3, 4, 5], [1, 4, 5, 7], 7), greedy_pack([3, 4, 5], [9, 10, 12], 8))
+```
+hint: Pair each item's ratio with its index, so that sorting by ratio keeps track of the item.
+hint: Sort from the best ratio down, then take each item that still fits.
+right: On the second set, greedy takes the 3 kg item (3 per kilogram) and the 4 kg one (2.5), leaving 1 kg unused: 19. The 3 kg and 5 kg items fill all 8 kg and are worth 21. With whole items, a good ratio isn't enough.
+wrong: Build (ratio, index) pairs, sort them in reverse, and add each item that fits, reducing the room.
+
+=== task: order easy
+title: Filling the knapsack table
+prompt: Put the steps for the 0/1 knapsack table in order.
+items:
+- Make a table with a row for each number of items, 0 to n, and a column for each capacity, 0 to W.
+- Leave row 0 at 0: no items, no value.
+- For each item in turn, go through every capacity.
+- Copy the box above; if the item fits and taking it beats that, use its value plus the box above, w − weight columns back.
+- Read the answer from the bottom-right box.
+hint: The table and its base row come first.
+hint: The answer is read once every box is filled.
+right: Size the table, keep row 0 at 0, fill row by row with leave-or-take, and read the bottom-right box.
+wrong: Table, base row, then each item's row (copy above, or take it if it fits and is better), then the answer in the last box.
+
+=== task: predict easy
+title: The direction matters
+prompt: One item weighs 2 kg and is worth 3. The same one-row update is run from right to left, then from left to right. What does it print?
+code:
+```python
+W = 6
+wt, val = 2, 3
+
+down = [0] * (W + 1)
+for w in range(W, wt - 1, -1):
+    down[w] = max(down[w], down[w - wt] + val)
+
+up = [0] * (W + 1)
+for w in range(wt, W + 1):
+    up[w] = max(up[w], up[w - wt] + val)
+
+print(down)
+print(up)
+```
+wrong[[0, 0, 3, 3, 3, 3, 3]\n[0, 0, 3, 3, 3, 3, 3]]: Left to right, `up[4]` reads `up[2]`, which already holds the item: 3 + 3 = 6.
+wrong[[0, 0, 3, 3, 6, 6, 9]\n[0, 0, 3, 3, 6, 6, 9]]: Right to left, `down[6]` reads `down[4]` before it's been changed: 0 + 3 = 3.
+wrong[[0, 0, 3, 3, 3, 3, 3]\n[0, 0, 3, 3, 6, 6, 6]]: `up[6]` reads `up[4]`, which is already 6: 9.
+hint: Right to left, every box reads a box that still holds 0.
+hint: Left to right, the boxes it reads may already include the item.
+right: `[0, 0, 3, 3, 3, 3, 3]` and `[0, 0, 3, 3, 6, 6, 9]`. Right to left uses the item once (0/1); left to right lets it be taken again and again (unbounded).
+wrong: Right to left: each box reads an unchanged 0, so every box from 2 is 3. Left to right: 4 reads 2 (3), and 6 reads 4 (6), giving 6 and 9.
+
+=== task: mcq easy
+title: Fast or not?
+prompt: The knapsack table takes O(n × W) time for n items and capacity W. Which is true?
+* It's fast when W is small, but a capacity of 20,000,000 means a row of 20 million boxes, however few the items :: Right. The time grows with W's value, not its length: pseudo-polynomial.
+- It's always faster than trying every set of items :: With 3 items and W in the millions, trying the 8 sets is far quicker.
+- W doesn't matter, only n :: Every capacity from 0 to W gets a column.
+- It's O(n + W) :: Every item meets every capacity: a product, not a sum.
+hint: How many columns does the table have?
+hint: What if W is enormous and n is tiny?
+right: n × W boxes. With a huge W the table is huge too, which is why the time is called pseudo-polynomial.
+wrong: The work is rows times columns, n × W, so a big capacity makes a big table.
+
+=== task: code medium
+title: Making a total exactly
+prompt: Write `subset_sum(nums, target)` that returns True if some of the numbers (each used at most once) add up exactly to `target`. It's a knapsack where each number is both a weight and a value, and only "can this total be made?" matters. Use one row of booleans: `can[0]` is True, and for each number x, go through the totals s from `target` down to x, setting `can[s]` to True when `can[s - x]` is.
+starter:
+```python
+def subset_sum(nums, target):
+    can = [False] * (target + 1)
+    can[0] = True
+    # your code here
+    return can[target]
+```
+solution:
+```python
+def subset_sum(nums, target):
+    can = [False] * (target + 1)
+    can[0] = True
+    for x in nums:
+        for s in range(target, x - 1, -1):
+            if can[s - x]:
+                can[s] = True
+    return can[target]
+```
+tests:
+- subset_sum([3, 34, 4, 12, 5, 2], 9)
+- subset_sum([3, 34, 4, 12, 5, 2], 30)
+- subset_sum([], 0)
+- subset_sum([5], 3)
+- subset_sum([1, 5, 11, 5], 11)
+- subset_sum([2, 4, 6], 5)
+fail[1]: 4 + 5 = 9: True.
+fail[2]: No set of these numbers adds up to 30: False.
+fail[3]: The empty set makes 0: True.
+fail[4]: 5 can't make 3: False.
+fail[5]: 11 on its own, or 1 + 5 + 5: True.
+fail[6]: Even numbers can't make an odd total: False.
+hint: Going from `target` down means each number is used at most once.
+hint: A total s can be made with x if s − x could be made before x was considered.
+right: The row records every total that can be made so far; each number adds the totals x higher. O(n × target).
+wrong: For each number, mark every total s (from high to low) whose s − x is already marked.
+
+=== task: code medium
+title: How many ways to make a total
+prompt: Write `count_subsets(nums, target)` that returns how many different subsets of the numbers (by position, each used at most once) add up to `target`. Use one row of counts: `ways[0] = 1`, for the empty subset, and for each number x, go through the totals from `target` down to x, adding `ways[s - x]` to `ways[s]`. One test has 30 numbers, too many to try every subset.
+starter:
+```python
+def count_subsets(nums, target):
+    ways = [0] * (target + 1)
+    ways[0] = 1
+    # your code here
+    return ways[target]
+```
+solution:
+```python
+def count_subsets(nums, target):
+    ways = [0] * (target + 1)
+    ways[0] = 1
+    for x in nums:
+        for s in range(target, x - 1, -1):
+            ways[s] += ways[s - x]
+    return ways[target]
+```
+tests:
+- count_subsets([2, 3, 5], 5)
+- count_subsets([1, 1, 1, 1], 2)
+- count_subsets([], 0)
+- count_subsets([3], 2)
+- count_subsets([1, 2, 3, 4, 5], 7)
+- count_subsets(list(range(1, 31)), 100)
+fail[1]: 5 alone, or 2 + 3: 2.
+fail[2]: Any two of the four 1s: 6.
+fail[3]: The empty subset: 1.
+fail[4]: 3 can't make 2: 0.
+fail[5]: 2 + 5, 3 + 4 and 1 + 2 + 4: 3.
+fail[6]: 198732 subsets of 1 to 30 add up to 100.
+hint: The same loops as subset sum, with counts instead of True and False.
+hint: Each subset that makes s − x becomes one that makes s by adding x.
+right: Right to left keeps each number to one use, and adding counts instead of setting True turns "can it be made?" into "in how many ways?". O(n × target).
+wrong: `ways[0] = 1`; for each x and each s from target down to x, `ways[s] += ways[s - x]`.
+
+=== task: predict medium
+title: Ratio against table
+prompt: What does it print: the greedy value-per-kilogram total, then the table's best?
+code:
+```python
+weights = [6, 5, 5]
+values = [30, 20, 20]
+W = 10
+
+order = sorted(range(3), key=lambda i: values[i] / weights[i], reverse=True)
+room, greedy = W, 0
+for i in order:
+    if weights[i] <= room:
+        room -= weights[i]
+        greedy += values[i]
+
+best = [0] * (W + 1)
+for wt, val in zip(weights, values):
+    for w in range(W, wt - 1, -1):
+        best[w] = max(best[w], best[w - wt] + val)
+
+print(greedy, best[W])
+```
+wrong[40 40]: Greedy takes the 6 kg item first (5 per kilogram), and then no 5 kg item fits in the 4 kg left.
+wrong[30 30]: The table finds the two 5 kg items: 40.
+wrong[30 50]: All three items weigh 16 kg; at most 10 kg fit, and the best set is worth 40.
+hint: Which item has the best value per kilogram?
+hint: Which two items fill the bag exactly?
+right: `30 40`. The best ratio grabs the 6 kg item and wastes 4 kg; the table checks both options for every item.
+wrong: Greedy: 30, then nothing fits. Table: 20 + 20 = 40 in exactly 10 kg.
+
+=== task: cells medium
+title: One row, item by item
+prompt: The one-row knapsack, updated from right to left, runs on two items: 1 kg worth 2, then 3 kg worth 5, with capacity 4. Fill in the boxes.
+code:
+```python
+best = [0, 0, 0, 0, 0]
+for wt, val in [(1, 2), (3, 5)]:
+    for w in range(4, wt - 1, -1):
+        best[w] = max(best[w], best[w - wt] + val)
+```
+labels: best[4] after the first item | best[3] after both | best[4] after both
+answer: 2 | 5 | 7
+wrong[8 | 5 | 7]: Right to left, the 1 kg item is used once: every box from 1 up holds 2, not 2 per kilogram.
+wrong[2 | 7 | 7]: With 3 kg, the two items don't fit together (4 kg): the best is the 3 kg item alone, 5.
+wrong[2 | 5 | 5]: With 4 kg, both items fit: 5 + best[1] = 5 + 2 = 7.
+hint: After the first item, the row is [0, 2, 2, 2, 2].
+hint: The second item updates w = 4, then w = 3, reading boxes 1 and 0.
+right: 2, 5 and 7. After both items the row is [0, 2, 2, 5, 7], the last row of the full table.
+wrong: First item: [0, 2, 2, 2, 2]. Second: best[4] = max(2, 5 + 2) = 7, best[3] = max(2, 5 + 0) = 5.
+
+=== task: fill medium
+title: Right to left in one row
+prompt: Fill in the blanks so that the one-row knapsack goes through the capacities from W down to the item's weight, and the program prints:
+
+```output
+[0, 1, 1, 4, 5, 7, 8, 9] [0, 0, 3, 4, 4, 7]
+```
+code:
+```python
+def one_row(weights, values, W):
+    best = [0] * (W + 1)
+    for wt, val in zip(weights, values):
+        for w in range(W, ??, -1):
+            best[w] = max(best[w], ??)
+    return best
+
+print(one_row([1, 3, 4, 5], [1, 4, 5, 7], 7), one_row([2, 3], [3, 4], 5))
+```
+answer: wt - 1 | best[w - wt] + val
+wrong[wt - 1 | best[w - wt]]: The item's value has to be added: without it, every box stays 0.
+wrong[-1 | best[w - wt] + val]: Capacities smaller than the item would read `best[w - wt]` at a negative index, the end of the list, and add the item to boxes it doesn't fit.
+hint: `range` stops before its second number: to include w = wt, stop at wt − 1.
+hint: Taking the item: its value plus the best in the room that's left.
+right: Going down to the item's weight, and no further, updates exactly the capacities that can hold it, each reading a box from before this item.
+wrong: `range(W, wt - 1, -1)` and `max(best[w], best[w - wt] + val)`.
+
+=== task: mcq medium
+title: Why right to left?
+prompt: In the one-row 0/1 knapsack, why must each item's updates go from the largest capacity down?
+* Each update reads a box to its left, `best[w - wt]`, which must still hold the value from before this item; going right to left changes boxes only after they've been read :: Right. Left to right, that box might already include the item, which would then be counted twice.
+- Because big capacities are more valuable :: The order is about which values are read, not their size.
+- To make the loop faster :: Both directions do the same number of steps.
+- Because Python's range can only count down :: `range` counts either way; the direction is chosen on purpose.
+hint: Which box does `best[w]` read?
+hint: Has that box already been changed by this item, in each direction?
+right: Right to left, every box read still belongs to the previous row, so the item is added at most once: the 0/1 rule. Left to right gives the unbounded knapsack.
+wrong: Going down keeps the boxes on the left unchanged until they've been read, so each item counts at most once.
+
+=== task: predict medium
+title: An item too heavy
+prompt: The middle item weighs more than the bag holds. What does the table print?
+code:
+```python
+weights = [2, 6, 1]
+values = [5, 100, 3]
+W = 4
+best = [[0] * (W + 1) for _ in range(4)]
+for i in range(1, 4):
+    wt, val = weights[i - 1], values[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+            best[i][w] = best[i - 1][w - wt] + val
+for row in best[1:]:
+    print(row)
+```
+wrong[[0, 0, 5, 5, 5]\n[0, 0, 0, 0, 0]\n[0, 3, 5, 8, 8]]: An item that never fits copies the row above: row 2 equals row 1.
+wrong[[0, 0, 5, 5, 5]\n[0, 0, 5, 5, 100]\n[0, 3, 5, 8, 100]]: The 6 kg item can't go in a 4 kg bag, whatever it's worth.
+wrong[[0, 0, 5, 5, 5]\n[0, 0, 5, 5, 5]\n[0, 3, 5, 8, 9]]: Capacity 4 holds the 2 kg and 1 kg items, 5 + 3 = 8; there's no third item to add.
+hint: Row 2 can only ever "leave it".
+hint: Row 3: the 1 kg item fits everywhere from capacity 1.
+right: `[0, 0, 5, 5, 5]`, `[0, 0, 5, 5, 5]` and `[0, 3, 5, 8, 8]`. The heavy item's value never matters: it changes nothing.
+wrong: Row 1: the 2 kg item from capacity 2. Row 2: a copy. Row 3: 3 at capacity 1, then 5, 8, 8.
+
+=== task: multi medium
+title: Knapsacks in disguise
+prompt: Choose **every** problem that's a 0/1 knapsack: choosing items, each at most once, to get the most value within a limit.
+* Choosing which projects to fund with a fixed budget, each with a cost and an expected return :: Right. Cost is the weight, return the value, the budget the capacity.
+* Choosing exam questions to answer in 60 minutes, each with a time and a number of marks :: Right. Time is the weight, marks the value.
+* Filling a lorry with parcels to earn the most delivery fees within its weight limit :: Right. Parcels are whole items.
+- Making change with the fewest coins, using each coin type as often as you like :: Unlimited coins and a "fewest" goal make that coin change, closer to the unbounded knapsack.
+- Filling a jar with sand and gravel, which can be poured in any amount :: Amounts that can be split make it the fractional knapsack, solved greedily.
+- Finding the shortest route between two towns :: That's a shortest-path problem.
+hint: Look for whole items, each used at most once, with a limit and a value to maximise.
+hint: Can the items be split, or used many times?
+right: Budgets, time limits and weight limits with whole, one-off items are all 0/1 knapsacks. Unlimited copies, splittable amounts or routes are different problems.
+wrong: 0/1 knapsack means whole items, each at most once, a single limit, and maximum value.
+
+=== task: parsons medium
+title: Two rows
+prompt: Arrange the lines so that `two_rows` keeps only the previous row and the current one: each new row starts as a copy of the previous, and every capacity that can hold the item may switch to taking it. The program prints:
+
+```output
+9 22 0
+```
+
+Not every line is needed.
+lines:
+```python
+def two_rows(weights, values, W):
+    prev = [0] * (W + 1)
+    for wt, val in zip(weights, values):
+        cur = prev[:]
+        for w in range(wt, W + 1):
+            cur[w] = max(prev[w], prev[w - wt] + val)
+        prev = cur
+    return prev[W]
+```
+distractors:
+```python
+            cur[w] = max(prev[w], cur[w - wt] + val)
+        cur = prev
+```
+after:
+```python
+print(two_rows([1, 3, 4, 5], [1, 4, 5, 7], 7), two_rows([1, 2, 3], [6, 10, 12], 5), two_rows([5], [10], 4))
+```
+hint: `prev[:]` makes a copy; assigning `cur = prev` would make them the same list.
+hint: Taking the item reads the previous row at w − wt.
+right: With two rows, the order of the capacities doesn't matter, since the current row is only written and the previous row only read. One row needs the right-to-left trick instead.
+wrong: Copy the previous row, update every capacity that fits from the previous row's values, then move on with the new row.
+
+=== task: order medium
+title: Which items were packed?
+prompt: Put the steps for reading the chosen items back from a full knapsack table in order.
+items:
+- Start at the bottom-right box, with w = W.
+- Compare box (i, w) with the box above it, (i − 1, w).
+- If they differ, item i − 1 was taken: record it and subtract its weight from w.
+- Move up one row, whatever happened.
+- When row 0 is reached, reverse the recorded items.
+hint: The walk starts where the answer is.
+hint: Items are found from the last one back, so they come out in reverse.
+right: From the bottom-right: a box that differs from the one above means that item was packed, which uses up its weight. Up a row each time, then reverse.
+wrong: Begin at (n, W); a change from the row above marks a taken item and lowers w; step up; reverse at the end.
+
+=== task: code hard
+title: Two fair teams
+prompt: Split the numbers into two groups, every number in exactly one, so that the group sums are as close as possible. Write `min_difference(nums)` that returns the smallest possible difference between the two sums. If one group adds up to s, the other adds up to total − s, and the difference is |total − 2s|. So find every sum a subset can make, with a one-row table of booleans as in subset sum, and take the best s.
+starter:
+```python
+def min_difference(nums):
+    total = sum(nums)
+    can = [False] * (total + 1)
+    can[0] = True
+    # your code here
+    return total
+```
+solution:
+```python
+def min_difference(nums):
+    total = sum(nums)
+    can = [False] * (total + 1)
+    can[0] = True
+    for x in nums:
+        for s in range(total, x - 1, -1):
+            if can[s - x]:
+                can[s] = True
+    best = total
+    for s in range(total + 1):
+        if can[s]:
+            best = min(best, abs(total - 2 * s))
+    return best
+```
+tests:
+- min_difference([1, 6, 11, 5])
+- min_difference([3, 1, 4, 2, 2])
+- min_difference([])
+- min_difference([7])
+- min_difference([1, 2, 3, 9])
+- min_difference(list(range(1, 41)))
+fail[1]: 1 + 5 + 6 = 12 and 11: difference 1.
+fail[2]: 3 + 1 + 2 = 6 and 4 + 2 = 6: 0.
+fail[3]: Two empty groups: 0.
+fail[4]: One number has to go in one group: 7.
+fail[5]: 1 + 2 + 3 = 6 against 9: 3.
+fail[6]: 1 to 40 add up to 820, which splits evenly: 0.
+hint: Mark every reachable sum, going from high to low for each number.
+hint: Then check every reachable s and keep the smallest |total − 2s|.
+right: Every subset sum is marked in O(n × total), and the best split is the reachable sum closest to half the total.
+wrong: Build the reachable-sums row as in subset sum, then minimise |total − 2s| over the reachable s.
+
+=== task: code hard
+title: Two limits
+prompt: Each string in `strs` is made of 0s and 1s. Write `ones_and_zeros(strs, m, n)` that returns the most strings you can choose, each at most once, using at most m 0s and n 1s in total. It's a knapsack with two capacities, so the table has two dimensions: `best[i][j]` is the most strings with at most i 0s and j 1s. For each string, with z zeros and o ones, update every (i, j) that can hold it, both from the top down so that each string counts once: `best[i][j] = max(best[i][j], best[i - z][j - o] + 1)`.
+starter:
+```python
+def ones_and_zeros(strs, m, n):
+    best = [[0] * (n + 1) for _ in range(m + 1)]
+    # your code here
+    return best[m][n]
+```
+solution:
+```python
+def ones_and_zeros(strs, m, n):
+    best = [[0] * (n + 1) for _ in range(m + 1)]
+    for s in strs:
+        zeros, ones = s.count("0"), s.count("1")
+        for i in range(m, zeros - 1, -1):
+            for j in range(n, ones - 1, -1):
+                best[i][j] = max(best[i][j], best[i - zeros][j - ones] + 1)
+    return best[m][n]
+```
+tests:
+- ones_and_zeros(["10", "0001", "111001", "1", "0"], 5, 3)
+- ones_and_zeros(["10", "0", "1"], 1, 1)
+- ones_and_zeros([], 3, 3)
+- ones_and_zeros(["111"], 0, 2)
+- ones_and_zeros(["0", "0", "1", "1"], 2, 2)
+fail[1]: "10", "0001", "1" and "0": 4 strings, using five 0s and three 1s.
+fail[2]: "0" and "1": 2.
+fail[3]: No strings: 0.
+fail[4]: "111" needs three 1s: 0.
+fail[5]: All four: 4.
+hint: Count the 0s and 1s of each string with `s.count`.
+hint: Loop i from m down to z and j from n down to o, so the table still holds the values from before this string.
+right: Two limits give two dimensions, but the idea is the knapsack's: each string is an item worth 1, and going down in both directions keeps it to one use.
+wrong: For each string, update `best[i][j]` from `best[i - z][j - o] + 1`, with i and j both going down.
+
+=== task: code hard
+title: The lightest bag for a value
+prompt: Turn the question round: what's the smallest total weight that reaches a value of at least `target`? Write `min_weight(weights, values, target)` that returns it, or -1 if even all the items together aren't worth enough. Make a table over **values**: `lightest[v]` is the smallest weight of a set worth exactly v, with `lightest[0] = 0` and infinity elsewhere. For each item, go through the values from the total of all values down to the item's value, and keep `lightest[v - val] + wt` when it's lighter. The answer is the smallest `lightest[v]` for any v from `target` up.
+starter:
+```python
+def min_weight(weights, values, target):
+    total = sum(values)
+    if target > total:
+        return -1
+    lightest = [0] + [float("inf")] * total
+    # your code here
+    return -1
+```
+solution:
+```python
+def min_weight(weights, values, target):
+    total = sum(values)
+    if target > total:
+        return -1
+    lightest = [0] + [float("inf")] * total
+    for wt, val in zip(weights, values):
+        for v in range(total, val - 1, -1):
+            if lightest[v - val] + wt < lightest[v]:
+                lightest[v] = lightest[v - val] + wt
+    best = float("inf")
+    for v in range(target, total + 1):
+        best = min(best, lightest[v])
+    return best
+```
+tests:
+- min_weight([1, 3, 4, 5], [1, 4, 5, 7], 9)
+- min_weight([1, 3, 4, 5], [1, 4, 5, 7], 17)
+- min_weight([1, 3, 4, 5], [1, 4, 5, 7], 18)
+- min_weight([2, 3], [3, 4], 0)
+- min_weight([5, 1, 1], [10, 6, 6], 11)
+- min_weight([10, 20, 30], [60, 100, 120], 160)
+fail[1]: A value of at least 9 needs 7 kg: items 1 and 2.
+fail[2]: All four items are worth 17 and weigh 13: 13.
+fail[3]: Nothing is worth 18: -1.
+fail[4]: Value 0 needs nothing: 0.
+fail[5]: The two 1 kg items are worth 12: 2.
+fail[6]: 10 + 20 kg reaches 160: 30.
+hint: Every value from 0 to the total gets an entry; values that can't be made stay at infinity.
+hint: "At least target" means the best over every v from target to the total.
+right: When values are small and weights huge, a table over values is the one that fits. Infinity marks values no set can make, as in coin change.
+wrong: Fill `lightest` over values, from high to low for each item, then return the minimum over the values from target up.
+
+=== task: code hard
+title: Filling the bag exactly
+prompt: Write `exact_fill(weights, values, W)` that returns the most value from items, each at most once, whose weights add up to **exactly** W, or -1 if no set weighs exactly W. Use one row, as in the lesson, but start with `best[0] = 0` and every other capacity at `-float("inf")`: a weight that can't be made exactly then stays at minus infinity, and adding a value to it changes nothing.
+starter:
+```python
+def exact_fill(weights, values, W):
+    best = [0] + [-float("inf")] * W
+    # your code here
+    return -1
+```
+solution:
+```python
+def exact_fill(weights, values, W):
+    best = [0] + [-float("inf")] * W
+    for wt, val in zip(weights, values):
+        for w in range(W, wt - 1, -1):
+            if best[w - wt] + val > best[w]:
+                best[w] = best[w - wt] + val
+    if best[W] == -float("inf"):
+        return -1
+    return best[W]
+```
+tests:
+- exact_fill([1, 3, 4, 5], [1, 4, 5, 7], 7)
+- exact_fill([2, 4], [5, 9], 5)
+- exact_fill([2, 3], [3, 4], 5)
+- exact_fill([], [], 0)
+- exact_fill([3, 3, 3], [1, 2, 3], 6)
+- exact_fill([5, 4, 3], [8, 7, 4], 8)
+fail[1]: 3 + 4 kg exactly: 9.
+fail[2]: No set weighs exactly 5: -1.
+fail[3]: 2 + 3 kg: 7.
+fail[4]: The empty set weighs exactly 0: 0.
+fail[5]: The two most valuable 3 kg items: 5.
+fail[6]: 5 + 3 kg is the only set weighing exactly 8: 12.
+hint: The only weight that's exactly made at the start is 0.
+hint: Minus infinity plus a value is still minus infinity, so impossible weights never become possible by accident.
+right: Starting from minus infinity changes the question from "at most W" to "exactly W", with the same loops. The lesson's table starts at 0 everywhere, because an empty bag fits any capacity.
+wrong: Initialise the row with 0 at index 0 and minus infinity elsewhere, run the right-to-left updates, and return -1 if `best[W]` is still minus infinity.
+
+=== task: predict hard
+title: Two equal items
+prompt: The first two items are identical. Which items does the walk back report, and for which total?
+code:
+```python
+weights = [2, 2, 3]
+values = [3, 3, 5]
+W = 5
+n = 3
+best = [[0] * (W + 1) for _ in range(n + 1)]
+for i in range(1, n + 1):
+    wt, val = weights[i - 1], values[i - 1]
+    for w in range(W + 1):
+        best[i][w] = best[i - 1][w]
+        if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+            best[i][w] = best[i - 1][w - wt] + val
+
+chosen = []
+w = W
+for i in range(n, 0, -1):
+    if best[i][w] != best[i - 1][w]:
+        chosen.append(i - 1)
+        w -= weights[i - 1]
+chosen.reverse()
+print(chosen, best[n][W])
+```
+wrong[[1, 2] 8]: At w = 2, box (2, 2) equals box (1, 2): the second item wasn't needed, because the first one gives the same 3.
+wrong[[0, 1] 6]: The 3 kg item fits with one 2 kg item: 3 + 5 = 8 beats 3 + 3.
+wrong[[0, 1, 2] 11]: All three weigh 7 kg, more than 5.
+hint: The best for 5 kg is one 2 kg item and the 3 kg item: 8.
+hint: After taking item 2, w = 2. Does box (2, 2) differ from box (1, 2)?
+right: `[0, 2] 8`. A box that equals the box above means the item wasn't needed, so on a tie the walk prefers the earlier item.
+wrong: Box (3, 5) = 8 differs from (2, 5) = 6: item 2 taken, w = 2. Box (2, 2) = 3 equals (1, 2) = 3: skip item 1. Box (1, 2) = 3 differs from 0: item 0.
+
+=== task: predict hard
+title: Sums with a set
+prompt: Instead of a row of booleans, this keeps a set of every total that some subset can make. What does it print?
+code:
+```python
+sums = {0}
+for x in [3, 5, 6]:
+    sums = sums | {s + x for s in sums}
+print(sorted(sums))
+```
+wrong[[3, 5, 6, 8, 9, 11, 14]]: The empty subset makes 0, and 0 stays in the set.
+wrong[[0, 3, 5, 6, 8, 9, 11, 14, 17]]: 17 would need 3 + 5 + 6 + 3: each number is used once per subset, and the total of all three is 14.
+wrong[[0, 3, 5, 8, 9, 11, 14]]: 6 on its own is a subset too.
+hint: After 3: {0, 3}. After 5: {0, 3, 5, 8}.
+hint: Then add 6 to each of those four.
+right: `[0, 3, 5, 6, 8, 9, 11, 14]`. Each number either joins a subset or doesn't, so the new set is the old one together with the old one shifted by x: the same rule as the boolean row.
+wrong: {0} → {0, 3} → {0, 3, 5, 8} → {0, 3, 5, 8, 6, 9, 11, 14}, sorted: 0, 3, 5, 6, 8, 9, 11, 14.
+
+=== task: cells hard
+title: Counting subsets by hand
+prompt: The one-row subset count from the medium tasks runs on [2, 3, 5] with totals up to 10: `ways[0] = 1`, and for each number x, the totals from 10 down to x get `ways[s] += ways[s - x]`. Fill in the final counts.
+code:
+```python
+ways = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+for x in [2, 3, 5]:
+    for s in range(10, x - 1, -1):
+        ways[s] += ways[s - x]
+```
+labels: ways[5] | ways[7] | ways[8] | ways[10]
+answer: 2 | 1 | 1 | 1
+wrong[1 | 1 | 1 | 1]: 5 can be made in two ways: 5 alone and 2 + 3.
+wrong[2 | 2 | 1 | 1]: 7 is only 2 + 5: 3 + 4 isn't possible with these numbers.
+wrong[2 | 1 | 1 | 0]: 10 is 2 + 3 + 5, all three numbers: 1 way.
+hint: After 2 and 3, the row is [1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0].
+hint: The 5 adds `ways[s - 5]` to each total from 10 down to 5.
+right: 2, 1, 1 and 1: 5 = 5 or 2 + 3; 7 = 2 + 5; 8 = 3 + 5; 10 = 2 + 3 + 5.
+wrong: After 2: totals 0 and 2. After 3: 0, 2, 3 and 5. After 5: ways[10] += ways[5] (1), ways[8] += ways[3] (1), ways[7] += ways[2] (1), ways[5] += ways[0] (now 2).
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the lesson's one-row knapsack. Choose **every** change that can make it return a wrong answer for the 0/1 problem.
+code:
+```python
+def knapsack(weights, values, W):
+    best = [0] * (W + 1)
+    for wt, val in zip(weights, values):
+        for w in range(W, wt - 1, -1):
+            best[w] = max(best[w], best[w - wt] + val)
+    return best[W]
+```
+* Looping `for w in range(wt, W + 1)` instead :: Right. Left to right, an item can be added again on top of itself: the unbounded knapsack.
+* Looping `for w in range(W, -1, -1)` instead :: Right. For w smaller than the item, `best[w - wt]` reads from the end of the list, adding the item where it doesn't fit.
+* Returning `best[W - 1]` :: Right. That's the best for a bag one kilogram smaller.
+- Going through the items in a different order :: The table finds the same best value for any order of the items.
+- Writing `best[w] = max(best[w - wt] + val, best[w])` :: max doesn't care about the order of its arguments.
+- Adding `best = best[:]` as the first line inside the item loop :: The copy is then updated exactly as the original would have been: nothing changes.
+hint: Which changes let an item count twice, or read the wrong boxes?
+hint: Which changes only rearrange the same comparisons?
+right: The direction, the range of capacities and the box returned are essential; the order of the items or of max's arguments isn't.
+wrong: Left to right allows reuse, going below the item's weight reads negative indexes, and the answer is at W. Reordering items or arguments is harmless.
+
+=== task: fill hard
+title: Reading the items back
+prompt: Fill in the blanks so that the walk back finds the items chosen by the full knapsack table, and the program prints:
+
+```output
+[1, 2] [1, 2]
+```
+code:
+```python
+def chosen_items(weights, values, W):
+    n = len(weights)
+    best = [[0] * (W + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        wt, val = weights[i - 1], values[i - 1]
+        for w in range(W + 1):
+            best[i][w] = best[i - 1][w]
+            if wt <= w and best[i - 1][w - wt] + val > best[i][w]:
+                best[i][w] = best[i - 1][w - wt] + val
+    chosen = []
+    w = W
+    for i in range(n, 0, -1):
+        if best[i][w] != ??:
+            chosen.append(i - 1)
+            w -= ??
+    chosen.reverse()
+    return chosen
+
+print(chosen_items([1, 3, 4, 5], [1, 4, 5, 7], 7), chosen_items([1, 2, 3], [6, 10, 12], 5))
+```
+answer: best[i - 1][w] | weights[i - 1]
+wrong[best[i][w - 1] | weights[i - 1]]: Comparing with the box to the left asks a different question; the item was taken when the box differs from the box **above**.
+wrong[best[i - 1][w] | values[i - 1]]: A taken item uses up its weight, not its value: w is a capacity.
+hint: If the box equals the one above it, the item wasn't needed.
+hint: A taken item leaves its weight less room for the earlier items.
+right: A box that differs from the box above can only come from taking the item, and the room left for the earlier items is w minus its weight.
+wrong: Compare with `best[i - 1][w]`, and subtract `weights[i - 1]` when the item was taken.
+
+=== task: parsons hard
+title: Which numbers make the total?
+prompt: Arrange the lines so that `pick_subset` returns a list of the numbers that add up to `target` (or None): a full table of booleans, `can[i][s]` for "the first i numbers can make s", then a walk back that takes number i − 1 whenever the first i − 1 numbers alone can't make the remaining total. The program prints:
+
+```output
+[4, 5] None [5, 3]
+```
+
+Not every line is needed.
+lines:
+```python
+def pick_subset(nums, target):
+    n = len(nums)
+    can = [[False] * (target + 1) for _ in range(n + 1)]
+    can[0][0] = True
+    for i in range(1, n + 1):
+        x = nums[i - 1]
+        for s in range(target + 1):
+            can[i][s] = can[i - 1][s] or (x <= s and can[i - 1][s - x])
+    if not can[n][target]:
+        return None
+    chosen = []
+    s = target
+    for i in range(n, 0, -1):
+        if not can[i - 1][s]:
+            chosen.append(nums[i - 1])
+            s -= nums[i - 1]
+    chosen.reverse()
+    return chosen
+```
+distractors:
+```python
+            can[i][s] = can[i - 1][s] and (x <= s and can[i - 1][s - x])
+        if can[i - 1][s]:
+```
+after:
+```python
+print(pick_subset([3, 34, 4, 12, 5, 2], 9), pick_subset([2, 4, 6], 5), pick_subset([5, 1, 1, 3], 8))
+```
+hint: A total can be made without number i − 1, or with it if the rest can be made from the earlier numbers.
+hint: Walking back: if the earlier numbers can make s on their own, skip this number; otherwise it's needed.
+right: The table remembers which totals each prefix can make, so the walk back can tell when a number was essential. 9 = 4 + 5 and 8 = 5 + 3.
+wrong: Fill `can[i][s]` with "without, or with if it fits"; then from the last number back, take a number whenever the earlier ones can't make the remaining total.
