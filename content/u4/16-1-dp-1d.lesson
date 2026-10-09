@@ -1,0 +1,1109 @@
+=== lesson
+id: algo-dp-1d
+title: 1D DP tables
+summary: Many problems fit a one-dimensional table, with one entry for each position or amount, each worked out from a few earlier entries. After a quick look back at Fibonacci and climbing stairs, you'll solve house robber, where each house is either taken or skipped, and coin change, where the fewest coins for an amount comes from the amounts one coin smaller. You'll also recover which choices made the best answer, and handle amounts that can't be made at all.
+
+=== learn
+### One entry per position
+Fibonacci and climbing stairs, from the last two lessons, both fill a list from left to right, where each entry reads the two entries before it:
+```python
+n = 8
+stairs = [0] * (n + 1)
+stairs[0] = 1
+stairs[1] = 1
+for i in range(2, n + 1):
+    stairs[i] = stairs[i - 1] + stairs[i - 2]
+print(stairs)
+```
+```output
+[1, 1, 2, 3, 5, 8, 13, 21, 34]
+```
+`stairs[i]` is the number of ways to climb i steps. That's the shape of every problem in this lesson: a list with one entry per position or amount, filled from left to right, where each entry is worked out from a few earlier ones. What changes from problem to problem is what an entry means, which earlier entries it reads, and how it combines them: adding them up to count, or taking the largest or smallest to find the best.
+
+### House robber: take it or skip it
+A row of houses holds some money each. A robber wants as much as possible, but robbing two houses next to each other sets off an alarm. Which houses should be robbed?
+
+Let `best[i]` be the most money from the first i houses. For the last of those houses, house i − 1 (counting from 0), there are two choices:
+- **Skip it**: the most from the first i − 1 houses, `best[i - 1]`.
+- **Take it**: its money, plus the most from the first i − 2 houses, since its neighbour must be skipped: `best[i - 2] + money[i - 1]`.
+
+`best[i]` is the larger of the two. With no houses there's nothing, `best[0] = 0`, and with one house you take it, `best[1] = money[0]`.
+```python
+def rob(money):
+    n = len(money)
+    best = [0] * (n + 1)
+    if n > 0:
+        best[1] = money[0]
+    for i in range(2, n + 1):
+        skip = best[i - 1]
+        take = best[i - 2] + money[i - 1]
+        best[i] = max(skip, take)
+    return best
+
+print(rob([2, 7, 9, 3, 1]))
+```
+```output
+[0, 2, 7, 11, 11, 12]
+```
+The answer is the last entry, 12: houses 0, 2 and 4, with 2 + 9 + 1. Picking the richest house first goes wrong: 9 rules out both of its neighbours, 7 and 3. Animation 1 fills this table.
+
+### Which houses?
+The table holds the best totals, not the choices, but the choices can be read back from it. Start at the end. If `best[i]` equals `best[i - 1]`, skipping house i − 1 was as good as taking it, so it was skipped: move to i − 1. Otherwise it was taken: note it, and jump to i − 2, past its neighbour.
+```python
+def which_houses(money):
+    best = rob(money)
+    houses = []
+    i = len(money)
+    while i > 0:
+        if best[i] == best[i - 1]:
+            i -= 1
+        else:
+            houses.append(i - 1)
+            i -= 2
+    houses.reverse()
+    return houses
+
+print(which_houses([2, 7, 9, 3, 1]))
+```
+```output
+[0, 2, 4]
+```
+
+### Two numbers are enough
+Each entry reads only the two before it, so the whole list can shrink to two variables, as with Fibonacci:
+```python
+def rob_total(money):
+    before, last = 0, 0
+    for x in money:
+        before, last = last, max(last, before + x)
+    return last
+
+print(rob_total([2, 7, 9, 3, 1]), rob_total([5, 1, 1, 5]))
+```
+```output
+12 10
+```
+`last` is the best up to the house before x, and `before` the best up to the house before that. O(n) time and O(1) memory. To find which houses, though, the whole table is needed.
+
+### Coin change: the fewest coins
+With coins worth 1, 3 and 4, what's the fewest coins that make 6? Taking the biggest coin first gives 4 + 1 + 1, three coins, but 3 + 3 uses only two. A table finds the true fewest.
+
+Let `fewest[a]` be the fewest coins that make the amount a. The **last** coin is one of the coin values c, and the coins before it make a − c, in `fewest[a - c]` coins at best. So `fewest[a]` is 1 plus the smallest `fewest[a - c]`, over every coin c that fits. Making 0 takes no coins: `fewest[0] = 0`.
+
+Some amounts can't be made at all: with coins 3 and 5, there's no way to make 4. Those entries start at infinity and stay there. Infinity fits the formula: infinity plus 1 is still infinity, and every real count is smaller than it.
+```python
+def min_coins(coins, amount):
+    fewest = [0] + [float("inf")] * amount
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = fewest[a - c] + 1
+    return fewest
+
+print(min_coins([1, 3, 4], 6))
+print(min_coins([3, 5], 7))
+```
+```output
+[0, 1, 2, 1, 1, 2, 2]
+[0, inf, inf, 1, inf, 1, 2, inf]
+```
+The fewest coins for 6 is 2. With coins 3 and 5, the amounts 1, 2, 4 and 7 can't be made. A function that answers "how many coins for this amount?" returns −1 or None for those, rather than infinity. Animation 2 fills the first table.
+
+The table has amount + 1 entries, and each tries every coin: O(amount × number of coins) time.
+
+### Which coins?
+To find the coins themselves, record for each amount the coin that gave its best count. Then walk back from the amount, subtracting that coin each time:
+```python
+def coins_used(coins, amount):
+    fewest = [0] + [float("inf")] * amount
+    last = [None] * (amount + 1)
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = fewest[a - c] + 1
+                last[a] = c
+    if fewest[amount] == float("inf"):
+        return None
+    used = []
+    a = amount
+    while a > 0:
+        used.append(last[a])
+        a -= last[a]
+    return used
+
+print(coins_used([1, 3, 4], 6), coins_used([1, 5, 6, 9], 11), coins_used([3, 5], 7))
+```
+```output
+[3, 3] [5, 6] None
+```
+
+### The pattern
+| problem | an entry means | it reads | it combines with | base case |
+| --- | --- | --- | --- | --- |
+| climbing stairs | ways to reach step i | i − 1, i − 2 | + | 1 way to stand at step 0 |
+| house robber | most money from the first i houses | i − 1, i − 2 | max | 0 from no houses |
+| coin change | fewest coins for amount a | a − c, for each coin c | min, + 1 | 0 coins for 0 |
+
+Each one is a list filled from left to right. The first two read a fixed number of earlier entries, so they take O(n); coin change reads one entry per coin.
+
+=== keypoints
+- A 1D table has one entry per position or amount, filled left to right from a few earlier entries.
+- House robber: `best[i] = max(best[i - 1], best[i - 2] + money[i - 1])`, skip the house or take it.
+- Read the choices back from the table: where an entry equals the one before, that house was skipped.
+- When each entry reads only the last two, two variables are enough.
+- Coin change: `fewest[a] = 1 + min(fewest[a - c])` over the coins that fit, with `fewest[0] = 0` and infinity for amounts that can't be made. O(amount × coins).
+- Taking the biggest coin or the richest house first can miss the best answer; the table checks every choice.
+
+=== example: Stamps on a parcel
+intro: A parcel needs exactly 14 cents of postage, and the post office has stamps of 1, 7 and 10 cents. Taking the biggest stamp first uses five stamps; the table finds the fewest.
+```python
+stamps = [1, 7, 10]
+postage = 14
+
+fewest = [0] + [float("inf")] * postage
+last = [None] * (postage + 1)
+for a in range(1, postage + 1):
+    for s in stamps:
+        if s <= a and fewest[a - s] + 1 < fewest[a]:
+            fewest[a] = fewest[a - s] + 1
+            last[a] = s
+
+used = []
+a = postage
+while a > 0:
+    used.append(last[a])
+    a -= last[a]
+print("fewest stamps:", fewest[postage], used)
+
+greedy = []
+left = postage
+for s in sorted(stamps, reverse=True):
+    while left >= s:
+        greedy.append(s)
+        left -= s
+print("biggest first:", len(greedy), greedy)
+```
+1-2: The stamp values and the postage needed.
+4-10: The coin-change table, remembering the last stamp used for each amount.
+12-17: Walk back from 14 to find the stamps: 7 + 7.
+19-25: For comparison, take the biggest stamp that fits, again and again: 10, then four 1s.
+
+=== example: Painting a fence
+intro: A fence has n posts, and each is painted in one of k colours. No three posts in a row may share a colour. In how many ways can it be painted? Each entry reads the two before it, as in house robber, but counts instead of maximising.
+```python
+def paint(n, k):
+    if n == 1:
+        return k
+    ways = [0] * (n + 1)
+    ways[1] = k
+    ways[2] = k * k
+    for i in range(3, n + 1):
+        ways[i] = (k - 1) * (ways[i - 1] + ways[i - 2])
+    return ways[n]
+
+for n in range(1, 6):
+    print("posts:", n, "| 2 colours:", paint(n, 2), "| 3 colours:", paint(n, 3))
+```
+1-3: One post can be any colour.
+4-6: Two posts can be any pair of colours, even the same twice.
+7-8: Post i either differs from post i − 1 (k − 1 choices, after any painting of i − 1 posts), or matches it, in which case post i − 1 must differ from post i − 2 (k − 1 choices, after any painting of i − 2 posts).
+11-12: With 2 colours, 3 posts can be painted in 6 ways: the 8 patterns minus the 2 with all three the same.
+
+=== animation: Robbing the street
+view: array money ptr=i-1
+array best ptr=i,i-1,i-2
+vars skip take
+intro: The top row is the street, with the house being decided marked. The bottom row is the table: `best[i]` is the most money from the first i houses. Each entry is the better of skipping house i − 1 or taking it.
+```python
+money = [2, 7, 9, 3, 1]
+best = [0, 0, 0, 0, 0, 0]
+best[1] = money[0]
+for i in range(2, len(money) + 1):
+    skip = best[i - 1]
+    take = best[i - 2] + money[i - 1]
+    best[i] = max(skip, take)
+print(best[-1])
+```
+1: Five houses, with the money in each.
+2: best[0] to best[5], all 0 for now.
+3: With one house, take it: best[1] = {money[0]}.
+4: Decide each house in turn, from house 1 (the second house) on.
+5: Skip house {i - 1}: the best without it is best[{i - 1}] = {best[i - 1]}.
+6: Take house {i - 1}: its {money[i - 1]}, plus best[{i - 2}] = {best[i - 2]} from before its neighbour, makes {best[i - 2] + money[i - 1]}.
+7: {('Taking is better: ' if take > skip else 'Skipping is at least as good: ')}best[{i}] = {max(skip, take)}.
+8: The most from all five houses: {best[-1]}.
+
+=== animation: Fewest coins
+view: array fewest ptr=a,a-c
+vars a c
+intro: Coins worth 1, 3 and 4. `fewest[a]` is the fewest coins that make a; amounts not reached yet are infinity. For each amount, every coin is tried as the last coin.
+```python
+coins = [1, 3, 4]
+amount = 6
+inf = float("inf")
+fewest = [0, inf, inf, inf, inf, inf, inf]
+for a in range(1, amount + 1):
+    for c in coins:
+        if c <= a and fewest[a - c] + 1 < fewest[a]:
+            fewest[a] = fewest[a - c] + 1
+print(fewest[amount])
+```
+1: The coin values.
+2: The amount to make.
+3: inf is infinity: no way to make the amount is known yet.
+4: Making 0 takes 0 coins. Every other amount starts at infinity.
+5: Fill the amounts from 1 up to 6.
+6: Try each coin as the last coin of amount {a}.
+7: {('Coin ' + str(c) + ' is too big for ' + str(a) + '.') if c > a else ('Coin ' + str(c) + ' leaves ' + str(a - c) + ', made with ' + str(fewest[a - c]) + ', so ' + str(a) + ' needs ' + str(fewest[a - c]) + ' + 1 = ' + str(fewest[a - c] + 1) + ': ' + ('better than ' + ('infinity' if fewest[a] == inf else str(fewest[a])) + '.' if fewest[a - c] + 1 < fewest[a] else 'not better than ' + str(fewest[a]) + '.'))}
+8: fewest[{a}] becomes {fewest[a - c] + 1}.
+9: The fewest coins for 6: {fewest[amount]}.
+
+=== task: predict easy
+title: Two at the ends
+prompt: The lesson's house robber table runs on four houses. What does it print?
+code:
+```python
+money = [5, 1, 1, 5]
+best = [0] * (len(money) + 1)
+best[1] = money[0]
+for i in range(2, len(money) + 1):
+    skip = best[i - 1]
+    take = best[i - 2] + money[i - 1]
+    best[i] = max(skip, take)
+print(best)
+```
+wrong[[0, 5, 5, 6, 6]]: For the last house, taking it gives 5 + best[2] = 5 + 5 = 10, more than skipping it.
+wrong[[0, 5, 6, 7, 12]]: That adds every house. Taking a house rules out the one before it: take = best[i − 2] + money[i − 1].
+wrong[[5, 1, 1, 5]]: `best` has one more entry than there are houses, starting with 0 for no houses.
+hint: best[2] = max(5, 0 + 1).
+hint: best[4] = max(best[3], best[2] + 5).
+right: `[0, 5, 5, 6, 10]`. The two outside houses, 5 + 5, beat any choice that includes a middle house.
+wrong: best[1] = 5. best[2] = max(5, 0 + 1) = 5. best[3] = max(5, 5 + 1) = 6. best[4] = max(6, 5 + 5) = 10.
+
+=== task: mcq easy
+title: Why two back?
+prompt: In house robber, taking house i − 1 gives `best[i - 2] + money[i - 1]`. Why `best[i - 2]` and not `best[i - 1]`?
+* Taking house i − 1 means its neighbour, house i − 2, must be skipped, so only the first i − 2 houses can add to it :: Right. `best[i - 2]` is the most from houses that don't touch it.
+- Because `best[i - 1]` hasn't been filled yet :: It has: it's filled one step earlier. It's the wrong choice, not an unfilled one.
+- Because every other house is always robbed :: The best choice can skip two houses in a row, as in [5, 1, 1, 5].
+- To leave a gap of two houses after every robbed one :: One skipped house is enough; best[i − 2] can include house i − 3.
+hint: Which houses are allowed together with house i − 1?
+hint: What does `best[i - 2]` cover?
+right: Two neighbours can't both be robbed, so taking house i − 1 leaves the first i − 2 houses, whose best is already in the table.
+wrong: Taking a house rules out the house before it, so its total adds to the best of the houses before that one.
+
+=== task: cells easy
+title: Robbing by hand
+prompt: Fill in the house robber table for these houses: `best[i]` is the most money from the first i houses, `best[0] = 0` and `best[1] = 3`.
+code:
+```python
+money = [3, 10, 3, 1, 2]
+```
+labels: best[2] | best[3] | best[4] | best[5]
+answer: 10 | 10 | 11 | 12
+wrong[10 | 6 | 11 | 12]: best[3] keeps the better of skipping house 2 (best[2] = 10) and taking it (best[1] + 3 = 6): 10.
+wrong[10 | 10 | 11 | 13]: best[5] = max(best[4], best[3] + 2) = max(11, 12) = 12.
+wrong[13 | 13 | 14 | 15]: Houses 0 and 1 are neighbours, so best[2] is the better of 3 and 10, not their sum.
+hint: best[2] = max(best[1], best[0] + 10).
+hint: Each entry compares skipping (the entry before) with taking (two entries before, plus this house).
+right: 10, 10, 11 and 12: houses 1 and 4, 10 + 2. The 10 decides everything, and its neighbours never get taken.
+wrong: best[2] = max(3, 10) = 10. best[3] = max(10, 3 + 3) = 10. best[4] = max(10, 10 + 1) = 11. best[5] = max(11, 10 + 2) = 12.
+
+=== task: code easy
+title: House robber
+prompt: Write `rob(money)` that returns the most money from a row of houses without robbing two neighbours. Use the lesson's table: `best[i]` is the most from the first i houses, `best[0] = 0`, `best[1] = money[0]` (when there's a house), and `best[i] = max(best[i - 1], best[i - 2] + money[i - 1])`. Return the last entry. The speed check uses a long street.
+starter:
+```python
+def rob(money):
+    n = len(money)
+    best = [0] * (n + 1)
+    # your code here
+    return best[n]
+```
+solution:
+```python
+def rob(money):
+    n = len(money)
+    best = [0] * (n + 1)
+    if n > 0:
+        best[1] = money[0]
+    for i in range(2, n + 1):
+        best[i] = max(best[i - 1], best[i - 2] + money[i - 1])
+    return best[n]
+```
+tests:
+- rob([2, 7, 9, 3, 1])
+- rob([5, 1, 1, 5])
+- rob([])
+- rob([4])
+- rob([1, 2, 3, 1])
+fail[1]: Houses 0, 2 and 4: 2 + 9 + 1 = 12.
+fail[2]: The two ends: 10.
+fail[3]: No houses: 0.
+fail[4]: One house: take it, 4.
+fail[5]: Houses 0 and 2: 1 + 3 = 4.
+speed: setup=money = [(i * 7) % 10 for i in range(n)] | call=rob(money) | target=O(n)
+slow:
+```python
+def rob(money):
+    best = [0]
+    if money:
+        best = best + [money[0]]
+    for i in range(2, len(money) + 1):
+        best = best + [max(best[i - 1], best[i - 2] + money[i - 1])]
+    return best[-1]
+```
+hint: Set `best[1] = money[0]` only if there's at least one house.
+hint: Loop i from 2 to n, filling each entry from the two before it.
+right: One pass, each entry from the two before it: O(n). The table also lets you read back which houses to rob.
+wrong: Base cases best[0] = 0 and best[1] = money[0]; then `best[i] = max(best[i - 1], best[i - 2] + money[i - 1])`.
+
+=== task: fill easy
+title: Fewest coins
+prompt: Fill in the blanks so that `min_coins` returns the fewest coins that make the amount, or -1 if it can't be made, and the program prints:
+
+```output
+2 -1 6
+```
+code:
+```python
+def min_coins(coins, amount):
+    fewest = [0] + [float("inf")] * amount
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = ??
+    if fewest[amount] == float("inf"):
+        return -1
+    return ??
+
+print(min_coins([1, 3, 4], 6), min_coins([2], 3), min_coins([1, 5, 10, 25], 63))
+```
+answer: fewest[a - c] + 1 | fewest[amount]
+wrong[fewest[a - c] | fewest[amount]]: The last coin itself has to be counted: without the + 1, every amount would take 0 coins.
+wrong[fewest[a] + 1 | fewest[amount]]: That adds 1 to the old value, which starts at infinity and stays there: every amount would be impossible.
+hint: The coins for a are the coins for a − c, plus the coin c.
+hint: Once the table is full, return the entry for the amount asked about.
+right: Each amount takes one coin more than the best amount one coin smaller. 63 takes 6 coins: 25 + 25 + 10 + 1 + 1 + 1.
+wrong: Store `fewest[a - c] + 1` when it's better, and return `fewest[amount]` unless it's infinity.
+
+=== task: multi easy
+title: True of 1D tables
+prompt: Choose **every** true statement about the lesson's 1D tables.
+* House robber's entries read the two entries before them :: Right. Skip reads best[i − 1]; take reads best[i − 2].
+* Coin change reads one earlier entry for each coin value :: Right. fewest[a − c] for every coin c that fits.
+* An amount that can't be made stays at infinity :: Right. No coin ever gives it a finite count.
+- The best robbery always takes every second house :: [5, 1, 1, 5] skips two in a row and takes the two ends.
+- Taking the biggest coin first always gives the fewest coins :: With 1, 3 and 4, it takes three coins for 6 instead of two.
+- The table only holds the final answer :: Every entry is an answer, for a smaller street or a smaller amount.
+hint: Which earlier entries does each formula use?
+hint: Does a quick rule like "biggest first" always match the table?
+right: Each entry reads a few earlier entries, unreachable amounts stay infinite, and every entry answers a smaller question. Rules of thumb like "every second house" or "biggest coin first" can miss the best.
+wrong: The tables read fixed earlier entries, keep infinity for impossible amounts, and answer every smaller case. Simple greedy rules aren't always right.
+
+=== task: parsons easy
+title: One, two or three steps
+prompt: Arrange the lines so that `ways(n)` counts the ways to climb n steps taking 1, 2 or 3 steps at a time, with a table filled from the bottom: `table[i]` adds up `table[i - step]` for every step size that fits. The program prints:
+
+```output
+[1, 1, 2, 4, 7, 13, 24]
+```
+
+Not every line is needed.
+lines:
+```python
+def ways(n):
+    table = [0] * (n + 1)
+    table[0] = 1
+    for i in range(1, n + 1):
+        for step in (1, 2, 3):
+            if step <= i:
+                table[i] += table[i - step]
+    return table[n]
+print([ways(n) for n in range(7)])
+```
+distractors:
+```python
+            if step < i:
+                table[i] = table[i - step]
+```
+hint: Standing at the bottom counts as one way.
+hint: Add, rather than replace: each step size gives a different set of ways.
+right: Each entry adds the ways from up to three entries before it, whichever fit. `step <= i` lets the last move start from the bottom, step 0.
+wrong: table[0] = 1; then for each i and each step size that fits, add `table[i - step]` to `table[i]`.
+
+=== task: order easy
+title: Solving house robber
+prompt: Put the steps of the house robber table in order.
+items:
+- Make a table with one more entry than there are houses.
+- Set best[0] to 0 and best[1] to the first house's money.
+- For each further house, work out the total if it's skipped: the entry before.
+- Work out the total if it's taken: two entries before, plus its money.
+- Store the larger, and after the last house, read the last entry.
+hint: The base cases go in before any house is decided.
+hint: Skip and take are both worked out before the larger is stored.
+right: Table, base cases, then for each house the skip total and the take total, keeping the larger; the answer is the last entry.
+wrong: Size the table, fill the base cases, and for each house compare skipping with taking. The final entry is the answer.
+
+=== task: predict easy
+title: Coins 1, 5 and 6
+prompt: What does this coin table print?
+code:
+```python
+coins = [1, 5, 6]
+amount = 10
+fewest = [0] + [float("inf")] * amount
+for a in range(1, amount + 1):
+    for c in coins:
+        if c <= a and fewest[a - c] + 1 < fewest[a]:
+            fewest[a] = fewest[a - c] + 1
+print(fewest)
+print(fewest[amount])
+```
+wrong[[0, 1, 2, 3, 4, 1, 1, 2, 3, 4, 5]\n5]: 10 can be made from two 5s: fewest[10] = fewest[5] + 1 = 2.
+wrong[[0, 1, 2, 3, 4, 1, 1, 2, 3, 4, 2]\n5]: The second line prints `fewest[10]`, the same 2.
+wrong[[0, 1, 2, 3, 4, 1, 2, 2, 3, 4, 2]\n2]: 6 is a coin itself: fewest[6] = fewest[0] + 1 = 1.
+hint: Amounts 5 and 6 are single coins.
+hint: For 10, try each last coin: 10 − 1 = 9, 10 − 5 = 5, 10 − 6 = 4.
+right: `[0, 1, 2, 3, 4, 1, 1, 2, 3, 4, 2]`, then `2`. Taking the 6 first would need 6 + 1 + 1 + 1 + 1, five coins; 5 + 5 is two.
+wrong: 1 to 4 need that many 1s; 5 and 6 are one coin; 7 is 6 + 1; 8 and 9 add more 1s; 10 is 5 + 5.
+
+=== task: mcq easy
+title: How long does coin change take?
+prompt: The coin table makes an amount of A with C different coin values. About how much work does it do?
+* O(A × C): it fills A + 1 entries, and tries every coin for each :: Right. Each try is a comparison and maybe an update.
+- O(A): one step per amount :: Each amount tries every coin, so the coins count too.
+- O(C): one step per coin :: Every amount from 1 to A is filled.
+- O(2 to the power A): every combination of coins :: The table never lists combinations: each amount is worked out once.
+hint: How many entries does the table have?
+hint: How many coins does each entry try?
+right: A + 1 entries times C coins each: O(A × C). With amounts in the millions, that's a lot of work, but it's never exponential.
+wrong: Count the loops: amounts from 1 to A, and inside, every coin value.
+
+=== task: code medium
+title: Houses in a circle
+prompt: The houses now stand in a circle, so the first and the last are neighbours too. Write `rob_circle(money)` that returns the most money without robbing two neighbours. The first and last houses can't both be robbed, so either the first is left out or the last is: solve the row without the first house and the row without the last, with a helper `rob(row)` like the lesson's, and return the better. A single house can be robbed on its own.
+starter:
+```python
+def rob(row):
+    # your code here
+    return 0
+
+def rob_circle(money):
+    # your code here
+    return 0
+```
+solution:
+```python
+def rob(row):
+    before, last = 0, 0
+    for x in row:
+        before, last = last, max(last, before + x)
+    return last
+
+def rob_circle(money):
+    if len(money) == 1:
+        return money[0]
+    return max(rob(money[1:]), rob(money[:-1]))
+```
+tests:
+- rob_circle([2, 3, 2])
+- rob_circle([1, 2, 3, 1])
+- rob_circle([5])
+- rob_circle([])
+- rob_circle([2, 7, 9, 3, 1])
+- rob_circle([200, 3, 140, 20, 10])
+fail[1]: The two 2s are neighbours in the circle: the best is the 3 alone.
+fail[2]: Houses 0 and 2: 1 + 3 = 4.
+fail[3]: One house: 5.
+fail[4]: No houses: 0.
+fail[5]: 2 and 1 are now neighbours: 2 + 9 = 11 is the best.
+fail[6]: 200 + 140 = 340; the 10 is next to the 200.
+hint: `money[1:]` leaves out the first house; `money[:-1]` leaves out the last.
+hint: Handle a single house first: both slices of one house are empty.
+right: Every allowed choice leaves out the first house or the last, so one of the two rows contains it. Two O(n) passes.
+wrong: Return the better of the row without the first house and the row without the last, with one house as a special case.
+
+=== task: code medium
+title: One trade
+prompt: `prices[d]` is a share's price on day d. Write `best_trade(prices)` that returns the most profit from buying once and selling once on a later day, or 0 if no trade makes money. Go through the days once, keeping the cheapest price seen so far: selling today would earn today's price minus that. The speed check needs one pass, not every pair of days.
+starter:
+```python
+def best_trade(prices):
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def best_trade(prices):
+    cheapest = None
+    best = 0
+    for p in prices:
+        if cheapest is None or p < cheapest:
+            cheapest = p
+        best = max(best, p - cheapest)
+    return best
+```
+tests:
+- best_trade([7, 1, 5, 3, 6, 4])
+- best_trade([7, 6, 4, 3, 1])
+- best_trade([])
+- best_trade([3])
+- best_trade([2, 4, 1, 7])
+- best_trade([3, 3, 3])
+fail[1]: Buy at 1, sell at 6: 5.
+fail[2]: Prices only fall: 0.
+fail[3]: No days: 0.
+fail[4]: One day: no trade, 0.
+fail[5]: Buy at 1, sell at 7: 6, after a dip below the first low.
+fail[6]: No price change: 0.
+speed: setup=prices = [(i * 37) % 101 for i in range(n)] | call=best_trade(prices) | target=O(n)
+slow:
+```python
+def best_trade(prices):
+    best = 0
+    for i in range(len(prices)):
+        for j in range(i + 1, len(prices)):
+            best = max(best, prices[j] - prices[i])
+    return best
+```
+hint: Before using today's price, update the cheapest price so far if today's is lower.
+hint: Today's profit is `p - cheapest`; keep the largest.
+right: The cheapest price up to each day is a one-number table, built as you go: O(n) instead of trying every pair.
+wrong: Track the lowest price so far and the best `price - lowest`, in one pass.
+
+=== task: predict medium
+title: Biggest first, again
+prompt: What does it print: the coins taken by the biggest-first rule, then the table's count?
+code:
+```python
+coins = [1, 4, 6]
+amount = 8
+
+greedy = 0
+left = amount
+for c in sorted(coins, reverse=True):
+    while left >= c:
+        left -= c
+        greedy += 1
+
+fewest = [0] + [float("inf")] * amount
+for a in range(1, amount + 1):
+    for c in coins:
+        if c <= a and fewest[a - c] + 1 < fewest[a]:
+            fewest[a] = fewest[a - c] + 1
+
+print(greedy, fewest[amount])
+```
+wrong[2 2]: Biggest first takes 6, then can't use 4 on the 2 that's left, so it needs two 1s: 3 coins.
+wrong[3 3]: The table finds 4 + 4: 2 coins.
+wrong[4 2]: After the 6, the rule takes 1 + 1: three coins in all, not four.
+hint: Biggest first: 6, then 2 is left.
+hint: The table tries 4 as the last coin of 8: fewest[4] + 1.
+right: `3 2`. The 6 looks like progress but leaves 2, which only 1s can make. The table tries every last coin and finds 4 + 4.
+wrong: Greedy: 6, 1, 1. Table: fewest[8] = fewest[4] + 1 = 2.
+
+=== task: cells medium
+title: Coins 1, 4 and 5
+prompt: Fill in the coin table entries for coins worth 1, 4 and 5.
+code:
+```python
+coins = [1, 4, 5]
+# the entries so far, for amounts 0 to 5:
+fewest = [0, 1, 2, 3, 1, 1]
+```
+labels: fewest[6] | fewest[7] | fewest[8] | fewest[9]
+answer: 2 | 3 | 2 | 2
+wrong[2 | 3 | 4 | 2]: 8 = 4 + 4: fewest[4] + 1 = 2.
+wrong[2 | 2 | 2 | 2]: 7 can't be two coins: 5 + 2 needs two 1s, and 4 + 3 needs three: the best is 5 + 1 + 1.
+wrong[3 | 3 | 2 | 2]: 6 = 5 + 1: two coins.
+hint: For each amount, try 1, 4 and 5 as the last coin.
+hint: fewest[9] = min(fewest[8], fewest[5], fewest[4]) + 1.
+right: 2, 3, 2 and 2: 5 + 1, 5 + 1 + 1, 4 + 4 and 5 + 4.
+wrong: 6: min(1, 2, 1) + 1 = 2. 7: min(2, 3, 2) + 1 = 3. 8: min(3, 1, 3) + 1 = 2. 9: min(2, 1, 1) + 1 = 2.
+
+=== task: fill medium
+title: Which coins, again
+prompt: Fill in the blanks so that `coins_used` records the coin that gave each amount its best count, and then walks back from the amount to list the coins. The program prints:
+
+```output
+[3, 3] [2, 2, 5]
+```
+code:
+```python
+def coins_used(coins, amount):
+    fewest = [0] + [float("inf")] * amount
+    last = [None] * (amount + 1)
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = fewest[a - c] + 1
+                last[a] = ??
+    used = []
+    a = amount
+    while a > 0:
+        used.append(last[a])
+        a -= ??
+    return used
+
+print(coins_used([1, 3, 4], 6), coins_used([2, 5], 9))
+```
+answer: c | last[a]
+wrong[a | last[a]]: `last[a]` should be the coin, not the amount: the walk back would take the whole amount in one step, as a single "coin".
+wrong[c | c]: After the loops, `c` is the last coin value tried, not the coin used for this amount: the walk back would take the wrong steps.
+hint: The coin that has improved `fewest[a]` is `c`.
+hint: Walking back, subtract the coin you've listed.
+right: `last[a]` remembers the final coin of the best way to make a. Subtracting it lands on an amount whose best way is also recorded, all the way down to 0.
+wrong: Store `last[a] = c` on every improvement, and walk back with `a -= last[a]`.
+
+=== task: mcq medium
+title: Why infinity?
+prompt: Why does the coin table start every amount except 0 at `float("inf")`?
+* Infinity means "can't be made yet": any real count is smaller, so the first way found replaces it, and an amount no coin reaches stays infinite :: Right. And infinity plus 1 is still infinity, so an impossible amount never spreads a finite count.
+- Because Python lists can't hold None :: Lists can hold None, but `min` and `<` don't work with None and numbers.
+- To make the table run faster :: The starting value doesn't change how many steps the loops take.
+- Because infinity is the answer for amounts made of many coins :: Any amount that can be made has a finite count.
+hint: What should happen the first time a way to make an amount is found?
+hint: What is infinity plus 1?
+right: Infinity is a starting value every real answer beats, and adding 1 to it changes nothing, so impossible amounts stay impossible and stand out at the end.
+wrong: Starting at infinity makes the first real count win, keeps unreachable amounts infinite, and lets you return −1 for them.
+
+=== task: predict medium
+title: Some amounts can't be made
+prompt: What does it print for coins worth 3 and 5?
+code:
+```python
+coins = [3, 5]
+amount = 8
+fewest = [0] + [float("inf")] * amount
+for a in range(1, amount + 1):
+    for c in coins:
+        if c <= a and fewest[a - c] + 1 < fewest[a]:
+            fewest[a] = fewest[a - c] + 1
+print(fewest)
+print(-1 if fewest[7] == float("inf") else fewest[7])
+```
+wrong[[0, inf, inf, 1, inf, 1, 2, 3, 2]\n3]: 7 − 3 = 4 and 7 − 5 = 2 are both impossible, so 7 is too.
+wrong[[0, inf, inf, 1, inf, 1, 2, inf, 3]\n-1]: 8 = 3 + 5: fewest[5] + 1 = 2.
+wrong[[0, inf, inf, 1, inf, 1, inf, inf, 2]\n-1]: 6 = 3 + 3: fewest[3] + 1 = 2.
+hint: An amount can be made only if some amount one coin smaller can.
+hint: Check 7: it would come from 4 or from 2.
+right: `[0, inf, inf, 1, inf, 1, 2, inf, 2]`, then `-1`. 1, 2, 4 and 7 can't be made from 3s and 5s; every amount from 8 up can.
+wrong: 3 and 5 are one coin; 6 is 3 + 3; 8 is 3 + 5. 1, 2, 4 and 7 only lead back to impossible amounts.
+
+=== task: multi medium
+title: When biggest-first fails
+prompt: For which coin sets can "take the biggest coin that fits, again and again" use more coins than necessary for some amount? Choose **every** one.
+* 1, 3 and 4 :: Right. 6: biggest first gives 4 + 1 + 1, but 3 + 3 is two coins.
+* 1, 5 and 6 :: Right. 10: 6 + 1 + 1 + 1 + 1 against 5 + 5.
+* 1, 7 and 10 :: Right. 14: 10 and four 1s against 7 + 7.
+- 1, 5, 10 and 25 :: For these coins biggest first is always best.
+- 1, 2, 4 and 8 :: With powers of 2, biggest first is always best.
+- 1, 2 and 5 :: For these coins biggest first is always best too.
+hint: Look for an amount where a big coin leaves a remainder that's hard to make, while two middle coins fit exactly.
+hint: Try amounts like twice the middle coin.
+right: The biggest-first rule works for some coin systems and fails for others, and you can't tell at a glance. The table is always right; the greedy algorithms lesson looks at when greedy choices are safe.
+wrong: Biggest first fails for 1/3/4, 1/5/6 and 1/7/10; it's fine for the usual 1/5/10/25, for powers of 2, and for 1/2/5.
+
+=== task: parsons medium
+title: Which houses to rob
+prompt: Arrange the lines so that `which_houses` fills the house robber table and then reads the choices back from the end: when an entry equals the one before, that house was skipped; otherwise it was taken, and the search jumps past its neighbour. The program prints:
+
+```output
+[0, 3] [1, 4]
+```
+
+Not every line is needed.
+lines:
+```python
+def which_houses(money):
+    n = len(money)
+    best = [0] * (n + 1)
+    if n > 0:
+        best[1] = money[0]
+    for i in range(2, n + 1):
+        best[i] = max(best[i - 1], best[i - 2] + money[i - 1])
+    houses = []
+    i = n
+    while i > 0:
+        if best[i] == best[i - 1]:
+            i -= 1
+        else:
+            houses.append(i - 1)
+            i -= 2
+    houses.reverse()
+    return houses
+```
+distractors:
+```python
+            houses.append(i)
+            i -= 1
+```
+after:
+```python
+print(which_houses([5, 1, 1, 5]), which_houses([3, 10, 3, 1, 2]))
+```
+hint: Entry i covers houses 0 to i − 1, so a taken house is house i − 1.
+hint: After a taken house, its neighbour can't be taken, so move back two.
+right: The table remembers the best totals, and comparing neighbouring entries reveals each choice. The houses come out from right to left, so they're reversed at the end.
+wrong: Fill the table, then from i = n: equal to the entry before means skipped (step back 1); otherwise record house i − 1 and step back 2. Reverse.
+
+=== task: order medium
+title: The coin table, step by step
+prompt: Put the steps of the fewest-coins table in order.
+items:
+- Set fewest[0] to 0 and every other amount to infinity.
+- Go through the amounts from 1 up to the target.
+- For each amount, try each coin that fits as the last coin.
+- Keep fewest[a − c] + 1 if it beats the amount's current count.
+- At the end, return −1 if the target is still infinity, or its count.
+hint: The base case and the infinities come first.
+hint: The answer is read once every amount is filled.
+right: Initialise, then fill the amounts in increasing order, trying every last coin, and read the target's entry at the end.
+wrong: Base case and infinities; then amounts upward, each trying every coin; finally the target's count or −1.
+
+=== task: code hard
+title: Travel passes
+prompt: You'll travel on the days in `days` (sorted day numbers from 1 to 365). A 1-day pass costs `costs[0]`, a 7-day pass `costs[1]` and a 30-day pass `costs[2]`, and a pass covers that many days in a row from the day you buy it. Write `min_cost_tickets(days, costs)` that returns the cheapest way to cover every travel day. Use a table over the days of the year: `cost[d]` is the cheapest way to cover the travel days up to day d. On a day you don't travel, `cost[d] = cost[d - 1]`. On a travel day, the pass covering it ends today, and was bought 1, 7 or 30 days earlier: `cost[d - 1] + costs[0]`, `cost[d - 7] + costs[1]` or `cost[d - 30] + costs[2]`, using `cost[0]` for any day before 1.
+starter:
+```python
+def min_cost_tickets(days, costs):
+    if not days:
+        return 0
+    last_day = days[-1]
+    cost = [0] * (last_day + 1)
+    # your code here
+    return cost[last_day]
+```
+solution:
+```python
+def min_cost_tickets(days, costs):
+    if not days:
+        return 0
+    last_day = days[-1]
+    travel = set(days)
+    cost = [0] * (last_day + 1)
+    for d in range(1, last_day + 1):
+        if d not in travel:
+            cost[d] = cost[d - 1]
+        else:
+            cost[d] = min(cost[d - 1] + costs[0],
+                          cost[max(0, d - 7)] + costs[1],
+                          cost[max(0, d - 30)] + costs[2])
+    return cost[last_day]
+```
+tests:
+- min_cost_tickets([1, 4, 6, 7, 8, 20], [2, 7, 15])
+- min_cost_tickets([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 30, 31], [2, 7, 15])
+- min_cost_tickets([], [2, 7, 15])
+- min_cost_tickets([5], [2, 7, 15])
+- min_cost_tickets([1, 2, 3], [5, 7, 20])
+- min_cost_tickets(list(range(1, 366)), [2, 7, 15])
+fail[1]: A 1-day pass on day 1, a 7-day pass covering days 4 to 8, and a 1-day pass on day 20: 2 + 7 + 2 = 11.
+fail[2]: A 30-day pass for days 1 to 30 and a 1-day pass for day 31: 17.
+fail[3]: No travel: 0.
+fail[4]: One day: 2.
+fail[5]: Three 1-day passes would cost 15; one 7-day pass costs 7.
+fail[6]: Every day of the year: 187.
+hint: Put the travel days in a set so that `d in travel` is quick.
+hint: `max(0, d - 7)` and `max(0, d - 30)` use `cost[0]` for passes bought before day 1.
+right: Each day reads three earlier days, so the table takes O(365) whatever the trip. Defining an entry as "covered up to day d" makes the days without travel free.
+wrong: Fill days 1 to the last travel day: copy the previous day if not travelling, otherwise take the cheapest of the three passes ending today.
+
+=== task: code hard
+title: Delete and earn
+prompt: From a list of numbers, you can repeatedly pick a number x to earn x points, but then every copy of x − 1 and x + 1 is deleted. Write `delete_and_earn(nums)` that returns the most points. Taking one copy of x means you may as well take every copy, so make `points[x]`, the total of all copies of x, for x from 0 to the largest number. Then choosing x rules out x − 1 and x + 1: that's house robber on `points`. Use a helper `rob(row)` like the lesson's.
+starter:
+```python
+def rob(row):
+    # your code here
+    return 0
+
+def delete_and_earn(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def rob(row):
+    before, last = 0, 0
+    for x in row:
+        before, last = last, max(last, before + x)
+    return last
+
+def delete_and_earn(nums):
+    if not nums:
+        return 0
+    points = [0] * (max(nums) + 1)
+    for x in nums:
+        points[x] += x
+    return rob(points)
+```
+tests:
+- delete_and_earn([3, 4, 2])
+- delete_and_earn([2, 2, 3, 3, 3, 4])
+- delete_and_earn([])
+- delete_and_earn([1])
+- delete_and_earn([1, 1, 1, 2, 4, 5, 5, 5, 6])
+- delete_and_earn([8, 8, 7, 7, 7])
+fail[1]: Take 4 (deleting 3), then 2: 6.
+fail[2]: All three 3s: 9; the 2s and the 4 are deleted.
+fail[3]: Nothing to pick: 0.
+fail[4]: 1.
+fail[5]: Take the three 1s (3 points) and the three 5s (15 points), which delete the 2, the 4 and the 6: 18.
+fail[6]: The 8s are worth 16 and the 7s 21, and they rule each other out: 21.
+hint: `points[x] += x` for each number gives the value of taking every copy of x.
+hint: Neighbouring values can't both be taken, exactly like neighbouring houses.
+right: Turning the list into points by value makes the rule "x rules out x ± 1" into "neighbours rule each other out". O(n + largest number).
+wrong: Build points by value, then run house robber on it.
+
+=== task: code hard
+title: Fewest squares
+prompt: Every whole number is a sum of perfect squares (1, 4, 9, 16...). Write `fewest_squares(n)` that returns the fewest squares that add up to n: 12 is 4 + 4 + 4, three squares, and 13 is 4 + 9, two. It's coin change with the squares up to n as coins: `best[a]` is 1 plus the smallest `best[a - k * k]`, over every k with k × k ≤ a, and `best[0] = 0`.
+starter:
+```python
+def fewest_squares(n):
+    best = [0] + [float("inf")] * n
+    # your code here
+    return best[n]
+```
+solution:
+```python
+def fewest_squares(n):
+    best = [0] + [float("inf")] * n
+    for a in range(1, n + 1):
+        k = 1
+        while k * k <= a:
+            if best[a - k * k] + 1 < best[a]:
+                best[a] = best[a - k * k] + 1
+            k += 1
+    return best[n]
+```
+tests:
+- fewest_squares(12)
+- fewest_squares(13)
+- fewest_squares(1)
+- fewest_squares(0)
+- fewest_squares(7)
+- fewest_squares(43)
+- fewest_squares(2000)
+fail[1]: 4 + 4 + 4: 3. Taking the biggest square first gives 9 + 1 + 1 + 1, four.
+fail[2]: 4 + 9: 2.
+fail[3]: 1 is a square: 1.
+fail[4]: No squares needed: 0.
+fail[5]: 4 + 1 + 1 + 1: 4.
+fail[6]: 25 + 9 + 9: 3.
+fail[7]: 1600 + 400: 2.
+hint: For each amount a, try every square k × k that fits, as the last square.
+hint: Every amount can be made from 1s, so no entry stays infinite.
+right: Each amount tries about √a squares, so the table takes O(n√n). The squares are coins, and the biggest one isn't always the best start.
+wrong: Fill `best[a]` from `best[a - k * k] + 1` for every k with k × k ≤ a, starting from `best[0] = 0`.
+
+=== task: code hard
+title: Never three in a row
+prompt: Write `no_three(nums)` that returns the largest sum of numbers (all 0 or more) you can choose from the list without choosing three neighbours in a row. Let `best[i]` be the best from the first i numbers. For number i − 1, the last one, there are three cases: skip it (`best[i - 1]`); take it but not the one before (`best[i - 2] + nums[i - 1]`); or take it and the one before, but not the one before that (`best[i - 3] + nums[i - 2] + nums[i - 1]`). Treat entries before 0 as 0.
+starter:
+```python
+def no_three(nums):
+    n = len(nums)
+    best = [0] * (n + 1)
+    # your code here
+    return best[n]
+```
+solution:
+```python
+def no_three(nums):
+    n = len(nums)
+    best = [0] * (n + 1)
+    for i in range(1, n + 1):
+        skip = best[i - 1]
+        one = (best[i - 2] if i >= 2 else 0) + nums[i - 1]
+        two = 0
+        if i >= 2:
+            two = (best[i - 3] if i >= 3 else 0) + nums[i - 2] + nums[i - 1]
+        best[i] = max(skip, one, two)
+    return best[n]
+```
+tests:
+- no_three([1, 2, 3])
+- no_three([3, 3, 3, 3])
+- no_three([100, 1000, 100, 1000, 1])
+- no_three([])
+- no_three([5])
+- no_three([6, 1, 1, 6, 1, 1, 6])
+fail[1]: 2 + 3: 5.
+fail[2]: Skip one of the middle two: 3 + 3 + 3 = 9.
+fail[3]: 100 + 1000, skip, 1000 + 1: 2101.
+fail[4]: Nothing: 0.
+fail[5]: One number: 5.
+fail[6]: The three 6s and two of the 1s: 20.
+hint: Work out the three cases, using 0 for entries before the start.
+hint: The "two" case needs at least two numbers.
+right: Each entry reads up to three entries back, one for each way the end of the choice can look. Still one pass: O(n).
+wrong: For each i: the max of skipping, taking one (with best[i − 2]) and taking two (with best[i − 3]).
+
+=== task: predict hard
+title: Two numbers in the wrong order
+prompt: This version tries to keep only two numbers, but updates them one at a time. What does it print?
+code:
+```python
+def rob_total(money):
+    before, last = 0, 0
+    for x in money:
+        last = max(last, before + x)
+        before = last
+    return last
+
+print(rob_total([2, 7, 9, 3, 1]), rob_total([5, 1, 1, 5]))
+```
+wrong[12 10]: Those are the right answers. Here `before` is set to the **new** `last`, so the next house can be added to a total that already includes its neighbour.
+wrong[9 5]: `last` keeps growing: each house is added to `before`, which is the total so far.
+wrong[22 10]: The second street adds up the same way: 5 + 1 + 1 + 5.
+hint: After the first house, `before` and `last` are equal. What does the second house get added to?
+hint: Every house ends up added to the running total.
+right: `22 12`. `before` should be the old `last`, from one house earlier; set after the update, it's the current total, so every house is added and the neighbour rule is lost. Updating both together, `before, last = last, max(last, before + x)`, keeps the old value.
+wrong: Each pass sets `before` to the new `last`, so the next `before + x` adds x to everything so far: 2 + 7 + 9 + 3 + 1 = 22 and 5 + 1 + 1 + 5 = 12.
+
+=== task: predict hard
+title: The richest house first
+prompt: A greedy robber takes the richest house that's still allowed, again and again. What does it print, for each street the greedy total and then the table's best?
+code:
+```python
+def greedy(money):
+    taken = [False] * len(money)
+    total = 0
+    for value, i in sorted([(m, i) for i, m in enumerate(money)], reverse=True):
+        left_ok = i == 0 or not taken[i - 1]
+        right_ok = i == len(money) - 1 or not taken[i + 1]
+        if left_ok and right_ok:
+            taken[i] = True
+            total += value
+    return total
+
+def rob(money):
+    before, last = 0, 0
+    for x in money:
+        before, last = last, max(last, before + x)
+    return last
+
+print(greedy([4, 5, 4]), rob([4, 5, 4]))
+print(greedy([2, 7, 9, 3, 1]), rob([2, 7, 9, 3, 1]))
+```
+wrong[8 8\n12 12]: The greedy robber takes the 5 first, and then both 4s are its neighbours.
+wrong[5 8\n11 12]: On the second street greedy takes 9, then 2 (house 0 isn't next to house 2), then 1: 12.
+wrong[5 5\n12 12]: The table compares taking the middle house with taking both ends: 4 + 4 = 8.
+hint: Greedy on [4, 5, 4]: what can it take after the 5?
+hint: On the second street, 7 and 3 are blocked by the 9, but 2 and 1 aren't.
+right: `5 8`, then `12 12`. Greedy happens to be right on the second street and wrong on the first: grabbing the 5 blocks two houses worth 8. The table checks both choices for every house.
+wrong: [4, 5, 4]: greedy takes 5 and is blocked; the table takes 4 + 4 = 8. [2, 7, 9, 3, 1]: greedy takes 9, then 2 and 1: 12, the same as the table.
+
+=== task: cells hard
+title: Fence colours by hand
+prompt: The lesson's fence example: n posts, k colours, no three posts in a row the same colour. `ways[1] = k`, `ways[2] = k * k`, and `ways[i] = (k - 1) * (ways[i - 1] + ways[i - 2])`. Fill in the table for k = 4.
+code:
+```python
+k = 4
+ways = [0, 4, 16, 0, 0]
+```
+labels: ways[3] | ways[4]
+answer: 60 | 228
+wrong[64 | 256]: That's every colouring, k to the power n. Patterns with three posts the same colour must be left out: 64 − 4 = 60.
+wrong[60 | 240]: ways[4] = 3 × (60 + 16) = 228.
+wrong[80 | 288]: The factor is k − 1 = 3, not k: post i differs from post i − 1 in 3 ways.
+hint: ways[3] = 3 × (16 + 4).
+hint: ways[4] = 3 × (ways[3] + ways[2]).
+right: 60 and 228. Of the 64 ways to colour three posts, only the 4 single-colour ones break the rule.
+wrong: ways[3] = 3 × (16 + 4) = 60. ways[4] = 3 × (60 + 16) = 228.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to this coin table. Choose **every** change that can make `min_coins` return a wrong answer.
+code:
+```python
+def min_coins(coins, amount):
+    fewest = [0] + [float("inf")] * amount
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = fewest[a - c] + 1
+    if fewest[amount] == float("inf"):
+        return -1
+    return fewest[amount]
+```
+* Starting every amount at 0 instead of infinity :: Right. No count is ever below 0, so nothing improves and every amount comes out as 0 coins.
+* Dropping the `c <= a` check :: Right. `fewest[a - c]` with a negative index reads entries from the end of the list, which are other amounts.
+* Stopping the coin loop at the first coin that improves `fewest[a]` :: Right. A later coin might improve it further: with 1, 3 and 4, amount 6 would stop at 1 + fewest[5] = 3.
+- Trying the coins from the biggest to the smallest :: Every coin is still tried for every amount, so the minimum is the same.
+- Using `fewest[a] = min(fewest[a], fewest[a - c] + 1)` instead of the `if` :: That's the same rule, written another way.
+- Returning `None` instead of `-1` for impossible amounts :: That's a different way to say "impossible", not a wrong count.
+hint: Which changes stop the table trying every coin, or read the wrong entries?
+hint: Which changes only reorder or rewrite the same comparisons?
+right: The starting values, the check that a coin fits, and trying every coin are all essential. The order of the coins and the way the minimum is written don't matter.
+wrong: A table that starts at 0, reads negative indexes, or stops early gives wrong counts. Reordering coins or rewriting `min` doesn't.
+
+=== task: fill hard
+title: Splitting into words
+prompt: Can a string be split into words from a set? `can[i]` is True when `text[:i]`, the first i characters, can be split. The empty start can: `can[0] = True`. `text[:i]` can be split if some earlier split point j can, and `text[j:i]` is a word. Fill in the blanks so that the program prints:
+
+```output
+True True False
+```
+code:
+```python
+def word_break(text, words):
+    n = len(text)
+    can = [False] * (n + 1)
+    can[0] = ??
+    for i in range(1, n + 1):
+        for j in range(i):
+            if can[j] and ?? in words:
+                can[i] = True
+                break
+    return can[n]
+
+words = {"apple", "pen", "pine", "pineapple"}
+print(word_break("applepenapple", words), word_break("pineapplepen", words), word_break("applepie", words))
+```
+answer: True | text[j:i]
+wrong[False | text[j:i]]: Every split starts from the empty start, so with `can[0]` False nothing would ever be True.
+wrong[True | text[j:i + 1]]: That piece runs one character past i, so it never matches the piece that ends where `can[i]` does.
+hint: Nothing has to be split before the first character.
+hint: The last word of `text[:i]` runs from j up to, but not including, i.
+right: Each entry asks whether some earlier split point leads to a word ending exactly at i. "applepie" fails because "pie" isn't a word.
+wrong: `can[0] = True`, and `can[i]` is True when `can[j]` is True and `text[j:i]` is in the set.
+
+=== task: parsons hard
+title: Fewest jumps
+prompt: From position j you can jump forward up to `nums[j]` places. `jumps[i]` is the fewest jumps to reach position i from position 0: 0 for position 0, and otherwise 1 more than the fewest for any earlier position j that can reach i, with `j + nums[j] >= i`. Positions that can't be reached stay infinite. Arrange the lines so that the program prints:
+
+```output
+[0, 1, 1, 2, 2] [0, 1, 2, 3]
+```
+
+Not every line is needed.
+lines:
+```python
+def min_jumps(nums):
+    n = len(nums)
+    jumps = [0] + [float("inf")] * (n - 1)
+    for i in range(1, n):
+        for j in range(i):
+            if j + nums[j] >= i and jumps[j] + 1 < jumps[i]:
+                jumps[i] = jumps[j] + 1
+    return jumps
+```
+distractors:
+```python
+            if j + nums[j] > i and jumps[j] + 1 < jumps[i]:
+    jumps = [0] * n
+```
+after:
+```python
+print(min_jumps([2, 3, 1, 1, 4]), min_jumps([1, 1, 1, 1]))
+```
+hint: Position j reaches every position up to `j + nums[j]`, including that one.
+hint: Unreached positions must start at infinity, or no jump would ever improve them.
+right: Each entry tries every earlier position as the jump's start: O(n²). From [2, 3, 1, 1, 4], two jumps reach the end: 0 → 1 → 4.
+wrong: Start at 0 for position 0 and infinity elsewhere; for each i, take 1 + the best jumps[j] over every j that can reach i.

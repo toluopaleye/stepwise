@@ -199,6 +199,8 @@ function testEq(a, b) {
     const x = fval(a), y = fval(b);
     if (x === y) return true;
     if (Number.isNaN(x) && Number.isNaN(y)) return true;
+    // infinity only equals itself (the tolerance below would make inf "close" to any number)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
     return Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
   }
   if ((a instanceof PyList && b instanceof PyList) || (a instanceof PyTuple && b instanceof PyTuple)) {
