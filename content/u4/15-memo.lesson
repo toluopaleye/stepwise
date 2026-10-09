@@ -1,0 +1,1121 @@
+=== lesson
+id: algo-memo
+title: Dynamic programming: memoization
+summary: Some recursive solutions solve the same smaller problems again and again. Memoization stores each answer the first time it's worked out and looks it up after that, which can turn exponential time into linear time. It's the top-down half of dynamic programming. You'll memoize with a dictionary and with `@cache`, count the work it saves, and solve climbing stairs, grid paths and other counting and best-choice problems by finding the right subproblem.
+
+=== learn
+### The same work, again and again
+In the Recursion lesson, `fib(n)` called itself twice, on n − 1 and n − 2. Counting how often each value is worked out shows the problem:
+```python
+count = {}
+
+def fib(n):
+    count[n] = count.get(n, 0) + 1
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+print(fib(6))
+print(count)
+```
+```output
+8
+{6: 1, 5: 1, 4: 2, 3: 3, 2: 5, 1: 8, 0: 5}
+```
+25 calls to find 7 different values: `fib(2)` alone is worked out 5 times. The smaller problems **overlap**: `fib(5)` and `fib(4)` both need `fib(3)`, and each works it out from scratch. That's why the calls grow exponentially, about 1.6 times for each step of n.
+
+**Dynamic programming** (DP) is the name for solving each smaller problem, or **subproblem**, once and reusing its answer.
+
+### A memo dictionary
+**Memoization** keeps a dictionary of answers, the **memo**, keyed by the arguments. Each call checks the memo first; only if the answer isn't there does it work it out, and then it stores it before returning:
+```python
+memo = {}
+
+def fib(n):
+    if n < 2:
+        return n
+    if n in memo:
+        return memo[n]
+    memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+
+print(fib(6), memo)
+print(fib(90))
+```
+```output
+8 {2: 1, 3: 2, 4: 3, 5: 5, 6: 8}
+2880067194370816120
+```
+The memo fills from the bottom up: `fib(2)` is the first call to finish, so it's stored first. After that, every repeated request is an O(1) lookup. Each value from 2 to n is worked out once, so `fib(n)` takes O(n) time instead of exponential time, and `fib(90)` is instant, where the plain version would need about 10¹⁹ calls. Animation 1 follows the memo as it fills.
+
+This style is called **top-down**: the recursion starts from the big question and works down to the small ones, storing answers on the way back up. The next lesson fills the same answers **bottom-up**, from the smallest, with a loop.
+
+### @cache does it for you
+The `functools` module can add a memo to a function for you:
+```python
+from functools import cache
+
+@cache
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+print(fib(90))
+print(fib.cache_info())
+```
+```output
+2880067194370816120
+CacheInfo(hits=88, misses=91, maxsize=None, currsize=91)
+```
+A line starting with `@` right above a `def` is a **decorator**: Python hands the function to `cache`, which returns a version of it that keeps a memo. `cache_info()` reports what happened: 91 different arguments (0 to 90) were worked out, and 88 requests were answered from the memo. In older code you'll see `@lru_cache(maxsize=None)` from the same module, which does the same.
+
+The memo is a dictionary keyed by the arguments, so every argument must be usable as a key: numbers, strings and tuples work, lists and sets don't.
+
+### Climbing stairs
+You climb a staircase of n steps, 1 or 2 steps at a time. In how many different ways can you reach the top?
+
+Think about the **last move**. To stand on step n, you came either from step n − 1, with a 1-step, or from step n − 2, with a 2-step. Every way to reach n is a way to reach one of those, plus one move, so `ways(n) = ways(n - 1) + ways(n - 2)`. At the bottom, `ways(0) = 1`: there's exactly one way to be where you started, doing nothing. And `ways(1) = 1`.
+```python
+@cache
+def ways(n):
+    if n <= 1:
+        return 1
+    return ways(n - 1) + ways(n - 2)
+
+print([ways(n) for n in range(1, 8)], ways(50))
+```
+```output
+[1, 2, 3, 5, 8, 13, 21] 20365011074
+```
+The same numbers as Fibonacci, shifted by one. If 3-steps were allowed too, the last move could also come from n − 3, and `ways(n) = ways(n - 1) + ways(n - 2) + ways(n - 3)`.
+
+### Finding the subproblem
+The hard part of dynamic programming is deciding what the subproblem is. A recipe that works for most problems:
+
+1. Say in words what a smaller version answers: "`ways(n)` is the number of ways to reach step n".
+2. Work out how that answer depends on smaller ones, usually by thinking about the last move (or the first).
+3. Write the base cases: the smallest versions, answered directly.
+4. Memoize on the arguments that describe the subproblem.
+
+The time is the number of different subproblems times the work for each one. `ways` has n + 1 subproblems with O(1) work each: O(n).
+
+### Grid paths
+A robot starts in the top-left cell of a grid and moves only right or down. How many different paths lead it to cell (r, c), counting rows and columns from 0? The last move into (r, c) came from the cell above it or the cell to its left, so `paths(r, c) = paths(r - 1, c) + paths(r, c - 1)`. A cell in the top row or the left column has exactly one path: straight along the edge.
+```python
+@cache
+def paths(r, c):
+    if r == 0 or c == 0:
+        return 1
+    return paths(r - 1, c) + paths(r, c - 1)
+
+print(paths(2, 2), paths(2, 3), paths(16, 16))
+```
+```output
+6 10 601080390
+```
+Here the subproblem needs two numbers, so the memo is keyed by (r, c) pairs: about (r + 1) × (c + 1) of them, with O(1) work each, so O(r × c). Without the memo, the number of calls would be more than the answer itself, over 600 million for `paths(16, 16)`. Animation 2 fills a table of answers for a small grid.
+
+### When a memo doesn't help
+A memo only helps when the same subproblems come up more than once. Merge sort splits a list into halves that never overlap, and binary search makes one call per level, so a memo would never be used.
+
+The answer must also depend only on the arguments. If a function reads something else that can change, such as a global list, a stored answer can be out of date, and the memo returns it anyway.
+
+A memoized function still recurses: the first call to `fib(5000)` goes 5,000 calls deep, past Python's limit of about 1,000. The table method in the next lesson uses a loop instead, with no recursion at all.
+
+=== keypoints
+- Overlapping subproblems: a recursive solution asks for the same smaller answers again and again, which can make it exponential.
+- Memoization stores each answer the first time it's worked out: check the memo, work the answer out, store it, return it.
+- `@cache` from `functools` memoizes a function for you. Its arguments must be hashable: numbers, strings, tuples.
+- Find the subproblem by thinking about the last move: `ways(n) = ways(n - 1) + ways(n - 2)`, `paths(r, c) = paths(r - 1, c) + paths(r, c - 1)`.
+- Time = number of different subproblems × work per subproblem. The memo costs memory, one entry per subproblem.
+- A memo only helps when subproblems repeat, and the recursion can still go too deep.
+
+=== example: A frog on stones
+intro: A frog starts on the first stone and wants to reach the last. It jumps one or two stones forward, and a jump costs the difference in height between the two stones. Memoization works for "the cheapest way" as well as "how many ways".
+```python
+from functools import cache
+
+heights = [10, 30, 40, 20, 50]
+
+@cache
+def cost(i):
+    if i == 0:
+        return 0
+    best = cost(i - 1) + abs(heights[i] - heights[i - 1])
+    if i >= 2:
+        best = min(best, cost(i - 2) + abs(heights[i] - heights[i - 2]))
+    return best
+
+for i in range(len(heights)):
+    print("stone", i, "costs", cost(i))
+```
+3: The heights of the five stones.
+5-12: `cost(i)` is the cheapest way to reach stone i. The last jump came from stone i − 1 or stone i − 2, so take the cheaper of the two.
+14-15: Stone 4 costs 40: 10 to 40 (a 2-jump, cost 30), then 40 to 50 (a 2-jump, cost 10).
+
+=== example: Splitting into words
+intro: In how many ways can a string be split into dictionary words? The subproblem is "the rest of the string, from position i", so the memo is keyed by i.
+```python
+from functools import cache
+
+words = {"cat", "cats", "and", "sand", "dog"}
+text = "catsanddog"
+
+@cache
+def splits(i):
+    if i == len(text):
+        return 1
+    total = 0
+    for word in words:
+        if text.startswith(word, i):
+            total += splits(i + len(word))
+    return total
+
+print(splits(0))
+```
+3-4: The dictionary and the text.
+6-14: `splits(i)` counts the ways to split `text[i:]`. Every word that starts at position i is a possible first word; the rest is the subproblem from where it ends. Reaching the end of the text counts as one way.
+16: Two splits: "cats and dog" and "cat sand dog". Both reach `splits(7)`, the "dog" at the end, which the memo works out once.
+
+=== animation: fib with a memo
+view: callstack n
+dict memo
+intro: Each call checks the memo before doing any work. Watch the first branch of calls fill the memo from fib(2) upwards; after that, the second call in each pair is answered from the memo at once.
+```python
+memo = {}
+
+def fib(n):
+    if n < 2:
+        return n
+    if n in memo:
+        return memo[n]
+    memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+
+print(fib(5))
+```
+1: The memo starts empty.
+3: Defines fib. Nothing runs yet.
+4: fib({n}) starts. {'Is ' + str(n) + ' less than 2? ' + ('Yes: a base case.' if n < 2 else 'No.')}
+5: Base case: fib({n}) is {n}.
+6: {'Is ' + str(n) + ' in the memo? ' + ('Yes: no work needed.' if n in memo else 'No: work it out.')}
+7: Return the stored answer, {memo[n]}.
+8: fib({n}) needs fib({n - 1}) and fib({n - 2}). Once both have returned, store the sum.
+9: fib({n}) is {memo[n]}, now in the memo.
+11: Ask for fib(5).
+
+=== animation: Paths in a table
+view: grid memo row=r col=c
+callstack r c
+intro: The memo is a table with one box per cell, None until that cell's number of paths is known. The highlighted box is the cell being asked about. Each box is filled once; cell (1, 1) is needed twice, and the second time it's read from the table.
+```python
+memo = [[None, None, None], [None, None, None], [None, None, None]]
+
+def paths(r, c):
+    if memo[r][c] is not None:
+        return memo[r][c]
+    if r == 0 or c == 0:
+        memo[r][c] = 1
+    else:
+        memo[r][c] = paths(r - 1, c) + paths(r, c - 1)
+    return memo[r][c]
+
+print(paths(2, 2))
+```
+1: A 3 by 3 table, with nothing known yet.
+3: Defines paths. Nothing runs yet.
+4: paths({r}, {c}): {'is it in the table already? ' + ('Yes.' if memo[r][c] is not None else 'No.')}
+5: Read it from the table: {memo[r][c]}.
+6: {'(' + str(r) + ', ' + str(c) + ') is on the top row or the left column: one path, straight along the edge.' if r == 0 or c == 0 else 'Paths into (' + str(r) + ', ' + str(c) + ') come from above or from the left.'}
+7: Store 1 for ({r}, {c}).
+9: Ask for the paths into ({r - 1}, {c}) and ({r}, {c - 1}), then store their sum.
+10: {'(' + str(r) + ', ' + str(c) + ') has ' + str(memo[r][c]) + (' path.' if memo[r][c] == 1 else ' paths.')}
+12: Ask for the bottom-right cell, (2, 2).
+
+=== task: predict easy
+title: Counting the repeats
+code:
+```python
+count = {}
+
+def fib(n):
+    count[n] = count.get(n, 0) + 1
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+print(fib(5))
+print(count)
+```
+wrong[5\n{5: 1, 4: 1, 3: 1, 2: 1, 1: 1, 0: 1}]: There's no memo here, so every request works its value out again: fib(3) is asked for by fib(5) and by fib(4).
+wrong[5\n{5: 1, 4: 1, 3: 2, 2: 3, 1: 3, 0: 3}]: fib(1) is reached from every fib(2) and also from every fib(3): 3 + 2 = 5 times.
+wrong[5\n{0: 3, 1: 5, 2: 3, 3: 2, 4: 1, 5: 1}]: A dictionary keeps the order its keys were added, and fib(5) is counted first.
+hint: fib(5) needs fib(4) and fib(3); fib(4) needs fib(3) and fib(2). How many times is fib(3) asked for?
+hint: Each fib(2) asks for fib(1) once, and so does each fib(3).
+right: `5`, then `{5: 1, 4: 1, 3: 2, 2: 3, 1: 5, 0: 3}`. 15 calls for 6 different values: the smaller the value, the more often it's worked out again.
+wrong: fib(5) and fib(4) are called once, fib(3) twice (from 5 and 4), fib(2) three times, fib(1) five times (from each fib(2) and each fib(3)), and fib(0) three times.
+
+=== task: mcq easy
+title: What a memo does
+prompt: How does memoization make a recursive function faster?
+* It stores each answer the first time it's worked out, and looks it up when the same arguments come again :: Right. Each different subproblem is solved once.
+- It skips the base cases, so each call does less work :: The base cases still run; what's saved is repeating whole subproblems.
+- It runs the two recursive calls at the same time :: Python runs them one after the other. The saving comes from not repeating them.
+- It replaces the recursion with a loop :: That's the table method in the next lesson. A memoized function still recurses.
+hint: What does the memo dictionary hold?
+hint: When is a stored answer used?
+right: The memo remembers answers by their arguments, so a repeated request costs a lookup instead of a whole new computation.
+wrong: Memoization means: check the memo, work the answer out only if it's missing, store it, return it.
+
+=== task: cells easy
+title: One, two or three steps
+prompt: You climb stairs taking 1, 2 or 3 steps at a time. `ways(n)` counts the ways to reach step n. What are these values?
+code:
+```python
+from functools import cache
+
+@cache
+def ways(n):
+    if n < 0:
+        return 0
+    if n == 0:
+        return 1
+    return ways(n - 1) + ways(n - 2) + ways(n - 3)
+```
+labels: ways(3) | ways(4) | ways(5)
+answer: 4 | 7 | 13
+wrong[3 | 5 | 8]: Those count 1-steps and 2-steps only. A 3-step adds the ways from three steps down: ways(3) includes the single 3-step.
+wrong[4 | 7 | 11]: ways(5) adds all three before it: ways(4) + ways(3) + ways(2) = 7 + 4 + 2.
+wrong[4 | 8 | 16]: Each value is the sum of the three before it, not double the one before: ways(4) = 4 + 2 + 1.
+hint: ways(0) = 1, ways(1) = 1 and ways(2) = 2.
+hint: ways(3) = ways(2) + ways(1) + ways(0).
+right: 4, 7 and 13. Each value adds up the three before it, because the last move was a 1-step, a 2-step or a 3-step.
+wrong: ways(3) = 2 + 1 + 1 = 4; ways(4) = 4 + 2 + 1 = 7; ways(5) = 7 + 4 + 2 = 13.
+
+=== task: code easy
+title: Tribonacci with a memo
+prompt: The Tribonacci numbers start 0, 1, 1, and each one after that is the sum of the three before it: 0, 1, 1, 2, 4, 7, 13, 24. Write `trib_memo(n, memo)` that returns the n-th one (counting from 0) using the memo dictionary, and `trib(n)` that calls it with a new, empty dictionary. The speed check needs the memo: without it, the calls grow exponentially.
+starter:
+```python
+def trib_memo(n, memo):
+    if n < 3:
+        return [0, 1, 1][n]
+    # your code here
+    return 0
+
+def trib(n):
+    return trib_memo(n, {})
+```
+solution:
+```python
+def trib_memo(n, memo):
+    if n < 3:
+        return [0, 1, 1][n]
+    if n in memo:
+        return memo[n]
+    memo[n] = trib_memo(n - 1, memo) + trib_memo(n - 2, memo) + trib_memo(n - 3, memo)
+    return memo[n]
+
+def trib(n):
+    return trib_memo(n, {})
+```
+tests:
+- trib(0)
+- trib(2)
+- trib(3)
+- trib(10)
+- trib(15)
+fail[1]: The first number is 0.
+fail[2]: The third number is 1.
+fail[3]: 0 + 1 + 1 = 2.
+fail[4]: 0, 1, 1, 2, 4, 7, 13, 24, 44, 81, 149: 149.
+fail[5]: 3136.
+speed: setup=m = n | call=trib(m) | target=O(n) | sizes=50,100,200,400
+slow:
+```python
+def trib_memo(n, memo):
+    if n < 3:
+        return [0, 1, 1][n]
+    return trib_memo(n - 1, memo) + trib_memo(n - 2, memo) + trib_memo(n - 3, memo)
+
+def trib(n):
+    return trib_memo(n, {})
+```
+hint: After the base cases: if n is in the memo, return the stored answer.
+hint: Otherwise store `trib_memo(n - 1, memo) + trib_memo(n - 2, memo) + trib_memo(n - 3, memo)` in `memo[n]` and return it.
+right: Each n from 3 up is worked out once, with three lookups or calls: O(n). Without the memo, the calls would grow about 1.8 times for each step of n.
+wrong: Base cases, then a memo check, then compute, store and return. `trib` starts each search with a fresh dictionary.
+
+=== task: fill easy
+title: Down to one
+prompt: Starting from a number n, each move subtracts 1, halves the number (if it's even) or divides it by 3 (if 3 divides it). `steps(n)` finds the fewest moves to reach 1, trying every move and keeping the best, with a memo so that each number is worked out once. Fill in the blanks so that the program prints:
+
+```output
+3 6 9
+```
+code:
+```python
+memo = {}
+
+def steps(n):
+    if n == 1:
+        return 0
+    if n in memo:
+        return memo[n]
+    best = steps(n - 1)
+    if n % 2 == 0:
+        best = min(best, steps(??))
+    if n % 3 == 0:
+        best = min(best, steps(n // 3))
+    memo[n] = ??
+    return memo[n]
+
+print(steps(10), steps(96), steps(500))
+```
+answer: n // 2 | best + 1
+wrong[n // 2 | best]: The move itself has to be counted: without the + 1, every number would need 0 moves.
+wrong[n - 1 | best + 1]: Halving would never be tried, since n − 1 is already the first option: 96 and 500 would take longer routes.
+hint: Halving an even number gives `n // 2`.
+hint: The answer for n is one move plus the best answer after that move.
+right: The best route from n is one move to some next number, plus the best route from there. With the memo, each number from 2 to n is worked out once: 10 → 9 → 3 → 1 takes 3 moves.
+wrong: Try `steps(n // 2)` for an even n, and store `best + 1`: the best next number's moves, plus this move.
+
+=== task: multi easy
+title: True of memoization
+prompt: Choose **every** true statement about memoization.
+* A memoized function works out each different set of arguments once :: Right. After that, the same arguments are a lookup.
+* The memo costs extra memory, one entry for each subproblem :: Right. It trades memory for time.
+* `@cache` needs arguments that can be dictionary keys :: Right. Numbers, strings and tuples work; lists don't.
+- Memoization makes every recursive function faster :: Only when subproblems repeat. Merge sort's halves never do.
+- A memoized function never recurses deeply :: Its first call still goes as deep as the recursion does: `fib(5000)` goes 5,000 calls deep.
+- The memo has to be filled in before the function is first called :: The memo fills itself, one entry each time a new subproblem is worked out.
+hint: What does a memo cost, and when does it save anything?
+hint: How does `@cache` store its answers?
+right: Each subproblem is solved once and stored, which costs memory and needs hashable arguments. It only pays off when subproblems repeat, and the recursion can still be deep.
+wrong: Memos store answers by argument as they're found. They help only with repeats, use memory, and don't reduce the depth of the first call.
+
+=== task: parsons easy
+title: No two ones in a row
+prompt: How many strings of n characters, each 0 or 1, have no two 1s next to each other? Build them from left to right: the next character can always be 0, but it can be 1 only if the last one wasn't. So the subproblem needs two things: how many characters are left, and what the last one was. Arrange the lines so that the program prints:
+
+```output
+5 144
+```
+
+Not every line is needed.
+lines:
+```python
+from functools import cache
+
+@cache
+def no_double(n, last):
+    if n == 0:
+        return 1
+    total = no_double(n - 1, 0)
+    if last == 0:
+        total += no_double(n - 1, 1)
+    return total
+```
+distractors:
+```python
+    if last == 1:
+        return 0
+```
+after:
+```python
+print(no_double(3, 0), no_double(10, 0))
+```
+hint: When no characters are left, the string is finished: that's one string.
+hint: A 1 can follow only a 0. Start as if the last character were 0.
+right: With 3 characters: 000, 001, 010, 100 and 101. The state (n, last) carries the one fact about the past that matters, so the memo has only 2 entries per length.
+wrong: Base case: 1 when no characters are left. Always count a 0 next; count a 1 next only if the last character was 0.
+
+=== task: order easy
+title: Adding a memo
+prompt: Put the steps for memoizing a recursive function in order.
+items:
+- Write the plain recursive function, with its base cases.
+- Make a dictionary for the answers, keyed by the arguments.
+- At the start of each call, after the base cases, return the stored answer if there is one.
+- Otherwise work the answer out with the recursive calls.
+- Store the answer in the dictionary, then return it.
+hint: You need a working recursion before there's anything to remember.
+hint: Look up first, store last.
+right: Recursion first, then a dictionary; each call checks it, works the answer out only if it's missing, and stores what it found.
+wrong: Get the recursion right, add the memo, check it at the start of each call, compute what's missing, and store it before returning.
+
+=== task: predict easy
+title: Every call, counted
+prompt: This memoized `fib` records every call it receives, including those answered from the memo or the base cases. What does it print?
+code:
+```python
+calls = []
+memo = {}
+
+def fib(n):
+    calls.append(n)
+    if n < 2:
+        return n
+    if n in memo:
+        return memo[n]
+    memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+
+print(fib(6), len(calls))
+print(calls)
+```
+wrong[8 7\n[6, 5, 4, 3, 2, 1, 0]]: Calls answered from the memo still happen, and are recorded: fib(3), fib(4) and fib(5) each ask for a value that's already stored, and fib(3) asks for fib(1).
+wrong[8 25\n[6, 5, 4, 3, 2, 1, 0, 1, 2, 1, 0, 3, 2, 1, 0, 1, 4, 3, 2, 1, 0, 1, 2, 1, 0]]: That's the plain version. With the memo, each second request returns at once, without calls of its own.
+wrong[8 11\n[6, 5, 4, 3, 2, 1, 0, 2, 3, 4, 1]]: The calls happen in order of the code: fib(3) asks for fib(2), then fib(1), before fib(4)'s second request, fib(2).
+hint: The first chain of calls goes 6, 5, 4, 3, 2, 1, 0. Then each waiting call makes its second request.
+hint: fib(3)'s second request is fib(1); fib(4)'s is fib(2); fib(5)'s is fib(3); fib(6)'s is fib(4).
+right: `8 11`, then `[6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4]`. The first branch goes all the way down; every second request is a base case or a lookup: 2n − 1 calls instead of exponentially many.
+wrong: Down the first branch: 6, 5, 4, 3, 2, 1, 0. Then, on the way back up, fib(3) asks for 1, fib(4) for 2, fib(5) for 3, fib(6) for 4, each answered at once.
+
+=== task: mcq easy
+title: How fast are grid paths?
+prompt: `paths(r, c)` with `@cache` returns `paths(r - 1, c) + paths(r, c - 1)`, with 1 for the top row and the left column. About how much time does `paths(r, c)` take?
+* O(r × c): there are about (r + 1) × (c + 1) different subproblems, each O(1) :: Right. Each pair of arguments is worked out once.
+- O(2 to the power r + c), like the plain version :: The plain version is exponential; with the memo, each (r, c) is worked out once.
+- O(r + c), the length of one path :: The memo stores answers for a whole rectangle of cells, not one path.
+- O(1), because the answer is a formula :: There is a formula, but this function adds up answers for all the cells in the rectangle.
+hint: How many different (r, c) pairs can the function be called with?
+hint: How much work does each one do, apart from its two calls?
+right: Time = number of subproblems × work per subproblem = (r + 1)(c + 1) × O(1) = O(r × c).
+wrong: Count the different arguments: one for each cell of the rectangle from (0, 0) to (r, c), each with O(1) work.
+
+=== task: code medium
+title: Broken steps
+prompt: You climb n steps, 1 or 2 at a time, but you can't land on a broken step; the steps in the set `broken` are broken. Write `broken_stairs(n, broken)` that returns the number of ways to reach step n, using a helper `climb(i, broken, memo)` that returns the number of ways to reach step i. A broken step, or a step below 0, can be reached in 0 ways; step 0 in 1 way. One test is 40 steps high, too many for the plain recursion.
+starter:
+```python
+def climb(i, broken, memo):
+    # your code here
+    return 0
+
+def broken_stairs(n, broken):
+    return climb(n, broken, {})
+```
+solution:
+```python
+def climb(i, broken, memo):
+    if i < 0 or i in broken:
+        return 0
+    if i == 0:
+        return 1
+    if i in memo:
+        return memo[i]
+    memo[i] = climb(i - 1, broken, memo) + climb(i - 2, broken, memo)
+    return memo[i]
+
+def broken_stairs(n, broken):
+    return climb(n, broken, {})
+```
+tests:
+- broken_stairs(5, set())
+- broken_stairs(5, {3})
+- broken_stairs(6, {2, 3})
+- broken_stairs(0, set())
+- broken_stairs(4, {4})
+- broken_stairs(10, {1, 5})
+- broken_stairs(40, {13})
+fail[1]: No broken steps: 8 ways, like the lesson's stairs.
+fail[2]: Step 3 must be jumped over, from 2 to 4: 2 ways to reach step 2, then 1 way on: 2.
+fail[3]: Two broken steps in a row can't be jumped over: 0.
+fail[4]: Already at the top: 1 way.
+fail[5]: The top step itself is broken: 0.
+fail[6]: Step 1 is broken, so the climb starts with a 2-step; step 5 is jumped from 4 to 6: 10.
+fail[7]: 45765394 ways. Without the memo, the calls would number in the hundreds of millions.
+hint: Check for a broken step or i < 0 first (0 ways), then i == 0 (1 way), then the memo.
+hint: The last move came from i − 1 or i − 2: store the sum of those two in `memo[i]`.
+right: A broken step contributes 0 ways to everything above it, and the memo makes each step's count a single sum: O(n).
+wrong: 0 for broken or negative steps, 1 for step 0; otherwise `climb(i - 1) + climb(i - 2)`, memoized by i.
+
+=== task: code medium
+title: Paths around rocks
+prompt: `grid` is a list of strings: "." is open and "#" is a rock. A robot starts in the top-left cell and moves only right or down, never onto a rock. Write `rock_paths(grid)` that returns the number of paths to the bottom-right cell, using a helper `paths_to(grid, r, c, memo)` for the number of paths to cell (r, c), memoized by (r, c). A cell outside the grid, or a rock, has 0 paths; the top-left cell has 1 (if it isn't a rock). One test is a 15 by 15 open grid.
+starter:
+```python
+def paths_to(grid, r, c, memo):
+    # your code here
+    return 0
+
+def rock_paths(grid):
+    return paths_to(grid, len(grid) - 1, len(grid[0]) - 1, {})
+```
+solution:
+```python
+def paths_to(grid, r, c, memo):
+    if r < 0 or c < 0 or grid[r][c] == "#":
+        return 0
+    if r == 0 and c == 0:
+        return 1
+    if (r, c) in memo:
+        return memo[(r, c)]
+    memo[(r, c)] = paths_to(grid, r - 1, c, memo) + paths_to(grid, r, c - 1, memo)
+    return memo[(r, c)]
+
+def rock_paths(grid):
+    return paths_to(grid, len(grid) - 1, len(grid[0]) - 1, {})
+```
+tests:
+- rock_paths(["...", "...", "..."])
+- rock_paths(["...", ".#.", "..."])
+- rock_paths(["..#", "...", "#.."])
+- rock_paths(["#.."])
+- rock_paths(["."])
+- rock_paths(["..", ".#"])
+- rock_paths(["." * 15] * 15)
+fail[1]: No rocks: 6 paths, as in the lesson.
+fail[2]: The middle rock leaves only the paths around the edges: 2.
+fail[3]: The rocks in two corners block some routes: 4.
+fail[4]: The start is a rock: 0.
+fail[5]: One cell: 1 path, of no moves.
+fail[6]: The goal is a rock: 0.
+fail[7]: 40116600 paths. Without the memo the calls would number in the tens of millions.
+hint: Return 0 for r < 0, c < 0 or a rock; 1 for (0, 0); then check the memo.
+hint: The paths into (r, c) arrive from (r − 1, c) or from (r, c − 1).
+right: A rock has 0 paths, so it adds nothing to the cells below and to the right of it. Each cell is worked out once: O(rows × columns).
+wrong: Memoize `paths_to(r − 1, c) + paths_to(r, c − 1)` by (r, c), with 0 for rocks and cells outside the grid and 1 for the start.
+
+=== task: predict medium
+title: What the cache saw
+code:
+```python
+from functools import cache
+
+@cache
+def ways(n):
+    if n <= 1:
+        return 1
+    return ways(n - 1) + ways(n - 2)
+
+print(ways(10))
+print(ways.cache_info())
+```
+wrong[89\nCacheInfo(hits=0, misses=11, maxsize=None, currsize=11)]: Every ways(n) from 3 up asks for ways(n − 2) after ways(n − 1) has already worked it out: those are hits.
+wrong[89\nCacheInfo(hits=9, misses=11, maxsize=None, currsize=11)]: ways(2) asks for ways(1) and ways(0), and neither has been worked out yet: both are misses. The hits come from ways(3) to ways(10): 8.
+wrong[89\nCacheInfo(hits=8, misses=10, maxsize=None, currsize=10)]: The arguments 0 to 10 are 11 different values, each a miss the first time.
+hint: How many different arguments does ways(10) lead to?
+hint: Which requests find their answer already stored?
+right: `89`, then `CacheInfo(hits=8, misses=11, maxsize=None, currsize=11)`. Each of the 11 arguments is worked out once (a miss), and the second request made by ways(3) to ways(10) is a hit.
+wrong: The first chain of calls goes 10, 9, down to 1 and 0: 11 misses. Then ways(3) to ways(10) each make a second request that's already stored: 8 hits.
+
+=== task: cells medium
+title: The frog again
+prompt: The frog from the lesson's example jumps one or two stones forward, and a jump costs the difference in height. `cost(i)` is the cheapest way to reach stone i: `cost(i) = min(cost(i - 1) + |h[i] - h[i - 1]|, cost(i - 2) + |h[i] - h[i - 2]|)`, with `cost(0) = 0` and only the first option for stone 1. Fill in the costs for these heights.
+code:
+```python
+h = [5, 9, 3, 8, 6]
+```
+labels: cost(1) | cost(2) | cost(3) | cost(4)
+answer: 4 | 2 | 5 | 5
+wrong[4 | 10 | 5 | 5]: Stone 2 can be reached straight from stone 0, for |3 − 5| = 2, which beats going through stone 1.
+wrong[4 | 2 | 7 | 5]: Stone 3 can be reached from stone 1, for 4 + |8 − 9| = 5, cheaper than 2 + |8 − 3| = 7.
+wrong[4 | 2 | 5 | 7]: Stone 4 can be reached from stone 2, for 2 + |6 − 3| = 5.
+hint: cost(1) = |9 − 5| = 4.
+hint: For each stone, compare a 1-jump from the stone before and a 2-jump from two stones before.
+right: 4, 2, 5 and 5. Skipping a stone can be cheaper: stone 2 is best reached straight from stone 0, and stone 4 from stone 2.
+wrong: cost(1) = 4. cost(2) = min(4 + 6, 0 + 2) = 2. cost(3) = min(2 + 5, 4 + 1) = 5. cost(4) = min(5 + 2, 2 + 3) = 5.
+
+=== task: fill medium
+title: Counting search trees
+prompt: How many different binary search trees can hold the keys 1 to n? Whichever key is the root, the smaller keys form the left subtree and the bigger ones the right subtree. With `left` keys on the left, the other n − 1 − left keys go on the right, and every left shape can go with every right shape, so the counts multiply. Fill in the blanks so that the program prints:
+
+```output
+[1, 1, 2, 5, 14, 42, 132, 429]
+```
+code:
+```python
+from functools import cache
+
+@cache
+def trees(n):
+    if n <= 1:
+        return 1
+    total = 0
+    for left in range(n):
+        total += trees(left) * trees(??)
+    return ??
+
+print([trees(n) for n in range(8)])
+```
+answer: n - 1 - left | total
+wrong[n - 1 | total]: The right side has n − 1 − left keys, not n − 1: the root and the left keys aren't in it. The counts would grow far too fast.
+wrong[n - 1 - left | trees(n)]: `trees(n)` would call itself with the same argument before any answer is stored, so it would never finish: a RecursionError.
+hint: n keys: one is the root, `left` go left. How many go right?
+hint: Return the total over every choice of root.
+right: The counts 1, 1, 2, 5, 14, 42 are the Catalan numbers. Each `trees(n)` adds up n products of smaller answers, so the memo makes it O(n²) in all.
+wrong: Multiply `trees(left)` by `trees(n - 1 - left)` for every split, and return the total.
+
+=== task: mcq medium
+title: Unhashable
+prompt: Someone memoizes `def total_ways(steps, n)` with `@cache` and calls `total_ways([1, 2], 10)`. It raises `TypeError: unhashable type: 'list'`. Why, and what's a fix?
+* `@cache` stores answers in a dictionary keyed by the arguments, and a list can't be a key; pass `(1, 2)`, a tuple, instead :: Right. Tuples can't change, so they can be dictionary keys.
+- Recursive functions can't take lists :: They can; it's only `@cache` that needs every argument to be hashable.
+- The list is too long to remember; use fewer steps :: Length has nothing to do with it: even `[1]` can't be a key.
+- `@cache` only works with one argument; combine them into one number :: `@cache` works with any number of arguments, as long as each can be a dictionary key.
+hint: What does `@cache` use to look answers up?
+hint: Which types can be dictionary keys?
+right: The memo is a dictionary, so each argument must be hashable. A tuple of the step sizes works the same in the function and can be a key.
+wrong: Lists can't be dictionary keys because they can change. Turn the list into a tuple before passing it to a `@cache` function.
+
+=== task: predict medium
+title: A memo shared by mistake
+prompt: `ways(n, steps)` counts the ways to climb n steps with the allowed step sizes in `steps`. Its memo is keyed by n only. What does it print?
+code:
+```python
+memo = {}
+
+def ways(n, steps):
+    if n == 0:
+        return 1
+    if n < 0:
+        return 0
+    if n in memo:
+        return memo[n]
+    total = 0
+    for s in steps:
+        total += ways(n - s, steps)
+    memo[n] = total
+    return total
+
+print(ways(4, [1, 2]))
+print(ways(4, [1, 3]))
+```
+wrong[5\n3]: That's the right count for steps of 1 and 3, but the memo already holds `memo[4] = 5` from the first call, so the second call returns 5 at once.
+wrong[5\n4]: The second call never works anything out: 4 is in the memo before any step size is tried.
+wrong[3\n5]: The first call uses steps of 1 and 2: ways(4) = 5.
+hint: What's in `memo` when the second call starts?
+hint: The key is only n, so the step sizes aren't part of it.
+right: `5`, then `5`. The answer depends on n **and** `steps`, but the memo only remembers n, so the second question gets the first question's answer. Key the memo by every argument that changes the answer, or start a new memo for each `steps`.
+wrong: The first call stores answers for n = 1 to 4 using steps of 1 and 2, including `memo[4] = 5`. The second call finds 4 in the memo and returns 5, although with steps of 1 and 3 the answer is 3.
+
+=== task: multi medium
+title: Will a memo help?
+prompt: Choose **every** function that a memo would make much faster, because it works out the same subproblems again and again.
+* The plain recursive `fib(n)`, returning `fib(n - 1) + fib(n - 2)` :: Right. The same values are worked out exponentially many times.
+* Grid paths, returning `paths(r - 1, c) + paths(r, c - 1)` :: Right. Many routes pass through the same cells.
+* Climbing stairs with 1 or 2 steps, returning `ways(n - 1) + ways(n - 2)` :: Right. The same recursion shape as Fibonacci.
+- Merge sort, sorting each half and merging :: The halves never overlap, so no subproblem comes up twice.
+- Binary search, searching one half of the list :: Each call makes at most one call, on a smaller range: nothing repeats.
+- Factorial, returning `n * fact(n - 1)` :: Each value from n down to 1 is asked for once: a chain, not a tree of repeats.
+hint: Does the function make more than one call that can lead to the same subproblem?
+hint: A chain of calls, or halves that don't overlap, never repeats anything.
+right: Fibonacci, grid paths and stairs branch into calls that meet again. Merge sort, binary search and factorial never ask the same question twice, so a memo would only cost memory.
+wrong: A memo pays off only with overlapping subproblems: two or more branches that lead to the same arguments.
+
+=== task: parsons medium
+title: Cutting a rod
+prompt: A rod of length n can be cut into pieces of whole lengths, and `prices[k]` is what a piece of length k sells for. `best(n)` is the most a rod of length n can earn: the first piece has some length k from 1 to n, and the rest, of length n − k, is the same question again. Arrange the lines so that the program prints:
+
+```output
+10 22
+```
+
+Not every line is needed.
+lines:
+```python
+from functools import cache
+
+prices = [0, 1, 5, 8, 9, 10, 17, 17, 20]
+
+@cache
+def best(n):
+    if n == 0:
+        return 0
+    result = 0
+    for k in range(1, n + 1):
+        result = max(result, prices[k] + best(n - k))
+    return result
+```
+distractors:
+```python
+        result = prices[k] + best(n - k)
+    for k in range(1, n):
+```
+after:
+```python
+print(best(4), best(8))
+```
+hint: Try every length k for the first piece, from 1 to n, the whole rod included.
+hint: Keep the largest of `prices[k] + best(n - k)`.
+right: A rod of 4 earns most as two pieces of 2 (5 + 5), and a rod of 8 as 2 + 6 (5 + 17). With the memo, each length is worked out once, trying up to n first pieces: O(n²).
+wrong: For each first-piece length k, add its price to the best for the rest, and keep the maximum. A rod of length 0 earns 0.
+
+=== task: order medium
+title: The memo fills
+prompt: Memoized `fib(4)`, from the lesson, runs. Put these events in the order they happen.
+items:
+- fib(4) starts
+- fib(3) starts
+- fib(2) starts
+- memo[2] = 1 is stored
+- memo[3] = 2 is stored
+- fib(2) is found in the memo
+- memo[4] = 3 is stored
+hint: Each call asks for n − 1 first, all the way down.
+hint: fib(4)'s second request, fib(2), comes after fib(3) has returned.
+right: The first chain goes 4, 3, 2 and stores 2, then 3. Then fib(4) asks for fib(2), finds it in the memo, and stores 4.
+wrong: fib(4) → fib(3) → fib(2): fib(2) finishes first and is stored, then fib(3). fib(4)'s second request, fib(2), is a lookup, and then fib(4) is stored.
+
+=== task: code hard
+title: Decoding a message
+prompt: Letters are sent as numbers: A is 1, B is 2, up to Z, 26. A string of digits can often be read in several ways: "226" is "BZ" (2, 26), "VF" (22, 6) or "BBF" (2, 2, 6). Write `decode_ways(s)` that returns the number of ways to read `s`. A code can't start with 0, so "06" has 0 ways, and "10" has 1 (10 is J). Use a memoized helper `count(s, i)` for the ways to read `s[i:]`: one digit (if it isn't 0) leaves `s[i + 1:]`, and two digits from 10 to 26 leave `s[i + 2:]`. Reading all of the string counts as 1 way.
+starter:
+```python
+from functools import cache
+
+@cache
+def count(s, i):
+    # your code here
+    return 0
+
+def decode_ways(s):
+    return count(s, 0)
+```
+solution:
+```python
+from functools import cache
+
+@cache
+def count(s, i):
+    if i == len(s):
+        return 1
+    total = 0
+    if s[i] != "0":
+        total += count(s, i + 1)
+    if i + 1 < len(s) and 10 <= int(s[i:i + 2]) <= 26:
+        total += count(s, i + 2)
+    return total
+
+def decode_ways(s):
+    return count(s, 0)
+```
+tests:
+- decode_ways("12")
+- decode_ways("226")
+- decode_ways("06")
+- decode_ways("10")
+- decode_ways("11106")
+- decode_ways("27")
+- decode_ways("1" * 40)
+fail[1]: "AB" (1, 2) or "L" (12): 2.
+fail[2]: 2 2 6, 22 6 or 2 26: 3.
+fail[3]: Nothing starts with 0: 0.
+fail[4]: Only 10 works; "1" then "0" isn't allowed: 1.
+fail[5]: 1 1 10 6 and 11 10 6: 2.
+fail[6]: 27 is too big, so only 2 7: 1.
+fail[7]: Forty 1s can be read in 165580141 ways, too many to try one by one.
+hint: At position i: if `s[i]` isn't "0", add `count(s, i + 1)`. If two digits fit and `int(s[i:i + 2])` is from 10 to 26, add `count(s, i + 2)`.
+hint: `i == len(s)` means the whole string has been read: 1 way.
+right: The subproblem is "the rest of the string from position i", so there are only len(s) + 1 of them, and the count is O(n), even when the answer is enormous.
+wrong: Memoize on the position: 1 at the end; otherwise add the ways after a one-digit code (not "0") and after a two-digit code from 10 to 26.
+
+=== task: code hard
+title: Down the triangle
+prompt: A triangle of numbers has one number in its top row, two in the next, and one more in each row after that. A path starts at the top and moves down one row at a time, to the number directly below or the one below and to the right: from row r, column c to (r + 1, c) or (r + 1, c + 1). Write `best_path(triangle)` that returns the largest possible sum along a path to the bottom row. Use a helper `best_from(triangle, r, c, memo)` for the best sum from (r, c) down, memoized by (r, c). One test has 40 rows, where there are about 550 billion paths.
+starter:
+```python
+def best_from(triangle, r, c, memo):
+    # your code here
+    return 0
+
+def best_path(triangle):
+    return best_from(triangle, 0, 0, {})
+```
+solution:
+```python
+def best_from(triangle, r, c, memo):
+    if r == len(triangle) - 1:
+        return triangle[r][c]
+    if (r, c) in memo:
+        return memo[(r, c)]
+    down = best_from(triangle, r + 1, c, memo)
+    right = best_from(triangle, r + 1, c + 1, memo)
+    memo[(r, c)] = triangle[r][c] + max(down, right)
+    return memo[(r, c)]
+
+def best_path(triangle):
+    return best_from(triangle, 0, 0, {})
+```
+tests:
+- best_path([[3], [7, 4], [2, 4, 6], [8, 5, 9, 3]])
+- best_path([[1]])
+- best_path([[1], [2, 3]])
+- best_path([[5], [9, 1], [1, 1, 9], [1, 9, 1, 1]])
+- best_path([[(r * 7 + c * 3) % 10 for c in range(r + 1)] for r in range(40)])
+fail[1]: 3 + 7 + 4 + 9 = 23.
+fail[2]: One row: 1.
+fail[3]: 1 + 3 = 4.
+fail[4]: 5 + 9 + 1 + 9 = 24: taking the 9 in row 1 leads to the 9 in the bottom row.
+fail[5]: 324. Without the memo, every one of the 2 to the power 39 paths would be followed.
+hint: On the bottom row, the best sum is the number itself.
+hint: Otherwise it's the number plus the larger of the best sums from the two cells below. Store it under (r, c).
+right: Each (r, c) is worked out once, so the 40-row triangle takes 820 small steps instead of 550 billion paths. Picking the larger neighbour row by row instead of looking ahead can miss the best path, as the fourth test shows.
+wrong: Memoize `triangle[r][c] + max(best below-left, best below-right)` by (r, c), with the bottom row as the base case.
+
+=== task: code hard
+title: The longest Collatz chain
+prompt: From a positive number, a Collatz chain halves it if it's even and makes it 3n + 1 if it's odd, until it reaches 1. Write `longest_collatz(limit)` that returns a tuple (start, steps): the start from 1 to limit − 1 whose chain takes the most steps to reach 1, and that number of steps (on a tie, the smaller start). Use a helper `chain(n, memo)` for the steps from n to 1, with one memo shared by every start, so that a chain that runs into a number seen before stops there. 27 takes 111 steps.
+starter:
+```python
+def chain(n, memo):
+    # your code here
+    return 0
+
+def longest_collatz(limit):
+    memo = {}
+    # your code here
+    return (1, 0)
+```
+solution:
+```python
+def chain(n, memo):
+    if n == 1:
+        return 0
+    if n in memo:
+        return memo[n]
+    if n % 2 == 0:
+        nxt = n // 2
+    else:
+        nxt = 3 * n + 1
+    memo[n] = 1 + chain(nxt, memo)
+    return memo[n]
+
+def longest_collatz(limit):
+    memo = {}
+    best_start, best_steps = 1, 0
+    for start in range(2, limit):
+        s = chain(start, memo)
+        if s > best_steps:
+            best_start, best_steps = start, s
+    return (best_start, best_steps)
+```
+tests:
+- longest_collatz(2)
+- longest_collatz(3)
+- longest_collatz(10)
+- longest_collatz(30)
+- longest_collatz(10000)
+fail[1]: Only 1, which takes 0 steps: (1, 0).
+fail[2]: 2 → 1 is one step: (2, 1).
+fail[3]: 9 takes 19 steps: (9, 19).
+fail[4]: 27 takes 111 steps: (27, 111).
+fail[5]: (6171, 261). Without a shared memo, the same chain endings would be followed again for thousands of starts.
+hint: `chain(n)` is 1 + `chain(next number)`, 0 for n = 1, memoized by n.
+hint: Share one memo across all the starts, and keep the start with the most steps, replacing it only on a strictly bigger count.
+right: Chains merge quickly: 27's chain passes through numbers that many other starts reach too. One shared memo means each number is followed once, however many chains run into it.
+wrong: Memoize the steps from each number in one dictionary for all starts; loop over the starts and keep the first one with the most steps.
+
+=== task: code hard
+title: Taking stones
+prompt: Two players take turns removing stones from a pile, each time removing a number of stones from the list `moves`. A player who can't move loses. Write `first_player_wins(n, moves)` that returns True if the player to move first, with n stones, can always win. A position is a win if **some** move leads to a position that's a loss for the other player. Use a helper `win(n, moves, memo)` memoized by n. One test has 300 stones.
+starter:
+```python
+def win(n, moves, memo):
+    # your code here
+    return False
+
+def first_player_wins(n, moves):
+    return win(n, moves, {})
+```
+solution:
+```python
+def win(n, moves, memo):
+    if n in memo:
+        return memo[n]
+    result = False
+    for m in moves:
+        if m <= n and not win(n - m, moves, memo):
+            result = True
+            break
+    memo[n] = result
+    return result
+
+def first_player_wins(n, moves):
+    return win(n, moves, {})
+```
+tests:
+- first_player_wins(5, [1, 2])
+- first_player_wins(6, [1, 2])
+- first_player_wins(7, [1, 3, 4])
+- first_player_wins(8, [1, 3, 4])
+- first_player_wins(0, [1])
+- first_player_wins(300, [1, 3, 4])
+fail[1]: Take 2, leaving 3: whatever the other player takes, you take the rest. True.
+fail[2]: With 6, every move leaves 4 or 5, which are wins for the other player: False.
+fail[3]: 7 is a losing position with moves 1, 3 and 4: every move leaves a winning one. False.
+fail[4]: Take 1, leaving the losing 7: True.
+fail[5]: No stones: the first player can't move, and loses. False.
+fail[6]: 300 stones: True. Without the memo, the game tree has far too many branches.
+hint: A position with no possible move is a loss: the loop finds no winning move, so `result` stays False.
+hint: For each move m with m ≤ n: if `win(n - m)` is False, the current player wins.
+right: Each pile size is decided once from smaller piles, so 300 stones take a few hundred small steps. With moves 1, 3 and 4, the losing piles are 0, 2, 7, 9 and 14, and from then on every 7 more.
+wrong: Memoize on n: a pile is a win if some allowed move leaves a pile that's a loss for the opponent.
+
+=== task: predict hard
+title: The order of the memo
+prompt: This version of grid paths stores the edge cells in the memo too. In what order are the keys added? It prints the answer, then the memo's keys in the order they were added.
+code:
+```python
+memo = {}
+
+def paths(r, c):
+    if (r, c) in memo:
+        return memo[(r, c)]
+    if r == 0 or c == 0:
+        memo[(r, c)] = 1
+    else:
+        memo[(r, c)] = paths(r - 1, c) + paths(r, c - 1)
+    return memo[(r, c)]
+
+print(paths(2, 2))
+print(list(memo))
+```
+wrong[6\n[(2, 2), (1, 2), (0, 2), (1, 1), (0, 1), (1, 0), (2, 1), (2, 0)]]: That's the order the calls start. A cell is stored only when its call finishes, after the cells it needs.
+wrong[6\n[(0, 1), (1, 0), (0, 2), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2)]]: paths(1, 2) asks for (0, 2) first, which is stored straight away, before (1, 1)'s search starts.
+wrong[6\n[(0, 2), (0, 1), (1, 0), (1, 1), (1, 2), (1, 1), (2, 0), (2, 1), (2, 2)]]: The second request for (1, 1) finds it in the memo, so it isn't stored again.
+hint: paths(2, 2) asks for (1, 2) first, which asks for (0, 2) and then (1, 1).
+hint: A key is added at the moment its answer is known.
+right: `6`, then `[(0, 2), (0, 1), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2)]`. Keys are added as calls finish, deepest first, and (0, 0) is never needed.
+wrong: (2, 2) → (1, 2) → (0, 2) stored; then (1, 1) → (0, 1), (1, 0) stored, then (1, 1), then (1, 2). Then (2, 1) → (1, 1) found, (2, 0) stored, then (2, 1), then (2, 2).
+
+=== task: predict hard
+title: Only what's needed
+prompt: `f(n) = f(n // 2) + f(n // 3)` with `f(0) = 1`. Top-down memoization only works out the values the first call actually needs. What does it print?
+code:
+```python
+memo = {}
+
+def f(n):
+    if n == 0:
+        return 1
+    if n in memo:
+        return memo[n]
+    memo[n] = f(n // 2) + f(n // 3)
+    return memo[n]
+
+print(f(100), len(memo))
+```
+wrong[55 100]: Only the numbers reached by halving and dividing by 3 are ever asked for, such as 100, 50, 33, 25 and 16, not every number below 100.
+wrong[55 15]: 0 is a base case, answered without the memo, so it's never stored.
+wrong[34 14]: f(100) = f(50) + f(33) = 33 + 22.
+hint: Write down the numbers f(100) leads to: 50 and 33, then 25, 16 and 11, then the numbers those lead to, down to 1.
+hint: Work out f from the bottom: f(1) = f(0) + f(0) = 2, f(2) = f(1) + f(0) = 3.
+right: `55 14`. Only 14 numbers are ever needed: 1, 2, 3, 4, 5, 6, 8, 11, 12, 16, 25, 33, 50 and 100. A table filled from 0 to 100 would work out all 100 values; top-down skips the ones no one asks for.
+wrong: The needed values: f(1) = 2, f(2) = 3, f(3) = 4, f(4) = 5, f(5) = 5, f(6) = 7, f(8) = 8, f(11) = 9, f(12) = 12, f(16) = 13, f(25) = 20, f(33) = 22, f(50) = 33, f(100) = 55. That's 14 entries.
+
+=== task: cells hard
+title: Calls with and without a memo
+prompt: Compare the plain `paths(r, c)` with the memoized version from the lesson, for `paths(3, 3)`. Both return 1 for the top row and left column without storing anything. Count every call, including the first one, and those answered from the memo.
+code:
+```python
+def paths(r, c):
+    if r == 0 or c == 0:
+        return 1
+    return paths(r - 1, c) + paths(r, c - 1)
+```
+labels: paths(3, 3) | calls without a memo | answers stored in the memo | calls with the memo
+answer: 20 | 39 | 9 | 19
+wrong[20 | 20 | 9 | 19]: Every call that isn't on an edge makes two more calls, so the plain version makes 2 × 20 − 1 calls: one for each 1 that's added up, plus the calls that add them.
+wrong[20 | 39 | 16 | 31]: Only cells with r ≥ 1 and c ≥ 1 are stored: (1, 1) to (3, 3), 9 of them.
+wrong[20 | 39 | 9 | 9]: Each stored cell makes two calls the first time it's worked out, so there are 2 × 9 calls, plus the first one.
+hint: In the plain version, calls(r, c) = 1 + calls(r − 1, c) + calls(r, c − 1), and an edge call is 1.
+hint: With the memo, each of the 9 inner cells is worked out once, making two calls each time.
+right: 20, 39, 9 and 19. The plain version's call tree has one leaf for each path, 20, so 39 calls in all; with the memo, the 9 inner cells make 2 calls each, plus the first call.
+wrong: Plain: calls(1, 1) = 3, calls(2, 2) = 11, calls(2, 3) = 19, calls(3, 3) = 1 + 19 + 19 = 39. Memo: 9 cells stored, each making 2 calls: 18 + 1 = 19.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to this memoized function. Choose **every** change that makes it give wrong answers, or makes it as slow as the plain recursion.
+code:
+```python
+memo = {}
+
+def ways(n):
+    if n <= 1:
+        return 1
+    if n in memo:
+        return memo[n]
+    memo[n] = ways(n - 1) + ways(n - 2)
+    return memo[n]
+```
+* Moving `memo = {}` inside `ways`, as its first line :: Right. Every call starts with an empty memo, so nothing is ever found: exponential time again.
+* Storing the answer in `memo[n + 1]` instead of `memo[n]`, and returning it :: Right. A later lookup of n + 1 gets the answer for n.
+* Checking `if n in memo` only after the two recursive calls :: Right. By then the work is done, so the memo saves nothing.
+- Checking the memo before the base case instead of after it :: The base cases aren't in the memo, so they still reach `return 1`.
+- Deleting the memo lines and putting `@cache` above the `def` :: `@cache` keeps the same kind of memo.
+- Calling `ways(n - 2)` before `ways(n - 1)` :: The sum is the same, and every value is still stored once.
+hint: Which changes stop a stored answer from being found, or store it under the wrong key?
+hint: Which changes only rearrange the same work?
+right: The memo must survive between calls, be keyed by the right argument, and be checked before the work is done. Where the base case sits, the order of the two calls, or using `@cache` changes nothing.
+wrong: A memo inside the function, a wrong key, or a late check break it. Moving the check above the base case, swapping the calls or using `@cache` are all fine.
+
+=== task: fill hard
+title: The longest increasing run
+prompt: An **increasing subsequence** picks some numbers from a list, in their order, each bigger than the one before; they needn't be next to each other. `longest_from(i)` is the length of the longest one that starts with `nums[i]`: 1 for `nums[i]` alone, or 1 more than the longest from some later, bigger number. Fill in the blanks so that the program prints:
+
+```output
+[3, 4, 3, 3, 3, 2, 2, 1] 4
+```
+code:
+```python
+from functools import cache
+
+nums = [4, 1, 3, 3, 2, 5, 5, 6]
+
+@cache
+def longest_from(i):
+    best = 1
+    for j in range(i + 1, len(nums)):
+        if nums[j] ?? nums[i]:
+            best = max(best, 1 + longest_from(??))
+    return best
+
+lengths = [longest_from(i) for i in range(len(nums))]
+print(lengths, max(lengths))
+```
+answer: > | j
+wrong[>= | j]: Equal numbers would count as increasing: 1, 3, 3, 5, 5, 6 would make a run of 6.
+wrong[< | j]: That finds the longest decreasing subsequence: 4, 3, 2 is 3 long.
+hint: The next number must be strictly bigger.
+hint: The rest of the subsequence starts at index j.
+right: From the 1 at index 1, the best is 1, 3, 5, 6: length 4. Each `longest_from(i)` looks at every later index once, so with the memo it's O(n²) in all.
+wrong: Compare with `>` so only bigger numbers can follow, and continue from `longest_from(j)`.
+
+=== task: parsons hard
+title: Ways to split a number
+prompt: In how many ways can n be written as a sum of positive whole numbers, with no part bigger than k? Order doesn't matter: 3 + 1 + 1 is the same as 1 + 3 + 1. Either no part is k, so every part is at most k − 1, or at least one part is k, and the rest, n − k, is split with parts up to k. Arrange the lines so that the program prints:
+
+```output
+7 3 190569292
+```
+
+Not every line is needed.
+lines:
+```python
+from functools import cache
+
+@cache
+def parts(n, k):
+    if n == 0:
+        return 1
+    if n < 0 or k == 0:
+        return 0
+    return parts(n, k - 1) + parts(n - k, k)
+```
+distractors:
+```python
+    return parts(n - 1, k) + parts(n - k, k)
+    if n < 0 or k < 0:
+```
+after:
+```python
+print(parts(5, 5), parts(5, 2), parts(100, 100))
+```
+hint: n = 0 is one way: the empty sum. A negative n, or no part sizes left, is 0 ways.
+hint: Split the ways by whether a part of size k is used.
+right: 5 can be split in 7 ways; with parts of at most 2, in 3 ways (2 + 2 + 1, 2 + 1 + 1 + 1, 1 + 1 + 1 + 1 + 1). The memo makes the 100 case a matter of about 10,000 subproblems.
+wrong: Base cases first: 1 for n = 0, 0 for n < 0 or k = 0. Then the ways without a part k plus the ways with at least one part k.
