@@ -1,0 +1,989 @@
+=== lesson
+id: algo-tabulation
+title: Dynamic programming: tabulation
+summary: Tabulation solves the same subproblems as memoization, but from the bottom up. It makes a table with an entry for every subproblem, fills in the base cases, then fills the rest in an order where every entry it needs is already there, and reads the answer from the table. There's no recursion, so no depth limit, and the table can often shrink to a few variables. You'll fill one- and two-dimensional tables, choose the order of filling, read answers from anywhere in a table, save memory, and compare tabulation with memoization.
+
+=== learn
+### From the bottom up
+Memoized `fib` starts at the top, with `fib(n)`, and lets the recursion find its way down to the base cases. **Tabulation** goes the other way. It makes a **table**, a list with one entry for every subproblem, fills in the base cases, and then fills in the rest in order, smallest first, so that every entry it needs is already there:
+```python
+n = 10
+table = [0] * (n + 1)
+table[1] = 1
+for i in range(2, n + 1):
+    table[i] = table[i - 1] + table[i - 2]
+print(table)
+print(table[n])
+```
+```output
+[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+55
+```
+`table[i]` holds fib(i). The base cases go in first: `table[0]` is already 0, and `table[1]` is set to 1. Then each pass of the loop fills one entry from the two before it. This is **bottom-up** dynamic programming: no recursion and no memo checks, with the same O(n) time. Animation 1 fills this table.
+
+### Five decisions
+Writing a table means deciding five things:
+
+1. What an entry means: `table[i]` is fib(i).
+2. The base cases, filled in before the loop: `table[0] = 0`, `table[1] = 1`.
+3. How an entry comes from earlier ones: `table[i] = table[i - 1] + table[i - 2]`.
+4. The order to fill the entries in: i going up from 2.
+5. Where the answer is: `table[n]`.
+
+The first three are the same decisions as for a memoized recursion. The fourth is new: the recursion used to choose the order for you.
+
+### The order of filling
+An entry can be filled only after every entry it reads. For `fib`, entry i reads i − 1 and i − 2, so counting up from 2 works. Starting the loop at 1 instead reads `table[-1]`, which in Python is the **last** entry of the list, so there's no error to warn you:
+```python
+table = [0] * 6
+table[1] = 1
+for i in range(1, 6):
+    table[i] = table[i - 1] + table[i - 2]
+print(table)
+```
+```output
+[0, 0, 0, 0, 0, 0]
+```
+The first pass overwrote the base case: `table[1]` became `table[0] + table[-1]`, which is 0 + 0. Everything after it was built on that 0.
+
+### A table with two dimensions
+Grid paths from the last lesson make a two-dimensional table: `paths[r][c]` is the number of paths from the top-left cell to cell (r, c), moving right or down. The top row and the left column are 1. Every other cell reads the cell above it and the cell to its left, so filling row by row, each row from left to right, works: when (r, c) comes up, the row above is complete, and (r, c − 1) was filled one step earlier.
+```python
+rows, cols = 3, 4
+paths = [[1] * cols for _ in range(rows)]
+for r in range(1, rows):
+    for c in range(1, cols):
+        paths[r][c] = paths[r - 1][c] + paths[r][c - 1]
+for row in paths:
+    print(row)
+```
+```output
+[1, 1, 1, 1]
+[1, 2, 3, 4]
+[1, 3, 6, 10]
+```
+Every box of the table is an answer: the number of paths into that cell. The question asked, paths into the bottom-right cell, is the last box: 10. Filling column by column would work too, since each cell's two neighbours would still be filled before it. Filling from the bottom row up would not. Animation 2 fills this table.
+
+### Reading the answer
+The answer isn't always the last entry. Sometimes it's the best entry anywhere in the table. Here `best[i]` is the largest sum of a **run**, some neighbouring numbers in a row, that **ends at** index i. It's either `nums[i]` alone, or `nums[i]` added to the best run ending one place earlier. The best run of all can end anywhere, so the answer is the largest entry:
+```python
+nums = [2, -5, 3, -1, 4, -6, 2]
+best = [0] * len(nums)
+best[0] = nums[0]
+for i in range(1, len(nums)):
+    best[i] = max(nums[i], best[i - 1] + nums[i])
+print(best)
+print(max(best))
+```
+```output
+[2, -3, 3, 2, 6, 0, 2]
+6
+```
+The best run is 3, −1, 4. This is **Kadane's algorithm** for the maximum subarray, O(n). Choosing what an entry means, "ends at i" rather than "anywhere up to i", is what made each entry quick to work out from the one before it.
+
+### Keeping only what you need
+When an entry reads only the last few entries, the older ones can be thrown away. `fib` needs two numbers, not a whole list:
+```python
+def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
+
+print(fib(10), fib(90))
+```
+```output
+55 2880067194370816120
+```
+Same O(n) time, in O(1) memory. The grid needs only the row above, so a single row, updated from left to right, is enough:
+```python
+row = [1] * cols
+for r in range(1, rows):
+    for c in range(1, cols):
+        row[c] = row[c] + row[c - 1]
+print(row)
+```
+```output
+[1, 3, 6, 10]
+```
+Before `row[c]` is updated, it still holds the value from the row above, and `row[c - 1]` already holds this row's value to the left: exactly the two numbers the formula needs. That's O(cols) memory instead of O(rows × cols).
+
+### Memo or table?
+| | memoization (top-down) | tabulation (bottom-up) |
+| --- | --- | --- |
+| starts from | the question asked | the smallest subproblems |
+| order | decided by the recursion | chosen by you |
+| works out | only the subproblems the question needs | every entry in the table |
+| recursion | yes, so deep problems hit the depth limit | none |
+| saving memory | hard | often straightforward: keep only the entries still needed |
+| writing it | close to the recursive idea | needs the order worked out |
+
+Both take the same time in Big O. A common way to work: write the recursion with a memo first, because it follows the idea directly, then turn it into a table when the recursion would be too deep or the memory needs cutting down.
+
+=== keypoints
+- Tabulation fills a table of subproblem answers from the smallest up, with loops and no recursion.
+- Decide what an entry means, the base cases, how an entry comes from earlier ones, the order of filling, and where the answer is.
+- Fill each entry only after every entry it reads: up from the base cases in one dimension, row by row in a grid.
+- The answer can be the last entry, or the best entry anywhere, as in the maximum subarray.
+- When an entry reads only recent entries, keep only those: fib in O(1) memory, grid paths in one row.
+- Memoization works out only what's needed and is quick to write; tabulation has no depth limit and makes saving memory straightforward.
+
+=== example: The cheapest way up
+intro: Each step of a staircase has a cost, paid when you step off it. You start on step 0 or step 1 for free, climb 1 or 2 steps at a time, and want to get past the last step as cheaply as possible.
+```python
+cost = [1, 100, 1, 1, 1, 100, 1, 1, 100, 1]
+n = len(cost)
+
+total = [0] * (n + 1)
+for i in range(2, n + 1):
+    from_one = total[i - 1] + cost[i - 1]
+    from_two = total[i - 2] + cost[i - 2]
+    total[i] = min(from_one, from_two)
+
+print(total)
+print("cheapest:", total[n])
+```
+1-2: Ten steps. The top is one step past the last of them, at position 10.
+4: `total[i]` is the cheapest way to stand on step i. Steps 0 and 1 cost nothing to reach.
+5-8: You arrive at step i from step i − 1 or step i − 2, paying the cost of the step you leave. Both are filled already.
+10-11: The cheapest way past the top costs 6: every expensive step is jumped over.
+
+=== example: Pascal's triangle
+intro: Each number in Pascal's triangle is the sum of the two above it, and the numbers count the ways to choose k things from n. Each row of the table is built from the row before.
+```python
+rows = [[1]]
+for n in range(1, 7):
+    prev = rows[-1]
+    row = [1] * (n + 1)
+    for k in range(1, n):
+        row[k] = prev[k - 1] + prev[k]
+    rows.append(row)
+
+for row in rows:
+    print(row)
+print("ways to choose 3 of 6:", rows[6][3])
+```
+1: Row 0 has a single 1.
+2-7: Row n has n + 1 entries, 1 at both ends. Every entry inside comes from the two entries above it in row n − 1, which is complete.
+9-11: The table holds every answer up to n = 6. Choosing 3 things from 6 can be done in 20 ways.
+
+=== animation: Filling the table
+view: array table ptr=i
+vars i
+intro: The table holds fib(0) to fib(7). The base cases go in first; then each pass fills entry i from the two entries before it, which are always filled already.
+```python
+n = 7
+table = [0] * (n + 1)
+table[1] = 1
+for i in range(2, n + 1):
+    table[i] = table[i - 1] + table[i - 2]
+print(table[n])
+```
+1: The table needs entries 0 to 7.
+2: One entry per subproblem, 0 for now.
+3: Base cases: table[0] is fib(0) = 0 already. Set table[1] to fib(1) = 1.
+4: Fill the entries in order, from 2 up to 7.
+5: table[{i}] = table[{i - 1}] + table[{i - 2}] = {table[i - 1]} + {table[i - 2]} = {table[i - 1] + table[i - 2]}.
+6: The answer is the last entry: {table[n]}.
+
+=== animation: Paths, row by row
+view: grid paths row=r col=c
+vars r c
+intro: The top row and the left column start at 1; the other boxes are empty. Each box is filled from the box above it and the box to its left, both of which are filled already.
+```python
+rows, cols = 3, 4
+paths = [[1, 1, 1, 1], [1, None, None, None], [1, None, None, None]]
+for r in range(1, rows):
+    for c in range(1, cols):
+        paths[r][c] = paths[r - 1][c] + paths[r][c - 1]
+print(paths[rows - 1][cols - 1])
+```
+1: A grid with 3 rows and 4 columns.
+2: The top row and the left column have one path each. The other boxes are still empty.
+3: Fill row by row, from row 1 down.
+4: In each row, go left to right, from column 1.
+5: paths[{r}][{c}] = {paths[r - 1][c]} from above + {paths[r][c - 1]} from the left = {paths[r - 1][c] + paths[r][c - 1]}.
+6: The bottom-right box answers the question: {paths[rows - 1][cols - 1]} paths.
+
+=== task: predict easy
+title: Steps of 1 and 3
+prompt: `table[i]` counts the ways to climb i steps taking 1 or 3 steps at a time. What does it print?
+code:
+```python
+n = 8
+table = [0] * (n + 1)
+table[0] = 1
+table[1] = 1
+table[2] = 1
+for i in range(3, n + 1):
+    table[i] = table[i - 1] + table[i - 3]
+print(table)
+```
+wrong[[1, 1, 1, 2, 3, 4, 6, 9, 13, 19]]: The table has n + 1 = 9 entries, for 0 to 8.
+wrong[[1, 1, 1, 2, 3, 5, 8, 13, 21]]: That adds the two entries before, as for steps of 1 and 2. Here entry i adds `table[i - 1]` and `table[i - 3]`.
+wrong[[1, 1, 1, 3, 5, 7, 11, 17, 25]]: Each entry adds the entry one before and the entry three before: table[3] = table[2] + table[0] = 1 + 1 = 2.
+hint: table[3] = table[2] + table[0].
+hint: table[6] = table[5] + table[3].
+right: `[1, 1, 1, 2, 3, 4, 6, 9, 13]`. The last move is a 1-step from i − 1 or a 3-step from i − 3, and both of those entries are filled before i.
+wrong: 3: 1 + 1 = 2. 4: 2 + 1 = 3. 5: 3 + 1 = 4. 6: 4 + 2 = 6. 7: 6 + 3 = 9. 8: 9 + 4 = 13.
+
+=== task: mcq easy
+title: Ready to fill
+prompt: A bottom-up loop is about to fill `table[i]`. What must be true at that moment?
+* Every entry that `table[i]` is worked out from has been filled already :: Right. That's what the order of filling is for.
+- Every entry of the table has been filled already :: Then there'd be nothing left to do. Only the entries that `table[i]` reads matter.
+- `table[i - 1]` holds the final answer :: The final answer is usually the last entry, filled at the end.
+- The base cases have been checked with an `if` inside the loop :: Base cases are filled in before the loop starts.
+hint: Which entries does the formula for `table[i]` read?
+hint: What goes wrong if one of them is still 0?
+right: The fill order guarantees that everything an entry reads is already there, so each entry is worked out once, correctly.
+wrong: An entry can only be filled after the entries in its formula; the rest of the table can wait.
+
+=== task: cells easy
+title: Filling by hand
+prompt: A table is filled with `table[i] = table[i - 1] + 2 * table[i - 2]`, starting from `table[0] = 0` and `table[1] = 1`. Fill in these entries.
+code:
+```python
+table = [0, 1, 0, 0, 0, 0]
+for i in range(2, 6):
+    table[i] = table[i - 1] + 2 * table[i - 2]
+```
+labels: table[3] | table[4] | table[5]
+answer: 3 | 5 | 11
+wrong[2 | 3 | 5]: That leaves out the 2 ×: table[3] = table[2] + 2 × table[1] = 1 + 2.
+wrong[3 | 5 | 13]: table[5] = table[4] + 2 × table[3] = 5 + 6 = 11.
+wrong[1 | 3 | 5]: table[2] is 1, and table[3] = 1 + 2 × 1 = 3.
+hint: First table[2] = 1 + 2 × 0 = 1.
+hint: Each entry uses the one before it and twice the one before that.
+right: 3, 5 and 11. Each entry is filled from two entries that are already there.
+wrong: table[2] = 1. table[3] = 1 + 2 × 1 = 3. table[4] = 3 + 2 × 1 = 5. table[5] = 5 + 2 × 3 = 11.
+
+=== task: code easy
+title: Tribonacci, bottom-up
+prompt: The Tribonacci numbers start 0, 1, 1, and each one after that is the sum of the three before it. Write `trib(n)` that returns the n-th one (counting from 0) with a table: make a list of n + 1 entries, put the three base cases in, and fill the rest with a loop. No recursion. The speed check needs one entry added per step, not a new list each time.
+starter:
+```python
+def trib(n):
+    if n < 3:
+        return [0, 1, 1][n]
+    table = [0] * (n + 1)
+    # your code here
+    return table[n]
+```
+solution:
+```python
+def trib(n):
+    if n < 3:
+        return [0, 1, 1][n]
+    table = [0] * (n + 1)
+    table[1] = 1
+    table[2] = 1
+    for i in range(3, n + 1):
+        table[i] = table[i - 1] + table[i - 2] + table[i - 3]
+    return table[n]
+```
+tests:
+- trib(0)
+- trib(2)
+- trib(3)
+- trib(10)
+- trib(37)
+fail[1]: The first number is 0.
+fail[2]: The third number is 1.
+fail[3]: 0 + 1 + 1 = 2.
+fail[4]: 0, 1, 1, 2, 4, 7, 13, 24, 44, 81, 149: 149.
+fail[5]: 2082876103.
+speed: setup=m = n | call=trib(m) | target=O(n)
+slow:
+```python
+def trib(n):
+    table = [0, 1, 1]
+    while len(table) <= n:
+        table = table + [table[-1] + table[-2] + table[-3]]
+    return table[n]
+```
+hint: Set `table[1]` and `table[2]` to 1; `table[0]` is already 0.
+hint: Loop i from 3 to n, filling `table[i]` from the three entries before it.
+right: Each entry is filled once, from three entries already there: O(n), with no recursion, so `trib(10000)` works too.
+wrong: Base cases first, then `for i in range(3, n + 1): table[i] = table[i - 1] + table[i - 2] + table[i - 3]`.
+
+=== task: fill easy
+title: Base case and start
+prompt: Fill in the blanks so that `ways(n)` counts the ways to climb n steps, 1 or 2 at a time, and the program prints:
+
+```output
+[1, 1, 2, 3, 5, 8, 13, 21]
+```
+code:
+```python
+def ways(n):
+    table = [0] * (n + 1)
+    table[0] = ??
+    if n >= 1:
+        table[1] = 1
+    for i in range(??, n + 1):
+        table[i] = table[i - 1] + table[i - 2]
+    return table[n]
+
+print([ways(n) for n in range(8)])
+```
+answer: 1 | 2
+wrong[0 | 2]: With no ways to stand at the bottom, every count would be one Fibonacci number too small: ways(2) would be 1, not 2.
+wrong[1 | 1]: The loop would start by overwriting the base case `table[1]` with `table[0] + table[-1]`, and for n = 1, `table[-1]` is `table[1]` itself: ways(1) would be 2.
+hint: Standing at the bottom, doing nothing, counts as one way.
+hint: Entries 0 and 1 are the base cases, so the loop starts at the first entry that isn't.
+right: `table[0] = 1` and the loop starts at 2, the first entry that's worked out from others. Starting earlier would overwrite a base case.
+wrong: The base case is 1, and the loop starts at 2.
+
+=== task: multi easy
+title: True of tabulation
+prompt: Choose **every** true statement about tabulation.
+* It fills the table from the smallest subproblems up, with loops :: Right. That's what bottom-up means.
+* It has no recursion, so there's no depth limit :: Right. A table of a million entries is no problem.
+* The base cases are filled in before the loop :: Right. Everything else is built on them.
+- It works out only the subproblems the question needs :: It fills the whole table. That's the top-down memo's advantage.
+- The answer is always the last entry of the table :: Sometimes it's the best entry anywhere, as in the maximum subarray.
+- Entries can be filled in any order :: Each entry needs the entries it reads to be filled first.
+hint: Does a table skip entries that aren't needed?
+hint: Where was the answer in the lesson's maximum subarray?
+right: Bottom-up, loop-based, base cases first, and in an order where each entry's inputs are ready. It fills the whole table, and the answer can be anywhere in it.
+wrong: Tables are filled with loops from the base cases up, in a careful order, with no recursion. They fill every entry, and the answer isn't always the last.
+
+=== task: parsons easy
+title: Running totals
+prompt: `prefix[i]` is the sum of the first i numbers, so `prefix[0]` is 0 and each entry adds one more number to the entry before it. Then the sum of `nums[a:b]` is `prefix[b] - prefix[a]`, without adding anything up again. Arrange the lines so that the program prints:
+
+```output
+[0, 3, 4, 8, 9, 14] 6
+```
+
+Not every line is needed.
+lines:
+```python
+nums = [3, 1, 4, 1, 5]
+prefix = [0] * (len(nums) + 1)
+for i in range(1, len(nums) + 1):
+    prefix[i] = prefix[i - 1] + nums[i - 1]
+print(prefix, prefix[4] - prefix[1])
+```
+distractors:
+```python
+    prefix[i] = prefix[i - 1] + nums[i]
+prefix = [0] * len(nums)
+```
+hint: The table has one more entry than `nums`, for the sum of no numbers.
+hint: Entry i adds `nums[i - 1]`, the i-th number, to the entry before it.
+right: Each entry is the one before plus one number. Afterwards, any range sum is a single subtraction: `nums[1:4]` sums to 9 − 3 = 6.
+wrong: Make n + 1 zeros, then fill `prefix[i] = prefix[i - 1] + nums[i - 1]` for i from 1 to n.
+
+=== task: order easy
+title: Five decisions
+prompt: Put the decisions for a bottom-up solution in the order the lesson makes them.
+items:
+- Decide what an entry of the table means.
+- Fill in the base cases.
+- Write how an entry comes from earlier entries.
+- Choose an order of filling where those entries come first.
+- Read the answer from the right entry.
+hint: You can't write a formula for an entry before you know what it means.
+hint: The answer is read once the table is full.
+right: Meaning, base cases, formula, fill order, answer: the same as for a memo, plus the order.
+wrong: First the meaning of an entry, then the base cases and the formula, then an order that suits the formula, and last, where the answer sits.
+
+=== task: predict easy
+title: The best run ending here
+prompt: `best[i]` is the largest sum of a run of neighbouring numbers ending at index i, as in the lesson. What does it print?
+code:
+```python
+nums = [-2, 1, -3, 4, -1, 2, 1, -5, 4]
+best = [0] * len(nums)
+best[0] = nums[0]
+for i in range(1, len(nums)):
+    best[i] = max(nums[i], best[i - 1] + nums[i])
+print(best)
+print(max(best))
+```
+wrong[[-2, 1, -2, 4, 3, 5, 6, 1, 5]\n5]: The answer is the largest entry, not the last one: the best run, 4, −1, 2, 1, ends at index 6.
+wrong[[-2, 1, 1, 4, 4, 5, 6, 6, 6]\n6]: An entry is the best run ending exactly at i, which must include `nums[i]`: index 2 gives max(−3, 1 − 3) = −2.
+wrong[[-2, -1, -4, 0, -1, 1, 2, -3, 1]\n2]: Each entry can also start a new run with `nums[i]` alone: at index 1, 1 beats −2 + 1.
+hint: At each index, compare starting fresh with `nums[i]` against adding it to the run before.
+hint: Is the answer the last entry or the largest?
+right: `[-2, 1, -2, 4, 3, 5, 6, 1, 5]`, then `6`. The best run is 4, −1, 2, 1, ending at index 6, so the answer is the largest entry, not the last.
+wrong: 1 starts fresh. −2 continues. 4 starts fresh. Then 3, 5, 6 continue the run. −5 drops it to 1, and 4 makes 5. The largest entry is 6.
+
+=== task: mcq easy
+title: Top-down or bottom-up?
+prompt: Which is true of memoization (top-down) compared with tabulation (bottom-up)?
+* Memoization works out only the subproblems the question leads to; a table fills every entry :: Right. Top-down follows the recursion, so it never visits entries no one needs.
+- Tabulation is always faster in Big O :: Both work out each subproblem once; in Big O they usually take the same time.
+- Memoization can't handle problems with two parameters :: It can: the memo is keyed by both, like (r, c).
+- Tabulation needs a dictionary instead of a list :: Tables are usually lists, or lists of lists.
+hint: What decides which subproblems a memoized function works out?
+hint: Does a loop over the table skip any entries?
+right: The recursion only asks for the subproblems on the way to the answer, while a table fills everything in its range. Otherwise the two do the same work.
+wrong: Top-down visits only what's needed; bottom-up fills the whole table. They share the same Big O, handle any number of parameters, and tables are usually lists.
+
+=== task: code medium
+title: Decoding, bottom-up
+prompt: Letters are sent as numbers, A = 1 to Z = 26, and `decode_ways(s)` counts the ways to read a string of digits. This time, use a table: `table[i]` is the number of ways to read the first i digits, `s[:i]`, and `table[0] = 1` for the empty start. The last code of `s[:i]` is either the single digit `s[i - 1]`, if it isn't "0", which leaves `s[:i - 1]`, or the two digits `s[i - 2:i]`, if they're from 10 to 26, which leaves `s[:i - 2]`.
+starter:
+```python
+def decode_ways(s):
+    n = len(s)
+    table = [0] * (n + 1)
+    table[0] = 1
+    # your code here
+    return table[n]
+```
+solution:
+```python
+def decode_ways(s):
+    n = len(s)
+    table = [0] * (n + 1)
+    table[0] = 1
+    for i in range(1, n + 1):
+        if s[i - 1] != "0":
+            table[i] += table[i - 1]
+        if i >= 2 and 10 <= int(s[i - 2:i]) <= 26:
+            table[i] += table[i - 2]
+    return table[n]
+```
+tests:
+- decode_ways("12")
+- decode_ways("226")
+- decode_ways("06")
+- decode_ways("10")
+- decode_ways("2101")
+- decode_ways("1" * 40)
+fail[1]: 1 2 or 12: 2.
+fail[2]: 2 2 6, 22 6, 2 26: 3.
+fail[3]: No code starts with 0: 0.
+fail[4]: Only 10: 1.
+fail[5]: 2 10 1 is the only reading: 21 would leave "01". 1.
+fail[6]: 165580141, with a loop of 40 passes.
+hint: For each i from 1 to n: add `table[i - 1]` if `s[i - 1]` isn't "0".
+hint: Also add `table[i - 2]` if i ≥ 2 and `int(s[i - 2:i])` is between 10 and 26.
+right: The table is filled left to right, and each entry reads the two before it: O(n) with no recursion, so even a string of 100,000 digits works.
+wrong: Fill `table[i]` from `table[i - 1]` (a valid single digit) and `table[i - 2]` (a valid pair), for i from 1 to n.
+
+=== task: code medium
+title: Choosing with one row
+prompt: The number of ways to choose k things from n, C(n, k), fills Pascal's triangle: C(n, k) = C(n − 1, k − 1) + C(n − 1, k). Write `choose(n, k)` using a single row of k + 1 numbers instead of the whole triangle. Start with `[1, 0, 0, ...]`, row 0, and turn it into row 1, row 2, up to row n. Update each row in place from right to left: `row[j] = row[j] + row[j - 1]`, so that `row[j - 1]` still holds the previous row's value when it's read.
+starter:
+```python
+def choose(n, k):
+    row = [1] + [0] * k
+    # your code here
+    return row[k]
+```
+solution:
+```python
+def choose(n, k):
+    row = [1] + [0] * k
+    for i in range(1, n + 1):
+        for j in range(min(i, k), 0, -1):
+            row[j] = row[j] + row[j - 1]
+    return row[k]
+```
+tests:
+- choose(5, 2)
+- choose(10, 3)
+- choose(0, 0)
+- choose(6, 0)
+- choose(4, 5)
+- choose(30, 15)
+fail[1]: 10.
+fail[2]: 120.
+fail[3]: Choosing nothing from nothing: 1 way.
+fail[4]: Choosing nothing: 1 way.
+fail[5]: You can't choose 5 from 4: 0.
+fail[6]: 155117520.
+hint: For each row i from 1 to n, loop j from `min(i, k)` down to 1.
+hint: Going right to left, `row[j - 1]` hasn't been changed yet in this row.
+right: Right to left, each update reads two values from the previous row, so one row of k + 1 numbers replaces a triangle of about n × k. Left to right would read a value already changed in this row.
+wrong: For each new row, go from the right end down to 1, adding the value to the left. The row for n holds C(n, k) at index k.
+
+=== task: predict medium
+title: Column by column
+prompt: This version fills the grid paths table column by column instead of row by row. What does it print?
+code:
+```python
+rows, cols = 3, 4
+paths = [[1] * cols for _ in range(rows)]
+for c in range(1, cols):
+    for r in range(1, rows):
+        paths[r][c] = paths[r - 1][c] + paths[r][c - 1]
+for row in paths:
+    print(row)
+```
+wrong[[1, 1, 1, 1]\n[1, 2, 2, 2]\n[1, 3, 3, 3]]: Each cell still reads the cell above and the cell to its left, and in column order both are filled before it.
+wrong[[1, 1, 1, 1]\n[1, 2, 3, 4]\n[1, 2, 3, 4]]: Row 2 reads row 1: (2, 1) is 2 + 1 = 3.
+wrong[[1, 1, 1]\n[1, 2, 3]\n[1, 3, 6]\n[1, 4, 10]]: The table still has 3 rows of 4; only the order of filling has changed.
+hint: When (r, c) is filled, is (r − 1, c) filled? Is (r, c − 1)?
+hint: Column c − 1 is completely filled before column c starts.
+right: The same table as row by row: `[1, 1, 1, 1]`, `[1, 2, 3, 4]`, `[1, 3, 6, 10]`. Any order that fills each cell after the cell above it and the cell to its left gives the same answers.
+wrong: Column 1: 2, 3. Column 2: 3, 6. Column 3: 4, 10. Each cell's two inputs are ready, so the table matches the row-by-row one.
+
+=== task: cells medium
+title: Diagonal moves too
+prompt: Now the robot can also move diagonally, down and to the right, so the paths into (r, c) come from above, from the left and from the up-left diagonal. The top row and left column still have 1 path each. Fill in the table.
+code:
+```python
+paths = [[1, 1, 1], [1, 0, 0], [1, 0, 0]]
+for r in range(1, 3):
+    for c in range(1, 3):
+        paths[r][c] = paths[r - 1][c] + paths[r][c - 1] + paths[r - 1][c - 1]
+```
+labels: paths[1][1] | paths[1][2] | paths[2][1] | paths[2][2]
+answer: 3 | 5 | 5 | 13
+wrong[2 | 3 | 3 | 6]: Those are the right-and-down counts. The diagonal adds the up-left cell: (1, 1) = 1 + 1 + 1.
+wrong[3 | 4 | 4 | 10]: (1, 2) = (0, 2) + (1, 1) + (0, 1) = 1 + 3 + 1 = 5.
+wrong[3 | 5 | 5 | 11]: (2, 2) = 5 + 5 + 3 = 13: the diagonal cell is (1, 1), worth 3.
+hint: (1, 1) = above 1 + left 1 + diagonal 1.
+hint: Fill row 1 before row 2, left to right.
+right: 3, 5, 5 and 13. One more term in the formula; the same order still works, because the diagonal cell is filled before both of the others.
+wrong: (1, 1) = 3. (1, 2) = 1 + 3 + 1 = 5. (2, 1) = 3 + 1 + 1 = 5. (2, 2) = 5 + 5 + 3 = 13.
+
+=== task: fill medium
+title: Ways to make change
+prompt: In how many ways can coins make an amount, if the order of the coins doesn't matter (1 + 2 is the same as 2 + 1)? Take the coins one kind at a time: after each kind, `ways[a]` counts the ways to make a with the kinds used so far. Using one more coin of the current kind on top of a way to make a − coin gives a way to make a. Fill in the blanks so that the program prints:
+
+```output
+[1, 1, 2, 2, 3, 4]
+```
+code:
+```python
+coins = [1, 2, 5]
+target = 5
+ways = [0] * (target + 1)
+ways[0] = ??
+for coin in coins:
+    for amount in range(coin, target + 1):
+        ways[amount] += ways[??]
+print(ways)
+```
+answer: 1 | amount - coin
+wrong[0 | amount - coin]: Every count is built from `ways[0]`: with 0 ways to make nothing, every entry stays 0.
+wrong[1 | amount - 1]: That always steps back by 1, whatever the coin, so the coin's value is ignored: the counts would be wrong from amount 3 on.
+hint: There's exactly one way to make 0: use no coins.
+hint: Adding one coin of value `coin` to a way to make `amount - coin` makes `amount`.
+right: 5 can be made in 4 ways: 5, 2 + 2 + 1, 2 + 1 + 1 + 1, 1 + 1 + 1 + 1 + 1. Because each coin kind is finished before the next starts, every combination is counted once, in one order.
+wrong: Start with `ways[0] = 1`, and for each coin add `ways[amount - coin]` to `ways[amount]`, going up.
+
+=== task: mcq medium
+title: When a table wins
+prompt: When is a table better than a memoized recursion?
+* When the recursion would go too deep, like counting the ways up a staircase of 100,000 steps :: Right. A loop has no depth limit, while the recursion would stop at about 1,000 calls.
+- When only a few of the subproblems are needed :: Then top-down is better: it skips the ones that aren't needed.
+- When the subproblems don't overlap :: Then neither helps: there's nothing to reuse.
+- When the problem has two parameters :: Both handle any number of parameters.
+hint: What limit does a recursion have that a loop doesn't?
+hint: Which style only does the work that's needed?
+right: Tables shine when the recursion is deep, or when memory can be cut down by keeping only recent entries. A memo shines when only some subproblems are needed.
+wrong: Choose a table for deep problems and for saving memory; choose a memo when few subproblems are needed or the order is hard to see.
+
+=== task: predict medium
+title: The loops swapped
+prompt: This version of the coin table puts the amount loop outside and the coin loop inside. What does it print?
+code:
+```python
+coins = [1, 2, 5]
+target = 5
+ways = [0] * (target + 1)
+ways[0] = 1
+for amount in range(1, target + 1):
+    for coin in coins:
+        if coin <= amount:
+            ways[amount] += ways[amount - coin]
+print(ways)
+```
+wrong[[1, 1, 2, 2, 3, 4]]: That's the count where order doesn't matter. Here each amount tries every coin as the **last** coin, so 1 + 2 and 2 + 1 are both counted.
+wrong[[1, 1, 2, 3, 5, 8]]: The 5-coin adds `ways[0]` at amount 5: 5 + 3 + 1 = 9.
+wrong[[1, 1, 1, 1, 1, 1]]: Each amount adds the ways for every coin that fits, not one of them.
+hint: ways[3] = ways[2] + ways[1], one for each possible last coin.
+hint: ways[5] = ways[4] + ways[3] + ways[0].
+right: `[1, 1, 2, 3, 5, 9]`. Swapping the loops changes what's counted: now different orders of the same coins are different ways. The order of filling decides the meaning of an entry.
+wrong: Each amount adds the ways for every possible last coin: 1, 1, 1 + 1 = 2, 2 + 1 = 3, 3 + 2 = 5, 5 + 3 + 1 = 9.
+
+=== task: multi medium
+title: Which order works?
+prompt: In a table, every entry `table[r][c]` is worked out from `table[r - 1][c]` (the entry above) and `table[r][c + 1]` (the entry to its right). The top row and the right column are base cases. Choose **every** order of filling that works.
+* Rows from top to bottom, each row from right to left :: Right. The row above is done, and the entry to the right was filled one step earlier.
+* Columns from right to left, each column from top to bottom :: Right. The column to the right is done, and the entry above was filled one step earlier.
+- Rows from top to bottom, each row from left to right :: The entry to the right hasn't been filled yet when it's needed.
+- Rows from bottom to top, each row from right to left :: The entry above hasn't been filled yet.
+- Columns from left to right, each column from top to bottom :: The column to the right hasn't been filled yet.
+hint: Each entry needs the one above it and the one to its right.
+hint: For each order, ask whether those two are filled before the entry.
+right: Any order that reaches the entry above and the entry to the right first works. Here that means top to bottom, and right to left.
+wrong: An entry needs the entries it reads to be filled first. With "above" and "right", go down the rows and leftwards along them, in either nesting.
+
+=== task: parsons medium
+title: Can you reach the end?
+prompt: Each number in `jumps` says how far you can jump forward from that position, at most. `good[i]` is True when you can get from position i to the last position. The last position is good; any other position is good if it can jump to some good position. Each entry reads entries to its right, so the table is filled from right to left. Arrange the lines so that the program prints:
+
+```output
+[True, True, True, True, True]
+[False, False, False, False, True]
+```
+
+Not every line is needed.
+lines:
+```python
+def reachable(jumps):
+    n = len(jumps)
+    good = [False] * n
+    good[n - 1] = True
+    for i in range(n - 2, -1, -1):
+        for j in range(i + 1, min(n, i + jumps[i] + 1)):
+            if good[j]:
+                good[i] = True
+                break
+    return good
+```
+distractors:
+```python
+    for i in range(n - 1):
+        for j in range(i + 1, min(n, i + jumps[i])):
+```
+after:
+```python
+print(reachable([2, 3, 1, 1, 4]))
+print(reachable([3, 2, 1, 0, 4]))
+```
+hint: Position i can land on positions i + 1 to i + jumps[i], as long as they're inside the list.
+hint: Go from the second-to-last position back to position 0.
+right: Filling right to left means every position to the right of i is decided before i. In the second list, every route lands on the 0 at index 3 and gets stuck there.
+wrong: The last position is good. Then, from right to left, mark a position good if one of the positions it can jump to is good.
+
+=== task: order medium
+title: From memo to table
+prompt: Put the steps for turning a memoized recursion into a table in order.
+items:
+- The memo's arguments become the indexes of the table.
+- The base cases become the first entries filled in.
+- The recursive calls become reads of other entries.
+- Choose a fill order where every entry read is filled first.
+- The first call's arguments say which entry holds the answer.
+hint: You need to know what the table is indexed by before filling anything in.
+hint: The answer is found at the end, where the original question points.
+right: Indexes from the arguments, then base cases, then the formula from the recursive calls, then an order that respects it, and finally the answer's entry.
+wrong: Arguments become indexes; base cases are filled first; calls become reads; the order makes reads safe; the original call locates the answer.
+
+=== task: code hard
+title: The longest common piece
+prompt: Write `common_substring(a, b)` that returns the length of the longest piece of text, a run of neighbouring characters, that appears in both strings. Use a table: `table[i][j]` is the length of the longest common piece that **ends** at `a[i - 1]` and at `b[j - 1]`. If those two characters match, it's 1 more than `table[i - 1][j - 1]`; if not, it's 0. Row 0 and column 0 are 0. The answer is the largest entry anywhere.
+starter:
+```python
+def common_substring(a, b):
+    table = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    best = 0
+    # your code here
+    return best
+```
+solution:
+```python
+def common_substring(a, b):
+    table = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    best = 0
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                table[i][j] = table[i - 1][j - 1] + 1
+                best = max(best, table[i][j])
+    return best
+```
+tests:
+- common_substring("abcdxyz", "xyzabcd")
+- common_substring("hello", "yellow")
+- common_substring("abc", "def")
+- common_substring("", "abc")
+- common_substring("ababab", "babab")
+- common_substring("a" * 300, "a" * 300)
+fail[1]: "abcd" is in both: 4.
+fail[2]: "ello": 4.
+fail[3]: No character in common: 0.
+fail[4]: An empty string has nothing in common with anything: 0.
+fail[5]: "babab" is in both: 5.
+fail[6]: The whole string: 300.
+hint: Loop i over 1 to len(a) and j over 1 to len(b); compare `a[i - 1]` and `b[j - 1]`.
+hint: On a match, extend the piece ending one character earlier in both: `table[i - 1][j - 1] + 1`. Keep the largest value seen.
+right: Defining an entry as the piece that ends at both positions makes each entry depend on one diagonal neighbour. The best piece can end anywhere, so the answer is the largest entry: O(len(a) × len(b)).
+wrong: Fill row by row; a matching pair extends the diagonal entry by 1, a mismatch is 0; return the maximum entry.
+
+=== task: code hard
+title: The largest square
+prompt: `grid` is a list of strings of "0" and "1". Write `largest_square(grid)` that returns the area of the largest square made only of "1" cells. Use a table where `size[r][c]` is the side of the largest all-1 square whose bottom-right corner is (r, c): 0 for a "0" cell, 1 for a "1" on the top row or left column, and otherwise 1 more than the smallest of the three neighbours above, to the left, and up-left.
+starter:
+```python
+def largest_square(grid):
+    rows, cols = len(grid), len(grid[0])
+    size = [[0] * cols for _ in range(rows)]
+    best = 0
+    # your code here
+    return best * best
+```
+solution:
+```python
+def largest_square(grid):
+    rows, cols = len(grid), len(grid[0])
+    size = [[0] * cols for _ in range(rows)]
+    best = 0
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == "1":
+                if r == 0 or c == 0:
+                    size[r][c] = 1
+                else:
+                    size[r][c] = 1 + min(size[r - 1][c], size[r][c - 1], size[r - 1][c - 1])
+                best = max(best, size[r][c])
+    return best * best
+```
+tests:
+- largest_square(["10100", "10111", "11111", "10010"])
+- largest_square(["0"])
+- largest_square(["1"])
+- largest_square(["111", "111", "111"])
+- largest_square(["0110", "1111", "1111", "0110"])
+- largest_square(["1" * 60] * 60)
+fail[1]: The largest square of 1s is 2 by 2: area 4.
+fail[2]: No 1s: 0.
+fail[3]: A single 1: area 1.
+fail[4]: The whole grid: 9.
+fail[5]: The corners are 0, so no 3 by 3 square fits: area 4.
+fail[6]: 60 by 60: 3600.
+hint: A square ending at (r, c) can only be as big as the squares ending above, to the left and up-left allow, plus 1.
+hint: Fill row by row, left to right, keep the largest side, and return its square.
+right: Each entry needs three neighbours that are all filled earlier in row order, so the table takes O(rows × cols). The largest square can end anywhere, so the answer is the largest entry, squared.
+wrong: For each "1": 1 on the edges, otherwise 1 + the minimum of the three neighbours. Track the largest side and return side × side.
+
+=== task: code hard
+title: Counting palindromes
+prompt: Write `count_palindromes(s)` that returns how many pieces of `s` (runs of neighbouring characters, counted by position) read the same backwards. Use a table where `pal[i][j]` is True when `s[i:j + 1]` is a palindrome: the two end characters must match, and the inside, `s[i + 1:j]`, must be a palindrome too, unless the piece is 1 or 2 characters long. The inside is shorter, so fill the table by **length**: all pieces of length 1, then all of length 2, then 3, up to the whole string.
+starter:
+```python
+def count_palindromes(s):
+    n = len(s)
+    pal = [[False] * n for _ in range(n)]
+    count = 0
+    # your code here
+    return count
+```
+solution:
+```python
+def count_palindromes(s):
+    n = len(s)
+    pal = [[False] * n for _ in range(n)]
+    count = 0
+    for length in range(1, n + 1):
+        for i in range(0, n - length + 1):
+            j = i + length - 1
+            if s[i] == s[j] and (length <= 2 or pal[i + 1][j - 1]):
+                pal[i][j] = True
+                count += 1
+    return count
+```
+tests:
+- count_palindromes("abc")
+- count_palindromes("aaa")
+- count_palindromes("abba")
+- count_palindromes("racecar")
+- count_palindromes("")
+- count_palindromes("ab" * 50)
+fail[1]: Each single letter: 3.
+fail[2]: a, a, a, aa, aa, aaa: 6.
+fail[3]: a, b, b, a, bb, abba: 6.
+fail[4]: 7 letters, plus cec, aceca and racecar: 10.
+fail[5]: An empty string has no pieces: 0.
+fail[6]: 2550.
+hint: For each length from 1 to n, and each start i, the end is `j = i + length - 1`.
+hint: It's a palindrome if `s[i] == s[j]` and either length ≤ 2 or `pal[i + 1][j - 1]`, which a shorter length has already filled.
+right: Filling by length guarantees that the inside of every piece is decided before the piece itself: an order that's neither row by row nor column by column. O(n²) pieces, O(1) each.
+wrong: Loop over lengths, then starts; mark a piece a palindrome when its ends match and its inside is one (or it's at most 2 long), and count it.
+
+=== task: code hard
+title: The largest product
+prompt: Write `max_product(nums)` that returns the largest product of a run of neighbouring numbers (at least one). A negative number turns the smallest product into the largest, so keep two values for the runs ending at each index: `hi`, the largest product ending there, and `lo`, the smallest. For the next number x, the candidates are x alone, `hi * x` and `lo * x`: the new `hi` is the largest of them and the new `lo` the smallest. Keep only these two numbers, not a whole table, and track the best `hi`.
+starter:
+```python
+def max_product(nums):
+    hi = lo = best = nums[0]
+    # your code here
+    return best
+```
+solution:
+```python
+def max_product(nums):
+    hi = lo = best = nums[0]
+    for x in nums[1:]:
+        candidates = (x, hi * x, lo * x)
+        hi, lo = max(candidates), min(candidates)
+        best = max(best, hi)
+    return best
+```
+tests:
+- max_product([2, 3, -2, 4])
+- max_product([-2, 0, -1])
+- max_product([-2, 3, -4])
+- max_product([-3])
+- max_product([2, -5, -2, -4, 3])
+- max_product([-1, -1, -1])
+fail[1]: 2 × 3 = 6; the −2 breaks the run.
+fail[2]: The 0 on its own: 0.
+fail[3]: All three: −2 × 3 × −4 = 24.
+fail[4]: One number: −3.
+fail[5]: −2 × −4 × 3 = 24.
+fail[6]: Two of them: 1.
+hint: Work out both new values from the old `hi` and `lo` before changing either.
+hint: `best` is the largest `hi` seen at any index.
+right: Two numbers summarise the whole table: the best and worst run ending here. A negative x swaps their roles, which is why the smallest has to be kept. O(n) time, O(1) memory.
+wrong: For each x, the new hi and lo are the max and min of x, hi × x and lo × x, computed together; the answer is the largest hi.
+
+=== task: predict hard
+title: The wrong direction
+prompt: This row should become row 5 of Pascal's triangle, `[1, 5, 10, 10, 5, 1]`, but it's updated from left to right. What does it print?
+code:
+```python
+row = [1, 0, 0, 0, 0, 0]
+for i in range(1, 6):
+    for j in range(1, i + 1):
+        row[j] = row[j] + row[j - 1]
+print(row)
+```
+wrong[[1, 5, 10, 10, 5, 1]]: That's what right to left gives. Left to right, `row[j - 1]` has already been changed in this pass when `row[j]` reads it.
+wrong[[1, 1, 1, 1, 1, 1]]: Each update adds the neighbour to the left, which has already been updated: after pass 2 the row is [1, 2, 2, 0, 0, 0].
+wrong[[1, 5, 15, 35, 70, 126]]: The pass for i only updates j from 1 to i, so the entries beyond i are untouched in that pass.
+hint: Pass 1 gives [1, 1, 0, 0, 0, 0]. Pass 2 updates j = 1, then j = 2 using the new `row[1]`.
+hint: Write the row down after each pass.
+right: `[1, 5, 14, 28, 42, 42]`. Each update reads a value already changed in the same pass, so the row mixes two rows of the triangle. Going right to left keeps the left neighbour from the previous row.
+wrong: Pass 1: [1, 1, 0, 0, 0, 0]. Pass 2: [1, 2, 2, 0, 0, 0]. Pass 3: [1, 3, 5, 5, 0, 0]. Pass 4: [1, 4, 9, 14, 14, 0]. Pass 5: [1, 5, 14, 28, 42, 42].
+
+=== task: predict hard
+title: Which entry is the answer?
+prompt: `run[i]` is the length of the run of increasing neighbours that ends at index i. What does it print?
+code:
+```python
+nums = [1, 3, 5, 4, 7, 8, 9, 2, 3]
+run = [1] * len(nums)
+for i in range(1, len(nums)):
+    if nums[i] > nums[i - 1]:
+        run[i] = run[i - 1] + 1
+print(run)
+print(run[-1], max(run))
+```
+wrong[[1, 2, 3, 1, 2, 3, 4, 1, 2]\n4 4]: The last entry is the run ending at the last number, 2, 3: length 2. The longest run, 4, 7, 8, 9, ends earlier.
+wrong[[1, 2, 3, 3, 4, 5, 6, 6, 7]\n7 7]: When a number isn't bigger than the one before, the run starts again at 1.
+wrong[[1, 2, 3, 1, 2, 3, 4, 1, 2]\n2 9]: `max(run)` is the largest entry, 4, not the length of the list.
+hint: At index 3, 4 isn't bigger than 5: what does `run[3]` stay at?
+hint: `run[-1]` is the run ending at the last number only.
+right: `[1, 2, 3, 1, 2, 3, 4, 1, 2]`, then `2 4`. The entry means "the run ending here", so the longest run overall is the largest entry, which ends at index 6, not at the end.
+wrong: The runs restart at 4 and at 2. The run 4, 7, 8, 9 reaches 4; the last entry is 2. So `run[-1]` is 2 and `max(run)` is 4.
+
+=== task: cells hard
+title: Change for 7
+prompt: The lesson's coin table runs with coins 2 and 3 and target 7: `ways[0] = 1`, then for each coin, for each amount from the coin up to 7, `ways[amount] += ways[amount - coin]`. Fill in the final entries.
+code:
+```python
+coins = [2, 3]
+ways = [1, 0, 0, 0, 0, 0, 0, 0]
+for coin in coins:
+    for amount in range(coin, 8):
+        ways[amount] += ways[amount - coin]
+```
+labels: ways[4] | ways[5] | ways[6] | ways[7]
+answer: 1 | 1 | 2 | 1
+wrong[1 | 0 | 1 | 0]: That's the table after the 2-coins only. The 3-coins then add ways to make 3, 5, 6 and 7.
+wrong[1 | 1 | 2 | 2]: 7 is 2 + 2 + 3 only: 7 − 3 = 4, and 4 can be made in 1 way.
+wrong[2 | 1 | 2 | 1]: 4 is 2 + 2 only: the 3-coin would leave 1, which can't be made.
+hint: After the 2-coins: [1, 0, 1, 0, 1, 0, 1, 0].
+hint: The 3-coins go up from 3: ways[3] += ways[0], ways[4] += ways[1], up to ways[7].
+right: 1, 1, 2 and 1. 4 = 2 + 2; 5 = 2 + 3; 6 = 2 + 2 + 2 or 3 + 3; 7 = 2 + 2 + 3.
+wrong: After 2s: [1, 0, 1, 0, 1, 0, 1, 0]. Adding 3s: ways[3] = 1, ways[4] = 1, ways[5] = 0 + 1 = 1, ways[6] = 1 + 1 = 2, ways[7] = 0 + 1 = 1.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to this table for climbing stairs 1 or 2 steps at a time. Choose **every** change that makes it return a wrong answer or raise an error, for some n ≥ 2.
+code:
+```python
+def ways(n):
+    table = [0] * (n + 1)
+    table[0] = 1
+    table[1] = 1
+    for i in range(2, n + 1):
+        table[i] = table[i - 1] + table[i - 2]
+    return table[n]
+```
+* Making the table `[0] * n` instead of `[0] * (n + 1)` :: Right. The last index is n − 1, so `table[n]` raises an IndexError.
+* Starting the loop at `range(1, n + 1)` :: Right. The first pass overwrites `table[1]` with `table[0] + table[-1]`, and `table[-1]` is the last entry, 0.
+* Returning `table[n - 1]` :: Right. That's the answer for n − 1 steps.
+- Filling `table[1] = 1` before `table[0] = 1` :: Both are set before the loop, so the order between them doesn't matter.
+- Writing `table[i - 2] + table[i - 1]` :: Addition doesn't care about order.
+- Keeping two variables instead of the table, `a, b = b, a + b` :: That's the same recurrence with less memory, if it's done right.
+hint: Which changes break the table's size, a base case, or the place the answer is read from?
+hint: Which changes only rearrange the same work?
+right: The size must have room for entry n, the loop must not overwrite a base case, and the answer is at n. The order of independent base cases, of the two terms, or keeping two variables changes nothing.
+wrong: A table one too short, a loop that starts on a base case, or reading the wrong entry break it. Swapping independent lines or terms doesn't.
+
+=== task: fill hard
+title: Longest increasing, bottom-up
+prompt: An increasing subsequence picks numbers from the list, in order, each bigger than the one before. `lis[i]` is the length of the longest one that **ends** with `nums[i]`: 1 for `nums[i]` alone, or 1 more than `lis[j]` for some earlier j with a smaller number. The answer is the largest entry. Fill in the blanks so that the program prints:
+
+```output
+[1, 1, 2, 2, 2, 3, 3, 4] 4
+```
+code:
+```python
+nums = [4, 1, 3, 3, 2, 5, 5, 6]
+lis = [1] * len(nums)
+for i in range(1, len(nums)):
+    for j in range(i):
+        if nums[j] ?? nums[i]:
+            lis[i] = max(lis[i], ??)
+print(lis, max(lis))
+```
+answer: < | lis[j] + 1
+wrong[<= | lis[j] + 1]: Equal numbers would count as increasing: 1, 3, 3, 5, 5, 6 would make 6.
+wrong[< | lis[j]]: The subsequence ending at j gets one more number, `nums[i]`, so its length goes up by 1. Without the + 1, every entry stays 1.
+hint: The earlier number must be strictly smaller.
+hint: Extending the subsequence that ends at j adds one number.
+right: Every entry reads only entries to its left, so filling left to right works. 1, 3, 5, 6 is one longest: 4. O(n²) with two loops.
+wrong: Compare `nums[j] < nums[i]`, and take `lis[j] + 1` when it's bigger.
+
+=== task: parsons hard
+title: Ugly numbers
+prompt: An **ugly number** has no prime factors other than 2, 3 and 5; the first ten are 1, 2, 3, 4, 5, 6, 8, 9, 10 and 12. Every ugly number after 1 is 2, 3 or 5 times a smaller one, so the table can be built in order: keep three pointers, `i2`, `i3` and `i5`, to the next numbers that haven't been multiplied by 2, 3 and 5 yet. The next ugly number is the smallest of the three products, and every pointer whose product equals it moves on, so that no number appears twice. Arrange the lines so that the program prints:
+
+```output
+[1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24] 5832
+```
+
+Not every line is needed.
+lines:
+```python
+def ugly(n):
+    nums = [1]
+    i2 = i3 = i5 = 0
+    while len(nums) < n:
+        nxt = min(nums[i2] * 2, nums[i3] * 3, nums[i5] * 5)
+        nums.append(nxt)
+        if nums[i2] * 2 == nxt:
+            i2 += 1
+        if nums[i3] * 3 == nxt:
+            i3 += 1
+        if nums[i5] * 5 == nxt:
+            i5 += 1
+    return nums
+```
+distractors:
+```python
+        elif nums[i3] * 3 == nxt:
+        nxt = max(nums[i2] * 2, nums[i3] * 3, nums[i5] * 5)
+```
+after:
+```python
+print(ugly(15), ugly(150)[-1])
+```
+hint: The next number is the smallest product that's bigger than everything so far.
+hint: 6 is both 3 × 2 and 2 × 3: both pointers must move, or 6 would be added twice.
+right: Each entry is built from earlier entries, picked by three pointers that only move forward, so n ugly numbers take O(n). The 150th is 5832.
+wrong: Append the smallest of the three products, then move every pointer whose product equals it, using separate `if`s, not `elif`.
