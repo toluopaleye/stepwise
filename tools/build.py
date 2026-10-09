@@ -684,6 +684,8 @@ def apply_checks(checks, cres, pres, skip_diff):
                 if c.get("error") and not c["error"].startswith(("NameError", "ValueError", "IndexError", "KeyError", "TypeError", "ZeroDivisionError", "RecursionError")):
                     errors.append(f"{ctx}: animation failed: {c['error']}")
                 payload["frames"] = c.get("frames", [])
+                if c.get("captionFails"):
+                    errors.append(f"{ctx}: caption placeholder can't be filled in (it would show as written): {', '.join(c['captionFails'])}")
                 if len(payload["frames"]) > 160:
                     print(f"  warn {ctx}: {len(payload['frames'])} animation frames")
             if p is not None:

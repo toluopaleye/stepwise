@@ -169,6 +169,9 @@ def enc(v, seen, depth=0):
     return {"$x": repr(v)[:200]}
 
 
+CAPTION_FAILS = []
+
+
 def fill_caption(tpl, frame):
     if not tpl:
         return None
@@ -182,6 +185,11 @@ def fill_caption(tpl, frame):
                 out.append(tpl[i:])
                 break
             expr = tpl[i + 1:j]
+            if not expr.strip():
+                # a literal {} in the text, such as "an empty dict, {}"
+                out.append(tpl[i:j + 1])
+                i = j + 1
+                continue
             conv = None
             if expr.endswith("!r"):
                 expr, conv = expr[:-2], "r"
@@ -189,6 +197,8 @@ def fill_caption(tpl, frame):
                 val = eval(expr, frame.f_globals, frame.f_locals)
                 out.append(repr(val) if conv == "r" else str(val))
             except Exception:  # noqa
+                # the learner would see the raw {placeholder}: the build reports it as an error
+                CAPTION_FAILS.append(f"line {frame.f_lineno}: {{{tpl[i + 1:j]}}}")
                 out.append("{" + tpl[i + 1:j] + "}")
             i = j + 1
         else:
@@ -286,7 +296,9 @@ def trace(src, captions, show, max_frames):
     if err_line is not None:
         end["err"] = error
     frames.append(end)
-    return {"frames": frames, "stdout": out.getvalue(), "error": error}
+    fails = sorted(set(CAPTION_FAILS))
+    CAPTION_FAILS.clear()
+    return {"frames": frames, "stdout": out.getvalue(), "error": error, "captionFails": fails}
 
 
 def main():
