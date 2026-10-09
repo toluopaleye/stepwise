@@ -1,0 +1,1200 @@
+=== lesson
+id: algo-dp-2d
+title: 2D grid DP
+summary: When a subproblem needs two numbers to describe it, the table becomes a grid, with a cell for every pair. You'll count paths through grids with blocked cells, find the cheapest path through a grid of costs and trace it back, and compare two strings with the longest common subsequence, where the rows and columns of the table stand for the characters of each string.
+
+=== learn
+### A cell for every pair
+The tabulation lesson counted paths through a grid, moving only right or down: `paths[r][c]` adds the cell above and the cell to the left. A subproblem described by two numbers, here a row and a column, needs a table with two dimensions: a list of rows.
+
+Now some cells are blocked, marked `#`. A blocked cell has no paths into it. Treating anything outside the grid as 0 handles the edges too, so the only special cell is the start, which has 1 path:
+```python
+grid = ["....",
+        ".#..",
+        "...#",
+        "#..."]
+rows, cols = len(grid), len(grid[0])
+paths = [[0] * cols for _ in range(rows)]
+for r in range(rows):
+    for c in range(cols):
+        if grid[r][c] == "#":
+            paths[r][c] = 0
+        elif r == 0 and c == 0:
+            paths[r][c] = 1
+        else:
+            above = paths[r - 1][c] if r > 0 else 0
+            left = paths[r][c - 1] if c > 0 else 0
+            paths[r][c] = above + left
+for row in paths:
+    print(row)
+```
+```output
+[1, 1, 1, 1]
+[1, 0, 1, 2]
+[1, 1, 2, 0]
+[0, 1, 3, 3]
+```
+The bottom-right cell can be reached in 3 ways. A block on the top row or in the left column would cut off every cell beyond it along that edge, since those cells can only be reached along the edge. The `#` at the start of the bottom row only removes one way in: the cells to its right are still reached from above.
+
+### The cheapest path
+Now each cell has a cost, and a path pays the cost of every cell it enters, the first and the last included. Moving right or down, what's the cheapest path from the top-left to the bottom-right? Let `best[r][c]` be the cheapest total to reach cell (r, c). The last step came from above or from the left, so it's the cell's own cost plus the cheaper of those two. Cells on the top row can only be reached from the left, and cells in the left column only from above:
+```python
+cost = [[1, 3, 1],
+        [1, 5, 1],
+        [4, 2, 1]]
+rows, cols = len(cost), len(cost[0])
+best = [[0] * cols for _ in range(rows)]
+for r in range(rows):
+    for c in range(cols):
+        if r == 0 and c == 0:
+            best[r][c] = cost[0][0]
+        elif r == 0:
+            best[r][c] = best[r][c - 1] + cost[r][c]
+        elif c == 0:
+            best[r][c] = best[r - 1][c] + cost[r][c]
+        else:
+            best[r][c] = min(best[r - 1][c], best[r][c - 1]) + cost[r][c]
+for row in best:
+    print(row)
+```
+```output
+[1, 4, 5]
+[2, 7, 6]
+[6, 8, 7]
+```
+The cheapest path costs 7. Counting paths adds the two neighbours; finding the cheapest takes the smaller. Animation 1 fills this table.
+
+### Tracing the path back
+The table holds the cheapest totals, and the path can be read back from it. Start at the bottom-right cell. Its cheapest total came from whichever neighbour, above or to the left, has the smaller total, so step there, and repeat until the start:
+```python
+r, c = rows - 1, cols - 1
+path = [(r, c)]
+while (r, c) != (0, 0):
+    if r == 0:
+        c -= 1
+    elif c == 0:
+        r -= 1
+    elif best[r - 1][c] <= best[r][c - 1]:
+        r -= 1
+    else:
+        c -= 1
+    path.append((r, c))
+path.reverse()
+print(path)
+print([cost[r][c] for r, c in path])
+```
+```output
+[(0, 0), (0, 1), (0, 2), (1, 2), (2, 2)]
+[1, 3, 1, 1, 1]
+```
+Right, right, down, down: 1 + 3 + 1 + 1 + 1 = 7. On a tie, either neighbour gives a cheapest path; this code prefers the one above.
+
+### Two strings, one grid
+A **subsequence** of a string keeps some of its characters in their order, not necessarily next to each other: "ace" is a subsequence of "abcde". The **longest common subsequence** (LCS) of two strings is the longest string that's a subsequence of both. Comparing two versions of a file, or two DNA strands, comes down to this question.
+
+The subproblem needs two numbers: how much of each string to use. Let `lcs[i][j]` be the length of the LCS of the first i characters of a, `a[:i]`, and the first j characters of b, `b[:j]`. Row 0 and column 0 are 0: nothing is common with an empty string. For the rest, compare the last characters, `a[i - 1]` and `b[j - 1]`:
+- If they're equal, that character ends a common subsequence: `lcs[i - 1][j - 1] + 1`.
+- If not, at least one of them isn't in the LCS, so drop one or the other and keep the better: `max(lcs[i - 1][j], lcs[i][j - 1])`.
+```python
+a, b = "abcde", "ace"
+lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+for i in range(1, len(a) + 1):
+    for j in range(1, len(b) + 1):
+        if a[i - 1] == b[j - 1]:
+            lcs[i][j] = lcs[i - 1][j - 1] + 1
+        else:
+            lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+for row in lcs:
+    print(row)
+print(lcs[len(a)][len(b)])
+```
+```output
+[0, 0, 0, 0]
+[0, 1, 1, 1]
+[0, 1, 1, 1]
+[0, 1, 2, 2]
+[0, 1, 2, 2]
+[0, 1, 2, 3]
+3
+```
+Row i stands for the first i characters of "abcde" and column j for the first j characters of "ace". Each cell reads the cell above, the cell to the left and the cell diagonally up-left, so filling row by row works. The answer is the bottom-right cell: 3. Animation 2 fills a table like this one.
+
+### Reading the subsequence back
+Walk back from the bottom-right cell. When the two characters match, that character is part of the LCS: record it and move diagonally. When they don't, move to whichever of the cell above and the cell to the left holds the bigger number, since that's where the length came from:
+```python
+def lcs_string(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    out = []
+    i, j = len(a), len(b)
+    while i > 0 and j > 0:
+        if a[i - 1] == b[j - 1]:
+            out.append(a[i - 1])
+            i -= 1
+            j -= 1
+        elif lcs[i - 1][j] >= lcs[i][j - 1]:
+            i -= 1
+        else:
+            j -= 1
+    out.reverse()
+    return "".join(out)
+
+print(lcs_string("abcde", "ace"), lcs_string("AGGTAB", "GXTXAYB"))
+```
+```output
+ace GTAB
+```
+The characters are found from the end backwards, so the list is reversed at the end.
+
+### Size, time and memory
+A table for strings of lengths m and n has (m + 1) × (n + 1) cells, each worked out in O(1) from cells already filled: **O(m × n)** time and memory. Trying every subsequence of one string instead would take O(2ᵐ).
+
+If only the length is needed, the table can keep two rows, the one above and the current one, for O(n) memory. Reading the subsequence back needs the whole table.
+
+=== keypoints
+- A subproblem described by two numbers gets a table with two dimensions: a list of rows, filled row by row.
+- Paths through a grid add the cell above and the cell to the left; a blocked cell has 0, and anything outside the grid counts as 0.
+- The cheapest path takes the cheaper of above and left, plus the cell's cost. Trace it back by stepping to the cheaper neighbour.
+- LCS: `lcs[i][j]` is for `a[:i]` and `b[:j]`. Matching last characters give the diagonal + 1; otherwise the larger of above and left.
+- Read the LCS back from the bottom-right: diagonal on a match, otherwise towards the larger neighbour.
+- O(m × n) time and memory; two rows are enough for the length alone.
+
+=== example: Comparing two versions
+intro: A diff tool shows what changed between two versions of a file. It finds the longest common subsequence of their lines: those lines stayed. Every other line was removed from the old version or added in the new one.
+```python
+old = ["eggs", "flour", "sugar", "butter", "milk"]
+new = ["eggs", "sugar", "cream", "butter", "salt"]
+
+lcs = [[0] * (len(new) + 1) for _ in range(len(old) + 1)]
+for i in range(1, len(old) + 1):
+    for j in range(1, len(new) + 1):
+        if old[i - 1] == new[j - 1]:
+            lcs[i][j] = lcs[i - 1][j - 1] + 1
+        else:
+            lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+
+lines = []
+i, j = len(old), len(new)
+while i > 0 or j > 0:
+    if i > 0 and j > 0 and old[i - 1] == new[j - 1]:
+        lines.append("  " + old[i - 1])
+        i -= 1
+        j -= 1
+    elif j > 0 and (i == 0 or lcs[i][j - 1] >= lcs[i - 1][j]):
+        lines.append("+ " + new[j - 1])
+        j -= 1
+    else:
+        lines.append("- " + old[i - 1])
+        i -= 1
+lines.reverse()
+for line in lines:
+    print(line)
+```
+1-2: Two versions of a shopping list, one line per item.
+4-10: The LCS table, comparing whole lines instead of characters.
+12-24: Walk back from the end. A matching line was kept. Otherwise a line of the new version was added, or a line of the old one was removed, whichever way the longer common part lies. At the edges, only one of those is possible.
+25-27: The diff, in order: eggs, sugar and butter stayed; flour and milk went; cream and salt arrived.
+
+=== example: A spelling checker
+intro: How many single-character edits, inserting, deleting or replacing a character, turn one word into another? This **edit distance** fills a table like the LCS one, and a spelling checker suggests the dictionary words with the smallest distance.
+```python
+def edit_distance(a, b):
+    d = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        d[i][0] = i
+    for j in range(len(b) + 1):
+        d[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                d[i][j] = d[i - 1][j - 1]
+            else:
+                d[i][j] = 1 + min(d[i - 1][j], d[i][j - 1], d[i - 1][j - 1])
+    return d[len(a)][len(b)]
+
+typed = "speling"
+for word in ["spelling", "spieling", "spelunking", "peeling"]:
+    print(word, edit_distance(typed, word))
+```
+1-6: `d[i][j]` is the distance between `a[:i]` and `b[:j]`. Turning i characters into nothing takes i deletions, and nothing into j characters takes j insertions.
+7-12: Matching last characters cost nothing more. Otherwise the last edit was a deletion (from above), an insertion (from the left) or a replacement (from the diagonal): take the cheapest, plus 1.
+15-17: "spelling" and "spieling" are one insertion away, "peeling" is two edits away, and "spelunking" three. A spelling checker would suggest the first two.
+
+=== animation: The cheapest path
+view: grid best row=r col=c
+vars r c
+intro: Each box gets the cheapest total to reach that cell: its own cost plus the cheaper of the box above and the box to its left. The top row and the left column have only one way in.
+```python
+cost = [[1, 3, 1], [1, 5, 1], [4, 2, 1]]
+best = [[None, None, None], [None, None, None], [None, None, None]]
+for r in range(3):
+    for c in range(3):
+        if r == 0 and c == 0:
+            best[r][c] = cost[0][0]
+        elif r == 0:
+            best[r][c] = best[r][c - 1] + cost[r][c]
+        elif c == 0:
+            best[r][c] = best[r - 1][c] + cost[r][c]
+        else:
+            best[r][c] = min(best[r - 1][c], best[r][c - 1]) + cost[r][c]
+print(best[2][2])
+```
+1: The cost of each cell, row by row.
+2: The table of cheapest totals, empty for now.
+3: Fill row by row.
+4: Each row from left to right.
+5: {'(' + str(r) + ', ' + str(c) + '): is it the start? ' + ('Yes.' if r == 0 and c == 0 else 'No.')}
+6: The start costs its own {cost[0][0]}.
+7: {'Is it on the top row? ' + ('Yes.' if r == 0 else 'No.')}
+8: On the top row, the only way in is from the left: {best[r][c - 1]} + {cost[r][c]} = {best[r][c - 1] + cost[r][c]}.
+9: {'Is it in the left column? ' + ('Yes.' if c == 0 else 'No.')}
+10: In the left column, the only way in is from above: {best[r - 1][c]} + {cost[r][c]} = {best[r - 1][c] + cost[r][c]}.
+12: From above {best[r - 1][c]} or from the left {best[r][c - 1]}: the cheaper is {min(best[r - 1][c], best[r][c - 1])}, plus {cost[r][c]} = {min(best[r - 1][c], best[r][c - 1]) + cost[r][c]}.
+13: The cheapest path to the bottom-right cell costs {best[2][2]}.
+
+=== animation: A common subsequence
+view: grid lcs row=i col=j rows=,a,b,c,d cols=,a,c,b,d
+vars i j
+intro: Rows stand for the first i characters of "abcd", columns for the first j characters of "acbd". Each box is the length of their longest common subsequence: a match extends the box diagonally up-left by 1; otherwise the box takes the larger of the box above and the box to its left.
+```python
+a, b = "abcd", "acbd"
+lcs = [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
+for i in range(1, 5):
+    for j in range(1, 5):
+        if a[i - 1] == b[j - 1]:
+            lcs[i][j] = lcs[i - 1][j - 1] + 1
+        else:
+            lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+print(lcs[4][4])
+```
+1: The two strings.
+2: A 5 by 5 table of zeros. Row 0 and column 0 stay 0: nothing is common with an empty string.
+3: Fill row by row: row i uses the first i characters of "abcd".
+4: Along the row, column j uses the first j characters of "acbd".
+5: {'Compare ' + a[i - 1] + ' with ' + b[j - 1] + ': ' + ('a match.' if a[i - 1] == b[j - 1] else 'different.')}
+6: {a[i - 1]} ends a common subsequence: the diagonal {lcs[i - 1][j - 1]} + 1 = {lcs[i - 1][j - 1] + 1}.
+8: Drop one of the two characters: the larger of above ({lcs[i - 1][j]}) and left ({lcs[i][j - 1]}) is {max(lcs[i - 1][j], lcs[i][j - 1])}.
+9: The longest common subsequence of "abcd" and "acbd" has {lcs[4][4]} characters, such as "abd" or "acd".
+
+=== task: predict easy
+title: The cheapest totals
+prompt: The lesson's cheapest-path table runs on a grid with two rows. What does it print?
+code:
+```python
+cost = [[1, 2, 3],
+        [4, 5, 6]]
+best = [[0, 0, 0], [0, 0, 0]]
+for r in range(2):
+    for c in range(3):
+        if r == 0 and c == 0:
+            best[r][c] = cost[0][0]
+        elif r == 0:
+            best[r][c] = best[r][c - 1] + cost[r][c]
+        elif c == 0:
+            best[r][c] = best[r - 1][c] + cost[r][c]
+        else:
+            best[r][c] = min(best[r - 1][c], best[r][c - 1]) + cost[r][c]
+print(best[0])
+print(best[1])
+```
+wrong[[1, 2, 3]\n[4, 5, 6]]: Each box holds a running total, the cheapest way to reach that cell, not the cell's own cost.
+wrong[[1, 3, 6]\n[5, 10, 16]]: Inner boxes take the **cheaper** of above and left: (1, 1) is min(3, 5) + 5 = 8.
+wrong[[1, 3, 6]\n[5, 8, 14]]: (1, 2) is min(6, 8) + 6 = 12: the cell above is cheaper.
+hint: The top row only adds from the left: 1, 1 + 2, 3 + 3.
+hint: (1, 1) = min(above 3, left 5) + 5.
+right: `[1, 3, 6]` and `[5, 8, 12]`. The cheapest path costs 12: right, right, down: 1 + 2 + 3 + 6.
+wrong: Top row: 1, 3, 6. Left column: 1 + 4 = 5. Then min(3, 5) + 5 = 8 and min(6, 8) + 6 = 12.
+
+=== task: mcq easy
+title: Row 0 and column 0
+prompt: In the LCS table, `lcs[i][j]` is for `a[:i]` and `b[:j]`. Why are row 0 and column 0 all 0?
+* Row 0 uses none of a, and column 0 none of b: nothing is common with an empty string :: Right. They're the base cases every other entry is built on.
+- Because Python lists start with 0 :: The zeros mean something: the LCS with an empty string has length 0.
+- Because the first characters of a and b never match :: They might match; that match is counted in row 1, column 1.
+- To make the table the same size as the strings :: The table is one bigger than each string, exactly so that row 0 and column 0 can stand for the empty prefixes.
+hint: What does `a[:0]` contain?
+hint: What's the longest common subsequence of "" and "abc"?
+right: Row 0 and column 0 stand for empty prefixes, whose LCS with anything is empty: length 0. Every other entry reads them.
+wrong: They're the base cases: an empty prefix has nothing in common with anything.
+
+=== task: cells easy
+title: Paths around one rock
+prompt: Count the right-and-down paths into each cell of this grid, as in the lesson: a rock has 0 paths, the start has 1, and anything outside the grid counts as 0.
+code:
+```python
+grid = ["...",
+        ".#.",
+        "..."]
+```
+labels: paths[1][2] | paths[2][1] | paths[2][2]
+answer: 1 | 1 | 2
+wrong[2 | 2 | 4]: The rock at (1, 1) has 0 paths, so it adds nothing to the cells to its right and below it.
+wrong[1 | 1 | 6]: Without the rock, there would be 6 paths. With it, only the two around the edges remain.
+wrong[1 | 1 | 1]: (2, 2) adds the cell above, 1, and the cell to its left, 1: 2.
+hint: The top row and the left column are all 1.
+hint: (1, 2) = above 1 + left 0 (the rock).
+right: 1, 1 and 2: one path along the top and down the right side, one down the left side and along the bottom.
+wrong: (1, 2) = 1 + 0 = 1. (2, 1) = 0 + 1 = 1. (2, 2) = 1 + 1 = 2.
+
+=== task: code easy
+title: The cheapest path
+prompt: Write `min_path_sum(cost)` that returns the cheapest total of a path from the top-left cell of the grid `cost` to the bottom-right one, moving right or down and paying for every cell entered, the first and last included. Use the lesson's table: the start costs its own number, the top row and the left column have only one way in, and every other cell adds its cost to the cheaper of the cell above and the cell to its left. The speed check uses a grid of 10 rows and about n cells.
+starter:
+```python
+def min_path_sum(cost):
+    rows, cols = len(cost), len(cost[0])
+    best = [[0] * cols for _ in range(rows)]
+    # your code here
+    return best[rows - 1][cols - 1]
+```
+solution:
+```python
+def min_path_sum(cost):
+    rows, cols = len(cost), len(cost[0])
+    best = [[0] * cols for _ in range(rows)]
+    for r in range(rows):
+        for c in range(cols):
+            if r == 0 and c == 0:
+                best[r][c] = cost[0][0]
+            elif r == 0:
+                best[r][c] = best[r][c - 1] + cost[r][c]
+            elif c == 0:
+                best[r][c] = best[r - 1][c] + cost[r][c]
+            else:
+                best[r][c] = min(best[r - 1][c], best[r][c - 1]) + cost[r][c]
+    return best[rows - 1][cols - 1]
+```
+tests:
+- min_path_sum([[1, 3, 1], [1, 5, 1], [4, 2, 1]])
+- min_path_sum([[5]])
+- min_path_sum([[1, 2, 3]])
+- min_path_sum([[1], [2], [3]])
+- min_path_sum([[1, 2], [5, 1]])
+- min_path_sum([[9, 1, 1], [1, 1, 9], [9, 1, 1]])
+fail[1]: Right, right, down, down: 7.
+fail[2]: One cell: 5.
+fail[3]: One row: everything, 6.
+fail[4]: One column: 6.
+fail[5]: Right, then down: 1 + 2 + 1 = 4.
+fail[6]: 13: the expensive start can't be avoided, and then the path weaves through the 1s.
+speed: setup=cost = [[(r * 7 + c * 3) % 9 + 1 for c in range(n // 10)] for r in range(10)] | call=min_path_sum(cost) | target=O(n)
+slow:
+```python
+def cheapest(cost, r, c):
+    if r == 0 and c == 0:
+        return cost[0][0]
+    if r == 0:
+        return cheapest(cost, r, c - 1) + cost[r][c]
+    if c == 0:
+        return cheapest(cost, r - 1, c) + cost[r][c]
+    return min(cheapest(cost, r - 1, c), cheapest(cost, r, c - 1)) + cost[r][c]
+
+def min_path_sum(cost):
+    return cheapest(cost, len(cost) - 1, len(cost[0]) - 1)
+```
+hint: Four cases: the start, the top row (from the left only), the left column (from above only), and the rest (the cheaper of the two).
+hint: Fill row by row, left to right, and return the bottom-right box.
+right: Each cell is worked out once from two boxes already filled: O(rows × cols). Trying every path instead would be exponential.
+wrong: Start with `cost[0][0]`; top row and left column add along the edge; every other box is its cost plus `min(above, left)`.
+
+=== task: fill easy
+title: The LCS rule
+prompt: Fill in the blanks so that the table holds the lengths of longest common subsequences, as in the lesson, and the program prints:
+
+```output
+3 4 0
+```
+code:
+```python
+def lcs_length(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = ??
+            else:
+                lcs[i][j] = max(??, lcs[i][j - 1])
+    return lcs[len(a)][len(b)]
+
+print(lcs_length("abcde", "ace"), lcs_length("AGGTAB", "GXTXAYB"), lcs_length("abc", "xyz"))
+```
+answer: lcs[i - 1][j - 1] + 1 | lcs[i - 1][j]
+wrong[lcs[i - 1][j - 1] | lcs[i - 1][j]]: A match must add 1 for the matching character, or every length stays 0.
+wrong[lcs[i - 1][j] + 1 | lcs[i - 1][j]]: A match extends the diagonal entry, where neither character has been used. Extending the entry above can count one character of b twice.
+hint: A match adds the character to the LCS of the two shorter prefixes.
+hint: Without a match, drop the last character of a, or the last character of b.
+right: The diagonal + 1 on a match; otherwise the larger of above and left. "AGGTAB" and "GXTXAYB" share "GTAB".
+wrong: `lcs[i - 1][j - 1] + 1` when the characters match, and `max(lcs[i - 1][j], lcs[i][j - 1])` when they don't.
+
+=== task: multi easy
+title: True of 2D tables
+prompt: Choose **every** true statement about the lesson's 2D tables.
+* The cheapest path table takes the smaller of the box above and the box to the left :: Right. Plus the cell's own cost.
+* The LCS table has one more row and one more column than the lengths of the two strings :: Right. Row 0 and column 0 stand for empty prefixes.
+* Filling row by row works for both tables :: Right. Every box reads boxes above it or to its left.
+- A blocked cell copies the number of paths from the cell above it :: A blocked cell has 0 paths: nothing can go into it.
+- The LCS can be read off row 1 of the table :: It's read back from the bottom-right box, walking towards the top-left.
+- The cheapest path always goes along the top row and down the right side :: It depends on the costs; the table finds the right turns.
+hint: What does each box read?
+hint: Where does the walk back start?
+right: Paths and costs read above and left; LCS reads above, left and the diagonal; all of these are filled earlier in row order. Answers and paths are read back from the bottom-right.
+wrong: Blocked cells are 0, the LCS is traced back from the bottom-right, and the cheapest path depends on the costs.
+
+=== task: parsons easy
+title: Paths around rocks
+prompt: Arrange the lines so that `rock_paths` counts the right-and-down paths from the top-left cell to the bottom-right one, where `#` cells are blocked: a blocked cell has 0 paths, the start has 1, and anything outside the grid counts as 0. The program prints:
+
+```output
+3 0
+```
+
+Not every line is needed.
+lines:
+```python
+def rock_paths(grid):
+    rows, cols = len(grid), len(grid[0])
+    paths = [[0] * cols for _ in range(rows)]
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == "#":
+                paths[r][c] = 0
+            elif r == 0 and c == 0:
+                paths[r][c] = 1
+            else:
+                above = paths[r - 1][c] if r > 0 else 0
+                left = paths[r][c - 1] if c > 0 else 0
+                paths[r][c] = above + left
+    return paths[rows - 1][cols - 1]
+```
+distractors:
+```python
+                paths[r][c] = above * left
+                left = paths[r][c + 1] if c < cols - 1 else 0
+```
+after:
+```python
+print(rock_paths(["....", ".#..", "...#", "#..."]), rock_paths(["..", "#.", ".#"]))
+```
+hint: Check for a rock first, then the start, then add the two neighbours.
+hint: `paths[r - 1][c]` with r = 0 would read the last row of the table: guard it with `if r > 0 else 0`.
+right: Blocked cells contribute nothing, and the guards make the edges work without special cases. The second grid's goal is blocked: 0.
+wrong: For each cell: 0 for a rock, 1 for the start, otherwise above + left, with 0 for anything outside the grid.
+
+=== task: order easy
+title: Filling the LCS table
+prompt: Put the steps for the longest common subsequence table in order.
+items:
+- Make a table with len(a) + 1 rows and len(b) + 1 columns of zeros.
+- Leave row 0 and column 0 at 0: nothing is common with an empty prefix.
+- Fill the other boxes row by row, comparing a[i − 1] with b[j − 1].
+- On a match take the diagonal box + 1, otherwise the larger of above and left.
+- Read the length from the bottom-right box.
+hint: The table has to exist before any box is filled.
+hint: The answer is read last.
+right: Size the table, keep the empty-prefix base cases, fill row by row with the match rule, and read the bottom-right box.
+wrong: Zeros first; row 0 and column 0 stay 0; fill row by row; the answer is the last box.
+
+=== task: predict easy
+title: Short common subsequences
+prompt: What does it print?
+code:
+```python
+def lcs_length(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    return lcs[len(a)][len(b)]
+
+print(lcs_length("abc", "acb"), lcs_length("aaa", "aa"), lcs_length("xyz", "abc"))
+```
+wrong[3 2 0]: "abc" and "acb" have their letters in different orders: the longest common subsequence is "ab" or "ac", 2 characters.
+wrong[2 3 0]: "aa" has only two a's, so no common subsequence can be longer than 2.
+wrong[2 2 3]: "xyz" and "abc" share no characters: 0.
+hint: A subsequence keeps the characters in order.
+hint: A common subsequence can't be longer than the shorter string.
+right: `2 2 0`. "ab" (or "ac") for the first pair, "aa" for the second, nothing for the third.
+wrong: abc/acb: 2, since b and c are in different orders. aaa/aa: 2. xyz/abc: no shared letters, 0.
+
+=== task: mcq easy
+title: How big is the work?
+prompt: The LCS table compares a string of m characters with one of n characters. About how much work does it do?
+* O(m × n): there are (m + 1) × (n + 1) boxes, each filled in O(1) :: Right. Each box reads three boxes already filled.
+- O(m + n), one pass along each string :: Every pair of prefixes gets a box, so it's a product, not a sum.
+- O(2 to the power m), one check per subsequence :: That's trying every subsequence; the table avoids it.
+- O(n), because only b is compared :: Every character of a is compared with every character of b.
+hint: How many boxes does the table have?
+hint: How much work is each box?
+right: (m + 1)(n + 1) boxes of O(1) work: O(m × n). For two strings of 1,000 characters, about a million steps.
+wrong: Count the boxes, rows times columns, and multiply by the work per box.
+
+=== task: code medium
+title: The cheapest fall
+prompt: A path falls through a square grid of numbers: it starts anywhere in the top row, and from cell (r, c) moves to (r + 1, c − 1), (r + 1, c) or (r + 1, c + 1), staying inside the grid. Write `falling_path(matrix)` that returns the smallest sum of the numbers along a falling path to the bottom row. Fill a table row by row, where each box is its own number plus the smallest of the up to three boxes above it that can reach it. The answer is the smallest box in the bottom row.
+starter:
+```python
+def falling_path(matrix):
+    best = [row[:] for row in matrix]
+    # your code here
+    return min(best[-1])
+```
+solution:
+```python
+def falling_path(matrix):
+    best = [row[:] for row in matrix]
+    for r in range(1, len(matrix)):
+        for c in range(len(matrix[r])):
+            options = [best[r - 1][c]]
+            if c > 0:
+                options.append(best[r - 1][c - 1])
+            if c + 1 < len(matrix[r]):
+                options.append(best[r - 1][c + 1])
+            best[r][c] = matrix[r][c] + min(options)
+    return min(best[-1])
+```
+tests:
+- falling_path([[2, 1, 3], [6, 5, 4], [7, 8, 9]])
+- falling_path([[-19, 57], [-40, -5]])
+- falling_path([[7]])
+- falling_path([[1, 2, 3, 4]])
+- falling_path([[1, 100, 1], [100, 100, 100], [1, 1, 100]])
+- falling_path([[5, 1, 9, 9], [9, 9, 9, 1], [9, 9, 1, 9], [1, 9, 9, 9]])
+fail[1]: 1, 5, 7: 13.
+fail[2]: −19 then −40: −59.
+fail[3]: One cell: 7.
+fail[4]: One row: the smallest number, 1.
+fail[5]: Every path crosses the middle row of 100s: 1 + 100 + 1 = 102.
+fail[6]: The cheap cells don't line up: 20.
+hint: The top row of `best` is the top row of the matrix: start the loop at row 1.
+hint: Collect the boxes above that can reach (r, c), checking the edges, and add the smallest.
+right: The answer can end anywhere on the bottom row, so it's the smallest box there. O(n²) for an n × n grid.
+wrong: For each box below the top row: its number plus the minimum of the boxes up-left, up and up-right that exist. Return the minimum of the last row.
+
+=== task: code medium
+title: Through a checkpoint
+prompt: In a grid of `rows` × `cols` cells with no rocks, how many right-and-down paths from the top-left cell to the bottom-right one pass through cell (r, c)? Every such path is a path from the start to (r, c), followed by a path from (r, c) to the end, and any of the first can go with any of the second, so the counts multiply. Write a helper `count_paths(h, w)` that counts the paths across a rectangle h cells high and w wide with a table, then `paths_via(rows, cols, r, c)`.
+starter:
+```python
+def count_paths(h, w):
+    table = [[1] * w for _ in range(h)]
+    # your code here
+    return table[h - 1][w - 1]
+
+def paths_via(rows, cols, r, c):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_paths(h, w):
+    table = [[1] * w for _ in range(h)]
+    for i in range(1, h):
+        for j in range(1, w):
+            table[i][j] = table[i - 1][j] + table[i][j - 1]
+    return table[h - 1][w - 1]
+
+def paths_via(rows, cols, r, c):
+    return count_paths(r + 1, c + 1) * count_paths(rows - r, cols - c)
+```
+tests:
+- paths_via(3, 3, 1, 1)
+- paths_via(3, 3, 0, 0)
+- paths_via(3, 4, 0, 3)
+- paths_via(4, 4, 2, 1)
+- paths_via(1, 1, 0, 0)
+- paths_via(10, 10, 5, 5)
+fail[1]: 2 paths to the centre and 2 from it: 4.
+fail[2]: Every path starts at (0, 0): all 6.
+fail[3]: Only one path reaches the top-right corner: along the top, then straight down.
+fail[4]: 3 paths to (2, 1) and 3 from it to (3, 3): 9.
+fail[5]: A single cell: 1.
+fail[6]: 252 paths to (5, 5) and 70 from it: 17640.
+hint: The rectangle from (0, 0) to (r, c) is r + 1 high and c + 1 wide; from (r, c) to the end it's rows − r high and cols − c wide.
+hint: Multiply the two counts.
+right: Splitting at the checkpoint turns one question into two smaller ones, solved with the same table. Each path through the checkpoint is exactly one pair of halves.
+wrong: Count the paths from the start to (r, c) and from (r, c) to the end, each with the grid table, and multiply.
+
+=== task: predict medium
+title: A rock on the top row
+prompt: This grid has a rock in the top row. What does the lesson's path table hold?
+code:
+```python
+grid = [".#..",
+        "....",
+        "...."]
+rows, cols = 3, 4
+paths = [[0] * cols for _ in range(rows)]
+for r in range(rows):
+    for c in range(cols):
+        if grid[r][c] == "#":
+            paths[r][c] = 0
+        elif r == 0 and c == 0:
+            paths[r][c] = 1
+        else:
+            above = paths[r - 1][c] if r > 0 else 0
+            left = paths[r][c - 1] if c > 0 else 0
+            paths[r][c] = above + left
+for row in paths:
+    print(row)
+```
+wrong[[1, 0, 1, 1]\n[1, 1, 2, 3]\n[1, 2, 4, 7]]: Cells on the top row can only be reached from the left, so everything to the right of the rock has 0 paths.
+wrong[[1, 0, 0, 0]\n[1, 2, 3, 4]\n[1, 3, 6, 10]]: (1, 1) can't come from the rock above it: 0 + 1 = 1.
+wrong[[1, 0, 0, 0]\n[1, 1, 1, 1]\n[1, 1, 1, 1]]: Row 2 adds the cell above as well: (2, 1) = 1 + 1 = 2.
+hint: Fill the top row first: what can reach (0, 2)?
+hint: Row 1 starts with a 1 at (1, 0), and each cell adds the 0 above it.
+right: `[1, 0, 0, 0]`, `[1, 1, 1, 1]`, `[1, 2, 3, 4]`. The rock cuts off the rest of the top row, so every path goes down the left side first.
+wrong: Top row: 1, then 0 from the rock onwards. Row 1: 1, 1, 1, 1 (the row above adds nothing). Row 2: 1, 2, 3, 4.
+
+=== task: cells medium
+title: The LCS table by hand
+prompt: Fill in these boxes of the LCS table for a = "abcb" (the rows) and b = "bcab" (the columns). Box (i, j) is the length of the longest common subsequence of `a[:i]` and `b[:j]`.
+code:
+```python
+a = "abcb"
+b = "bcab"
+# rows 0 and 1 of the table:
+# [0, 0, 0, 0, 0]
+# [0, 0, 0, 1, 1]
+```
+labels: lcs[2][4] | lcs[3][2] | lcs[4][4]
+answer: 2 | 2 | 3
+wrong[1 | 2 | 3]: "ab" and "bcab" share "ab", in order: 2.
+wrong[2 | 1 | 3]: "abc" and "bc" share "bc": 2.
+wrong[2 | 2 | 4]: "abcb" and "bcab" can't share all four letters in order; "bcb" is common, but not "abcb": 3.
+hint: Fill row 2 ("ab") first, then row 3 ("abc"), left to right.
+hint: lcs[4][4]: the last letters, b and b, match, so it's lcs[3][3] + 1.
+right: 2, 2 and 3. For example, "ab", "bc" and "bcb" are common subsequences of those lengths.
+wrong: Row 2: [0, 1, 1, 1, 2]. Row 3: [0, 1, 2, 2, 2]. Row 4: [0, 1, 2, 2, 3].
+
+=== task: fill medium
+title: Collecting coins
+prompt: Each cell of `coins` holds some coins, and a robot moving right or down collects every cell it enters. Fill in the blanks so that `best[r][c]` is the most it can have collected on reaching (r, c), counting anything outside the grid as 0, and the program prints:
+
+```output
+8 8
+```
+code:
+```python
+def most_coins(coins):
+    rows, cols = len(coins), len(coins[0])
+    best = [[0] * cols for _ in range(rows)]
+    for r in range(rows):
+        for c in range(cols):
+            above = best[r - 1][c] if r > 0 else 0
+            left = best[r][c - 1] if c > 0 else 0
+            best[r][c] = ??(above, left) + ??
+    return best[rows - 1][cols - 1]
+
+print(most_coins([[0, 3, 1], [2, 0, 4], [1, 5, 0]]), most_coins([[1, 2], [3, 4]]))
+```
+answer: max | coins[r][c]
+wrong[min | coins[r][c]]: That finds the poorest route, and with the outside counted as 0, the edges would collect nothing from before.
+wrong[max | 1]: Each cell would count as 1 coin, whatever it holds.
+hint: To collect the most, arrive from the richer neighbour.
+hint: Then add the coins in this cell.
+right: The same table as the cheapest path, with max in place of min. The first grid allows 8 coins in several ways, such as right, right, down, down: 3 + 1 + 4 + 0.
+wrong: `best[r][c] = max(above, left) + coins[r][c]`.
+
+=== task: mcq medium
+title: When the characters differ
+prompt: In the LCS table, when `a[i - 1]` and `b[j - 1]` differ, why is `lcs[i][j]` the larger of `lcs[i - 1][j]` and `lcs[i][j - 1]`?
+* Both last characters can't end the same common subsequence, so one of them can be dropped: the box above drops a's, the box to the left drops b's, and the better choice wins :: Right. The LCS of the shorter pair is already known.
+- Because the diagonal box is always smaller :: The point is which characters can be left out, not the sizes of the boxes.
+- Because a mismatch ends the subsequence :: A subsequence can skip characters; a mismatch only means one of the two isn't used here.
+- To count both characters once each :: Neither character is counted: they don't match.
+hint: Can a common subsequence end with two different characters at once?
+hint: What does the box above stand for?
+right: At least one of the two last characters isn't in the LCS. Dropping a's gives the box above; dropping b's gives the box to the left; the LCS is the longer of the two.
+wrong: A mismatch means one last character isn't used, so take the best of leaving out a's last character or b's.
+
+=== task: predict medium
+title: The cheaper step each time
+prompt: A greedy robot starts at the top-left and always steps to the cheaper of right and down. What does it print: the greedy path's total, then the table's cheapest total?
+code:
+```python
+cost = [[1, 2, 1],
+        [3, 9, 9],
+        [1, 1, 1]]
+
+r, c = 0, 0
+greedy = cost[0][0]
+while (r, c) != (2, 2):
+    if r == 2:
+        c += 1
+    elif c == 2:
+        r += 1
+    elif cost[r][c + 1] <= cost[r + 1][c]:
+        c += 1
+    else:
+        r += 1
+    greedy += cost[r][c]
+
+best = [[0] * 3 for _ in range(3)]
+for i in range(3):
+    for j in range(3):
+        if i == 0 and j == 0:
+            best[i][j] = cost[0][0]
+        elif i == 0:
+            best[i][j] = best[i][j - 1] + cost[i][j]
+        elif j == 0:
+            best[i][j] = best[i - 1][j] + cost[i][j]
+        else:
+            best[i][j] = min(best[i - 1][j], best[i][j - 1]) + cost[i][j]
+print(greedy, best[2][2])
+```
+wrong[7 7]: The greedy robot takes the 2 to its right first, then the 1, and then has to come down through a 9.
+wrong[14 14]: The table finds the path down the left side and along the bottom: 1 + 3 + 1 + 1 + 1 = 7.
+wrong[13 7]: After the top row, the greedy path pays 9 and then 1 to reach the corner: 1 + 2 + 1 + 9 + 1 = 14.
+hint: From (0, 0), the right step costs 2 and the down step 3.
+hint: What's the cheapest way down the left side?
+right: `14 7`. The cheap first steps lead into the expensive column; looking one step ahead isn't enough, and the table considers every route.
+wrong: Greedy: 1, 2, 1, 9, 1 = 14. Table: 1, 3, 1, 1, 1 = 7.
+
+=== task: multi medium
+title: Orders that fill the LCS table
+prompt: Each box of the LCS table reads the box above, the box to the left and the box up-left. Choose **every** order of filling that works.
+* Row by row, each row left to right :: Right. All three boxes are filled earlier.
+* Column by column, each column top to bottom :: Right. The box to the left is in an earlier column; the box above is earlier in this one.
+* By anti-diagonals: all boxes with i + j = 2, then all with i + j = 3, up to the bottom-right box :: Right. All three boxes it reads have a smaller i + j.
+- Row by row, each row right to left :: The box to the left isn't filled yet when it's needed.
+- Row by row from the bottom row up :: The box above isn't filled yet.
+hint: For each order, check that above, left and up-left come before the box.
+hint: Up-left has i + j two smaller; above and left have it one smaller.
+right: Any order that reaches above, left and up-left first works: rows, columns, or diagonals of equal i + j.
+wrong: The box needs its three upper-left neighbours: going down and rightwards, in rows, columns or anti-diagonals, all work.
+
+=== task: parsons medium
+title: Two rows are enough
+prompt: When only the length is needed, the LCS table can keep two rows: `prev` for row i − 1 and `cur` for row i. Arrange the lines so that `lcs_length` does this, and the program prints:
+
+```output
+3 4 0
+```
+
+Not every line is needed.
+lines:
+```python
+def lcs_length(a, b):
+    prev = [0] * (len(b) + 1)
+    for i in range(1, len(a) + 1):
+        cur = [0] * (len(b) + 1)
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev = cur
+    return prev[len(b)]
+```
+distractors:
+```python
+                cur[j] = cur[j - 1] + 1
+        cur = prev
+```
+after:
+```python
+print(lcs_length("abcde", "ace"), lcs_length("AGGTAB", "GXTXAYB"), lcs_length("abc", ""))
+```
+hint: The diagonal box is `prev[j - 1]`, the box above is `prev[j]`, and the box to the left is `cur[j - 1]`.
+hint: After each row, the current row becomes the previous one.
+right: Two rows of len(b) + 1 boxes replace the whole table: O(n) memory, the same O(m × n) time. Reading the subsequence back would need every row.
+wrong: Start with a row of zeros; build each new row from it with the match rule; make it the previous row; return its last box.
+
+=== task: order medium
+title: Reading the LCS back
+prompt: Put the steps for reading the longest common subsequence back from a filled table in order.
+items:
+- Start at the bottom-right box.
+- If the two characters match, record the character and move up-left.
+- Otherwise move to the larger of the box above and the box to the left.
+- Stop when you reach row 0 or column 0.
+- Reverse the recorded characters.
+hint: The walk starts where the answer is.
+hint: Characters are found from the end, so they come out backwards.
+right: From the bottom-right: matches are recorded and go diagonally, mismatches follow the larger neighbour, and the list is reversed at the end.
+wrong: Begin at the last box; take matches diagonally; otherwise step to the larger neighbour; stop at an edge; reverse.
+
+=== task: code hard
+title: The longest palindrome inside
+prompt: Write `longest_pal_subseq(s)` that returns the length of the longest subsequence of `s` that reads the same backwards. Use a table where `pal[i][j]` is the answer for `s[i:j + 1]`: 1 for a single character; if `s[i] == s[j]`, 2 more than the inside, `pal[i + 1][j - 1]` (or 2 if the piece is two characters long); otherwise the larger of `pal[i + 1][j]` and `pal[i][j - 1]`. Each box reads shorter pieces, so fill the table by length.
+starter:
+```python
+def longest_pal_subseq(s):
+    n = len(s)
+    if n == 0:
+        return 0
+    pal = [[0] * n for _ in range(n)]
+    # your code here
+    return pal[0][n - 1]
+```
+solution:
+```python
+def longest_pal_subseq(s):
+    n = len(s)
+    if n == 0:
+        return 0
+    pal = [[0] * n for _ in range(n)]
+    for i in range(n):
+        pal[i][i] = 1
+    for length in range(2, n + 1):
+        for i in range(0, n - length + 1):
+            j = i + length - 1
+            if s[i] == s[j]:
+                inside = pal[i + 1][j - 1] if length > 2 else 0
+                pal[i][j] = inside + 2
+            else:
+                pal[i][j] = max(pal[i + 1][j], pal[i][j - 1])
+    return pal[0][n - 1]
+```
+tests:
+- longest_pal_subseq("bbbab")
+- longest_pal_subseq("cbbd")
+- longest_pal_subseq("a")
+- longest_pal_subseq("")
+- longest_pal_subseq("racecar")
+- longest_pal_subseq("character")
+- longest_pal_subseq("abcdef")
+fail[1]: "bbbb": 4.
+fail[2]: "bb": 2.
+fail[3]: One letter: 1.
+fail[4]: Nothing: 0.
+fail[5]: The whole word: 7.
+fail[6]: "carac": 5.
+fail[7]: No letter repeats: 1.
+hint: Set every `pal[i][i]` to 1, then loop over lengths 2 to n and start positions i, with `j = i + length - 1`.
+hint: Matching ends add 2 to the inside; otherwise drop one end or the other and keep the better.
+right: The boxes read shorter pieces, so filling by length is the order that works. O(n²) boxes, each O(1).
+wrong: Base cases on the diagonal; then by increasing length: matching ends give inside + 2, otherwise the max of dropping either end.
+
+=== task: code hard
+title: Interleaving two strings
+prompt: Write `interleave(a, b, c)` that returns True if `c` can be made by merging `a` and `b`, keeping the order of the characters within each: "aadbbcbcac" interleaves "aabcc" and "dbbca". Use a table where `ok[i][j]` is True when the first i characters of a and the first j of b can make the first i + j characters of c: `ok[0][0]` is True; then `ok[i][j]` is True if `ok[i - 1][j]` is and `a[i - 1] == c[i + j - 1]`, or if `ok[i][j - 1]` is and `b[j - 1] == c[i + j - 1]`. If the lengths don't add up, return False.
+starter:
+```python
+def interleave(a, b, c):
+    if len(a) + len(b) != len(c):
+        return False
+    ok = [[False] * (len(b) + 1) for _ in range(len(a) + 1)]
+    ok[0][0] = True
+    # your code here
+    return ok[len(a)][len(b)]
+```
+solution:
+```python
+def interleave(a, b, c):
+    if len(a) + len(b) != len(c):
+        return False
+    ok = [[False] * (len(b) + 1) for _ in range(len(a) + 1)]
+    ok[0][0] = True
+    for i in range(len(a) + 1):
+        for j in range(len(b) + 1):
+            if i > 0 and ok[i - 1][j] and a[i - 1] == c[i + j - 1]:
+                ok[i][j] = True
+            if j > 0 and ok[i][j - 1] and b[j - 1] == c[i + j - 1]:
+                ok[i][j] = True
+    return ok[len(a)][len(b)]
+```
+tests:
+- interleave("aabcc", "dbbca", "aadbbcbcac")
+- interleave("aabcc", "dbbca", "aadbbbaccc")
+- interleave("", "", "")
+- interleave("abc", "", "abc")
+- interleave("ab", "cd", "acbd")
+- interleave("ab", "cd", "abdc")
+- interleave("a", "b", "abc")
+fail[1]: True: the merge exists.
+fail[2]: False: no merge gives those characters in that order.
+fail[3]: Three empty strings: True.
+fail[4]: All of c comes from a: True.
+fail[5]: a, c, b, d: True.
+fail[6]: "dc" has b's characters in the wrong order: False.
+fail[7]: The lengths don't add up: False.
+hint: Loop i from 0 to len(a) and j from 0 to len(b), skipping the checks that would read outside the table.
+hint: The next character of c, `c[i + j - 1]`, came from a or from b.
+right: Each box asks where the last character of the merged prefix came from, so the table tries every merge without listing them. O(len(a) × len(b)).
+wrong: Box (i, j) is True if box (i − 1, j) is and a's character matches c's, or box (i, j − 1) is and b's character matches.
+
+=== task: code hard
+title: Counting hidden copies
+prompt: Write `count_subseq(s, t)` that returns how many different ways `t` can be picked out of `s` as a subsequence (choosing different positions counts as different): "rabbit" can be picked out of "rabbbit" in 3 ways, one for each b that's left out. Use a table where `ways[i][j]` counts the ways to pick `t[:j]` out of `s[:i]`. Picking nothing is always one way, so column 0 is all 1. Otherwise, the last character of `s[:i]` can be left out (`ways[i - 1][j]`), and if it matches `t[j - 1]`, it can also be used for it (`ways[i - 1][j - 1]` more).
+starter:
+```python
+def count_subseq(s, t):
+    ways = [[0] * (len(t) + 1) for _ in range(len(s) + 1)]
+    # your code here
+    return ways[len(s)][len(t)]
+```
+solution:
+```python
+def count_subseq(s, t):
+    ways = [[0] * (len(t) + 1) for _ in range(len(s) + 1)]
+    for i in range(len(s) + 1):
+        ways[i][0] = 1
+    for i in range(1, len(s) + 1):
+        for j in range(1, len(t) + 1):
+            ways[i][j] = ways[i - 1][j]
+            if s[i - 1] == t[j - 1]:
+                ways[i][j] += ways[i - 1][j - 1]
+    return ways[len(s)][len(t)]
+```
+tests:
+- count_subseq("rabbbit", "rabbit")
+- count_subseq("babgbag", "bag")
+- count_subseq("abc", "")
+- count_subseq("", "a")
+- count_subseq("aaa", "aa")
+- count_subseq("a" * 40, "a" * 20)
+fail[1]: Leave out any one of the three b's: 3.
+fail[2]: 5 ways.
+fail[3]: Picking nothing: 1 way.
+fail[4]: Nothing to pick from: 0.
+fail[5]: Any two of the three a's: 3.
+fail[6]: Any 20 of the 40 a's: 137846528820, far too many to list.
+hint: Set `ways[i][0] = 1` for every i, then fill row by row.
+hint: Always add the ways without the last character of s; on a match, add the ways where it's used for t's last character.
+right: Each box splits the ways by whether the last character of s is used, so the counts add up without listing anything. O(len(s) × len(t)).
+wrong: Column 0 is 1; each box is the box above, plus the diagonal box when the characters match.
+
+=== task: code hard
+title: The shortest merge
+prompt: Write `supersequence(a, b)` that returns a shortest string that has both `a` and `b` as subsequences. Characters in their longest common subsequence need to appear only once, so build the LCS table, then walk back from the bottom-right. On a match, add the character once and move diagonally. Otherwise, if `j > 0` and either `i == 0` or the box to the left is at least as big as the box above, add `b[j - 1]` and move left; else add `a[i - 1]` and move up. Keep going until both strings are used up, then reverse.
+starter:
+```python
+def supersequence(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    # your code here
+    return ""
+```
+solution:
+```python
+def supersequence(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    out = []
+    i, j = len(a), len(b)
+    while i > 0 or j > 0:
+        if i > 0 and j > 0 and a[i - 1] == b[j - 1]:
+            out.append(a[i - 1])
+            i -= 1
+            j -= 1
+        elif j > 0 and (i == 0 or lcs[i][j - 1] >= lcs[i - 1][j]):
+            out.append(b[j - 1])
+            j -= 1
+        else:
+            out.append(a[i - 1])
+            i -= 1
+    out.reverse()
+    return "".join(out)
+```
+tests:
+- supersequence("abac", "cab")
+- supersequence("abc", "abc")
+- supersequence("", "xy")
+- supersequence("geek", "eke")
+- supersequence("AGGTAB", "GXTXAYB")
+fail[1]: 'cabac': 5 characters, with "ab" shared.
+fail[2]: The same string: 'abc'.
+fail[3]: Only b: 'xy'.
+fail[4]: 'geeke'.
+fail[5]: 'AGGXTXAYB': 6 + 7 − 4 characters.
+hint: The walk is the diff walk from the lesson's example: shared characters once, the others from whichever string they came from.
+hint: Its length is always len(a) + len(b) minus the LCS length.
+right: Every character of a and b appears, and the shared ones only once, so the merge is as short as possible: len(a) + len(b) − LCS. The tie rule decides which shortest merge you get.
+wrong: Build the LCS table, walk back adding matches once and other characters from the side you step away from, then reverse.
+
+=== task: predict hard
+title: Breaking ties differently
+prompt: These two versions of the lesson's `lcs_string` differ only in how they break ties when the box above equals the box to the left: the first moves up, the second moves left. What do they print?
+code:
+```python
+def lcs_table(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    return lcs
+
+def walk(a, b, prefer_up):
+    lcs = lcs_table(a, b)
+    out = []
+    i, j = len(a), len(b)
+    while i > 0 and j > 0:
+        if a[i - 1] == b[j - 1]:
+            out.append(a[i - 1])
+            i -= 1
+            j -= 1
+        elif lcs[i - 1][j] > lcs[i][j - 1] or (prefer_up and lcs[i - 1][j] == lcs[i][j - 1]):
+            i -= 1
+        else:
+            j -= 1
+    out.reverse()
+    return "".join(out)
+
+print(walk("abcbdab", "bdcaba", True), walk("abcbdab", "bdcaba", False))
+```
+wrong[bcba bcba]: The tie rule changes which characters are picked, though not how many.
+wrong[bdab bcba]: Moving up on ties keeps more of b's ending, "...ba": the first walk finds "bcba".
+wrong[bcab bdab]: Each walk records characters from the end, so after reversing the first gives "bcba", not "bcab".
+hint: Both strings have length 4, the LCS length.
+hint: Work the walks out from the bottom-right; the first tie is at the very first step.
+right: `bcba bdab`. Both are longest common subsequences; when there's more than one, the tie rule decides which one the walk finds.
+wrong: Moving up on ties: a, b, c, b found backwards, reversed "bcba". Moving left on ties: "bdab". Same length, different characters.
+
+=== task: predict hard
+title: Edit distances
+prompt: Using the edit distance from the lesson's spelling checker example, what does it print?
+code:
+```python
+def edit_distance(a, b):
+    d = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        d[i][0] = i
+    for j in range(len(b) + 1):
+        d[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                d[i][j] = d[i - 1][j - 1]
+            else:
+                d[i][j] = 1 + min(d[i - 1][j], d[i][j - 1], d[i - 1][j - 1])
+    return d[len(a)][len(b)]
+
+print(edit_distance("kitten", "sitting"), edit_distance("", "abc"), edit_distance("flaw", "lawn"))
+```
+wrong[2 3 2]: kitten to sitting needs k → s, e → i, and an inserted g: 3.
+wrong[3 0 2]: Turning nothing into "abc" takes 3 insertions.
+wrong[3 3 4]: flaw → law (delete f), law → lawn (insert n): 2.
+hint: kitten and sitting differ at the first letter, the fifth, and the length.
+hint: flaw and lawn share "law".
+right: `3 3 2`. Replace k with s, e with i, and insert g; insert three letters; delete f and insert n.
+wrong: kitten → sitten → sittin → sitting is 3 edits. "" → "abc" is 3 insertions. flaw → law → lawn is 2.
+
+=== task: cells hard
+title: The cheapest totals by hand
+prompt: Fill in the cheapest-path table for this grid: each box is the cell's cost plus the cheaper of the box above and the box to its left (only one of them on the top row or the left column).
+code:
+```python
+cost = [[1, 2, 5],
+        [3, 2, 1],
+        [4, 3, 1]]
+```
+labels: best[1][1] | best[1][2] | best[2][1] | best[2][2]
+answer: 5 | 6 | 8 | 7
+wrong[5 | 9 | 8 | 7]: (1, 2) can come from (1, 1), worth 5, which is cheaper than the 8 above it: 5 + 1 = 6.
+wrong[5 | 6 | 8 | 9]: (2, 2) comes from above, 6, rather than from the left, 8: 6 + 1 = 7.
+wrong[6 | 7 | 9 | 8]: (1, 1) takes the cheaper of 3 above and 4 to the left: 3 + 2 = 5.
+hint: The top row is 1, 3, 8 and the left column 1, 4, 8.
+hint: (1, 1) = min(3, 4) + 2.
+right: 5, 6, 8 and 7. The cheapest path goes right, down, right, down: 1 + 2 + 2 + 1 + 1.
+wrong: (1, 1) = min(3, 4) + 2 = 5. (1, 2) = min(8, 5) + 1 = 6. (2, 1) = min(5, 8) + 3 = 8. (2, 2) = min(6, 8) + 1 = 7.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to this LCS table. Choose **every** change that can make it return a wrong length.
+code:
+```python
+def lcs_length(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    return lcs[len(a)][len(b)]
+```
+* Comparing `a[i]` with `b[j]` instead of `a[i - 1]` with `b[j - 1]` :: Right. Box (i, j) is about the first i and j characters, whose last characters are at i − 1 and j − 1; `a[i]` runs past the end of a.
+* Using `lcs[i - 1][j] + 1` on a match instead of the diagonal :: Right. The box above may already have used `b[j - 1]`, so it can be counted twice.
+* Making the table `[[0] * len(b) for _ in range(len(a))]` :: Right. There'd be no room for the empty prefixes, and the last box would be out of range.
+- Filling the table column by column instead of row by row :: Each box still finds above, left and diagonal filled.
+- Swapping a and b in the call :: The LCS of a and b is the LCS of b and a: the length is the same.
+- Writing `max(lcs[i][j - 1], lcs[i - 1][j])` :: max doesn't care about the order of its arguments.
+hint: Which changes read the wrong characters or the wrong boxes?
+hint: Which only change the order of the same work?
+right: The prefix lengths, the diagonal on a match, and the extra row and column are essential. The fill order, the order of the strings and the order of max's arguments don't matter.
+wrong: Off-by-one character indexes, extending the wrong box, and a table without its empty-prefix row and column break it; reordering doesn't.
+
+=== task: fill hard
+title: Edit distance
+prompt: Fill in the blanks so that `edit_distance` works as in the lesson's spelling checker: turning the first i characters of a into nothing takes i deletions, and a mismatch takes 1 more than the cheapest of deleting, inserting or replacing. The program prints:
+
+```output
+3 3 3
+```
+code:
+```python
+def edit_distance(a, b):
+    d = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        d[i][0] = ??
+    for j in range(len(b) + 1):
+        d[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                d[i][j] = d[i - 1][j - 1]
+            else:
+                d[i][j] = 1 + min(d[i - 1][j], d[i][j - 1], ??)
+    return d[len(a)][len(b)]
+
+print(edit_distance("kitten", "sitting"), edit_distance("horse", "ros"), edit_distance("abc", ""))
+```
+answer: i | d[i - 1][j - 1]
+wrong[0 | d[i - 1][j - 1]]: Deleting characters would cost nothing: "abc" would turn into "" for free, and "horse" into "ros" for 2.
+wrong[i | d[i][j]]: `d[i][j]` is still 0 when it's read, so every mismatch would cost only 1.
+hint: Turning i characters into an empty string needs i deletions.
+hint: A replacement changes the last character of a into the last of b: what's left is `a[:i - 1]` against `b[:j - 1]`.
+right: Column 0 holds the cost of deleting everything, and the diagonal box is the replacement. "horse" becomes "ros" in 3 edits: replace h with r, delete r, delete e.
+wrong: `d[i][0] = i`, and the third option is `d[i - 1][j - 1]`, a replacement.
+
+=== task: parsons hard
+title: Deleting to match
+prompt: What's the fewest characters to delete from the two strings, in total, so that what's left of them is equal? Every character outside a longest common subsequence must go, so the answer is len(a) + len(b) − 2 × LCS. Arrange the lines so that `min_deletions` builds the LCS table and works this out, and the program prints:
+
+```output
+2 4 0
+```
+
+Not every line is needed.
+lines:
+```python
+def min_deletions(a, b):
+    lcs = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                lcs[i][j] = lcs[i - 1][j - 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    common = lcs[len(a)][len(b)]
+    return len(a) + len(b) - 2 * common
+```
+distractors:
+```python
+    return len(a) + len(b) - common
+                lcs[i][j] = min(lcs[i - 1][j], lcs[i][j - 1])
+```
+after:
+```python
+print(min_deletions("sea", "eat"), min_deletions("leetcode", "etco"), min_deletions("abc", "abc"))
+```
+hint: Fill the LCS table as usual.
+hint: The common part survives in both strings, so it's subtracted twice.
+right: "sea" and "eat" share "ea": delete s and t, 2 characters. The LCS decides everything; the deletions are what's left over in each string.
+wrong: Compute the LCS length with the table, then return the total length minus twice that.
