@@ -857,8 +857,17 @@
       case 'cells': {
         const vals = ts.cells.map((x) => (x || '').trim());
         if (vals.some((x) => !x)) return { needInput: 'Fill in every box first.' };
-        const normCell = (x) => squash(x).replace(/^'(.*)'$/, '$1').replace(/^"(.*)"$/, '$1').toLowerCase();
-        const cellMarks = vals.map((v, i) => normCell(v) === normCell(T.answer[i]));
+        const unquote = (x) => x.replace(/^'(.*)'$/, '$1').replace(/^"(.*)"$/, '$1');
+        const normCell = (x) => unquote(squash(x)).toLowerCase();
+        const isQuoted = (x) => /^(['"]).*\1$/.test(squash(x));
+        // quote style and missing quotes are forgiven, except where they change the value:
+        // "True" or "2" with quotes is a string, True or 2 without them is not
+        const literal = (x) => /^(-?\d+(\.\d+)?|true|false|none)$/i.test(x) || /^[[({]/.test(x);
+        const cellEq = (got, exp) => {
+          if (isQuoted(got) !== isQuoted(exp) && literal(unquote(squash(isQuoted(exp) ? exp : got)))) return false;
+          return normCell(got) === normCell(exp);
+        };
+        const cellMarks = vals.map((v, i) => cellEq(v, T.answer[i]));
         const ok = cellMarks.every(Boolean);
         let specific = '';
         if (!ok) {
