@@ -365,7 +365,8 @@ def sub_blanks(code, answers, ctx):
 
 
 def split_pipe(v):
-    return [x.strip() for x in v.split("|")]
+    # items are separated by |; write \| for a | inside one item, e.g. a label like len(a \| b)
+    return [x.strip().replace("\\|", "|") for x in re.split(r"(?<!\\)\|", v)]
 
 
 def deterministic_shuffle(items, seed):
@@ -646,6 +647,9 @@ def compile_task(lid, idx, t, cjobs, pjobs, checks):
         T["wrongs"] = {" | ".join(split_pipe(k)): md(v) for k, v in t["keyed"]["wrong"].items()}
         if f.get("answer"):
             T["answer"] = split_pipe(f["answer"])
+            for name in ("labels", "start"):
+                if T[name] and len(T[name]) != len(T["answer"]):
+                    raise BuildError(f"{t['ctx']}: {len(T[name])} {name} but {len(T['answer'])} answer boxes")
         elif f.get("compute"):
             k = len(cjobs)
             cjobs.append({"kind": "value", "src": f["compute"], "name": "answer"})
