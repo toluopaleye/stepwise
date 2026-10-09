@@ -1,0 +1,1380 @@
+=== lesson
+id: algo-dijkstra
+title: Dijkstra's shortest paths
+summary: When edges have lengths, the shortest route is the one with the smallest total length, which isn't always the one with the fewest edges. Dijkstra's algorithm finds the shortest distance from a start to every vertex: it keeps a best-known distance for each one, and repeatedly settles the nearest unsettled vertex and tries the edges out of it, with a heap to find the nearest quickly. You'll trace it, write it, rebuild routes, see why a negative length breaks it, and use it for grids, ties and other kinds of "best route".
+
+=== learn
+### Streets with lengths
+In the BFS lesson every edge counted as one step. On a map, streets have lengths, and the route with the fewest streets isn't always the shortest. A **weighted graph** gives every edge a number, its **weight**: here, the minutes a street takes. Each vertex lists the streets leaving it as (neighbour, length) pairs:
+```python
+streets = {
+    "A": [("B", 4), ("C", 1)],
+    "B": [("D", 5)],
+    "C": [("B", 2), ("D", 8), ("E", 10)],
+    "D": [("E", 2)],
+    "E": [],
+}
+```
+These streets are one-way: A to B takes 4 minutes, but there's no street from B to A. A two-way street is listed from both ends.
+
+| street | length |
+| --- | --- |
+| A → B | 4 |
+| A → C | 1 |
+| B → D | 5 |
+| C → B | 2 |
+| C → D | 8 |
+| C → E | 10 |
+| D → E | 2 |
+
+BFS from A reaches E in two streets, A, C, E, which take 1 + 10 = 11 minutes. The route A, C, B, D, E uses four streets but takes only 1 + 2 + 5 + 2 = 10. The **shortest route** is the one with the smallest total length, and a vertex's **distance** from the start is that total.
+
+### Settle the nearest
+**Dijkstra's algorithm**, published by Edsger Dijkstra in 1959, finds the distance from a start to every vertex, as long as no length is negative. It keeps a **best-known distance** for every vertex: 0 for the start, and infinity, `float("inf")`, for the others, since no route to them is known yet. Then it repeats two steps:
+
+1. Take the unsettled vertex with the smallest best-known distance and **settle** it: that distance is now final.
+2. Try every edge out of it. An edge u → v of length w offers v a route of length `dist[u] + w`. If that's less than v's best-known distance, v gets it. Trying an edge like this is called **relaxing** it.
+
+From A:
+
+| settle | at | edges tried | best-known distances afterwards |
+| --- | --- | --- | --- |
+| A | 0 | B: 0 + 4 = 4; C: 0 + 1 = 1 | B 4, C 1, D ∞, E ∞ |
+| C | 1 | B: 1 + 2 = 3, better than 4; D: 9; E: 11 | B 3, D 9, E 11 |
+| B | 3 | D: 3 + 5 = 8, better than 9 | D 8, E 11 |
+| D | 8 | E: 8 + 2 = 10, better than 11 | E 10 |
+| E | 10 | none | |
+
+A best-known distance can keep going down until its vertex is settled: B was 4 until C offered 3. Infinity makes the first offer to a vertex always win, since every number is less than it.
+
+### A heap finds the nearest
+Looking through every vertex for the smallest best-known distance takes O(V) each time. A heap from `heapq` hands out the smallest in O(log V). Whenever a distance improves, push a pair (distance, vertex). Pairs compare by their first item, the distance, so `heappop` gives the nearest:
+```python
+import heapq
+
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+
+print(dijkstra(streets, "A"))
+```
+```output
+{'A': 0, 'B': 3, 'C': 1, 'D': 8, 'E': 10}
+```
+When B's distance drops from 4 to 3, the old pair (4, 'B') stays in the heap, because a heap can't find and change an item in its middle. (3, 'B') comes out first and settles B. When (4, 'B') comes out later, B is in `done`, so the pair is skipped. Animation 1 runs this search.
+
+### Why a settled distance is final
+When u comes off the heap with distance d, no unsettled vertex has a best-known distance below d. Now take any route to u. It begins at the start, which is settled, so somewhere it first steps from a settled vertex to an unsettled vertex x. That step's edge was relaxed when its settled end was settled, so getting as far as x takes at least x's best-known distance, which is at least d. The rest of the route, from x to u, can only add length, because no length is negative. So no route to u is shorter than d.
+
+### Negative lengths break it
+That last step fails when a length can be negative: a route that looks long can still become shorter. Here the street from C to B has length −4:
+```python
+trap = {
+    "A": [("B", 2), ("C", 5)],
+    "B": [("D", 1)],
+    "C": [("B", -4)],
+    "D": [],
+}
+print(dijkstra(trap, "A"))
+```
+```output
+{'A': 0, 'B': 1, 'C': 5, 'D': 3}
+```
+B is settled at 2 and offers D 2 + 1 = 3. Only then is C settled, and its street gives B 5 − 4 = 1. B's distance changes, but B is already settled, so its streets are never tried again: D stays at 3, although A, C, B, D takes 2. Graphs with negative lengths need a different algorithm, such as Bellman-Ford, which this course doesn't cover. Animation 2 shows Dijkstra going wrong.
+
+### Rebuilding the route
+As in BFS, record each vertex's **parent**: whenever an edge u → v gives v a shorter distance, `parent[v] = u`. A later improvement overwrites it, so in the end each vertex's parent is the vertex before it on a shortest route, and following parents back from the goal gives the route backwards. The search can stop as soon as the goal comes off the heap, since its distance is final then:
+```python
+def shortest_route(graph, start, goal):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    parent = {start: None}
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u == goal:
+            break
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                parent[v] = u
+                heapq.heappush(heap, (dist[v], v))
+    if dist[goal] == float("inf"):
+        return None
+    route = []
+    v = goal
+    while v is not None:
+        route.append(v)
+        v = parent[v]
+    route.reverse()
+    return dist[goal], route
+
+print(shortest_route(streets, "A", "E"))
+print(shortest_route(streets, "B", "C"))
+```
+```output
+(10, ['A', 'C', 'B', 'D', 'E'])
+None
+```
+E's parent was C when C offered 11, and became D when D offered 10. From B, the streets lead only to D and E, so there's no route to C, and C's distance stays infinity.
+
+### O((V + E) log V)
+Every vertex is settled once, and its edges are relaxed then: E relaxations in all. Each improvement pushes one pair, so the heap never holds more than E + 1 pairs, and each push and pop costs O(log E). A graph has at most V² edges, so log E is at most 2 log V, and the whole search is **O((V + E) log V)**.
+
+| lengths | use | time |
+| --- | --- | --- |
+| all the same | BFS | O(V + E) |
+| 0 or more | Dijkstra with a heap | O((V + E) log V) |
+| 0 or more, with nearly every pair of vertices joined | Dijkstra, looking through every vertex for the nearest | O(V²) |
+| some negative | Bellman-Ford (not covered) | O(V × E) |
+
+### Where it's used
+Map apps find routes with Dijkstra's algorithm and faster relatives of it, such as A*. Internet routers use it to choose paths through a network. The lengths don't have to be distances: they can be minutes, ticket prices or risks, anything that adds up along a route and is never negative.
+
+=== keypoints
+- In a weighted graph each edge has a length. The shortest route has the smallest total length, not the fewest edges.
+- Dijkstra's algorithm keeps a best-known distance for every vertex: 0 for the start, infinity for the rest.
+- Repeatedly settle the unsettled vertex with the smallest distance, then relax its edges: if `dist[u] + w < dist[v]`, v gets the shorter distance.
+- A heap of (distance, vertex) pairs finds the nearest. An improvement pushes a new pair, and pairs for vertices that are already settled are skipped.
+- A settled distance is final because no length is negative. One negative length can make the answers wrong.
+- Record parents to rebuild the route; stop early when the goal is settled. O((V + E) log V).
+
+=== example: A train journey
+intro: Trains run both ways between stations, taking a number of minutes. Dijkstra's algorithm with parents finds the quickest route from Hill to Castle.
+```python
+import heapq
+
+trains = {
+    "Hill": [("Park", 3), ("Market", 7)],
+    "Park": [("Hill", 3), ("Market", 2), ("Docks", 9)],
+    "Market": [("Hill", 7), ("Park", 2), ("Docks", 4), ("Castle", 8)],
+    "Docks": [("Park", 9), ("Market", 4), ("Castle", 2)],
+    "Castle": [("Market", 8), ("Docks", 2)],
+}
+
+start, goal = "Hill", "Castle"
+dist = {s: float("inf") for s in trains}
+dist[start] = 0
+parent = {start: None}
+heap = [(0, start)]
+done = set()
+while heap:
+    d, u = heapq.heappop(heap)
+    if u == goal:
+        break
+    if u in done:
+        continue
+    done.add(u)
+    for v, minutes in trains[u]:
+        if d + minutes < dist[v]:
+            dist[v] = d + minutes
+            parent[v] = u
+            heapq.heappush(heap, (dist[v], v))
+
+route = []
+s = goal
+while s is not None:
+    route.append(s)
+    s = parent[s]
+print(" → ".join(route[::-1]) + ":", dist[goal], "minutes")
+```
+3-9: Each station lists the stations it has a train to, with the minutes the trip takes, in both directions.
+11-16: Every station starts at infinity except the start, which has no parent.
+17-28: Dijkstra's algorithm, recording each station's parent and stopping when the goal comes off the heap.
+30-35: Follow the parents back from the goal, then print the route the right way round. Hill to Market to Castle takes 15 minutes; the quickest route goes through Park, Market and Docks.
+
+=== example: Spreading the news
+intro: Ana has some news. Each person phones some others, and each call takes a number of minutes before the news is passed on. Dijkstra's algorithm says when each person hears it, and when everyone who can hear it has.
+```python
+import heapq
+
+calls = {
+    "Ana": [("Ben", 2), ("Cy", 6)],
+    "Ben": [("Cy", 3), ("Dee", 7)],
+    "Cy": [("Dee", 1)],
+    "Dee": [],
+    "Eli": [("Ana", 1)],
+}
+
+dist = {p: float("inf") for p in calls}
+dist["Ana"] = 0
+heap = [(0, "Ana")]
+done = set()
+while heap:
+    d, u = heapq.heappop(heap)
+    if u in done:
+        continue
+    done.add(u)
+    for v, minutes in calls[u]:
+        if d + minutes < dist[v]:
+            dist[v] = d + minutes
+            heapq.heappush(heap, (dist[v], v))
+
+for p in calls:
+    if dist[p] == float("inf"):
+        print(p, "never hears it")
+    else:
+        print(p, "hears it after", dist[p], "minutes")
+heard = [dist[p] for p in calls if dist[p] != float("inf")]
+print("Everyone who can hear it has heard it after", max(heard), "minutes")
+```
+3-9: Calls go one way: Eli phones Ana, but nobody phones Eli.
+11-23: Dijkstra's algorithm from Ana, who has the news at minute 0. Cy hears it sooner through Ben (2 + 3) than from Ana directly (6).
+25-29: A distance that's still infinity means no chain of calls reaches that person.
+30-31: The last person to hear it decides when everyone has: the largest distance that isn't infinity.
+
+=== animation: Settling the nearest
+view: graph g pos=A:40,120;B:220,50;C:150,200;D:330,50;E:420,200 directed=1 visited=done current=u dist=dist vlabel=settled
+vars heap d u v w
+intro: Each vertex shows its best-known distance underneath. Green vertices are settled: their distances are final. The yellow one has come off the heap. Watch B, D and E get shorter distances before they're settled.
+```python
+import heapq
+
+g = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)], "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+inf = float("inf")
+dist = {"A": 0, "B": inf, "C": inf, "D": inf, "E": inf}
+heap = [(0, "A")]
+done = set()
+while heap:
+    d, u = heapq.heappop(heap)
+    if u in done:
+        continue
+    done.add(u)
+    for v, w in g[u]:
+        if d + w < dist[v]:
+            dist[v] = d + w
+            heapq.heappush(heap, (dist[v], v))
+```
+1: heapq gives the heap.
+3: The one-way streets from the lesson, each with its length.
+4: inf is infinity, bigger than any number.
+5: Only A's distance is known: 0. Every other vertex starts at infinity.
+6: The heap holds (distance, vertex) pairs, starting with A's.
+7: Nothing is settled yet.
+8: {'Pairs are waiting in the heap: keep going.' if heap else 'The heap is empty: every distance is final.'}
+9: Pop the pair with the smallest distance: {heap[0]}.
+10: {'Is ' + str(u) + ' settled already? ' + ('Yes: this pair is out of date.' if u in done else 'No.')}
+11: {u} is settled already: skip this pair.
+12: Settle {u}: its distance, {d}, is final.
+13: Next street out of {u}. When there are none left, go back to the heap.
+14: {'Through ' + str(u) + ', ' + str(v) + ' is ' + str(d) + ' + ' + str(w) + ' = ' + str(d + w) + ' away: ' + ('better than ' + ('infinity' if dist[v] == inf else str(dist[v])) + '.' if d + w < dist[v] else 'not better than ' + str(dist[v]) + '.')}
+15: {v} gets the shorter distance, {d + w}.
+16: Push ({dist[v]}, {v}) so that the heap can hand it out.
+
+=== animation: A negative length
+view: graph g pos=A:40,110;B:210,40;C:130,190;D:350,40 directed=1 visited=done current=u dist=dist vlabel=settled
+vars heap d u v w
+intro: The street from C to B has length −4. B is settled first, at 2, and passes 3 on to D. When C later offers B a shorter route, B is already settled, so D never hears about it.
+```python
+import heapq
+
+g = {"A": [("B", 2), ("C", 5)], "B": [("D", 1)], "C": [("B", -4)], "D": []}
+inf = float("inf")
+dist = {"A": 0, "B": inf, "C": inf, "D": inf}
+heap = [(0, "A")]
+done = set()
+while heap:
+    d, u = heapq.heappop(heap)
+    if u in done:
+        continue
+    done.add(u)
+    for v, w in g[u]:
+        if d + w < dist[v]:
+            dist[v] = d + w
+            heapq.heappush(heap, (dist[v], v))
+print(dist)
+```
+1: heapq gives the heap.
+3: A leads to B (2) and C (5), B leads to D (1), and C leads to B with length −4.
+4: inf is infinity, bigger than any number.
+5: Only A's distance is known: 0.
+6: The heap starts with A's pair.
+7: Nothing is settled yet.
+8: {'Pairs are waiting in the heap: keep going.' if heap else 'The heap is empty, so Dijkstra stops.'}
+9: Pop the pair with the smallest distance: {heap[0]}.
+10: {'Is ' + str(u) + ' settled already? ' + ('Yes: skip this pair.' if u in done else 'No.')}
+11: {u} is settled already, so its streets are not tried again, even though this distance is shorter.
+12: Settle {u} at {d}. Dijkstra treats this as final.
+13: Next street out of {u}. When there are none left, go back to the heap.
+14: {'Through ' + str(u) + ', ' + str(v) + ' is ' + str(d) + (' + ' + str(w) if w >= 0 else ' − ' + str(-w)) + ' = ' + str(d + w) + ' away: ' + ('better than ' + ('infinity' if dist[v] == inf else str(dist[v])) + '.' if d + w < dist[v] else 'not better than ' + str(dist[v]) + '.')}
+15: {v} gets the shorter distance, {d + w}.{' But ' + str(v) + ' is already settled, and its streets have been tried.' if v in done else ''}
+16: Push ({dist[v]}, {v}).
+17: D should be 2, along A, C, B, D: 5 − 4 + 1. Dijkstra says {dist['D']}.
+
+=== task: predict easy
+title: Two ways to A
+code:
+```python
+import heapq
+
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+
+graph = {"S": [("A", 5), ("B", 2)], "A": [("C", 1)], "B": [("A", 1)], "C": []}
+print(dijkstra(graph, "S"))
+```
+wrong[{'S': 0, 'A': 5, 'B': 2, 'C': 6}]: That uses the direct edge S → A. B is settled first, at 2, and offers A 2 + 1 = 3, which is shorter.
+wrong[{'S': 0, 'A': 3, 'B': 2, 'C': 6}]: C is reached from A, and A's distance is 3 by the time A is settled, so C gets 3 + 1 = 4.
+wrong[{'S': 0, 'A': 5, 'B': 2, 'C': inf}]: C can be reached: S, B, A, C takes 2 + 1 + 1 = 4.
+hint: S offers A 5 and B 2. Which is settled first, and what does it offer A?
+hint: C's distance comes from A's final distance.
+right: `{'S': 0, 'A': 3, 'B': 2, 'C': 4}`. B is settled at 2 and lowers A from 5 to 3; then A is settled and offers C 3 + 1 = 4.
+wrong: Settle S: A 5, B 2. Settle B (2): A becomes 2 + 1 = 3. Settle A (3): C becomes 4. Settle C.
+
+=== task: mcq easy
+title: Who's next?
+prompt: Dijkstra's algorithm has settled S. The best-known distances of the other vertices are A 5, B 2, C 9 and D infinity. Which vertex is settled next?
+* B, with the smallest best-known distance, 2 :: Right. No route through A, C or D could reach B in less than 2.
+- A, because S's first edge leads to it :: The order of the edges doesn't matter: the smallest distance is settled next.
+- D, because it hasn't been reached yet :: D's best-known distance is infinity, the largest of all. It's settled last, if ever.
+- C, the vertex furthest away :: Dijkstra always settles the nearest unsettled vertex, not the furthest.
+hint: Dijkstra settles vertices from nearest to furthest.
+hint: Which best-known distance is smallest?
+right: The unsettled vertex with the smallest best-known distance is the next to be settled, because every other route to it would have to go through a vertex that's at least as far.
+wrong: Settle the unsettled vertex with the smallest best-known distance: B at 2.
+
+=== task: cells easy
+title: Distances so far
+prompt: Dijkstra's algorithm starts at S on this graph. What are the best-known distances right after S and then B have been settled and their edges tried?
+code:
+```python
+graph = {"S": [("A", 6), ("B", 2)], "A": [("C", 1)], "B": [("A", 3), ("C", 7)], "C": []}
+```
+labels: A | B | C
+answer: 5 | 2 | 9
+wrong[6 | 2 | inf]: Those are the distances after S alone. Settling B tries its edges too: A gets 2 + 3 = 5 and C gets 2 + 7 = 9.
+wrong[5 | 2 | 6]: C would get 5 + 1 = 6 from A, but A hasn't been settled yet, so its edge hasn't been tried.
+wrong[6 | 2 | 9]: B offers A a route of 2 + 3 = 5, shorter than 6, so A's distance goes down.
+hint: Settling S gives A 6 and B 2. Then B is settled: what does it offer A and C?
+hint: A distance only changes when the offer is smaller.
+right: 5, 2 and 9. B lowers A from 6 to 5, and gives C its first distance, 9. A will be settled next and lower C to 6.
+wrong: After S: A 6, B 2, C infinity. After B: A min(6, 2 + 3) = 5, C 2 + 7 = 9.
+
+=== task: code easy
+title: Dijkstra's algorithm
+prompt: Write `dijkstra(graph, start)` that returns a dictionary with every vertex's distance from `start`, or None for a vertex that can't be reached. `graph` lists each vertex's edges as (neighbour, length) pairs, and no length is negative. Use the lesson's method: best-known distances starting at infinity, a heap of (distance, vertex) pairs, and a `done` set; then turn every infinity into None. The speed check uses a long graph where each vertex leads to the next two.
+starter:
+```python
+import heapq
+
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    # your code here
+    return dist
+```
+solution:
+```python
+import heapq
+
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    result = {}
+    for v in graph:
+        if dist[v] == float("inf"):
+            result[v] = None
+        else:
+            result[v] = dist[v]
+    return result
+```
+tests:
+- dijkstra({"A": [("B", 4), ("C", 1)], "B": [("D", 5)], "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}, "A")
+- dijkstra({"A": [("B", 4), ("C", 1)], "B": [("D", 5)], "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}, "C")
+- dijkstra({"x": []}, "x")
+- dijkstra({"a": [("b", 0)], "b": [("c", 5)], "c": []}, "a")
+- dijkstra({"p": [("q", 2)], "q": [("p", 2)], "r": [("p", 1)]}, "p")
+fail[1]: The lesson's streets from A: {'A': 0, 'B': 3, 'C': 1, 'D': 8, 'E': 10}.
+fail[2]: From C, A can't be reached: {'A': None, 'B': 2, 'C': 0, 'D': 7, 'E': 9}.
+fail[3]: One vertex: {'x': 0}.
+fail[4]: A length of 0 is allowed: {'a': 0, 'b': 0, 'c': 5}.
+fail[5]: r leads to p, but nothing leads to r: {'p': 0, 'q': 2, 'r': None}.
+speed: setup=graph = {i: [(j, 1 + (i + j) % 3) for j in (i + 1, i + 2) if j < n] for i in range(n)} | call=dijkstra(graph, 0) | target=O(n log n)
+slow:
+```python
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    done = set()
+    while len(done) < len(graph):
+        u = None
+        for v in graph:
+            if v not in done and (u is None or dist[v] < dist[u]):
+                u = v
+        if dist[u] == float("inf"):
+            break
+        done.add(u)
+        for v, w in graph[u]:
+            if dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+    result = {}
+    for v in graph:
+        if dist[v] == float("inf"):
+            result[v] = None
+        else:
+            result[v] = dist[v]
+    return result
+```
+hint: Start the heap with `(0, start)`. In the loop, pop `d, u`; skip u if it's in `done`, otherwise add it to `done`.
+hint: For each `v, w` in `graph[u]`: if `d + w < dist[v]`, set `dist[v]` and push `(dist[v], v)`. At the end, build a new dictionary with None for every infinity.
+hint: Looking through every vertex for the nearest one instead of using the heap would be O(V²) on the speed check's graph.
+right: Every vertex is settled once and every edge is relaxed once, and each heap operation is O(log V): O((V + E) log V) in all.
+wrong: Heap of (distance, vertex) pairs from the start; pop, skip settled vertices, settle, relax each edge and push improvements. Replace infinity with None at the end.
+
+=== task: fill easy
+title: Remember the way
+prompt: Fill in the blanks so that `shortest_route` records each vertex's parent, the vertex its best-known distance came from, and the program prints:
+
+```output
+(10, ['A', 'C', 'B', 'D', 'E'])
+```
+code:
+```python
+import heapq
+
+def shortest_route(graph, start, goal):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    parent = {start: None}
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < ??:
+                dist[v] = d + w
+                parent[v] = ??
+                heapq.heappush(heap, (dist[v], v))
+    route = []
+    v = goal
+    while v is not None:
+        route.append(v)
+        v = parent[v]
+    route.reverse()
+    return dist[goal], route
+
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(shortest_route(streets, "A", "E"))
+```
+answer: dist[v] | u
+wrong[dist[u] | u]: That compares the offer with u's own distance, which d + w never beats, so nothing after the start would get a distance or a parent: following parents back from E fails at once.
+wrong[dist[v] | start]: Every vertex would point straight back to the start, so the route would come out as A, E, which isn't even a street.
+hint: The offer d + w is compared with the best route to v found so far.
+hint: The vertex whose edge gave v its distance is v's parent.
+right: The offer d + w is compared with `dist[v]`, and when it wins, u becomes v's parent. A later, better offer overwrites the parent, so each parent ends up on a shortest route.
+wrong: Compare `d + w < dist[v]`, and set `parent[v] = u` along with the new distance.
+
+=== task: multi easy
+title: True of Dijkstra's algorithm
+prompt: Choose **every** true statement about Dijkstra's algorithm, for a graph with no negative lengths.
+* When a vertex comes off the heap for the first time, its distance is final :: Right. Every other route to it would have to pass a vertex that's at least as far.
+* A vertex's best-known distance can go down several times before it's settled :: Right. In the lesson, E went from infinity to 11 to 10.
+* The heap can hold more than one pair for the same vertex :: Right. Each improvement pushes a new pair, and the old ones are skipped later.
+- It finds the route with the fewest edges :: It finds the smallest total length. The lesson's route to E uses four streets, while A, C, E uses two.
+- Vertices are settled in the order they're first found :: They're settled in order of distance: in the lesson, B was found before C but settled after it.
+- It still works with negative lengths, as long as there's no cycle :: The lesson's trap has no cycle, and Dijkstra still gets D wrong.
+hint: How can a vertex end up with more than one pair in the heap?
+hint: What does Dijkstra add up: edges, or lengths?
+right: Distances can drop several times before a vertex is settled, which leaves old pairs in the heap; the first pair for a vertex to come out carries its final distance. It minimises total length, not edges, and needs lengths of 0 or more.
+wrong: Settled distances are final, best-known ones can fall more than once, and stale pairs pile up in the heap. It doesn't count edges, doesn't settle in discovery order, and fails with negative lengths.
+
+=== task: parsons easy
+title: How long is this route?
+prompt: Arrange the lines so that `route_length` adds up the lengths of the edges along a route, or returns None if one of the steps isn't an edge. The program prints:
+
+```output
+10 11 None
+```
+
+Not every line is needed.
+lines:
+```python
+def route_length(graph, route):
+    total = 0
+    for i in range(len(route) - 1):
+        u, v = route[i], route[i + 1]
+        found = None
+        for x, w in graph[u]:
+            if x == v:
+                found = w
+        if found is None:
+            return None
+        total += found
+    return total
+```
+distractors:
+```python
+        total += w
+        found = 0
+```
+after:
+```python
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(route_length(streets, ["A", "C", "B", "D", "E"]),
+      route_length(streets, ["A", "C", "E"]),
+      route_length(streets, ["A", "E"]))
+```
+hint: For each pair of neighbouring vertices on the route, look for the edge from the first to the second.
+hint: If no edge matches, the route is impossible.
+right: Each step u → v adds the length of the edge from u to v. A, C, B, D, E takes 10, A, C, E takes 11, and A, E isn't a route at all, since there's no street from A to E.
+wrong: Go through neighbouring pairs, find the matching edge's length (None if there isn't one), and add it to the total.
+
+=== task: order easy
+title: Settled in order
+prompt: Dijkstra's algorithm starts at S on this graph:
+
+```python
+graph = {"S": [("A", 7), ("B", 2), ("C", 4)],
+         "A": [("D", 1)],
+         "B": [("A", 3), ("C", 1)],
+         "C": [("D", 5)],
+         "D": []}
+```
+
+Put the vertices in the order they're settled, each with the distance it's settled at.
+items:
+- S at 0
+- B at 2
+- C at 3
+- A at 5
+- D at 6
+hint: S offers A 7, B 2 and C 4. B is nearest; what does it offer A and C?
+hint: D first gets 3 + 5 = 8 from C, then A offers 5 + 1 = 6.
+right: S, B (2), C (3), A (5), D (6). B lowers C from 4 to 3 and A from 7 to 5, and A lowers D from 8 to 6.
+wrong: Settle S. Then B at 2: C becomes 3, A 5. Then C at 3: D becomes 8. Then A at 5: D becomes 6. Then D.
+
+=== task: predict easy
+title: An out-of-date pair
+prompt: This version prints a line each time a pair comes off the heap. What does it print?
+code:
+```python
+import heapq
+
+graph = {"S": [("A", 4), ("B", 1)], "A": [], "B": [("A", 1)]}
+dist = {"S": 0, "A": float("inf"), "B": float("inf")}
+heap = [(0, "S")]
+done = set()
+while heap:
+    d, u = heapq.heappop(heap)
+    if u in done:
+        print("skip", d, u)
+        continue
+    done.add(u)
+    print("settle", d, u)
+    for v, w in graph[u]:
+        if d + w < dist[v]:
+            dist[v] = d + w
+            heapq.heappush(heap, (dist[v], v))
+```
+wrong[settle 0 S\nsettle 1 B\nsettle 2 A]: A's first pair, (4, 'A'), is still in the heap when (2, 'A') is pushed. It comes out last, and is skipped.
+wrong[settle 0 S\nsettle 4 A\nsettle 1 B]: The heap always hands out the smallest pair: (1, 'B') comes before (4, 'A').
+wrong[settle 0 S\nsettle 1 B\nskip 4 A\nsettle 2 A]: (2, 'A') is smaller than (4, 'A'), so it comes out first and settles A. The old pair comes out after it.
+hint: After S, the heap holds (4, 'A') and (1, 'B'). Which comes out first, and what does B push?
+hint: Nothing removes (4, 'A') from the heap.
+right: `settle 0 S`, `settle 1 B`, `settle 2 A`, `skip 4 A`. B pushes (2, 'A'), which settles A; the old pair (4, 'A') comes out last and is skipped because A is done.
+wrong: S pushes (4, 'A') and (1, 'B'). B comes out and pushes (2, 'A'). That settles A. Then (4, 'A') comes out, and A is already done.
+
+=== task: mcq easy
+title: Why a heap?
+prompt: Dijkstra's algorithm needs the unsettled vertex with the smallest best-known distance, again and again. What does a heap of (distance, vertex) pairs give it?
+* Each push and pop in O(log n), instead of looking through every vertex each time :: Right. Looking through every vertex is O(V) per step, O(V²) in all.
+- The pairs in sorted order, so the shortest route can be read off directly :: A heap isn't sorted: only its smallest item is known to be at the front.
+- Old pairs removed automatically when a distance improves :: Old pairs stay in the heap; the algorithm skips them when they come out.
+- Each vertex stored once, with its latest distance :: A vertex can have several pairs in the heap, one for each time its distance improved.
+hint: What does `heappop` always hand out?
+hint: How much does each push or pop cost?
+right: The heap hands out the smallest pair in O(log n), which is exactly the question Dijkstra asks at every step.
+wrong: A heap is for "give me the smallest" in O(log n). It isn't sorted, and it keeps old pairs until they're popped.
+
+=== task: code medium
+title: Two-way roads
+prompt: `roads` is a list of two-way roads, each a tuple (a, b, minutes). Write `travel_time(roads, start, goal)` that returns the fewest minutes from `start` to `goal`, or -1 if there's no way. Build the graph first, adding every road from both ends; a place that's in no road has no neighbours. Then run Dijkstra's algorithm, and return as soon as the goal comes off the heap.
+starter:
+```python
+import heapq
+
+def travel_time(roads, start, goal):
+    graph = {}
+    # your code here
+    return -1
+```
+solution:
+```python
+import heapq
+
+def travel_time(roads, start, goal):
+    graph = {}
+    for a, b, m in roads:
+        if a not in graph:
+            graph[a] = []
+        if b not in graph:
+            graph[b] = []
+        graph[a].append((b, m))
+        graph[b].append((a, m))
+    dist = {start: 0}
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u == goal:
+            return d
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph.get(u, []):
+            if v not in dist or d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return -1
+```
+tests:
+- travel_time([("A", "B", 4), ("A", "C", 1), ("C", "B", 2), ("B", "D", 5), ("C", "D", 8), ("C", "E", 10), ("D", "E", 2)], "A", "E")
+- travel_time([("A", "B", 4), ("A", "C", 1), ("C", "B", 2), ("B", "D", 5), ("C", "D", 8), ("C", "E", 10), ("D", "E", 2)], "B", "C")
+- travel_time([("a", "b", 1), ("c", "d", 1)], "a", "d")
+- travel_time([("a", "b", 5)], "a", "a")
+- travel_time([("p", "q", 9), ("p", "q", 4)], "p", "q")
+- travel_time([("x", "y", 3)], "x", "z")
+fail[1]: A, C, B, D, E: 1 + 2 + 5 + 2 = 10.
+fail[2]: The roads go both ways, so B to C is the road of 2.
+fail[3]: a and b are cut off from c and d: -1.
+fail[4]: Already there: 0.
+fail[5]: Two roads join p and q; the shorter takes 4.
+fail[6]: z isn't on any road: -1.
+hint: For each `(a, b, m)`: make sure both places have a list, then append `(b, m)` to a's list and `(a, m)` to b's.
+hint: Pop `d, u`; if u is the goal, return d. Use `graph.get(u, [])` so a place with no roads has no neighbours.
+right: A two-way road is two one-way edges, so Dijkstra's algorithm runs as usual. The goal's distance is final when it comes off the heap, so the search can stop there.
+wrong: Build adjacency lists with both directions, run Dijkstra from the start, return d when the goal is popped, and -1 if the heap runs out.
+
+=== task: code medium
+title: The nearest fire station
+prompt: Some places have a fire station. Write `nearest(graph, stations)` that returns, for every place, the distance to its nearest station, or None if no station can reach it. `graph` lists each place's edges as (neighbour, length) pairs, the lengths a fire engine drives. Run Dijkstra's algorithm once, starting from every station at once: each station's distance is 0, and every station's pair goes into the heap before the loop starts.
+starter:
+```python
+import heapq
+
+def nearest(graph, stations):
+    dist = {v: float("inf") for v in graph}
+    heap = []
+    # your code here
+    return dist
+```
+solution:
+```python
+import heapq
+
+def nearest(graph, stations):
+    dist = {v: float("inf") for v in graph}
+    heap = []
+    for s in stations:
+        dist[s] = 0
+        heap.append((0, s))
+    heapq.heapify(heap)
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    result = {}
+    for v in graph:
+        if dist[v] == float("inf"):
+            result[v] = None
+        else:
+            result[v] = dist[v]
+    return result
+```
+tests:
+- nearest({"a": [("b", 2)], "b": [("a", 2), ("c", 5)], "c": [("b", 5), ("d", 1)], "d": [("c", 1)], "e": []}, ["a", "d"])
+- nearest({"a": [("b", 2)], "b": [("a", 2), ("c", 5)], "c": [("b", 5), ("d", 1)], "d": [("c", 1)], "e": []}, ["c"])
+- nearest({"a": [("b", 2)], "b": [("a", 2), ("c", 5)], "c": [("b", 5), ("d", 1)], "d": [("c", 1)], "e": []}, [])
+- nearest({"A": [("B", 4), ("C", 1)], "B": [("D", 5)], "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}, ["C", "B"])
+fail[1]: b is 2 from a; c is 1 from d; e can't be reached: {'a': 0, 'b': 2, 'c': 1, 'd': 0, 'e': None}.
+fail[2]: One station, at c: {'a': 7, 'b': 5, 'c': 0, 'd': 1, 'e': None}.
+fail[3]: No stations: every place gets None.
+fail[4]: The edges are one-way: A can't be reached from B or C, and D is 5 from B: {'A': None, 'B': 0, 'C': 0, 'D': 5, 'E': 7}.
+hint: Put `(0, s)` in the heap for every station s, and set `dist[s] = 0`. The rest is Dijkstra's algorithm as usual.
+hint: At the end, turn every infinity into None.
+right: Starting from every station at once is like adding one imaginary start with an edge of length 0 to each station. One search answers the question for every place, instead of one search per station.
+wrong: Seed the heap with all the stations at distance 0, run Dijkstra, and replace the infinities with None.
+
+=== task: predict medium
+title: Breadth-first with lengths
+prompt: This search is BFS, but it adds up the lengths: each vertex gets a distance when it's first found. What does it print?
+code:
+```python
+from collections import deque
+
+def bfs_lengths(graph, start):
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        u = queue.popleft()
+        for v, w in graph[u]:
+            if v not in dist:
+                dist[v] = dist[u] + w
+                queue.append(v)
+    return dist
+
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(bfs_lengths(streets, "A"))
+```
+wrong[{'A': 0, 'B': 3, 'C': 1, 'D': 8, 'E': 10}]: Those are Dijkstra's distances. BFS never changes a distance once it's set: B keeps the 4 it got from A.
+wrong[{'A': 0, 'B': 4, 'C': 1, 'D': 9, 'E': 10}]: E is first found from C, at 1 + 10 = 11. By the time D is taken from the queue, E already has a distance, so D's shorter offer is ignored.
+wrong[{'A': 0, 'B': 4, 'C': 1, 'D': 13, 'E': 11}]: D is first found from B, at 4 + 5 = 9.
+hint: The queue takes B before C. What does B give D?
+hint: Once a vertex is in `dist`, its distance never changes.
+right: `{'A': 0, 'B': 4, 'C': 1, 'D': 9, 'E': 11}`. Each vertex keeps the length of the first route that finds it, which goes by the number of edges, not the total length. Dijkstra's answers are 3, 8 and 10 for B, D and E.
+wrong: A finds B (4) and C (1). B finds D (4 + 5 = 9). C finds E (1 + 10 = 11); B and D are already set. Nothing changes after that.
+
+=== task: cells medium
+title: Following the parents
+prompt: Dijkstra's algorithm with parents runs from S on this graph. A vertex's parent is the vertex its final distance came from. Fill in the boxes.
+code:
+```python
+graph = {"S": [("A", 1), ("B", 5)], "A": [("B", 2), ("C", 6)],
+         "B": [("C", 1), ("D", 4)], "C": [("D", 1)], "D": []}
+```
+labels: distance to D | parent of D | parent of C | parent of B
+answer: 5 | C | B | A
+wrong[7 | B | B | A]: B's offer to D, 3 + 4 = 7, comes first, but C later offers 4 + 1 = 5, which replaces both D's distance and its parent.
+wrong[5 | C | A | A]: A offers C 1 + 6 = 7, but B offers 3 + 1 = 4 later, so B becomes C's parent.
+wrong[5 | C | B | S]: S offers B 5, but A offers 1 + 2 = 3, so A becomes B's parent.
+hint: Settle S, then A (1), then B (3), then C (4). Each improvement changes a parent.
+hint: Follow D's parents back to S: that's the shortest route to D.
+right: 5, C, B and A. Every later, shorter offer replaced the parent, so D, C, B, A, S read backwards is the shortest route: S, A, B, C, D, of length 1 + 2 + 1 + 1.
+wrong: S gives A 1 (parent S) and B 5. A gives B 3 (parent A) and C 7. B gives C 4 (parent B) and D 7. C gives D 5 (parent C).
+
+=== task: fill medium
+title: Without a done set
+prompt: Another common way to skip old pairs: when a pair comes off the heap, compare its distance with the vertex's best-known distance. If the pair's distance is bigger, the vertex was already handled with a shorter one. This version also starts with an empty `dist`, so a missing vertex means "no route yet", and `order` records the vertices it handles. Fill in the blanks so that the program prints:
+
+```output
+({'A': 0, 'B': 3, 'C': 1, 'D': 8, 'E': 10}, ['A', 'C', 'B', 'D', 'E'])
+```
+code:
+```python
+import heapq
+
+def dijkstra_lazy(graph, start):
+    dist = {start: 0}
+    heap = [(0, start)]
+    order = []
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > ??:
+            continue
+        order.append(u)
+        for v, w in graph[u]:
+            if v not in dist or d + w < dist[v]:
+                dist[v] = ??
+                heapq.heappush(heap, (dist[v], v))
+    return dist, order
+
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(dijkstra_lazy(streets, "A"))
+```
+answer: dist[u] | d + w
+wrong[d | d + w]: `d > d` is never true, so the old pairs (4, 'B'), (9, 'D') and (11, 'E') would be handled again: the distances come out right, but `order` gets B, D and E twice.
+wrong[dist[u] | w]: Each vertex would store only the length of its last edge, not the route's total: E would get 2.
+hint: A pair is out of date when its distance is bigger than the best-known distance of its vertex.
+hint: The new distance is the route to u plus the edge from u.
+right: An out-of-date pair has a bigger distance than its vertex's current best, so `d > dist[u]` spots it with no extra set. Both versions do the same work.
+wrong: Skip the pair when `d > dist[u]`, and set `dist[v] = d + w` when the offer is better.
+
+=== task: mcq medium
+title: Why is settled final?
+prompt: Why can Dijkstra's algorithm treat a vertex's distance as final as soon as the vertex comes off the heap?
+* Every unsettled vertex is at least as far, and lengths are never negative, so no route through them can come back shorter :: Right. Any other route must pass an unsettled vertex, which already costs at least as much.
+- Because each vertex is pushed into the heap only once :: A vertex is pushed every time its distance improves, so it can be pushed several times.
+- Because the heap keeps its pairs in sorted order :: A heap only guarantees its smallest item; the rest isn't sorted, and that isn't the reason.
+- Because the start's distance is 0 :: That's where the search begins, but it doesn't explain why later distances can't improve.
+hint: What would a shorter route to the vertex have to pass through?
+hint: What happens to a route's length as more edges are added?
+right: A different route would have to reach some unsettled vertex first, which already costs at least as much, and the rest of the route only adds length. That's exactly the argument that a negative length breaks.
+wrong: The popped vertex is the nearest unsettled one, and adding non-negative lengths can't make a longer route shorter.
+
+=== task: predict medium
+title: A rebate
+prompt: The edge from B to A has length −4, like a rebate. What does Dijkstra's algorithm print?
+code:
+```python
+import heapq
+
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+
+graph = {"S": [("A", 1), ("B", 4)], "A": [("C", 2)], "B": [("A", -4)], "C": []}
+print(dijkstra(graph, "S"))
+```
+wrong[{'S': 0, 'A': 0, 'B': 4, 'C': 2}]: That's the true answer, but A's edges were tried when A was settled at 1. When B lowers A to 0 afterwards, A is skipped, and C keeps 3.
+wrong[{'S': 0, 'A': 1, 'B': 4, 'C': 3}]: B's edge does lower A's distance: 4 − 4 = 0 is less than 1, so `dist['A']` changes, even though A is settled.
+wrong[{'S': 0, 'A': -3, 'B': 4, 'C': -1}]: B is settled at 4, so it offers A 4 − 4 = 0, not −3.
+hint: The order of settling is S (0), A (1), C (3), B (4). What does B do to A?
+hint: Once A is settled, are its edges ever tried again?
+right: `{'S': 0, 'A': 0, 'B': 4, 'C': 3}`. A's distance does go down to 0, but A was already settled and its edge to C already tried, so C is left at 3 instead of 2.
+wrong: S: A 1, B 4. A (1): C 3. C (3). B (4): A becomes 0, and (0, 'A') is pushed, but A is done, so the pair is skipped. C stays at 3.
+
+=== task: multi medium
+title: The right tool?
+prompt: Choose **every** problem that Dijkstra's algorithm can solve as it is, with the right lengths on the edges.
+* The fastest drive between two towns, with travel times on the roads :: Right. Times add up along a route and are never negative.
+* The cheapest way to fly between two cities, with ticket prices on the flights :: Right. Prices add up and are never negative.
+* The fewest moves for a knight between two squares of a chessboard :: Right. Every move has length 1. BFS is simpler for that, but Dijkstra gets the same answer.
+- The longest route between two places in a graph with cycles :: Dijkstra finds the smallest total. Making lengths negative to find the longest breaks it.
+- The cheapest route when some roads pay you to use them :: A payment is a negative length, which Dijkstra can't handle.
+- An order for jobs that depend on each other :: That's a topological sort, not a shortest route.
+hint: Dijkstra needs a total that adds up along a route, with no negative parts.
+hint: Equal lengths are fine.
+right: Travel times, ticket prices and knight moves all add up along a route with no negative parts. Longest routes and negative lengths break the "settled is final" argument, and job orders aren't a route question.
+wrong: The lengths must add up along the route and never be negative; the goal must be the smallest total.
+
+=== task: parsons medium
+title: Without a heap
+prompt: When nearly every pair of vertices is joined by an edge, looking through every vertex for the nearest, O(V²) in all, is as good as a heap or better. Arrange the lines so that `dijkstra_scan` does that, and the program prints:
+
+```output
+{'P': 0, 'Q': 2, 'R': 1, 'S': 3}
+```
+
+Not every line is needed.
+lines:
+```python
+def dijkstra_scan(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    done = set()
+    while len(done) < len(graph):
+        u = None
+        for v in graph:
+            if v not in done and (u is None or dist[v] < dist[u]):
+                u = v
+        if dist[u] == float("inf"):
+            break
+        done.add(u)
+        for v, w in graph[u]:
+            if dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+    return dist
+```
+distractors:
+```python
+            if v not in done and (u is None or dist[v] > dist[u]):
+                dist[v] = w
+```
+after:
+```python
+graph = {"P": [("Q", 3), ("R", 1)], "Q": [("S", 1)], "R": [("Q", 1), ("S", 5)], "S": []}
+print(dijkstra_scan(graph, "P"))
+```
+hint: Each round, the inner loop finds the unsettled vertex with the smallest distance.
+hint: If even the nearest unsettled vertex is at infinity, the rest can't be reached: stop.
+right: Each of the V rounds looks at every vertex, O(V²), and each edge is relaxed once. With about V² edges, that matches the heap version's O((V + E) log V) or beats it, and it needs no heap at all.
+wrong: Repeat: find the unsettled vertex with the smallest distance (stop if it's infinity), settle it, and relax its edges.
+
+=== task: order medium
+title: Dijkstra's algorithm, step by step
+prompt: Put the steps of Dijkstra's algorithm with a heap in order.
+items:
+- Set every best-known distance to infinity, and the start's to 0.
+- Put the pair (0, start) in the heap.
+- Pop the pair with the smallest distance.
+- If its vertex is settled already, skip it; otherwise settle it.
+- Relax each edge out of the vertex, pushing a pair for every distance that improves.
+- When the heap is empty, every reachable vertex has its final distance.
+hint: The heap can't be used until the start's pair is in it.
+hint: Relaxing comes after settling.
+right: Initialise the distances, seed the heap with the start, then repeatedly pop, skip or settle, and relax, until the heap is empty.
+wrong: Distances first, then the heap; each round pops the nearest pair, settles its vertex unless it's done, and relaxes its edges.
+
+=== task: code hard
+title: The cheapest path through a grid
+prompt: Each cell of `grid` holds a cost of 1 to 9. A path starts at the top-left cell and ends at the bottom-right one, moving up, down, left or right, and its cost is the sum of every cell it enters, including the first and the last. Write `grid_cost(grid)` that returns the cheapest path's cost. Moving only right and down isn't enough: the cheapest path can double back. Use Dijkstra's algorithm with cells as vertices: the heap holds (cost, row, column) triples, and a step into a cell costs that cell's number.
+starter:
+```python
+import heapq
+
+def grid_cost(grid):
+    rows, cols = len(grid), len(grid[0])
+    best = {(0, 0): grid[0][0]}
+    heap = [(grid[0][0], 0, 0)]
+    # your code here
+    return 0
+```
+solution:
+```python
+import heapq
+
+def grid_cost(grid):
+    rows, cols = len(grid), len(grid[0])
+    best = {(0, 0): grid[0][0]}
+    heap = [(grid[0][0], 0, 0)]
+    done = set()
+    while heap:
+        d, r, c = heapq.heappop(heap)
+        if (r, c) in done:
+            continue
+        done.add((r, c))
+        if (r, c) == (rows - 1, cols - 1):
+            return d
+        for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                nd = d + grid[nr][nc]
+                if (nr, nc) not in best or nd < best[(nr, nc)]:
+                    best[(nr, nc)] = nd
+                    heapq.heappush(heap, (nd, nr, nc))
+    return -1
+```
+tests:
+- grid_cost([[1, 3, 1], [1, 5, 1], [4, 2, 1]])
+- grid_cost([[1, 9, 1, 1, 1], [1, 9, 1, 9, 1], [1, 1, 1, 9, 1]])
+- grid_cost([[5]])
+- grid_cost([[1, 2], [3, 4]])
+- grid_cost([[1, 1, 1, 1], [9, 9, 9, 1], [1, 1, 1, 1], [1, 9, 9, 9], [1, 1, 1, 1]])
+fail[1]: Right, right, down, down: 1 + 3 + 1 + 1 + 1 = 7.
+fail[2]: Down the left side, along the bottom, up the middle, along the top and down the right side: 11. Moving only right and down would cost 15.
+fail[3]: One cell: its own cost, 5.
+fail[4]: Right then down: 1 + 2 + 4 = 7.
+fail[5]: The cheap cells snake back and forth: 14.
+hint: The start's cost is its own number. From cell (r, c), each of the four neighbours inside the grid costs `d + grid[nr][nc]`.
+hint: Keep the best cost found for each cell in `best`, push improvements, skip cells already in `done`, and return when the bottom-right cell comes off the heap.
+right: A grid is a graph where each cell joins its neighbours, and the cost of entering a cell is the length of the edge into it. Dijkstra handles paths that turn back, which a right-and-down table can't.
+wrong: Dijkstra over cells: pop the cheapest, settle it, return at the target, and push each in-grid neighbour whose cost improves.
+
+=== task: code hard
+title: How many shortest routes?
+prompt: Write `count_shortest(graph, start, goal)` that returns how many different routes from `start` to `goal` have the shortest total length (0 if the goal can't be reached, and 1 if it's the start). Every length is at least 1. Run Dijkstra's algorithm and keep `ways[v]`, the number of shortest routes to v found so far, starting with 1 for the start. When u is settled and its edge to v offers a shorter distance, v's routes are u's routes: `ways[v] = ways[u]`. When it offers exactly the same distance, they add: `ways[v] += ways[u]`. One test has more than a billion shortest routes, far too many to list.
+starter:
+```python
+import heapq
+
+def count_shortest(graph, start, goal):
+    dist = {v: float("inf") for v in graph}
+    ways = {v: 0 for v in graph}
+    dist[start] = 0
+    ways[start] = 1
+    # your code here
+    return ways[goal]
+```
+solution:
+```python
+import heapq
+
+def count_shortest(graph, start, goal):
+    dist = {v: float("inf") for v in graph}
+    ways = {v: 0 for v in graph}
+    dist[start] = 0
+    ways[start] = 1
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                ways[v] = ways[u]
+                heapq.heappush(heap, (dist[v], v))
+            elif d + w == dist[v]:
+                ways[v] += ways[u]
+    return ways[goal]
+```
+tests:
+- count_shortest({"S": [("A", 1), ("B", 1)], "A": [("T", 1)], "B": [("T", 1)], "T": []}, "S", "T")
+- count_shortest({"A": [("B", 4), ("C", 1)], "B": [("D", 5)], "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}, "A", "E")
+- count_shortest({"a": [("b", 1), ("c", 1)], "b": [("d", 1)], "c": [("d", 1)], "d": [("e", 1), ("f", 1)], "e": [("g", 1)], "f": [("g", 1)], "g": []}, "a", "g")
+- count_shortest({"s": [("a", 2), ("b", 1)], "b": [("a", 1)], "a": [("t", 1)], "t": []}, "s", "t")
+- count_shortest({"a": [("b", 1)], "b": [], "c": []}, "a", "c")
+- count_shortest({"a": [("b", 1)], "b": []}, "a", "a")
+- count_shortest({v: ([(v + 1, 1), (v + 2, 2)] if v % 2 == 0 and v < 60 else [(v + 1, 1)] if v % 2 == 1 else []) for v in range(61)}, 0, 60)
+fail[1]: Through A or through B, both 2 long: 2.
+fail[2]: Only A, C, B, D, E is 10 long: 1.
+fail[3]: Two ways to d, and from d two ways to g: 2 × 2 = 4.
+fail[4]: a is 2 away directly or through b, so t has 2 shortest routes.
+fail[5]: c can't be reached: 0.
+fail[6]: The start itself: 1 route, with no edges.
+fail[7]: Thirty diamonds in a row, each crossed in 2 ways of length 2: 2 to the power 30 = 1073741824.
+hint: Relax as usual, but on a strictly shorter offer copy `ways[u]` into `ways[v]`, and on an equal offer add it.
+hint: Every length is at least 1, so all of u's shortest routes are counted before u is settled.
+right: Every shortest route to v ends with an edge from a vertex settled before v, and each such vertex adds its own count once, at the moment it's settled. Counting this way takes O((V + E) log V), even when the routes number in the billions.
+wrong: Run Dijkstra with a `ways` dictionary: a strictly better offer sets `ways[v] = ways[u]`, an equal one adds `ways[u]`. Return `ways[goal]`.
+
+=== task: code hard
+title: The heaviest truck
+prompt: Each road in `graph` has a weight limit, given as (neighbour, limit) pairs. A truck can use a route only if it's no heavier than every road's limit along it, so a route allows the smallest limit on it. Write `heaviest(graph, start, goal)` that returns the heaviest truck that can get from `start` to `goal`, or 0 if none can (`start` and `goal` are different). It's Dijkstra's algorithm turned round: keep the best limit found for each place, starting at 0, and settle the place with the **largest** best limit first, using a heap of (−limit, place) pairs. The start's limit is `float("inf")`, and going from u along a road of limit w allows `min(best[u], w)`.
+starter:
+```python
+import heapq
+
+def heaviest(graph, start, goal):
+    best = {v: 0 for v in graph}
+    best[start] = float("inf")
+    heap = [(-best[start], start)]
+    # your code here
+    return 0
+```
+solution:
+```python
+import heapq
+
+def heaviest(graph, start, goal):
+    best = {v: 0 for v in graph}
+    best[start] = float("inf")
+    heap = [(-best[start], start)]
+    done = set()
+    while heap:
+        neg, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        if u == goal:
+            return best[u]
+        for v, w in graph[u]:
+            limit = min(best[u], w)
+            if limit > best[v]:
+                best[v] = limit
+                heapq.heappush(heap, (-limit, v))
+    return 0
+```
+tests:
+- heaviest({"A": [("B", 10), ("C", 4)], "B": [("D", 3)], "C": [("D", 8)], "D": []}, "A", "D")
+- heaviest({"A": [("B", 5)], "B": [("C", 7)], "C": []}, "A", "C")
+- heaviest({"A": [("B", 5)], "B": [], "C": []}, "A", "C")
+- heaviest({"S": [("A", 9), ("B", 6)], "A": [("T", 2), ("B", 8)], "B": [("T", 5)], "T": []}, "S", "T")
+fail[1]: Through B the narrowest road is 3; through C it's 4: 4.
+fail[2]: The route's limit is its smallest road, 5.
+fail[3]: C can't be reached: 0.
+fail[4]: S, A, B, T allows min(9, 8, 5) = 5, more than the other routes allow.
+hint: Pop the pair with the most negative first item: that's the place with the largest limit.
+hint: A road of limit w from u gives `min(best[u], w)`; keep it if it's larger than `best[v]`. Return `best[goal]` when the goal is settled.
+right: The same "settle the best one first" argument works with "smallest along the route" in place of "sum" and "largest" in place of "smallest": a route's limit can only stay the same or shrink as roads are added, so a settled limit is final.
+wrong: Max-heap via negated limits; settle the place with the largest limit, return at the goal, and relax with `min(best[u], w)`, keeping larger values.
+
+=== task: code hard
+title: One half-price ticket
+prompt: `flights` lists each city's flights as (city, price) pairs. You have one coupon that makes a single flight cost `price // 2`. Write `cheapest(flights, start, goal)` that returns the cheapest total price from `start` to `goal`, using the coupon on at most one flight, or -1 if the goal can't be reached. Run Dijkstra's algorithm on **states** (city, used), where used is 0 before the coupon is spent and 1 after: from (city, 0) a flight leads to (next, 0) at full price, and to (next, 1) at half price; from (city, 1), only full price. The heap holds (cost, city, used) triples. Return the cost when the goal comes off the heap in either state.
+starter:
+```python
+import heapq
+
+def cheapest(flights, start, goal):
+    settled = set()
+    heap = [(0, start, 0)]
+    # your code here
+    return -1
+```
+solution:
+```python
+import heapq
+
+def cheapest(flights, start, goal):
+    settled = set()
+    heap = [(0, start, 0)]
+    while heap:
+        cost, city, used = heapq.heappop(heap)
+        if (city, used) in settled:
+            continue
+        settled.add((city, used))
+        if city == goal:
+            return cost
+        for nxt, price in flights[city]:
+            heapq.heappush(heap, (cost + price, nxt, used))
+            if used == 0:
+                heapq.heappush(heap, (cost + price // 2, nxt, 1))
+    return -1
+```
+tests:
+- cheapest({"A": [("B", 100), ("C", 30)], "B": [("D", 10)], "C": [("D", 60)], "D": []}, "A", "D")
+- cheapest({"A": [("B", 10), ("C", 50)], "B": [("D", 10)], "C": [("D", 1)], "D": [("E", 40)], "E": []}, "A", "E")
+- cheapest({"H": [("M", 120), ("P", 40)], "P": [("M", 40), ("Q", 70)], "M": [("Q", 10)], "Q": []}, "H", "Q")
+- cheapest({"x": [("y", 7)], "y": []}, "x", "y")
+- cheapest({"x": [("y", 7)], "y": [], "z": []}, "x", "z")
+- cheapest({"x": [("y", 7)], "y": []}, "x", "x")
+fail[1]: Without the coupon the best is 30 + 60 = 90. With it, A to B costs 50, then 10: 60.
+fail[2]: A, B, D, E with the coupon on the 40 flight: 10 + 10 + 20 = 40.
+fail[3]: Two routes cost 70: H, M, Q with the coupon on the 120 flight (60 + 10), and H, P, M, Q with it on the first 40 flight (20 + 40 + 10).
+fail[4]: The coupon halves the only flight: 7 // 2 = 3.
+fail[5]: z can't be reached: -1.
+fail[6]: Already there: 0.
+hint: A state is (city, used). Skip a state that's already settled, and return the cost as soon as the goal's city comes off the heap.
+hint: For each flight from a state, push the full-price move; if the coupon is unused, also push the half-price move with used = 1.
+right: Each state is a vertex of a bigger graph, with two copies of every city: before and after the coupon. Dijkstra on that graph finds the best way to spend the coupon without trying every flight separately.
+wrong: Dijkstra over (city, used) states: full-price edges keep used as it is; half-price edges go from used 0 to used 1. Return at the first time the goal comes off the heap.
+
+=== task: predict hard
+title: A tie
+prompt: S's edges to C and B have the same length, and B's edge to D has length 0. What does it print?
+code:
+```python
+import heapq
+
+graph = {"S": [("C", 2), ("B", 2)], "B": [("D", 0)], "C": [("D", 1)], "D": []}
+dist = {"S": 0, "B": float("inf"), "C": float("inf"), "D": float("inf")}
+heap = [(0, "S")]
+done = set()
+order = []
+while heap:
+    d, u = heapq.heappop(heap)
+    if u in done:
+        continue
+    done.add(u)
+    order.append(u)
+    for v, w in graph[u]:
+        if d + w < dist[v]:
+            dist[v] = d + w
+            heapq.heappush(heap, (dist[v], v))
+print(order)
+print(dist)
+```
+wrong[['S', 'C', 'B', 'D']\n{'S': 0, 'B': 2, 'C': 2, 'D': 2}]: (2, 'C') and (2, 'B') have the same distance, so the tuples are compared by their second items: 'B' comes before 'C'.
+wrong[['S', 'B', 'D', 'C']\n{'S': 0, 'B': 2, 'C': 2, 'D': 2}]: (2, 'C') and (2, 'D') tie on distance, and 'C' comes before 'D'.
+wrong[['S', 'B', 'C', 'D']\n{'S': 0, 'B': 2, 'C': 2, 'D': 3}]: B offers D 2 + 0 = 2, before C offers 3; C's offer isn't better, so D keeps 2.
+hint: How does Python compare (2, 'C') with (2, 'B')?
+hint: After B is settled, the heap holds (2, 'C') and (2, 'D').
+right: `['S', 'B', 'C', 'D']`, then `{'S': 0, 'B': 2, 'C': 2, 'D': 2}`. Ties on distance are broken by the vertex's name, because tuples compare item by item; a length of 0 is no problem.
+wrong: After S, the heap has (2, 'C') and (2, 'B'): 'B' wins the tie. B gives D 2. Then (2, 'C') beats (2, 'D'); C's offer to D, 3, isn't better. Then D.
+
+=== task: predict hard
+title: Stopping early
+prompt: This version stops as soon as the goal, B, comes off the heap. What does it print?
+code:
+```python
+import heapq
+
+def dist_to(graph, start, goal):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u == goal:
+            break
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(dist_to(streets, "A", "B"))
+```
+wrong[{'A': 0, 'B': 3, 'C': 1, 'D': 8, 'E': 10}]: Those are the final distances. The search stops when B comes off the heap, before B's edge to D or D's edge to E is tried.
+wrong[{'A': 0, 'B': 4, 'C': 1, 'D': inf, 'E': inf}]: C comes off the heap before B, since 1 < 4, and C's edges are tried: B drops to 3, D gets 9, E gets 11.
+wrong[{'A': 0, 'B': 3, 'C': 1, 'D': inf, 'E': inf}]: When C is settled, all its edges are tried, including those to D and E.
+hint: Which pairs come off the heap before (3, 'B')?
+hint: D and E get offers from C, but are they final?
+right: `{'A': 0, 'B': 3, 'C': 1, 'D': 9, 'E': 11}`. B's distance is final when it comes off the heap, but D and E still have their first offers; their true distances, 8 and 10, aren't known yet. Stopping early only answers the question for the goal.
+wrong: A: B 4, C 1. C (1): B 3, D 9, E 11. Then (3, 'B') comes off the heap, and the loop stops. D and E keep the offers they had.
+
+=== task: cells hard
+title: First found, finally settled
+prompt: Dijkstra's algorithm runs from S on this graph. Fill in the boxes.
+code:
+```python
+graph = {"S": [("A", 8), ("B", 1), ("C", 4)], "B": [("A", 5), ("C", 2)],
+         "C": [("A", 1), ("D", 7)], "A": [("D", 1)], "D": []}
+```
+labels: A's first distance | A's final distance | times A's distance went down | D's final distance
+answer: 8 | 4 | 2 | 5
+wrong[8 | 6 | 1 | 7]: After B lowers A to 6, C is settled at 3 and offers A 3 + 1 = 4, a second drop. Then A offers D 4 + 1 = 5.
+wrong[6 | 4 | 2 | 5]: A's first distance comes from S's edge, 8, before B is settled.
+wrong[8 | 4 | 2 | 10]: C's offer to D, 3 + 7 = 10, is beaten by A's, 4 + 1 = 5.
+hint: S gives A 8, B 1 and C 4. B is settled next: what does it offer A and C?
+hint: C is settled at 3. What does it offer A?
+right: 8, 4, 2 and 5. A's distance fell twice, from 8 to 6 to 4, before it was settled, and its final distance gave D 5.
+wrong: S: A 8, B 1, C 4. B (1): A 6, C 3. C (3): A 4, D 10. A (4): D 5. So A went 8, 6, 4: two drops.
+
+=== task: multi hard
+title: Spot the bug
+prompt: Each change is made to the lesson's `dijkstra`. Choose **every** change that can make it return a wrong distance, for a graph with no negative lengths.
+code:
+```python
+def dijkstra(graph, start):
+    dist = {v: float("inf") for v in graph}
+    dist[start] = 0
+    heap = [(0, start)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in graph[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+```
+* Adding v to `done` when its distance first improves, instead of adding u when it's popped :: Right. v's pair would be skipped when it comes off the heap, so its edges would never be tried.
+* Taking pairs with `heap.pop()` from a plain list, instead of `heapq.heappop` :: Right. That takes the pair pushed last, not the nearest, so a vertex can be settled before its shortest route is found.
+* Pushing `(v, dist[v])` instead of `(dist[v], v)` :: Right. Pairs would come out in order of their names, not their distances.
+* Starting every distance at 0 instead of infinity :: Right. No offer is ever smaller than 0, so every vertex would keep a distance of 0, reachable or not.
+- Relaxing when `d + w <= dist[v]` instead of `<` :: Equal offers push extra pairs, but every distance comes out the same.
+- Removing the `if u in done: continue` check :: Old pairs would be handled again, but their larger distances can't improve anything, so only time is wasted.
+hint: Which changes stop the nearest vertex from being the next one settled?
+hint: Which changes only add extra work?
+right: The heap must hand out the nearest pair, distances must start at infinity, and a vertex is settled only when it comes off the heap. Allowing equal offers or reprocessing old pairs costs time but not correctness.
+wrong: Changes that settle vertices out of distance order, or never let distances improve, break it. Extra pushes and repeated old pairs only slow it down.
+
+=== task: fill hard
+title: Fewest streets among the shortest
+prompt: Several routes can share the shortest length. To choose the one with the fewest streets among them, give every route a cost of (length, streets): tuples compare by length first and by number of streets on a tie, so the heap and the comparisons work unchanged. Fill in the blanks so that the program prints:
+
+```output
+{'S': (0, 0), 'B': (1, 1), 'A': (2, 2), 'D': (2, 1), 'T': (5, 2)}
+```
+code:
+```python
+import heapq
+
+def best_route(graph, start):
+    best = {v: None for v in graph}
+    best[start] = (0, 0)
+    heap = [((0, 0), start)]
+    done = set()
+    while heap:
+        cost, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        length, streets = cost
+        for v, w in graph[u]:
+            new = (length + w, ??)
+            if best[v] is None or new < ??:
+                best[v] = new
+                heapq.heappush(heap, (new, v))
+    return best
+
+graph = {"S": [("A", 6), ("B", 1), ("D", 2)], "B": [("A", 1)],
+         "A": [("T", 3)], "D": [("T", 3)], "T": []}
+print(best_route(graph, "S"))
+```
+answer: streets + 1 | best[v]
+wrong[streets | best[v]]: The number of streets would never go up, so every cost would end in 0 and ties couldn't be broken.
+wrong[streets + 1 | best[u]]: That compares the offer with u's own cost, which it never beats: A would keep the (6, 1) S gave it, although S, B, A is (2, 2).
+hint: Each street on the route adds 1 to the count.
+hint: The offer competes with the best cost found so far for v.
+right: Both routes to T are 5 long: S, B, A, T uses 3 streets and S, D, T uses 2, so (5, 2) wins. Comparing whole tuples breaks the tie, with no other change to the algorithm.
+wrong: `new = (length + w, streets + 1)`, kept when `new < best[v]`.
+
+=== task: parsons hard
+title: Distances to the goal
+prompt: Dijkstra's algorithm gives distances **from** one vertex. For distances **to** one vertex from every other, turn every edge round and run it from the goal: a route from v to the goal is a route from the goal to v in the turned graph. Arrange the lines so that `distances_to` does this, using None for vertices that can't reach the goal, and the program prints:
+
+```output
+{'A': 10, 'B': 7, 'C': 9, 'D': 2, 'E': 0}
+{'A': 1, 'B': None, 'C': 0, 'D': None, 'E': None}
+```
+
+Not every line is needed.
+lines:
+```python
+import heapq
+
+def distances_to(graph, goal):
+    back = {v: [] for v in graph}
+    for u in graph:
+        for v, w in graph[u]:
+            back[v].append((u, w))
+    dist = {v: None for v in graph}
+    dist[goal] = 0
+    heap = [(0, goal)]
+    done = set()
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u in done:
+            continue
+        done.add(u)
+        for v, w in back[u]:
+            if dist[v] is None or d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+```
+distractors:
+```python
+            back[u].append((v, w))
+            if d + w < dist[v]:
+```
+after:
+```python
+streets = {"A": [("B", 4), ("C", 1)], "B": [("D", 5)],
+           "C": [("B", 2), ("D", 8), ("E", 10)], "D": [("E", 2)], "E": []}
+print(distances_to(streets, "E"))
+print(distances_to(streets, "C"))
+```
+hint: An edge u → v of length w becomes v → u in `back`.
+hint: Without infinity, a missing distance is None, so check for None before comparing.
+right: Turning the edges round turns every route round, so one search from the goal answers "how far is the goal from here?" for every vertex. Only A can reach C.
+wrong: Build `back` with each edge turned round, then run Dijkstra from the goal over `back`, treating None as "no route yet".
