@@ -1,0 +1,1178 @@
+=== lesson
+id: algo-greedy
+title: Greedy algorithms
+summary: A greedy algorithm builds its answer one choice at a time, always taking the choice that looks best right now, and never goes back. When the rule is right, it's simple and fast, often a sort and one pass. When it's wrong, it gives a worse answer without any warning. You'll fit the most bookings into a day by sorting on end times, give change with the fewest coins, fill a bag with goods that can be cut, prove a greedy rule with an exchange argument, hunt for counterexamples, and choose between greedy and dynamic programming.
+
+=== learn
+### Best choice now, no going back
+A **greedy algorithm** builds its answer one step at a time. At each step it makes the choice that looks best right now, by a fixed rule, and it never goes back to change that choice. The other methods in this unit are more careful: backtracking tries every choice and undoes the ones that fail, and dynamic programming compares every choice for every smaller question. Greedy makes one choice per step and moves on, which makes it simple and fast.
+
+Giving change is the classic example. To pay an amount with as few coins as possible, take the biggest coin that fits, again and again:
+```python
+def make_change(amount, coins):
+    used = []
+    for c in sorted(coins, reverse=True):
+        while amount >= c:
+            used.append(c)
+            amount -= c
+    return used
+
+print(make_change(63, [1, 5, 10, 25]))
+print(make_change(6, [1, 3, 4]))
+```
+```output
+[25, 25, 10, 1, 1, 1]
+[4, 1, 1]
+```
+With coins of 1, 5, 10 and 25 cents, six coins is the fewest possible for 63 cents. But with coins of 1, 3 and 4, the same rule pays 6 with three coins, while 3 + 3 needs only two. Taking the 4 looked best, and greedy never reconsiders it. As the 1D DP lesson showed, a greedy rule can be fast and right, or fast and wrong. This lesson is about telling the two apart.
+
+### Fitting the most bookings in
+A sports hall has one court. Clubs ask to book it from a start hour to an end hour, and the hall wants to accept as many bookings as possible. Two bookings **clash** if they overlap; a booking that ends at 3 doesn't clash with one that starts at 3. Choosing the most bookings with no clashes is called **activity selection**.
+
+A greedy rule for this problem puts the bookings in some order, goes through them, and accepts each one that doesn't clash with the bookings already accepted. The question is which order. Three come to mind:
+
+| rule | the idea | fails on |
+| --- | --- | --- |
+| earliest start first | use the court as early as possible | (0, 10), (1, 2), (3, 4) |
+| shortest first | short bookings leave the most time for others | (0, 5), (4, 6), (5, 10) |
+| earliest end first | free the court again as soon as possible | nothing |
+
+Earliest start first accepts (0, 10), which clashes with both of the others: 1 booking, when (1, 2) and (3, 4) make 2. Shortest first accepts (4, 6), the 2-hour booking, which clashes with both of the others: 1 booking, when (0, 5) and (5, 10) make 2. Earliest end first is right for every list of bookings; the section after next proves it.
+
+### Earliest end first
+Sort the bookings by their end hour. Then go through them in that order, keeping `free_from`, the hour from which the court is free. A booking that starts at `free_from` or later doesn't clash with anything accepted so far: accept it, and the court is busy until it ends. A booking that starts earlier clashes: skip it.
+```python
+def most_bookings(bookings):
+    by_end = sorted(bookings, key=lambda b: b[1])
+    chosen = []
+    free_from = 0
+    for start, end in by_end:
+        if start >= free_from:
+            chosen.append((start, end))
+            free_from = end
+    return chosen
+
+hall = [(1, 4), (3, 5), (0, 6), (5, 7),
+        (3, 9), (5, 9), (6, 10), (8, 11),
+        (8, 12), (2, 14), (12, 16)]
+print(most_bookings(hall))
+```
+```output
+[(1, 4), (5, 7), (8, 11), (12, 16)]
+```
+The hours start at 0, so the court is free from hour 0 before anything is accepted. `key=lambda b: b[1]` sorts the (start, end) pairs by their ends. (1, 4) ends first and is accepted, so the court is free from 4. (3, 5) and (0, 6) start before 4 and are skipped. (5, 7) starts after 4 and is accepted, so the court is free from 7. Then (8, 11) and (12, 16) are accepted, and every other booking clashes. Sorting takes O(n log n) and the pass O(n), so the whole algorithm is **O(n log n)**. Animation 1 runs it on a shorter list.
+
+### Why the earliest end is safe
+Let f be the booking that ends first. Take any best answer: a set of bookings with no clashes, as large as possible. Look at its booking that ends first, and call it x.
+- If x is f, this best answer already includes f.
+- If not, swap x for f. Every other booking in the answer starts after x ends, and f ends no later than x, so f clashes with none of them. The answer still has the same size, so it's still a best answer, and now it includes f.
+
+Either way, some best answer includes f, so accepting f first can't spoil anything. After that, the bookings left to consider are the ones that start at f's end or later, and choosing the most of them is the same problem again, only smaller. The same swap shows that the next choice is safe, and the next, all the way to the end.
+
+This is an **exchange argument**, the usual way to prove a greedy rule right. It has two parts:
+1. **The greedy choice is safe**: take any best answer and exchange one of its parts for the greedy choice, without making the answer worse.
+2. **What's left is a smaller copy of the same problem**, so the same reasoning covers every later choice.
+
+Try it on shortest first, and part 1 breaks. For (0, 5), (4, 6), (5, 10), the best answer is (0, 5) and (5, 10), and swapping either of them for (4, 6) causes a clash.
+
+### Coins: when biggest-first is safe
+For coins of 1, 5, 10 and 25 an exchange argument works too. Think of any answer that uses the fewest coins. It can't contain:
+- five 1s, which could be exchanged for one 5, so it has at most four 1s;
+- two 5s, which could be exchanged for one 10, so it has at most one 5;
+- three 10s, which could be exchanged for a 25 and a 5, so it has at most two 10s;
+- two 10s and a 5 together, which could be exchanged for one 25.
+
+So its coins smaller than 25 add up to at most 24: two 10s and four 1s. If it used fewer 25s than fit, its smaller coins would have to add up to 25 or more, which is impossible. So a fewest-coins answer uses as many 25s as fit, which is exactly what greedy does. The same reasoning works for the 10s, since the 5 and the 1s below them add up to at most 9, and for the 5s, since four 1s add up to 4.
+
+With 1, 3 and 4 the exchanges run out. The fewest-coins answer for 6 is 3 + 3, and any answer that contains a 4 needs 4 + 1 + 1, three coins. No simple test tells which coin systems are safe for greedy, so for any coins, the coin-change table from the 1D DP lesson is the method to trust. Example 1 compares the two on several coin systems.
+
+### Goods that can be cut
+In the knapsack lesson, items are taken whole, and taking the best value per kilogram first can fail. Now suppose the goods can be cut: a merchant fills a 6 kg bag with spices sold by weight, and part of a spice is worth its share of the value. Then greedy is right: take the spices in order of value per kilogram, best first, each one whole while it fits, and cut the first one that doesn't fit, to fill the bag exactly. This is the **fractional knapsack**.
+```python
+def ratio(good):
+    weight, value = good
+    return value / weight
+
+def fill_bag(goods, capacity):
+    order = sorted(goods, key=ratio, reverse=True)
+    room = capacity
+    total = 0
+    for weight, value in order:
+        take = min(weight, room)
+        total += value * take / weight
+        room -= take
+    return total
+
+spices = [(4, 24), (1, 30), (5, 50), (2, 40)]
+print(fill_bag(spices, 6))
+```
+```output
+100.0
+```
+Each spice is a (kg, value) pair, and `ratio` works out its value per kilogram, so sorting with `key=ratio, reverse=True` puts the best value per kilogram first.
+
+| spice (kg, value) | per kg | taken | value added | room left |
+| --- | --- | --- | --- | --- |
+| (1, 30) | 30 | all 1 kg | 30 | 5 kg |
+| (2, 40) | 20 | all 2 kg | 40 | 3 kg |
+| (5, 50) | 10 | 3 of its 5 kg | 50 × 3 / 5 = 30 | 0 kg |
+| (4, 24) | 6 | none | 0 | 0 kg |
+
+`take` is the whole spice when it fits, and the room left when it doesn't; once the bag is full, `take` is 0. The total is a float because of the division. Animation 2 fills the bag step by step.
+
+Here's the exchange argument. Suppose a load leaves some of a better spice behind while it carries some of a worse one. Swap some of the worse spice for the same weight of the better one: the weight stays the same and the value goes up. So a best load takes as much as possible of the best spice, then as much as possible of the next best, and continues down the list, which is what greedy does. With whole items this swap isn't possible, since part of an item can't be taken, and that's why the knapsack lesson needs its table.
+
+### Greedy or dynamic programming?
+| | greedy | dynamic programming |
+| --- | --- | --- |
+| choices | one per step, never changed | every choice, for every smaller question |
+| typical time | a sort and one pass: O(n log n) | the table's size times the choices for each box |
+| always right? | only when the greedy choice is proved safe | yes, when the problem is built from smaller copies of itself |
+
+Greedy rules that are right: earliest end first for bookings, best value per kilogram first for goods that can be cut, biggest coin first for 1, 5, 10 and 25. Dijkstra's algorithm is greedy too: it always settles the nearest unsettled vertex, and the proof in its lesson that a settled distance is final is an exchange argument. Other famous greedy algorithms, which this course doesn't cover, are Huffman coding, used to compress files, and Prim's and Kruskal's algorithms, which connect a set of points using the least total length of wire.
+
+Problems where greedy rules fail and DP is needed include the 0/1 knapsack, the fewest coins for any coin system, house robber and the cheapest path through a grid.
+
+A good habit when a greedy rule comes to mind: first hunt for a counterexample. Write a slow method that's certainly right, such as trying every possibility or a DP table, and compare the two on many small inputs. One input where they differ proves the rule wrong. If none turns up, that's encouraging, but only an exchange argument proves the rule right. If neither happens, use DP.
+
+=== keypoints
+- A greedy algorithm builds its answer one choice at a time, taking the choice that looks best now and never undoing it.
+- Activity selection: sort by end time and accept each booking that starts at or after the end of the last one accepted. O(n log n).
+- Earliest start first and shortest first fail. One counterexample is enough to rule out a greedy rule.
+- An exchange argument proves a greedy rule: any best answer can be changed to include the greedy choice without getting worse, and what's left is a smaller copy of the problem.
+- Biggest coin first is right for 1, 5, 10 and 25, but not for every coin system: with 1, 3 and 4 it pays 6 as 4 + 1 + 1.
+- Fractional knapsack: best value per kilogram first, cutting the last item taken, is right. For whole items it can fail.
+- Greedy is fast but only sometimes right; DP compares every choice. Test a greedy rule against a slow, certain method on small inputs.
+
+=== example: Is biggest-first safe?
+intro: A program can't prove a greedy rule right, but it can hunt for counterexamples. This one compares biggest-coin-first with the coin-change table for every amount up to 100, for five coin systems, and reports the first amount where greedy uses more coins.
+```python
+def greedy_count(amount, coins):
+    count = 0
+    for c in sorted(coins, reverse=True):
+        count += amount // c
+        amount %= c
+    return count
+
+def fewest_table(limit, coins):
+    fewest = [0] + [float("inf")] * limit
+    for a in range(1, limit + 1):
+        for c in coins:
+            if c <= a and fewest[a - c] + 1 < fewest[a]:
+                fewest[a] = fewest[a - c] + 1
+    return fewest
+
+systems = [[1, 5, 10, 25], [1, 3, 4], [1, 2, 5, 10, 20, 50],
+           [1, 7, 10], [1, 6, 10]]
+for coins in systems:
+    fewest = fewest_table(100, coins)
+    bad = None
+    for a in range(1, 101):
+        if greedy_count(a, coins) > fewest[a]:
+            bad = a
+            break
+    if bad is None:
+        print(coins, "is safe for every amount up to 100")
+    else:
+        g = greedy_count(bad, coins)
+        print(f"{coins} fails at {bad}: {g} coins instead of {fewest[bad]}")
+```
+1-6: Biggest first, counting coins instead of listing them: `amount // c` is how many c coins fit, and `amount % c` is what's left after them.
+8-14: The coin-change table from the 1D DP lesson: the fewest coins for every amount up to the limit.
+16-17: Five coin systems to test.
+18-24: For each system, look for the first amount where greedy needs more coins than the table.
+25-29: 1, 5, 10, 25 and 1, 2, 5, 10, 20, 50 pass. 1, 3, 4 fails at 6, 1, 7, 10 at 14 (10 and four 1s against 7 + 7), and 1, 6, 10 at 12 (10 + 1 + 1 against 6 + 6). Passing every amount up to 100 is good evidence, but not a proof.
+
+=== example: Canoes for a trip
+intro: A canoe holds at most two people, with a total weight of at most 120 kg. To use the fewest canoes, pair the heaviest person left with the lightest, if they fit together. If they don't, nobody else fits with the heaviest either, so the heaviest paddles alone.
+```python
+weights = [70, 50, 85, 45, 60, 80, 40]
+limit = 120
+
+people = sorted(weights)
+light = 0
+heavy = len(people) - 1
+canoes = []
+while light <= heavy:
+    if light < heavy and people[light] + people[heavy] <= limit:
+        canoes.append([people[heavy], people[light]])
+        light += 1
+    else:
+        canoes.append([people[heavy]])
+    heavy -= 1
+print(len(canoes), "canoes:", canoes)
+```
+1-2: Seven people's weights in kg, and the limit for one canoe.
+4-7: Sort the weights. `light` and `heavy` point at the lightest and the heaviest person who still needs a canoe.
+8-14: The heaviest person gets a canoe now. If the lightest fits with them, the two share it and `light` moves up; otherwise the heaviest goes alone. Either way `heavy` moves down. `light < heavy` stops the last person from being paired with themselves.
+15: 85 + 40 is over 120, so 85 kg goes alone; then 80 + 40, 70 + 45 and 60 + 50 share. Pairing the heaviest with the lightest is safe: in any plan, swapping the heaviest person's partner with the lightest person keeps every canoe within the limit.
+
+=== animation: Earliest end first
+view: array by_end ptr=i
+array chosen title=accepted
+vars start end free_from
+intro: The bookings are sorted by end time. Each one that starts no earlier than `free_from` is accepted, and the court is then busy until it ends.
+```python
+by_end = [(1, 3), (2, 5), (4, 6), (3, 7), (6, 8), (5, 9), (8, 10)]
+chosen = []
+free_from = 0
+for i in range(len(by_end)):
+    start, end = by_end[i]
+    if start >= free_from:
+        chosen.append(by_end[i])
+        free_from = end
+print(chosen)
+```
+1: Seven bookings as (start, end), already sorted by end time, as sorted(bookings, key=lambda b: b[1]) would leave them.
+2: Nothing is accepted yet.
+3: The court is free from hour 0.
+4: Go on to the next booking in order of end time, if there's one left.
+5: Booking {i} runs from {by_end[i][0]} to {by_end[i][1]}.
+6: {('It starts at ' + str(start) + ', and the court is free from ' + str(free_from) + ': no clash.') if start >= free_from else ('It starts at ' + str(start) + ', before the court is free at ' + str(free_from) + ': it clashes, so skip it.')}
+7: Accept it.
+8: The court is busy until {end}.
+9: {len(chosen)} bookings, the most that fit.
+
+=== animation: Filling the bag
+view: array by_ratio ptr=i
+vars weight value take room total
+intro: The spices are sorted by value per kilogram, best first. Each one is taken whole while it fits; the first one that doesn't fit is cut to fill the bag.
+```python
+by_ratio = [(1, 30), (2, 40), (5, 50), (4, 24)]
+room = 6
+total = 0
+for i in range(len(by_ratio)):
+    weight, value = by_ratio[i]
+    take = min(weight, room)
+    total += value * take / weight
+    room -= take
+print(total)
+```
+1: The spices as (kg, value), sorted by value per kilogram: 30, 20, 10 and 6.
+2: The bag holds 6 kg.
+3: It's empty so far.
+4: Go on to the next spice, if there's one left.
+5: Spice {i}: {by_ratio[i][0]} kg worth {by_ratio[i][1]}, which is {by_ratio[i][1] // by_ratio[i][0]} per kilogram.
+6: {('All ' + str(weight) + ' kg fit in the ' + str(room) + ' kg of room: take it whole.') if weight <= room else (('Only ' + str(room) + ' kg of room is left: cut ' + str(room) + ' kg from it.') if room > 0 else 'The bag is full: take none of it.')}
+7: Taking {take} of its {weight} kg adds {value} × {take} / {weight} = {value * take / weight}.
+8: {('The room shrinks by ' + str(take) + ' kg.') if take > 0 else 'Nothing was taken, so the room stays at 0 kg.'}
+9: The bag is worth {total}, the most possible when spices can be cut.
+
+=== task: predict easy
+title: Biggest coin first
+prompt: `make_change` takes the biggest coin that fits, again and again. The second set of coins has no 5. What does it print?
+code:
+```python
+def make_change(amount, coins):
+    used = []
+    for c in sorted(coins, reverse=True):
+        while amount >= c:
+            used.append(c)
+            amount -= c
+    return used
+
+print(make_change(41, [1, 5, 10, 25]))
+print(make_change(30, [1, 10, 25]))
+```
+wrong[[25, 10, 5, 1]\n[10, 10, 10]]: Greedy takes the 25 first, because it fits. Then only 1s fit in the 5 that's left. Three 10s would use fewer coins, but greedy never goes back on the 25.
+wrong[[25, 10, 5, 1]\n[25, 5]]: There's no 5 coin in the second set, [1, 10, 25]: the 5 left after the 25 is paid in 1s.
+wrong[[25, 10, 1, 1, 1, 1, 1, 1]\n[25, 1, 1, 1, 1, 1]]: After the 25 and the 10, 6 is left, and the first set has a 5: 5 + 1.
+hint: For 41: which coins fit, biggest first?
+hint: For 30 with 1, 10 and 25: after the 25, does a 10 fit in what's left?
+right: `[25, 10, 5, 1]`, then `[25, 1, 1, 1, 1, 1]`. Without a 5, biggest first pays 30 with six coins, where three 10s would do: the 25 looked best, and greedy never undoes a choice.
+wrong: 41: the 25 leaves 16, the 10 leaves 6, the 5 leaves 1, then a 1. 30: the 25 leaves 5, the 10 doesn't fit, so five 1s.
+
+=== task: mcq easy
+title: What makes it greedy?
+prompt: Which of these describes a greedy algorithm?
+* It builds the answer step by step, each time taking the choice that looks best right now, and never undoes a choice :: Right. One choice per step, made by a fixed rule and kept.
+- It tries every possible answer and keeps the best one :: That's brute force. Greedy follows a single path of choices.
+- It fills a table with the answers to smaller questions :: That's dynamic programming, which compares every choice for every smaller question.
+- It backs out of a choice when that choice leads to a dead end :: That's backtracking. Greedy never goes back.
+hint: How many choices does greedy look at in each step?
+hint: Does greedy ever change its mind?
+right: Greedy is fast because it commits: one choice per step, never revisited. That's also why it can be wrong.
+wrong: A greedy algorithm takes the best-looking choice at each step and keeps it. It doesn't try alternatives, back out of choices or fill tables.
+
+=== task: cells easy
+title: When is the court free?
+prompt: Earliest end first runs on six bookings, already sorted by end time. Fill in `free_from` after each booking has been considered.
+code:
+```python
+by_end = [(1, 2), (1, 4), (3, 5), (2, 6), (5, 8), (7, 9)]
+free_from = 0
+for start, end in by_end:
+    if start >= free_from:
+        free_from = end
+```
+labels: after (1, 2) | after (1, 4) | after (3, 5) | after (2, 6) | after (5, 8) | after (7, 9)
+answer: 2 | 2 | 5 | 5 | 8 | 8
+wrong[2 | 4 | 5 | 6 | 8 | 9]: `free_from` changes only when a booking is accepted. (1, 4) starts at 1, before the court is free at 2, so it's skipped and `free_from` stays 2.
+wrong[2 | 2 | 5 | 5 | 5 | 9]: (5, 8) starts at 5, exactly when the court becomes free. `5 >= 5` is True, so it's accepted, and `free_from` becomes 8.
+wrong[2 | 2 | 5 | 5 | 8 | 9]: (7, 9) starts at 7, before the court is free at 8: it clashes with (5, 8).
+hint: A booking is accepted when its start is at least `free_from`, and then `free_from` becomes its end.
+hint: Three bookings are accepted.
+right: 2, 2, 5, 5, 8 and 8. The accepted bookings are (1, 2), (3, 5) and (5, 8).
+wrong: (1, 2) is accepted: 2. (1, 4) clashes: still 2. (3, 5) is accepted: 5. (2, 6) clashes: still 5. (5, 8) is accepted: 8. (7, 9) clashes: still 8.
+
+=== task: code easy
+title: The most bookings
+prompt: Write `max_bookings(bookings)` that returns the largest number of bookings that can share one court without clashing. Each booking is a (start, end) pair of hours from 0 up, and a booking that ends at 3 doesn't clash with one that starts at 3. Use earliest end first: sort by end time, and accept each booking that starts at or after the end of the last booking accepted. For example, `max_bookings([(0, 5), (4, 6), (5, 10)])` is 2. The speed check uses thousands of bookings.
+starter:
+```python
+def max_bookings(bookings):
+    count = 0
+    free_from = 0
+    # your code here
+    return count
+```
+solution:
+```python
+def max_bookings(bookings):
+    count = 0
+    free_from = 0
+    for start, end in sorted(bookings, key=lambda b: b[1]):
+        if start >= free_from:
+            count += 1
+            free_from = end
+    return count
+```
+tests:
+- max_bookings([(1, 4), (3, 5), (0, 6), (5, 7), (8, 11), (8, 12), (2, 14), (12, 16)])
+- max_bookings([])
+- max_bookings([(2, 5)])
+- max_bookings([(0, 10), (1, 2), (3, 4)])
+- max_bookings([(0, 5), (4, 6), (5, 10)])
+- max_bookings([(1, 3), (3, 5), (5, 7)])
+- max_bookings([(1, 5), (1, 5), (1, 5)])
+fail[1]: Earliest end first accepts (1, 4), (5, 7), (8, 11) and (12, 16): 4.
+fail[2]: No bookings: 0.
+fail[3]: One booking always fits: 1.
+fail[4]: (1, 2) ends first, then (3, 4) fits: 2. Sorting by start would accept (0, 10), which blocks both.
+fail[5]: (0, 5) ends first, and (5, 10) starts as it ends: 2. Sorting by length would accept (4, 6), which blocks both.
+fail[6]: Each booking starts exactly when the one before ends, so none clash: 3. Use `>=`, not `>`.
+fail[7]: Three copies of the same booking all clash with each other: 1.
+speed: setup=bookings = [(i, i + 2) for i in range(n)] | call=max_bookings(bookings) | target=O(n log n)
+slow:
+```python
+def max_bookings(bookings):
+    count = 0
+    free_from = 0
+    while True:
+        best = None
+        for start, end in bookings:
+            if start >= free_from and (best is None or end < best[1]):
+                best = (start, end)
+        if best is None:
+            return count
+        count += 1
+        free_from = best[1]
+```
+hint: `sorted(bookings, key=lambda b: b[1])` puts the bookings in order of end time.
+hint: For each (start, end) in that order: if `start >= free_from`, add 1 to the count and set `free_from = end`.
+right: One sort, O(n log n), then one pass, O(n). Searching the whole list again for the next booking to accept would make it O(n²).
+wrong: Sort by end; then for each (start, end), if `start >= free_from`, count it and set `free_from = end`.
+
+=== task: fill easy
+title: How much to take
+prompt: Fill in the blanks so that `fill_bag` takes as much of each good as the room allows, best value per kilogram first, and adds the value of the part it takes. The program prints:
+
+```output
+100.0
+240.0
+```
+code:
+```python
+def fill_bag(goods, capacity):
+    order = sorted(goods, key=lambda g: g[1] / g[0], reverse=True)
+    room = capacity
+    total = 0
+    for weight, value in order:
+        take = min(weight, ??)
+        total += value * ?? / weight
+        room -= take
+    return total
+
+print(fill_bag([(4, 24), (1, 30), (5, 50), (2, 40)], 6))
+print(fill_bag([(10, 60), (20, 100), (30, 120)], 50))
+```
+answer: room | take
+wrong[capacity | take]: The bag's whole capacity isn't the room that's left: once some goods are in, less room remains. This takes too much and overfills the bag.
+wrong[room | weight]: `value * weight / weight` is the whole value, so a good that's cut counts as if it were taken whole, and so does a good that doesn't go in at all.
+hint: The most of a good that can go in is its whole weight or the room that's left, whichever is smaller.
+hint: A part of a good is worth its share of the value: value × kilograms taken / kilograms it weighs.
+right: `min(weight, room)` is the whole good when it fits and the room left when it doesn't, and `value * take / weight` is what that part is worth. The second bag takes 10 kg and 20 kg whole, then 20 of the 30 kg good: 60 + 100 + 80 = 240.
+wrong: `take = min(weight, room)` and `total += value * take / weight`.
+
+=== task: multi easy
+title: Which greedy rules are right?
+prompt: Choose **every** problem where the greedy rule given always finds the best answer.
+* Accepting the most bookings for one court: earliest end first :: Right. Some best answer always includes the booking that ends first.
+* Filling a bag with goods that can be cut: best value per kilogram first :: Right. Any worse goods can be swapped for the same weight of better ones.
+* Paying with the fewest coins of 1, 5, 10 and 25: biggest coin first :: Right. The coins below 25 in a fewest-coins answer add up to at most 24, so it uses as many 25s as fit.
+- Accepting the most bookings for one court: shortest first :: (0, 5), (4, 6), (5, 10): the short booking in the middle blocks both of the others.
+- Paying with the fewest coins of 1, 3 and 4: biggest coin first :: It pays 6 as 4 + 1 + 1, but 3 + 3 is two coins.
+- Filling a bag with whole items: best value per kilogram first :: A whole item can leave room that nothing else fills, which is why the knapsack lesson needed a table.
+hint: Which rules did the lesson prove with an exchange argument?
+hint: Which ones did a small counterexample break?
+right: Earliest end first, best value per kilogram for goods that can be cut, and biggest coin first for 1, 5, 10 and 25 are proved right. Shortest first, biggest coin first for 1, 3 and 4, and best value per kilogram for whole items each have a counterexample.
+wrong: The proved rules are earliest end first, best value per kilogram when goods can be cut, and biggest coin first for the usual coins. The others fail on small examples.
+
+=== task: parsons easy
+title: Collect every rise
+prompt: A share's price is known for each day. You may buy and sell as often as you like, but you can hold only one share at a time. The greedy rule: collect every rise from one day to the next, as if you bought on the day before each rise and sold on the day of the rise. Arrange the lines so that `max_profit` adds up every rise. The program prints:
+
+```output
+7 0 4
+```
+
+Not every line is needed.
+lines:
+```python
+def max_profit(prices):
+    profit = 0
+    for i in range(1, len(prices)):
+        if prices[i] > prices[i - 1]:
+            profit += prices[i] - prices[i - 1]
+    return profit
+```
+distractors:
+```python
+        if prices[i] < prices[i - 1]:
+            profit += prices[i]
+```
+after:
+```python
+print(max_profit([7, 1, 5, 3, 6, 4]), max_profit([7, 6, 4, 3, 1]), max_profit([1, 2, 3, 4, 5]))
+```
+hint: Compare each day with the day before it, starting from day 1.
+hint: A rise adds the difference between the two prices.
+right: [7, 1, 5, 3, 6, 4]: the rises 1 to 5 and 3 to 6 make 4 + 3 = 7. Any trade's profit is the sum of the day-to-day changes it spans, so collecting exactly the rises can't be beaten. Falling prices give 0, and a steady climb from 1 to 5 gives 4.
+wrong: Loop from day 1, and when a price is higher than the day before, add the difference.
+
+=== task: order easy
+title: Earliest end first, step by step
+prompt: Put the steps of earliest end first in order.
+items:
+- Sort the bookings by their end times.
+- Go through them in that order, starting with the one that ends first.
+- Accept a booking if it starts no earlier than the end of the last booking accepted.
+- After accepting a booking, remember its end: the court is busy until then.
+- When every booking has been considered, return the accepted ones.
+hint: The order of the bookings is fixed before any of them is considered.
+hint: The end of an accepted booking is needed to check the bookings after it.
+right: Sort by end, then one pass: accept each booking that starts once the court is free, and move the time the court is free to its end.
+wrong: Sort first; go through the bookings in order of end; accept one that starts at or after the time the court is free; update that time; return the accepted bookings.
+
+=== task: predict easy
+title: Earliest start or earliest end?
+prompt: `accept` goes through the bookings in the order it's given, accepting each one that starts at or after the time the court is free. It runs twice: with the bookings sorted by start, then by end. What does it print?
+code:
+```python
+bookings = [(0, 7), (1, 3), (3, 5), (6, 9), (8, 10)]
+
+def accept(order):
+    chosen = []
+    free_from = 0
+    for start, end in order:
+        if start >= free_from:
+            chosen.append((start, end))
+            free_from = end
+    return chosen
+
+print(accept(sorted(bookings)))
+print(accept(sorted(bookings, key=lambda b: b[1])))
+```
+wrong[[(1, 3), (3, 5), (6, 9)]\n[(1, 3), (3, 5), (6, 9)]]: `sorted(bookings)` sorts the pairs by their first items, the starts, so (0, 7) comes first and is accepted.
+wrong[[(0, 7), (8, 10)]\n[(1, 3), (3, 5), (8, 10)]]: After (3, 5), the court is free from 5. (0, 7) clashes, but (6, 9) comes next in order of end and starts after 5, so it's accepted, and then (8, 10) clashes with it.
+wrong[[(0, 7), (8, 10)]\n[(1, 3), (6, 9)]]: (3, 5) starts exactly when (1, 3) ends, so they don't clash.
+hint: Sorting tuples compares their first items first.
+hint: In order of end: (1, 3), (3, 5), (0, 7), (6, 9), (8, 10).
+right: `[(0, 7), (8, 10)]`, then `[(1, 3), (3, 5), (6, 9)]`. Starting first, (0, 7) blocks three bookings; ending first leaves room for three.
+wrong: By start: (0, 7) is accepted, and nothing else fits until (8, 10). By end: (1, 3), then (3, 5), then (6, 9); (0, 7) and (8, 10) clash.
+
+=== task: mcq easy
+title: Cut or whole?
+prompt: Best value per kilogram first always fills a bag in the best way when the goods can be cut, but it can fail when items must be taken whole. Why?
+* A whole item can leave room that no other item fits, while with cutting, the room left is always filled with the best goods remaining :: Right. Cutting never wastes space, so every kilogram holds the best goods available.
+- Cutting changes an item's value per kilogram :: A part of an item has the same value per kilogram as the whole item.
+- With whole items, value per kilogram is worked out differently :: It's value ÷ weight either way.
+- With whole items, sorting by weight instead would always work :: Lightest first fails too: the bag can fill up with light items of little value.
+hint: In the knapsack lesson's example, why did greedy end up with 8 instead of 9?
+hint: What happens to the room that's left over in each case?
+right: With cutting, every kilogram of the bag holds the best goods available, so nothing is wasted. With whole items, early choices can leave a gap that only a different set of items would fill.
+wrong: Whole items can leave wasted room, while cutting fills it exactly. That's why greedy is right only for the fractional knapsack.
+
+=== task: code medium
+title: Shortest job first
+prompt: Customers queue at one counter, and serving customer i takes `times[i]` minutes. Each customer waits until everyone served before them is done, and you can choose the order. Write `least_waiting(times)` that returns the smallest possible total of all the customers' waiting times. The greedy rule: serve the quickest customer first. Sort the times, then go through them, adding each customer's wait, the minutes spent on everyone before them, to the total. For `[3, 1, 2]`, the order 1, 2, 3 gives waits of 0, 1 and 3: 4. The speed check uses thousands of customers.
+starter:
+```python
+def least_waiting(times):
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+def least_waiting(times):
+    total = 0
+    elapsed = 0
+    for t in sorted(times):
+        total += elapsed
+        elapsed += t
+    return total
+```
+tests:
+- least_waiting([3, 1, 2])
+- least_waiting([])
+- least_waiting([5])
+- least_waiting([4, 4, 4])
+- least_waiting([10, 2, 7, 1])
+- least_waiting(list(range(100, 0, -1)))
+fail[1]: Serve 1, 2, 3: waits of 0, 1 and 1 + 2 = 3, a total of 4.
+fail[2]: No customers: 0.
+fail[3]: The only customer doesn't wait: 0.
+fail[4]: Waits of 0, 4 and 8: 12.
+fail[5]: Serve 1, 2, 7, 10: waits of 0, 1, 3 and 10: 14.
+fail[6]: 100 customers taking 1 to 100 minutes, served quickest first: 166650.
+speed: setup=times = list(range(n, 0, -1)) | call=least_waiting(times) | target=O(n log n)
+slow:
+```python
+def least_waiting(times):
+    order = sorted(times)
+    total = 0
+    for i in range(len(order)):
+        total += sum(order[:i])
+    return total
+```
+hint: Keep `elapsed`, the minutes spent so far: each customer waits `elapsed`, and then `elapsed` grows by their own time.
+hint: Add `elapsed` to the total before adding the customer's time to `elapsed`.
+right: If a longer job comes immediately before a shorter one, swapping them cuts the shorter one's wait by more than it adds to the longer one's, so no order beats shortest first. The running total keeps the method at O(n log n), where adding up each wait from scratch would be O(n²).
+wrong: Sort the times; for each t, add `elapsed` to the total, then add t to `elapsed`.
+
+=== task: code medium
+title: Lemonade change
+prompt: Lemonade costs 5. Customers queue and each pays with a 5, 10 or 20 note. You start with no change and must give each customer the right change straight away. Write `lemonade_change(bills)` that returns True if every customer can be given change, and False otherwise. A 10 needs a 5 back. For a 20, give a 10 and a 5 if you can, and three 5s otherwise: 5s are more useful than 10s, since they help with both 10s and 20s, so keep them when possible.
+starter:
+```python
+def lemonade_change(bills):
+    fives = 0
+    tens = 0
+    # your code here
+    return True
+```
+solution:
+```python
+def lemonade_change(bills):
+    fives = 0
+    tens = 0
+    for bill in bills:
+        if bill == 5:
+            fives += 1
+        elif bill == 10:
+            if fives == 0:
+                return False
+            fives -= 1
+            tens += 1
+        else:
+            if tens > 0 and fives > 0:
+                tens -= 1
+                fives -= 1
+            elif fives >= 3:
+                fives -= 3
+            else:
+                return False
+    return True
+```
+tests:
+- lemonade_change([5, 5, 5, 10, 20])
+- lemonade_change([5, 5, 10, 10, 20])
+- lemonade_change([])
+- lemonade_change([10])
+- lemonade_change([5, 5, 5, 5, 10, 20, 10, 10])
+- lemonade_change([5, 20])
+- lemonade_change([5, 5, 5, 20])
+fail[1]: Three 5s come in, the 10 gets a 5 back, and the 20 gets the 10 and a 5: True.
+fail[2]: After the two 10s, there's no 5 left, and a 20 needs 15 back: False.
+fail[3]: Nobody needs change: True.
+fail[4]: The first customer pays with a 10, and there's no 5 to give back: False.
+fail[5]: Give the 10 and a 5 for the 20, which keeps two 5s for the two 10s after it: True. Paying the 20 with three 5s would leave one 5 for two customers.
+fail[6]: One 5 can't make 15: False.
+fail[7]: There's no 10 yet, so the 20 gets three 5s: True.
+hint: Count the 5s and 10s you hold. A 5 adds a 5; a 10 needs a 5 back and adds a 10.
+hint: For a 20, check for a 10 and a 5 first, then for three 5s; if neither, return False.
+right: Giving a 10 whenever possible is the greedy choice, and it's safe: a 10 can only ever help with a 20, while 5s help with everything. One pass, O(n).
+wrong: Track `fives` and `tens`. 5: keep it. 10: return False without a 5, else trade a 5 for the 10. 20: a 10 and a 5 if you have them, else three 5s, else False.
+
+=== task: predict medium
+title: Canoes with a 100 kg limit
+prompt: The canoe pairing from the examples runs on six people, with a limit of 100 kg. What does it print?
+code:
+```python
+weights = [95, 40, 75, 20, 60, 50]
+limit = 100
+
+people = sorted(weights)
+light = 0
+heavy = len(people) - 1
+canoes = []
+while light <= heavy:
+    if light < heavy and people[light] + people[heavy] <= limit:
+        canoes.append([people[heavy], people[light]])
+        light += 1
+    else:
+        canoes.append([people[heavy]])
+    heavy -= 1
+print(len(canoes), canoes)
+```
+wrong[3 [[95, 20], [75, 40], [60, 50]]]: 95 + 20 = 115 is over the limit, so 95 kg goes alone.
+wrong[5 [[95], [75, 20], [60], [50, 40]]]: 60 + 40 = 100 is within the limit, since the test is `<=`, so they share.
+wrong[4 [[95], [75, 20], [60, 40], [50, 50]]]: When `light` and `heavy` meet, only one person is left, so 50 kg goes alone.
+hint: Sorted, the weights are [20, 40, 50, 60, 75, 95].
+hint: Check 95 + 20, then 75 + 20, then 60 + 40.
+right: `4 [[95], [75, 20], [60, 40], [50]]`. The heaviest person left always gets a canoe, shared with the lightest when they fit; the last person, 50 kg, has nobody left to pair with.
+wrong: 95 + 20 is over 100: alone. 75 + 20 = 95: they share. 60 + 40 = 100: they share. Then `light` and `heavy` both point at 50: alone.
+
+=== task: cells medium
+title: How much of each?
+prompt: Goods A, B, C and D can be cut, and a 7 kg bag is filled best value per kilogram first. How many kilograms of each go in?
+code:
+```python
+goods = {"A": (2, 10), "B": (3, 9), "C": (4, 16), "D": (1, 2)}
+# each good is (kg, value); the bag holds 7 kg
+```
+labels: kg of A | kg of B | kg of C | kg of D
+answer: 2 | 1 | 4 | 0
+wrong[2 | 3 | 2 | 0]: That takes the goods in the order they're listed. C is worth 16 / 4 = 4 per kilogram, more than B's 3, so C goes in before B.
+wrong[2 | 0 | 4 | 1]: D is worth 2 per kilogram, the worst of all. The last kilogram of room goes to B, worth 3 per kilogram.
+wrong[0 | 3 | 4 | 0]: That sorts by value, not by value per kilogram. A is the best at 10 / 2 = 5 per kilogram.
+hint: Values per kilogram: A 5, B 3, C 4, D 2.
+hint: A and C together fill 6 kg, so 1 kg of room is left.
+right: 2, 1, 4 and 0: A whole, C whole, 1 kg cut from B, and no D. The bag is worth 10 + 16 + 3 = 29.
+wrong: In order of value per kilogram: A (5), C (4), B (3), D (2). A takes 2 kg, C 4 kg, and then 1 kg of B fills the bag.
+
+=== task: fill medium
+title: The most items for the money
+prompt: `most_items` buys as many items as it can with a budget: the cheapest first, stopping at the first item it can't afford. Fill in the blanks so that the program prints:
+
+```output
+3 2 0
+```
+code:
+```python
+def most_items(prices, budget):
+    count = 0
+    for p in ??:
+        if p > ??:
+            break
+        budget -= p
+        count += 1
+    return count
+
+print(most_items([20, 5, 15, 10], 32), most_items([8, 3, 3, 9], 10), most_items([7], 5))
+```
+answer: sorted(prices) | budget
+wrong[prices | budget]: In the order given, the 20 is bought first and uses most of the money. Cheapest first needs the prices sorted.
+wrong[sorted(prices, reverse=True) | budget]: Most expensive first buys the fewest items: only the 20 in the first test.
+hint: Which order buys the most items?
+hint: An item can be bought when its price is no more than the money left.
+right: Cheapest first: 5, 10 and 15 cost 30 of the 32. Swapping any item bought for a cheaper one that wasn't keeps the count and saves money, so the cheapest items are always a best choice. Once one item is too expensive, every later one is too, so the loop can stop there.
+wrong: `for p in sorted(prices):` and `if p > budget:`. [20, 5, 15, 10] with 32: buy 5, 10 and 15 (30 spent); then 20 is too much: 3.
+
+=== task: mcq medium
+title: Dijkstra's greedy choice
+prompt: Dijkstra's algorithm is a greedy algorithm. Which choice does it make greedily and never undo?
+* Settling the unsettled vertex with the smallest best-known distance, whose distance is then final :: Right. That's its greedy step, and the proof that a settled distance is final is its exchange argument.
+- Following the shortest edge out of the vertex it's at :: That's a different rule, and it can fail: a short first edge can lead on to long ones.
+- Visiting the vertices in the order they're listed in the graph :: The order depends on the distances found, not on how the graph is written.
+- Lowering a vertex's best-known distance when an edge offers a shorter route :: That's relaxing an edge. It can happen several times to the same vertex before it's settled, so it isn't a final choice.
+hint: What does Dijkstra do with the vertex that comes off the heap?
+hint: Which decision is never changed afterwards?
+right: Each round settles the nearest unsettled vertex for good. Because no length is negative, no later route to it can be shorter, which is what makes this greedy choice safe.
+wrong: Dijkstra's greedy choice is to settle the nearest unsettled vertex: its distance is final from then on.
+
+=== task: predict medium
+title: Fewest arrows
+prompt: Balloons are stretched along a wall, each from a start position to an end position. An arrow fired at position x bursts every balloon with start ≤ x ≤ end. This greedy finds the fewest arrows: it goes through the balloons in order of end, and when the last arrow fired misses a balloon, it fires a new one at that balloon's end. Where are the arrows fired?
+code:
+```python
+balloons = [(10, 16), (2, 8), (1, 6), (7, 12), (6, 9)]
+arrows = []
+for start, end in sorted(balloons, key=lambda b: b[1]):
+    if not arrows or start > arrows[-1]:
+        arrows.append(end)
+print(arrows)
+```
+wrong[[6, 9, 16]]: (6, 9) starts at 6, where the first arrow is. `6 > 6` is False, so that arrow bursts it.
+wrong[[6, 12, 16]]: (10, 16) starts at 10, before the arrow at 12, so that arrow bursts it.
+wrong[[1, 7]]: Each arrow is fired at a balloon's end, not its start: as late as possible, so that it also bursts the balloons that start later.
+hint: In order of end: (1, 6), (2, 8), (6, 9), (7, 12), (10, 16).
+hint: Which balloons start after 6?
+right: `[6, 12]`. The arrow at 6 bursts (1, 6), (2, 8) and (6, 9); the arrow at 12 bursts (7, 12) and (10, 16). Firing at the earliest end is the same idea as accepting the booking that ends first.
+wrong: The first arrow goes at 6, the end of (1, 6). (2, 8) and (6, 9) start at or before 6, so it bursts them. (7, 12) starts after 6: the next arrow goes at 12, and it also bursts (10, 16).
+
+=== task: multi medium
+title: Greedy or DP?
+prompt: Choose **every** true statement comparing greedy algorithms with dynamic programming.
+* DP compares every choice for every smaller question; greedy makes one choice per step :: Right. That's the main difference between them.
+* When both give the best answer, greedy is usually faster :: Right. Greedy is often a sort and one pass, while DP fills a whole table.
+* A DP table can show that a greedy rule is wrong, by finding an input where it does better :: Right. Example 1 does this for coins.
+- Greedy gives the best answer for every problem DP can solve :: The 0/1 knapsack is solved by DP, and best value per kilogram first fails on it.
+- If a greedy rule is right on ten random inputs, it's right on all of them :: Tests can find a counterexample, but they can't prove there isn't one.
+- A greedy algorithm needs a table to remember the choices it didn't make :: Greedy keeps only its answer so far: it never looks back at other choices.
+hint: How many choices does each method consider?
+hint: What can testing prove, and what can't it?
+right: DP is thorough and right whenever the problem is built from smaller copies of itself; greedy is quicker but needs a proof. A DP table, or another slow and certain method, is the way to test a greedy rule.
+wrong: DP considers every choice; greedy considers one, so it's faster when it's right. DP can expose a wrong greedy rule, but passing tests doesn't prove a rule right.
+
+=== task: parsons medium
+title: Cookies for children
+prompt: Each child is happy with a cookie at least as big as their greed, `greed[i]`, and gets at most one cookie. To make the most children happy, go through the cookies from smallest to biggest, and give each one to the least greedy child still waiting, if it's big enough for them. Arrange the lines so that `content_children` returns how many children are made happy. The program prints:
+
+```output
+1 2
+2
+```
+
+Not every line is needed.
+lines:
+```python
+def content_children(greed, cookies):
+    greed = sorted(greed)
+    cookies = sorted(cookies)
+    child = 0
+    for c in cookies:
+        if child < len(greed) and c >= greed[child]:
+            child += 1
+    return child
+```
+distractors:
+```python
+    cookies = sorted(cookies, reverse=True)
+        if child < len(greed) and c > greed[child]:
+```
+after:
+```python
+print(content_children([1, 2, 3], [1, 1]), content_children([1, 2], [1, 2, 3]))
+print(content_children([10, 9, 8, 7], [5, 6, 7, 8]))
+```
+hint: Both lists are sorted from small to big.
+hint: `child` is the position of the least greedy child still waiting, which is also the number made happy so far.
+right: A cookie too small for the least greedy child is too small for everyone, so it's skipped; a cookie that's big enough goes to that child, since a greedier child would need a bigger one. With greeds 7 to 10 and cookies 5 to 8: the 7 cookie makes the 7 child happy, and the 8 cookie the 8 child: 2.
+wrong: Sort both lists; for each cookie, smallest first, if it's at least `greed[child]`, that child is happy and `child` moves on.
+
+=== task: order medium
+title: Proving earliest end first
+prompt: Put the steps of the proof that accepting the booking that ends first is safe in order.
+items:
+- Take any best answer: as many bookings as possible, none of them clashing.
+- Find the booking in it that ends first.
+- Swap that booking for the booking that ends earliest of all.
+- Check that nothing clashes: the new booking ends no later than the one it replaced, and the others start after that one ends.
+- Conclude that some best answer includes the earliest-ending booking, so accepting it first is safe.
+- Repeat the argument for the bookings that start after it ends.
+hint: The proof starts from an answer that's already as good as possible.
+hint: The swap has to be checked before anything can be concluded from it.
+right: Start from any best answer, exchange its first booking for the greedy choice, check the result is still valid and as large, and conclude. What's left is a smaller copy of the same problem.
+wrong: A best answer; its first booking; the swap; the check that nothing clashes; the conclusion; then the same argument on the bookings that are left.
+
+=== task: code hard
+title: Fewest meeting rooms
+prompt: Write `min_rooms(meetings)` that returns the fewest rooms needed to hold all the meetings, each a (start, end) pair, with no two meetings in the same room at once. A meeting that ends at 3 and one that starts at 3 can use the same room. The greedy rule: go through the meetings in order of start time, and give each one the room that frees up first, if it's free by then. Keep the end times of the rooms in use in a heap from `heapq`, so that `ends[0]` is the earliest. For each meeting, if `ends[0] <= start`, that room is reused: pop its end time. Either way, push the meeting's end time. At the end, the heap's size is the number of rooms. The speed check uses thousands of meetings that all overlap.
+starter:
+```python
+import heapq
+
+def min_rooms(meetings):
+    ends = []
+    # your code here
+    return len(ends)
+```
+solution:
+```python
+import heapq
+
+def min_rooms(meetings):
+    ends = []
+    for start, end in sorted(meetings):
+        if ends and ends[0] <= start:
+            heapq.heappop(ends)
+        heapq.heappush(ends, end)
+    return len(ends)
+```
+tests:
+- min_rooms([(0, 30), (5, 10), (15, 20)])
+- min_rooms([(7, 10), (2, 4)])
+- min_rooms([])
+- min_rooms([(1, 5), (1, 5), (1, 5)])
+- min_rooms([(1, 3), (3, 5), (5, 7)])
+- min_rooms([(1, 10), (2, 3), (4, 5), (6, 7), (8, 9)])
+- min_rooms([(1, 4), (2, 5), (3, 6), (4, 7)])
+fail[1]: (0, 30) needs a room all the time; (5, 10) and then (15, 20) can share a second one: 2.
+fail[2]: (2, 4) ends before (7, 10) starts, so 1 room is enough. The meetings aren't given in order of start: sort them.
+fail[3]: No meetings, no rooms: 0.
+fail[4]: Three meetings at the same time need three rooms.
+fail[5]: Each meeting starts as the one before ends, so one room is enough. Reuse a room when `ends[0] <= start`.
+fail[6]: The long meeting keeps one room, and the four short ones take turns in another: 2.
+fail[7]: At hour 3, the first three meetings are all running: 3 rooms. (4, 7) then reuses the room of (1, 4).
+error[IndexError]: `ends[0]` doesn't exist while the heap is empty: check `if ends and ends[0] <= start`.
+speed: setup=meetings = [(i, n + i) for i in range(n)] | call=min_rooms(meetings) | target=O(n log n)
+slow:
+```python
+def min_rooms(meetings):
+    rooms = []
+    for start, end in sorted(meetings):
+        placed = False
+        for r in range(len(rooms)):
+            if rooms[r] <= start:
+                rooms[r] = end
+                placed = True
+                break
+        if not placed:
+            rooms.append(end)
+    return len(rooms)
+```
+hint: `sorted(meetings)` sorts the pairs by start time.
+hint: For each meeting: `if ends and ends[0] <= start: heapq.heappop(ends)`, and then `heapq.heappush(ends, end)`.
+right: The heap finds the room that frees up first in O(log n), so the whole method is O(n log n); searching every room for a free one would be O(n²) when many meetings overlap. Whenever a new room is opened, every room in use is busy at that start time, so that many meetings really do overlap, and no plan can use fewer rooms.
+wrong: Sort by start. For each meeting, pop the earliest end time if it's no later than the start, then push the meeting's end time. Return the heap's size.
+
+=== task: code hard
+title: Joining ropes cheaply
+prompt: Joining two ropes of lengths a and b makes one rope of length a + b and costs a + b. Write `join_cost(lengths)` that returns the smallest total cost of joining all the ropes into one. The greedy rule: always join the two shortest ropes. Put the lengths in a heap with `heapq.heapify`, and while more than one rope is left, pop the two shortest, add their sum to the cost, and push the joined rope back. For `[4, 3, 2, 6]`: join 2 and 3 (cost 5), then 4 and 5 (cost 9), then 6 and 9 (cost 15), a total of 29. The speed check joins thousands of ropes.
+starter:
+```python
+import heapq
+
+def join_cost(lengths):
+    total = 0
+    # your code here
+    return total
+```
+solution:
+```python
+import heapq
+
+def join_cost(lengths):
+    heap = list(lengths)
+    heapq.heapify(heap)
+    total = 0
+    while len(heap) > 1:
+        a = heapq.heappop(heap)
+        b = heapq.heappop(heap)
+        total += a + b
+        heapq.heappush(heap, a + b)
+    return total
+```
+tests:
+- join_cost([4, 3, 2, 6])
+- join_cost([])
+- join_cost([7])
+- join_cost([1, 1, 1, 1])
+- join_cost([5, 5])
+- join_cost([1, 2, 3, 4, 5])
+- join_cost([8, 4, 6, 12])
+fail[1]: 5 + 9 + 15 = 29.
+fail[2]: No ropes, nothing to join: 0.
+fail[3]: One rope is already in one piece: 0.
+fail[4]: 1 + 1 = 2, twice, then 2 + 2 = 4: 8.
+fail[5]: One join: 10.
+fail[6]: Joins costing 3, 6, 9 and 15: 33.
+fail[7]: 4 + 6 = 10, 8 + 10 = 18, 12 + 18 = 30: 58.
+error[IndexError]: Popping from an empty heap: stop when one rope is left, with `while len(heap) > 1`.
+speed: setup=lengths = list(range(1, n + 1)) | call=join_cost(lengths) | target=O(n log n)
+slow:
+```python
+def join_cost(lengths):
+    ropes = list(lengths)
+    total = 0
+    while len(ropes) > 1:
+        ropes.sort()
+        a = ropes.pop(0)
+        b = ropes.pop(0)
+        total += a + b
+        ropes.append(a + b)
+    return total
+```
+hint: Heapify a copy, `heap = list(lengths)`, so that the list passed in isn't changed.
+hint: Each round: `a = heapq.heappop(heap)`, `b = heapq.heappop(heap)`, add a + b to the total, and push a + b.
+right: A rope's length is paid again in every later join it's part of, so the shortest ropes should be joined first. This is the idea behind Huffman coding. With a heap each round is O(log n), so the whole method is O(n log n); sorting the list again every round would be far slower.
+wrong: Heapify a copy of the lengths. While two or more ropes remain, pop two, add their sum to the cost, and push the sum back.
+
+=== task: code hard
+title: Round the circle
+prompt: Petrol stations stand in a circle. At station i a car can take `gas[i]` litres, and driving on to the next station uses `cost[i]` litres; after the last station comes station 0 again. The tank starts empty and has no limit. Write `start_station(gas, cost)` that returns the first station, counting from 0, from which the car can drive all the way round, or -1 if there's none. First, if the total gas is less than the total cost, return -1. Otherwise one greedy pass finds the start: begin at station 0 with an empty tank, and at each station add `gas[i] - cost[i]` to the tank. If the tank drops below 0 at station i, no station from the current start up to i can be the start, so the start becomes i + 1, with an empty tank. The speed check uses thousands of stations.
+starter:
+```python
+def start_station(gas, cost):
+    # your code here
+    return -1
+```
+solution:
+```python
+def start_station(gas, cost):
+    if sum(gas) < sum(cost):
+        return -1
+    start = 0
+    tank = 0
+    for i in range(len(gas)):
+        tank += gas[i] - cost[i]
+        if tank < 0:
+            start = i + 1
+            tank = 0
+    return start
+```
+tests:
+- start_station([1, 2, 3, 4, 5], [3, 4, 5, 1, 2])
+- start_station([2, 3, 4], [3, 4, 3])
+- start_station([5], [4])
+- start_station([1, 1, 3], [2, 2, 1])
+- start_station([3, 1, 1], [1, 2, 2])
+- start_station([4, 0, 0, 4], [1, 2, 2, 3])
+fail[1]: From station 3 the tank holds 3, 6, 4, 2 and 0 litres after each drive: never below 0. Stations 0, 1 and 2 run dry: 3.
+fail[2]: 9 litres of gas against 10 litres of driving: -1.
+fail[3]: One station with 5 litres and a 4-litre drive back to itself: 0.
+fail[4]: Stations 0 and 1 each give 1 litre and need 2, so the start is 2.
+fail[5]: From station 0 the tank goes 2, 1, 0: never below 0, so 0.
+fail[6]: From station 0 the tank goes 3, 1, then −1 at station 2, so the start moves to 3.
+speed: setup=gas = [1] * (n - 2) + [0, 2]; cost = [1] * n | call=start_station(gas, cost) | target=O(n)
+slow:
+```python
+def start_station(gas, cost):
+    n = len(gas)
+    for s in range(n):
+        tank = 0
+        ok = True
+        for k in range(n):
+            i = (s + k) % n
+            tank += gas[i] - cost[i]
+            if tank < 0:
+                ok = False
+                break
+        if ok:
+            return s
+    return -1
+```
+hint: `sum(gas) < sum(cost)` is the first check.
+hint: Keep `start` and `tank`. After adding `gas[i] - cost[i]`, if `tank < 0`, set `start = i + 1` and `tank = 0`.
+right: If the car runs dry at station i after starting at s, starting at any station between s and i is no better: starting at s, the car reached each of them with at least 0 litres. So one pass, O(n), is enough, where trying every start would be O(n²).
+wrong: Return -1 if there's too little gas overall. Otherwise make one pass, adding gas minus cost; whenever the tank goes below 0, restart at the next station with an empty tank.
+
+=== task: code hard
+title: Cutting a string into parts
+prompt: Write `partition_labels(s)` that cuts the string into as many parts as possible, so that each letter appears in only one part, and returns the parts' lengths in order. For "ababcbacadefegdehijhklij" the parts are "ababcbaca", "defegde" and "hijhklij": [9, 7, 8]. The greedy rule: first record the last index of every letter. Then walk through the string. The current part must reach at least as far as the last index of every letter in it, so keep `end`, the largest such index so far. When i reaches `end`, nothing in the part appears later: cut there, record the part's length, and start the next part at i + 1. The speed check uses long strings.
+starter:
+```python
+def partition_labels(s):
+    sizes = []
+    # your code here
+    return sizes
+```
+solution:
+```python
+def partition_labels(s):
+    last = {}
+    for i in range(len(s)):
+        last[s[i]] = i
+    sizes = []
+    start = 0
+    end = 0
+    for i in range(len(s)):
+        end = max(end, last[s[i]])
+        if i == end:
+            sizes.append(end - start + 1)
+            start = i + 1
+    return sizes
+```
+tests:
+- partition_labels("ababcbacadefegdehijhklij")
+- partition_labels("")
+- partition_labels("a")
+- partition_labels("abc")
+- partition_labels("abca")
+- partition_labels("eccbbbbdec")
+- partition_labels("caedbdedda")
+fail[1]: "ababcbaca", "defegde" and "hijhklij": [9, 7, 8].
+fail[2]: An empty string has no parts: [].
+fail[3]: One letter, one part: [1].
+fail[4]: No letter repeats, so every letter is a part of its own: [1, 1, 1].
+fail[5]: The last a is at the end, so the whole string is one part: [4].
+fail[6]: e is at index 0 and index 8, and c at index 9, so it's all one part: [10].
+fail[7]: c appears only at the start, so it's a part of its own; the rest stretches to the last a: [1, 9].
+speed: setup=s = "a" * n + "b" * n | call=partition_labels(s) | target=O(n)
+slow:
+```python
+def partition_labels(s):
+    sizes = []
+    start = 0
+    end = 0
+    for i in range(len(s)):
+        j = len(s) - 1
+        while s[j] != s[i]:
+            j -= 1
+        end = max(end, j)
+        if i == end:
+            sizes.append(end - start + 1)
+            start = i + 1
+    return sizes
+```
+hint: `last = {}` and, for each i, `last[s[i]] = i` leaves each letter's last index.
+hint: `end = max(end, last[s[i]])`; when `i == end`, append `end - start + 1` and set `start = i + 1`.
+right: Each cut is made as early as possible, since a part can't end before the last copy of any letter in it, so the parts are as many as possible. Two passes over the string: O(n). Searching for each letter's last copy again at every position would be O(n²).
+wrong: Record each letter's last index. Walk through the string, stretching `end` to the last index of each letter you meet, and cut when i reaches `end`.
+
+=== task: predict hard
+title: The first counterexample
+prompt: This program looks for the smallest amount where biggest coin first, with coins of 1, 5 and 12, uses more coins than the fewest the table finds. What does it print?
+code:
+```python
+coins = [1, 5, 12]
+fewest = [0] + [float("inf")] * 30
+for a in range(1, 31):
+    for c in coins:
+        if c <= a and fewest[a - c] + 1 < fewest[a]:
+            fewest[a] = fewest[a - c] + 1
+
+for a in range(1, 31):
+    left = a
+    count = 0
+    for c in sorted(coins, reverse=True):
+        count += left // c
+        left %= c
+    if count > fewest[a]:
+        print(a, count, fewest[a])
+        break
+```
+wrong[16 5 4]: 16 does fail (12 and four 1s, against 5 + 5 + 5 + 1), but the loop stops at the first amount that fails, and 15 comes first.
+wrong[20 5 4]: 20 fails too, but 15 is smaller: 12 + 1 + 1 + 1 against 5 + 5 + 5.
+wrong[15 4 2]: No two of the coins add up to 15 (12 + 5 is 17, and 5 + 5 is 10), so the fewest is 5 + 5 + 5: three coins.
+hint: Below 12, greedy uses only 5s and 1s, which is the best possible. Check 12, 13, 14 and 15.
+hint: For 15, greedy takes 12 and three 1s. What does the table find?
+right: `15 4 3`. Up to 14, greedy matches the table: 14 is 12 + 1 + 1, three coins, as few as possible. At 15 it uses 12 + 1 + 1 + 1, four coins, against 5 + 5 + 5.
+wrong: Greedy and the table agree up to 14. For 15, greedy uses 12, 1, 1 and 1 (4 coins), and the table finds 5, 5 and 5 (3 coins). The program prints the first such amount and stops.
+
+=== task: predict hard
+title: Two cities
+prompt: Six people must fly to two cities, three to each. Flying a person to city A costs the first number of their pair, and to city B the second. The greedy sorts the people by how much cheaper A is than B for them, then sends the first half to A and the rest to B. What does it print?
+code:
+```python
+costs = [(10, 20), (30, 200), (400, 50), (30, 20), (50, 40), (60, 90)]
+order = sorted(costs, key=lambda c: c[0] - c[1])
+half = len(costs) // 2
+to_a = sum(c[0] for c in order[:half])
+to_b = sum(c[1] for c in order[half:])
+print(to_a, to_b, to_a + to_b)
+```
+wrong[70 180 250]: That sends the three cheapest A fares to A. The sort key is the difference `c[0] - c[1]`: (30, 200) saves 170 by going to A, (60, 90) saves 30 and (10, 20) saves 10.
+wrong[480 310 790]: The sort goes from the smallest difference up, so the people for whom A is cheapest compared with B come first, and they go to A.
+wrong[100 480 580]: `to_b` adds `c[1]`, the fare to city B, for the second half: 20 + 40 + 50 = 110.
+hint: The differences a − b are −10, −170, 350, 10, 10 and −30.
+hint: The three smallest differences go to A.
+right: `100 110 210`. The people who save the most by going to A go there: (30, 200), (60, 90) and (10, 20). The other three go to B for 20 + 40 + 50. Swapping any A person with any B person can only cost more, since the A person's difference is the smaller one.
+wrong: Sorted by a − b: (30, 200), (60, 90), (10, 20), (30, 20), (50, 40), (400, 50). A: 30 + 60 + 10 = 100. B: 20 + 40 + 50 = 110. Total 210.
+
+=== task: cells hard
+title: Why 1, 2, 5, 10 is safe
+prompt: Apply the lesson's exchange argument to coins of 1, 2, 5 and 10. In an answer that uses the fewest coins, what's the most 1s, 2s and 5s it can contain? And what's the most that all its coins below 10 can add up to?
+code:
+```python
+coins = [1, 2, 5, 10]
+# In a fewest-coins answer, no group of its coins can be
+# exchanged for fewer coins with the same total.
+```
+labels: most 1s | most 2s | most 5s | most below 10
+answer: 1 | 2 | 1 | 9
+wrong[1 | 2 | 1 | 10]: A 1 and two 2s make 5, so they could be exchanged for one 5: they never appear together. The most is 5 + 2 + 2 = 9.
+wrong[1 | 4 | 1 | 14]: Three 2s make 6, which is 5 + 1: two coins instead of three. So there are at most two 2s.
+wrong[4 | 2 | 1 | 13]: Two 1s can be exchanged for one 2, so there's at most one 1.
+hint: Two 1s make a 2; three 2s make 5 + 1; two 5s make a 10.
+hint: Can a 1 and two 2s appear together?
+right: 1, 2, 1 and 9. The coins below 10 add up to at most 9 (5 + 2 + 2), so a fewest-coins answer uses as many 10s as fit, as greedy does. The same reasoning works for the 5s, since the coins below 5 add up to at most 2 + 2 = 4, and for the 2s.
+wrong: At most one 1 (1 + 1 = 2), two 2s (2 + 2 + 2 = 5 + 1), one 5 (5 + 5 = 10), and never a 1 with two 2s (1 + 2 + 2 = 5). The largest total below 10 is 5 + 2 + 2 = 9.
+
+=== task: multi hard
+title: Spot the counterexamples
+prompt: Choose **every** input where the greedy rule gives a worse answer than the best possible.
+* Biggest coin first; coins 1, 6 and 10; amount 12 :: Right. 10 + 1 + 1 is three coins, but 6 + 6 is two.
+* Earliest start first; bookings (1, 9), (2, 4), (5, 7), (8, 10) :: Right. (1, 9) starts first and clashes with all three others, which fit together.
+* Best value per kilogram first; whole items (2 kg, 6), (3 kg, 8), (4 kg, 10); bag 7 kg :: Right. Greedy takes 2 kg and 3 kg for 14, and then the 4 kg item doesn't fit; 3 kg and 4 kg make 18.
+- Biggest coin first; coins 1, 5, 10 and 25; amount 40 :: 25 + 10 + 5 is three coins, the fewest possible.
+- Earliest start first; bookings (1, 3), (2, 5), (4, 6) :: It accepts (1, 3) and (4, 6), and no three of these fit together, so 2 is the best.
+- Shortest first; bookings (0, 3), (3, 5), (5, 9) :: None of them clash, so every rule accepts all three.
+hint: Work out the greedy answer and the best answer for each one.
+hint: A rule that fails on some inputs can still be right on others.
+right: A rule that's wrong in general still gets many inputs right, so a counterexample has to be a specific input where it loses. Three of these are counterexamples; on the other three, the rules happen to find the best.
+wrong: 12 with coins 1, 6 and 10, (1, 9) starting first, and 14 against 18 in the bag are counterexamples. 40 with the usual coins, (1, 3) then (4, 6), and three bookings that don't clash are not.
+
+=== task: fill hard
+title: Fewest jumps
+prompt: Each number in `jumps` is the longest jump forward from that position; any shorter jump is allowed too. `fewest_jumps` returns the fewest jumps from position 0 to the last position, which every test can reach. It works in rounds: `count` jumps can reach any position up to `reach`. While walking through those positions, it keeps `farthest`, the farthest that one more jump could get. When the walk arrives at `reach`, one more jump is needed, and the positions it can reach go up to `farthest`. Fill in the blanks so that the program prints:
+
+```output
+2
+2
+3
+0
+```
+code:
+```python
+def fewest_jumps(jumps):
+    count = 0
+    reach = 0
+    farthest = 0
+    for i in range(len(jumps) - 1):
+        farthest = max(farthest, i + jumps[i])
+        if i == ??:
+            count += 1
+            reach = ??
+    return count
+
+for jumps in [[2, 3, 1, 1, 4], [2, 3, 0, 1, 4], [1, 1, 1, 1], [5]]:
+    print(fewest_jumps(jumps))
+```
+answer: reach | farthest
+wrong[reach | i + jumps[i]]: The next jump doesn't have to start at position `reach`: it can start at any position reached so far. Using only the jump from `reach` misses longer ones, so [2, 3, 1, 1, 4] would take 3 jumps instead of 2.
+wrong[farthest | farthest]: `farthest` is always ahead of i here, so `i == farthest` is never True and the count stays 0.
+hint: A new jump is needed when the walk reaches the end of what the jumps so far can reach.
+hint: The new reach is the farthest position seen while walking.
+right: Each round is like a layer of BFS: all the positions reachable with `count` jumps, then the farthest that one more jump gets. For [2, 3, 1, 1, 4], one jump reaches up to 2; from positions 1 and 2, the farthest is 1 + 3 = 4, the end: 2 jumps. The loop stops before the last position, since no jump from there is needed.
+wrong: `if i == reach:` and `reach = farthest`. Position 0 starts the first jump, and whenever i reaches `reach`, another jump extends the reach to `farthest`.
+
+=== task: parsons hard
+title: Sweets in a row
+prompt: Children stand in a row, each with a rating. Every child gets at least one sweet, and a child with a higher rating than a neighbour must get more sweets than that neighbour. Arrange the lines so that `fewest_sweets` gives out the fewest sweets with two greedy passes. Left to right: a child rated higher than the child on their left gets one more sweet than them. Then right to left: a child rated higher than the child on their right needs at least one more than them, so they keep the larger of the two counts. The program prints:
+
+```output
+5 4
+7 11
+```
+
+Not every line is needed.
+lines:
+```python
+def fewest_sweets(ratings):
+    n = len(ratings)
+    sweets = [1] * n
+    for i in range(1, n):
+        if ratings[i] > ratings[i - 1]:
+            sweets[i] = sweets[i - 1] + 1
+    for i in range(n - 2, -1, -1):
+        if ratings[i] > ratings[i + 1]:
+            sweets[i] = max(sweets[i], sweets[i + 1] + 1)
+    return sum(sweets)
+```
+distractors:
+```python
+            sweets[i] = sweets[i + 1] + 1
+    for i in range(n - 1, -1, -1):
+```
+after:
+```python
+print(fewest_sweets([1, 0, 2]), fewest_sweets([1, 2, 2]))
+print(fewest_sweets([1, 2, 3, 1]), fewest_sweets([1, 5, 4, 3, 2]))
+```
+hint: Every child starts with one sweet.
+hint: The second pass starts at the second-to-last child, since the last child has nobody on their right.
+right: The first pass satisfies every left neighbour, the second every right neighbour, and `max` keeps the first pass's work. For [1, 2, 3, 1], the first pass gives [1, 2, 3, 1]; the child rated 3 already has more than the child on their right, so `max` keeps 3: 7 sweets. For [1, 2, 2], equal ratings need nothing, so [1, 2, 1].
+wrong: Start everyone at 1. Left to right from i = 1: one more than the left neighbour when rated higher. Right to left from n − 2: at least one more than the right neighbour when rated higher, keeping the larger count.
