@@ -248,6 +248,11 @@
       if (T.type === 'cells') st.cells = T.answer ? T.answer.map(() => '') : [];
       if (T.type === 'order') st.order = T.shuffled.slice();
       if (T.type === 'code') st.code = drafts[k] !== undefined ? drafts[k] : T.starter;
+      if (T.type === 'code' && T.followup) {
+        const fu = T.followup;
+        st.fu = { rows: Array.from({ length: fu.edges ? fu.count : 0 }, () => ({ call: fu.fn + '(', exp: '' })), time: '', space: '', wrongT: 0, wrongS: 0 };
+        st.fuResult = null;
+      }
       const tp = taskProg(lid, step - 1);
       if (tp) { st.tries = tp.tries || 0; st.hints = tp.hints || 0; }
       S.ts[k] = st;
@@ -534,6 +539,12 @@
       else if (T.cases) items.push(`${icon('box')}Checked in ${plural(T.cases.length, 'case')}, each starting from different values`);
       else items.push(`${icon('box')}${plural(T.tests.length, 'test')}`);
       if (T.speed) items.push(`${icon('clock')}Speed check: should grow like ${esc(T.speed.target)} or better`);
+      if (T.followup) {
+        const parts = [];
+        if (T.followup.edges) parts.push(`write ${plural(T.followup.count, 'edge-case test')} of your own`);
+        if (T.followup.time) parts.push('give the time and space complexity');
+        items.push(`${icon('check')}<span>After the tests pass: ${parts.join(', then ')}</span>`);
+      }
       [...new Set((T.require || []).concat(T.forbid || []).map((r) => htmlToText(r.html)))].forEach((txt) => items.push(`${icon('check')}<span>${esc(txt)}</span>`));
       checks = `<ul class="checks">${items.map((x) => `<li>${x}</li>`).join('')}</ul>`;
     }
@@ -547,6 +558,7 @@
       <div class="block">
         <div class="label-row"><span class="label task">Your task</span><span class="diff ${T.diff}">${T.diff}</span><span class="count">${S.step} of ${L.tasks.length} · ${TYPE_NAME[T.type]}</span></div>
         <h2 class="title">${T.title}</h2>
+        ${T.leetcode ? `<a class="lc" href="${esc(T.leetcode.url)}" target="_blank" rel="noopener">LeetCode ${T.leetcode.num} · ${esc(T.leetcode.title)} ${icon('arrow')}</a>` : ''}
         <div class="prose">${T.prompt}</div>
         ${checks}
       </div>
@@ -558,7 +570,7 @@
 
   // ---------------------------------------------------------------- render: task (right)
   function submitButtons(T, ts) {
-    const solved = ts.result && ts.result.ok;
+    const solved = ts.result && ts.result.ok && !ts.result.followup;
     let b = '';
     if (T.type === 'code') b += `<button class="btn" data-act="runtests">${icon('play')}Run tests</button>`;
     if (T.type === 'fill' || T.type === 'parsons') b += `<button class="btn" data-act="tryrun">${icon('play')}Run</button>`;
@@ -721,7 +733,102 @@
     return h;
   }
 
+  function followupHTML(L, T, ts) {
+    const fu = T.followup;
+    const st = ts.fu;
+    const fr = ts.fuResult;
+    let body = '<div class="prose"><p>Every test passes. Now do what an interviewer would ask next.</p></div>';
+    if (fu.edges) {
+      const rows = st.rows.map((row, i) => {
+        const m = fr && fr.rows[i];
+        return `<div class="fu-row"><input class="fu-in fu-call${m ? (m.ok ? ' ok' : ' bad') : ''}" data-fu-row="${i}" data-fu-key="call" value="${esc(row.call)}" spellcheck="false" autocomplete="off" aria-label="Edge case ${i + 1}: the call"><span class="fu-arrow" aria-hidden="true">→</span><input class="fu-in fu-exp${m ? (m.ok ? ' ok' : ' bad') : ''}" data-fu-row="${i}" data-fu-key="exp" value="${esc(row.exp)}" placeholder="expected" spellcheck="false" autocomplete="off" aria-label="Edge case ${i + 1}: what it should return">${m ? `<div class="fu-msg ${m.ok ? 'okt' : 'badt'}">${m.msg}</div>` : ''}</div>`;
+      }).join('');
+      body += `<div class="fu-sec"><div class="answer-h">Your edge-case tests</div><p class="note-sm">Write ${plural(fu.count, 'test')}, each a different edge case: a call to <code class="ic">${esc(fu.fn)}(...)</code> and what it should return.</p>${rows}</div>`;
+    }
+    if (fu.time) {
+      const sel = (key, label, cur) => `<label class="fu-pick"><span>${label}</span><select data-fu-key="${key}"><option value="">choose…</option>${fu.options.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+      let msgs = '';
+      if (fr && fr.time !== null) {
+        const line = (ok, label, ans, wrongs, why, nudge) => ok
+          ? `<div class="fu-msg okt">${label}: ${esc(ans)}, right.</div>`
+          : `<div class="fu-msg badt">${label}: not ${esc(st[label === 'Time' ? 'time' : 'space'] || 'chosen yet')}. ${wrongs >= 2 ? why : nudge}</div>`;
+        msgs = line(fr.time, 'Time', fu.time, st.wrongT, fu.whyTime, 'Count how many times each loop runs as the input grows, and what each step costs.')
+          + line(fr.space, 'Space', fu.space, st.wrongS, fu.whySpace, 'Count the extra memory your solution keeps besides the input: new lists, sets, dictionaries and the call stack.');
+      }
+      body += `<div class="fu-sec"><div class="answer-h">Complexity of your solution</div>${fu.note ? `<p class="note-sm">${fu.note}</p>` : ''}<div class="fu-picks">${sel('time', 'Time', st.time)}${sel('space', 'Space', st.space)}</div>${msgs}</div>`;
+    }
+    const actions = `<button class="btn primary" data-act="fu-check">Check</button><button class="btn" data-act="retry">Back to my code</button>`;
+    return `<div class="why fu"><div class="why-h"><b>Part 2 · Test it and analyse it</b></div>${body}<div class="actions">${actions}</div></div>`;
+  }
+
+  function followupSummary(T) {
+    const fu = T.followup;
+    let h = '';
+    if (fu.time) h += `<p><strong>Time: ${esc(fu.time)}.</strong></p>${fu.whyTime}<p><strong>Space: ${esc(fu.space)}.</strong></p>${fu.whySpace}`;
+    if (fu.edges) h += `<p><strong>Edge cases worth testing</strong></p><ul>${fu.edges.map((e) => `<li>${e.name}: <code class="ic">${esc(e.example)}</code> → <code class="ic">${esc(e.expect)}</code></li>`).join('')}</ul>`;
+    return h;
+  }
+
+  function checkFollowup(L, T, ts) {
+    const fu = T.followup;
+    const st = ts.fu;
+    const res = { rows: [], time: null, space: null, ok: true };
+    const lim = { loadLimit: 2000000, testLimit: 2000000 };
+    if (fu.edges) {
+      const used = new Set();
+      st.rows.forEach((row) => {
+        const call = (row.call || '').trim();
+        const exp = (row.exp || '').trim();
+        const out = { ok: false, msg: '' };
+        if (!exp || call === fu.fn + '(' || !call) out.msg = `Fill in a call to ${esc(fu.fn)}(...) and the value it should return.`;
+        else if (!call.startsWith(fu.fn + '(') || !call.endsWith(')')) out.msg = `Each test is a call to the function, <code class="ic">${esc(fu.fn)}(...)</code>, with your input inside the brackets.`;
+        else {
+          const ref = PR.runTests(T.solution, [{ code: call, expect: exp }], lim);
+          const rr = ref.load.ok ? ref.results[0] : null;
+          if (!rr) out.msg = 'Something went wrong while checking this test.';
+          else if (rr.error && rr.error.type === 'InternalError') out.msg = `Python can't read the expected value <code class="ic">${esc(exp)}</code>. Write it as a Python value, such as 0, [] or "abc".`;
+          else if (rr.error) out.msg = `This call stops with ${esc(rr.error.type)} even in a correct solution, so it isn't an input the problem allows. Check the constraints.`;
+          else if (!rr.ok) out.msg = `The right answer for this call is <code class="ic">${esc(rr.gotRepr)}</code>, not <code class="ic">${esc(exp)}</code>.`;
+          else {
+            const er = PR.runTests(fu.edgeSrc, [{ code: '__edges(' + call.slice(fu.fn.length + 1), expect: '[]' }], lim);
+            let hits = [];
+            try { hits = er.load.ok && !er.results[0].error ? JSON.parse(er.results[0].gotRepr) : []; } catch (e) { hits = []; }
+            const mine = PR.runTests(ts.code, [{ code: call, expect: exp }], lim);
+            const mr = mine.load.ok ? mine.results[0] : null;
+            const free = hits.find((h) => !used.has(h));
+            if (!hits.length) out.msg = 'The expected value is right, but this is an ordinary input, not an edge case. Think about the smallest, emptiest or most unusual inputs the problem allows.';
+            else if (free === undefined) out.msg = `This is the same kind of edge case as another of your tests (${fu.edges[hits[0]].name}). Pick a different one.`;
+            else if (!mr || !mr.ok) out.msg = `A good edge case (${fu.edges[free].name}) with the right expected value, but your code ${mr && mr.error ? 'raises ' + esc(mr.error.type) : 'returns <code class="ic">' + esc(mr ? mr.gotRepr : '?') + '</code>'} here. Go back to your code and fix it.`;
+            else { used.add(free); out.ok = true; out.msg = `Edge case: ${fu.edges[free].name}. The expected value is right, and your code passes it.`; }
+          }
+        }
+        if (!out.ok) res.ok = false;
+        res.rows.push(out);
+      });
+    }
+    if (fu.time) {
+      if (!st.time || !st.space) { toast('Choose the time and the space complexity.'); return; }
+      res.time = st.time === fu.time;
+      res.space = st.space === fu.space;
+      if (!res.time) st.wrongT += 1;
+      if (!res.space) st.wrongS += 1;
+      if (!res.time || !res.space) res.ok = false;
+    }
+    ts.fuResult = res;
+    if (res.ok) {
+      const r = Object.assign({}, ts.result, { ok: true, followup: false, kind: 'right', pill: 'ok', specific: followupSummary(T) });
+      r.xp = recordResult(L, S.step - 1, r, ts);
+      ts.result = r;
+      if (r.xp) toast(`+${r.xp} XP`);
+    } else {
+      recordResult(L, S.step - 1, { ok: false }, ts);
+    }
+    render({ keepScroll: true });
+    scrollToResults();
+  }
+
   function whyHTML(L, T, ts, r) {
+    if (r.followup) return followupHTML(L, T, ts);
     const good = r.ok;
     let title = good ? 'Why it\'s right' : (r.kind === 'slow' ? 'Why it\'s slow' : r.kind === 'error' ? 'What went wrong' : r.kind === 'rule' ? 'Why it isn\'t accepted yet' : 'Why it\'s not right yet');
     let chips = '';
@@ -1100,6 +1207,16 @@
     collectInputs(T, ts);
     const r = check(L, T, ts);
     if (r.needInput) { toast(r.needInput); return; }
+    if (T.type === 'code' && r.ok && T.followup && !(ts.fuResult && ts.fuResult.ok)) {
+      // the tests pass: now the edge cases and the complexity decide
+      r.followup = true;
+      ts.result = r;
+      ts.run = null;
+      ts.fuResult = null;
+      render({ keepScroll: true });
+      scrollToResults();
+      return;
+    }
     r.xp = recordResult(L, S.step - 1, r, ts);
     ts.result = r;
     if (T.type === 'code') ts.run = null;
@@ -1139,6 +1256,10 @@
     if (T.type === 'fill') document.querySelectorAll('input.blank').forEach((el) => { ts.fills[+el.dataset.blank] = el.value; });
     if (T.type === 'cells') document.querySelectorAll('input.cellin').forEach((el) => { ts.cells[+el.dataset.cell] = el.value; });
     if (T.type === 'code') { const el = document.getElementById('task-editor'); if (el) ts.code = el.value; }
+    if (T.type === 'code' && ts.fu) {
+      document.querySelectorAll('input[data-fu-row]').forEach((el) => { ts.fu.rows[+el.dataset.fuRow][el.dataset.fuKey] = el.value; });
+      document.querySelectorAll('select[data-fu-key]').forEach((el) => { ts.fu[el.dataset.fuKey] = el.value; });
+    }
   }
 
   function scrollToResults() {
@@ -1391,6 +1512,7 @@
       case 'anim-restart': stopAnim(); S.anim.i = 0; renderAnim(); break;
       case 'hint': ts.hints = Math.min(T.hints.length, ts.hints + 1); { const lp2 = lessonProg(L.id); if (lp2.t[S.step - 1]) lp2.t[S.step - 1].hints = ts.hints; saveProgress(); } render({ keepScroll: true }); break;
       case 'submit': submit(); break;
+      case 'fu-check': collectInputs(T, ts); checkFollowup(L, T, ts); break;
       case 'runtests': runTests(); break;
       case 'tryrun': tryRun(); break;
       case 'predict-run': { collectInputs(T, ts); const r = PR.run(T.code, { stepLimit: 500000 }); ts.liveRun = r.stdout + (r.error ? (r.error.traceback || r.error.message) : ''); render({ keepScroll: true }); break; }
@@ -1445,6 +1567,7 @@
       if (t.classList.contains('blank')) { ts.fills[+t.dataset.blank] = t.value; t.style.width = Math.max(6, t.value.length + 4) + 'ch'; }
       if (t.classList.contains('cellin')) { ts.cells[+t.dataset.cell] = t.value; t.style.width = cellWidth(+t.dataset.minlen || 4, t.value); }
       if (t.id === 'predict-in') ts.text = t.value;
+      if (t.dataset && t.dataset.fuRow !== undefined && ts.fu) ts.fu.rows[+t.dataset.fuRow][t.dataset.fuKey] = t.value;
       if (t.id === 'ask-in' && ts.ask) ts.ask.draft = t.value;
     }
   });
@@ -1454,6 +1577,7 @@
   });
   root.addEventListener('change', (e) => {
     if (e.target.id === 'anim-speed') { S.anim.speed = parseFloat(e.target.value) || 1; }
+    if (e.target.dataset && e.target.dataset.fuKey && e.target.tagName === 'SELECT' && S.step > 0) { const ts = TS(S.lesson, S.step); if (ts.fu) ts.fu[e.target.dataset.fuKey] = e.target.value; }
   });
   root.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && S.drawer) { S.drawer = false; render({ keepScroll: true }); }

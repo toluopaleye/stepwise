@@ -7,6 +7,7 @@
 
 Usage: python3 tools/build.py [--only u1|lesson-id|file-stem,...] [--check] [--skip-diff] [--out DIR] [--allow-short] [--content DIR]
 """
+import ast
 import html
 import json
 import pathlib
@@ -22,9 +23,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import bundle_py  # noqa: E402
 
 TEXT_FIELDS = {"title", "prompt", "right", "wrong", "hint", "intro", "explain", "summary", "check", "answer", "expect",
-               "labels", "start", "speed", "view", "show", "id", "indent", "name"}
+               "labels", "start", "speed", "view", "show", "id", "indent", "name",
+               "complexity", "why_time", "why_space", "edge_count", "complexity_options", "complexity_note", "leetcode"}
 CODE_FIELDS = {"code", "starter", "solution", "lines", "distractors", "compute", "after", "setup", "slow"}
-LIST_FIELDS = {"tests", "items", "options", "cases"}
+LIST_FIELDS = {"tests", "items", "options", "cases", "edges"}
 KEYED = {"wrong", "fail", "error", "require", "forbid"}
 DIFFS = {"easy", "medium", "hard"}
 TASK_TYPES = {"mcq", "multi", "predict", "fill", "parsons", "code", "cells", "order"}
@@ -155,7 +157,7 @@ def parse_fields(lines, ctx, allow_notes=False, bare_fence_code=False):
     keyed = {k: {} for k in KEYED}
     options = []
     notes = []
-    lists = {"tests": [], "items": [], "cases": []}
+    lists = {"tests": [], "items": [], "cases": [], "edges": []}
     cur = None  # (kind, key, arg)
     i = 0
     n = len(lines)
@@ -224,7 +226,7 @@ def parse_fields(lines, ctx, allow_notes=False, bare_fence_code=False):
             options[-1]["fb"] += " " + s
             i += 1
             continue
-        if cur and cur[0] == "field" and cur[1] in ("tests", "items", "cases") and line.startswith("- "):
+        if cur and cur[0] == "field" and cur[1] in ("tests", "items", "cases", "edges") and line.startswith("- "):
             lists[cur[1]].append(line[2:].rstrip())
             i += 1
             continue
@@ -367,6 +369,79 @@ def sub_blanks(code, answers, ctx):
 def split_pipe(v):
     # items are separated by |; write \| for a | inside one item, e.g. a label like len(a \| b)
     return [x.strip().replace("\\|", "|") for x in re.split(r"(?<!\\)\|", v)]
+
+
+BIGO_CHOICES = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n²)", "O(n³)", "O(2ⁿ)", "O(n!)"]
+
+
+def target_function(t, solution):
+    """The function the tests call, and its parameter names (for edge-case predicates)."""
+    import ast as _ast
+    tests = t["lists"]["tests"]
+    m = re.match(r"\s*([A-Za-z_]\w*)\(", tests[0]) if tests else None
+    if not m:
+        raise BuildError(f"{t['ctx']}: edges: need tests that call a function, like f(...)")
+    fn = m.group(1)
+    for node in _ast.walk(_ast.parse(solution)):
+        if isinstance(node, _ast.FunctionDef) and node.name == fn:
+            a = node.args
+            if a.vararg or a.kwarg or a.kwonlyargs:
+                raise BuildError(f"{t['ctx']}: edges: {fn}() can't take *args, **kwargs or keyword-only arguments")
+            return fn, [x.arg for x in a.posonlyargs + a.args]
+    raise BuildError(f"{t['ctx']}: edges: the solution doesn't define {fn}()")
+
+
+def compile_followup(t, f, T, cjobs, checks):
+    """After the tests pass, a code task can ask for edge-case tests and the time and space complexity."""
+    fu = {}
+    if f.get("complexity"):
+        try:
+            parts = {k.strip(): v.strip() for k, v in (x.split("=", 1) for x in f["complexity"].split("|"))}
+            fu["time"], fu["space"] = parts["time"], parts["space"]
+        except (ValueError, KeyError):
+            raise BuildError(f"{t['ctx']}: complexity: needs 'time=O(...) | space=O(...)'")
+        extra = [x.strip() for x in (f.get("complexity_options") or "").split(";") if x.strip()]
+        fu["options"] = BIGO_CHOICES + [x for x in extra if x not in BIGO_CHOICES]
+        for which in ("time", "space"):
+            if fu[which] not in fu["options"]:
+                raise BuildError(f"{t['ctx']}: complexity {which}={fu[which]} isn't a choice; add it with complexity_options: (separate with ;)")
+            if not f.get(f"why_{which}"):
+                raise BuildError(f"{t['ctx']}: complexity needs why_{which}:")
+        fu["whyTime"], fu["whySpace"] = md(f["why_time"]), md(f["why_space"])
+        if f.get("complexity_note"):
+            fu["note"] = inline_md(f["complexity_note"])
+    elif f.get("why_time") or f.get("why_space") or f.get("complexity_options"):
+        raise BuildError(f"{t['ctx']}: why_time/why_space/complexity_options need complexity:")
+    edges = t["lists"]["edges"]
+    if edges:
+        fn, params = target_function(t, f["solution"])
+        items = []
+        for e in edges:
+            parts = [x.strip() for x in e.split(" :: ")]
+            if len(parts) != 3:
+                raise BuildError(f"{t['ctx']}: an edge is 'name :: predicate on the arguments :: example call': {e!r}")
+            name, pred, example = parts
+            if not example.startswith(fn + "("):
+                raise BuildError(f"{t['ctx']}: edge example must call {fn}(...): {example!r}")
+            items.append({"name": inline_md(name), "pred": pred, "example": example})
+        count = int(f.get("edge_count") or min(2, len(items)))
+        if not 1 <= count <= min(3, len(items)):
+            raise BuildError(f"{t['ctx']}: edge_count must be 1 to 3, and at most the number of edges")
+        src = [f"def __edges({', '.join(params)}):", "    __hits = []"]
+        for i, it in enumerate(items):
+            src += ["    try:", f"        if {it['pred']}:", f"            __hits.append({i})", "    except Exception:", "        pass"]
+        src.append("    return __hits")
+        fu.update({"fn": fn, "params": params, "count": count, "edgeSrc": "\n".join(src),
+                   "edges": [{"name": it["name"], "example": it["example"], "expect": None} for it in items]})
+        k = len(cjobs)
+        calls = [it["example"] for it in items]
+        cjobs.append({"kind": "tests", "src": f["solution"] + "\n\n" + fu["edgeSrc"],
+                      "tests": calls + ["__edges(" + c[len(fn) + 1:] for c in calls]})
+        checks.append(("code-edges", t["ctx"], k, None, T))
+    elif f.get("edge_count"):
+        raise BuildError(f"{t['ctx']}: edge_count needs edges:")
+    if fu:
+        T["followup"] = fu
 
 
 def deterministic_shuffle(items, seed):
@@ -629,6 +704,12 @@ def compile_task(lid, idx, t, cjobs, pjobs, checks):
                 k2 = len(cjobs)
                 cjobs.append({"kind": "tests", "src": T["starter"] or "pass", "tests": tests})
                 checks.append(("code-starter", t["ctx"], k2, None, T))
+        if f.get("leetcode"):
+            parts = [x.strip() for x in f["leetcode"].split("|")]
+            if len(parts) != 3 or not parts[0].isdigit():
+                raise BuildError(f"{t['ctx']}: leetcode: needs 'number | title | slug'")
+            T["leetcode"] = {"num": int(parts[0]), "title": parts[1], "url": f"https://leetcode.com/problems/{parts[2]}/"}
+        compile_followup(t, f, T, cjobs, checks)
         if f.get("slow") and not f.get("speed"):
             raise BuildError(f"{t['ctx']}: 'slow:' only makes sense with 'speed:'")
         if f.get("slow"):
@@ -739,6 +820,23 @@ def apply_checks(checks, cres, pres, skip_diff):
                 payload["tests"][i]["expect"] = r["repr"]
                 if r["repr"] and r["repr"].startswith("<"):
                     errors.append(f"{ctx}: test {i + 1} returns an object ({r['repr']}); return plain data instead")
+        elif kind == "code-edges":
+            fu = payload["followup"]
+            n = len(fu["edges"])
+            if c.get("error"):
+                errors.append(f"{ctx}: edges: solution or predicates raised {c['error']}")
+                continue
+            for i, r in enumerate(c["results"][:n]):
+                if r.get("error"):
+                    errors.append(f"{ctx}: edge {i + 1} example errors with the solution: {r['error']}")
+                fu["edges"][i]["expect"] = r["repr"]
+            for i, r in enumerate(c["results"][n:]):
+                try:
+                    hits = ast.literal_eval(r["repr"]) if not r.get("error") else []
+                except (ValueError, SyntaxError):
+                    hits = []
+                if i not in hits:
+                    errors.append(f"{ctx}: edge {i + 1} ({htmlstrip(fu['edges'][i]['name'])}): its own predicate is False for its example")
         elif kind == "code-case":
             T, ci = payload
             if c.get("error"):
@@ -790,6 +888,14 @@ def verify_code_tasks(course, skip_diff):
             if T["type"] == "code" and T.get("mode") == "tests":
                 jobs.append({"id": len(jobs), "src": T["solution"], "tests": [{"code": t["code"], "expect": t["expect"]} for t in T["tests"]]})
                 refs.append((L["id"], i))
+                fu = T.get("followup") or {}
+                if fu.get("edges"):
+                    # the app checks a learner's edge cases with the reference solution and these predicates
+                    tests = [{"code": e["example"], "expect": e["expect"]} for e in fu["edges"]]
+                    tests += [{"code": f"{k} in __edges(" + e["example"][len(fu["fn"]) + 1:], "expect": "True"}
+                              for k, e in enumerate(fu["edges"])]
+                    jobs.append({"id": len(jobs), "src": T["solution"] + "\n\n" + fu["edgeSrc"], "tests": tests})
+                    refs.append((L["id"], f"{i} (edge examples)"))
                 if T.get("slow"):
                     jobs.append({"id": len(jobs), "src": T["slow"], "tests": [{"code": t["code"], "expect": t["expect"]} for t in T["tests"]]})
                     refs.append((L["id"], f"{i} (slow version)"))

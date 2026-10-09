@@ -252,10 +252,46 @@ def check_task(page, L, i, T, shots, quick):
     if not ok:
         detail = page.locator(".why").first.inner_text()[:600] if page.locator(".why").count() else ""
         raise Fail(f"task {i + 1} ({ty}): the right answer was not accepted: {text}\n{detail}")
+    if ty == "code" and T.get("followup"):
+        check_followup(page, T, i, shots, lid)
     if i in (0, 9) or ty in ("code", "parsons", "cells", "order"):
         shot(page, shots, f"{lid}-t{i + 1}-right")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1"):
         raise Fail(f"task {i + 1}: page scrolls sideways")
+
+
+def check_followup(page, T, i, shots, lid):
+    """Part 2 of a code task: a wrong attempt must be refused, then the right edge cases and complexity accepted."""
+    fu = T["followup"]
+    if not page.locator(".why.fu").count():
+        raise Fail(f"task {i + 1}: the tests pass but the follow-up didn't open")
+    if page.locator('[data-act="next"]').count():
+        raise Fail(f"task {i + 1}: 'Next task' is offered before the follow-up is done")
+    # wrong: a right edge case with a wrong expected value, and a wrong time complexity
+    if fu.get("edges"):
+        for k in range(fu["count"]):
+            page.locator(f'input[data-fu-row="{k}"][data-fu-key="call"]').fill(fu["edges"][k]["example"])
+            page.locator(f'input[data-fu-row="{k}"][data-fu-key="exp"]').fill('"zz_wrong_zz"')
+    if fu.get("time"):
+        wrong = next(o for o in fu["options"] if o != fu["time"])
+        page.select_option('select[data-fu-key="time"]', wrong)
+        page.select_option('select[data-fu-key="space"]', fu["space"])
+    click(page, '[data-act="fu-check"]')
+    if not page.locator(".why.fu").count() or page.locator('[data-act="next"]').count():
+        raise Fail(f"task {i + 1}: a wrong follow-up was accepted")
+    if not page.locator(".fu-msg.badt").count():
+        raise Fail(f"task {i + 1}: a wrong follow-up got no explanation")
+    shot(page, shots, f"{lid}-t{i + 1}-followup-wrong")
+    # right
+    if fu.get("edges"):
+        for k in range(fu["count"]):
+            page.locator(f'input[data-fu-row="{k}"][data-fu-key="exp"]').fill(fu["edges"][k]["expect"])
+    if fu.get("time"):
+        page.select_option('select[data-fu-key="time"]', fu["time"])
+    click(page, '[data-act="fu-check"]')
+    if not page.locator('.why.good [data-act="next"]').count():
+        detail = page.locator(".why").first.inner_text()[:600] if page.locator(".why").count() else ""
+        raise Fail(f"task {i + 1}: the right follow-up was not accepted\n{detail}")
 
 
 if __name__ == "__main__":

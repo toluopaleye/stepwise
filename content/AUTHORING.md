@@ -24,16 +24,14 @@ the format and the quality bar.
 | animations | **1 or 2** traced programs with a caption on the important lines |
 | tasks | **exactly 30: 10 easy, then 10 medium, then 10 hard** (the build enforces the counts and order) |
 
-Task mix per lesson (30 tasks):
-- Easy = one idea, one step of reasoning (recognise, read, predict a 2–4 line program, fill one blank).
-  Medium = two ideas together, a short trace, a small program. Hard = combine ideas, edge cases, write real code,
-  trace something longer, or spot a subtle bug.
-- Use **at least 6 different task types** across the 30. Include **at least 7 `code` tasks** (at least 1 easy,
-  2 medium and 4 hard), **at least 5 `predict`** tasks (or `mcq` with `check: output`) so learners trace code by
-  hand, and at least 2 each of mcq/multi, fill, cells, parsons/order.
-- Cover every key point and every learn step with several tasks. No two tasks may test the exact same thing:
-  vary the values, the situation (shopping, games, grades, maps...), and the angle (read it, predict it, fix it,
-  write it, explain it).
+Task mix per lesson (30 tasks): **every task is a `code` task, asked the way LeetCode asks it** (section 4,
+"LeetCode-style code tasks"). No predict, mcq, multi, fill, parsons, order or cells tasks.
+- Use a LeetCode problem whenever one fits the lesson's topic, and name it with `leetcode:`. Only when nothing on
+  LeetCode fits the lesson (for example the early Python lessons on print or variables) write your own problem.
+- Easy = one idea from the lesson in a short function. Medium = two ideas together, or a classic problem that
+  needs the lesson's main technique. Hard = a harder classic, edge cases that need care, or a design problem.
+  LeetCode's own label is a guide, not a rule: judge difficulty for a learner at this point in the course.
+- Cover every key point and every learn step across the 30 problems, and never repeat a problem in the course.
 - Every task has a `title`, 2–3 `hint:` lines (nudge → specific → almost the answer), `right:` and `wrong:`.
 - Every task's feedback must explain **why** (the mechanism), never just "Correct!" or "Try again".
 - A 30-task lesson file is long (60–100 KB). Write it in stages: learn + keypoints + examples + animations first,
@@ -286,6 +284,49 @@ items:
 - Second step
 - Third step
 ```
+
+### LeetCode-style code tasks (every task in the course)
+Each task is a `code` task whose prompt reads like a LeetCode problem:
+1. The problem in 2–5 sentences, in **your own words** (never copy LeetCode's text or examples: write new
+   examples), including any rule the tests depend on (the order of a returned list, what to return when there's
+   no answer, how ties are broken).
+2. `**Example 1:**` and `**Example 2:**` (sometimes 3): a call and what it returns, with a short reason.
+3. `**Constraints:**` the sizes and values allowed, and the time to aim for when it matters ("Aim for O(n) time.").
+
+Fields on top of the usual code-task fields:
+```
+leetcode: 1 | Two Sum | two-sum          (number | title | URL slug; leave out when there's no LeetCode problem)
+edges:                                   (edge-case categories; the learner must hit edge_count different ones)
+- only two numbers :: len(nums) == 2 :: two_sum([7, 8], 15)
+- negative numbers :: any(x < 0 for x in nums) :: two_sum([-4, 1, 9], -3)
+edge_count: 2                            (1–3, how many edge-case tests the learner writes)
+complexity: time=O(n) | space=O(n)       (the learner picks each from a list after the tests pass)
+complexity_options: O(m + n); O(m × n)   (extra choices, separated by ;, when the answer isn't one of
+                                          O(1), O(log n), O(n), O(n log n), O(n²), O(n³), O(2ⁿ), O(n!))
+complexity_note: Time per call to put or get, on average.   (optional: what "time" means here)
+why_time: One pass, with an O(1) dictionary lookup for each number.
+why_space: The dictionary holds up to n numbers.
+```
+- An edge is `name :: predicate :: example call`. The predicate is a Python expression on the function's
+  parameters (it runs inside a function with the same parameter names). The example must satisfy its own
+  predicate; the build checks this and works out the example's answer with the solution. Name the edges so the
+  list teaches: "an empty list", "one item", "all the same", "negative numbers", "no answer exists".
+- After the tests pass, the app asks for `edge_count` tests: the learner types a call and the value it should
+  return. Each must be a different edge (by the predicates), have the right expected value (checked with the
+  solution) and pass the learner's own code. Then the learner picks the time and the space complexity.
+- Which follow-ups apply: Unit 1 lessons before `py-functions` have none (tasks there set a variable or print,
+  with `cases` or `tests: stdout`). From `py-functions` on, function tasks get `edges`. From Unit 2 (Big O) on,
+  every task gets `complexity` too. Design problems (a class whose methods are called in a sequence) get
+  `complexity` with a `complexity_note` but no `edges`.
+- Class design tasks: test with one expression per scenario, e.g.
+  `(lambda m: [m.put(1, 10), m.get(1), m.get(3)])(MyHashMap())` gives `[None, 10, -1]`, and say in the prompt
+  which methods return nothing.
+- Make results deterministic: if LeetCode allows "any order", either fix the order in the prompt or wrap the
+  test in `sorted(...)`.
+- Function names are the snake_case form of LeetCode's (`twoSum` → `two_sum`).
+- Add `speed:` and `slow:` whenever the lesson's point is a faster algorithm and the checker can tell the two
+  apart (O(n) vs O(n²), O(log n) vs O(n)).
+- Write 5–8 tests, including the edge cases, and `fail[N]` for the ones that catch a specific mistake.
 
 ## 5. Feedback rules
 
