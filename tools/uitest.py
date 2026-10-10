@@ -173,6 +173,13 @@ def check_task(page, L, i, T, shots, quick):
     lid = L["id"]
     go_task(page, i)
     ty = T["type"]
+    if T.get("patterns") and L.get("patterns"):
+        if not page.locator('[data-act="show-pat"]').count():
+            raise Fail(f"task {i + 1}: no 'Show the pattern' button")
+        click(page, '[data-act="show-pat"]')
+        n = page.locator(".hintbox .patrow .pat").count()
+        if n != len(T["patterns"]):
+            raise Fail(f"task {i + 1}: showed {n} patterns, expected {len(T['patterns'])}")
     # ---- wrong answer first (feedback must say not right) ----
     wrong_done = False
     if ty == "mcq":
@@ -254,6 +261,8 @@ def check_task(page, L, i, T, shots, quick):
         raise Fail(f"task {i + 1} ({ty}): the right answer was not accepted: {text}\n{detail}")
     if ty == "code" and T.get("followup"):
         check_followup(page, T, i, shots, lid)
+    if T.get("patterns") and L.get("patterns") and not page.locator(".why.good .patrow.solved .pat").count():
+        raise Fail(f"task {i + 1}: the solved panel doesn't show the patterns")
     if i in (0, 9) or ty in ("code", "parsons", "cells", "order"):
         shot(page, shots, f"{lid}-t{i + 1}-right")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1"):

@@ -18,8 +18,9 @@ the format and the quality bar.
 | Part | Rule |
 | --- | --- |
 | `=== lesson` | `id`, `title`, `summary` (1–2 sentences) |
-| `=== learn` | 5–10 steps, each starting `### Heading`. One idea per step. |
+| `=== learn` | 5–10 steps for the topic, each starting `### Heading`, one idea per step; then one step for each problem-solving pattern the tasks use, an edge-case step and (from Unit 2 on) a time-and-space step. See "The learn section must prepare for every task". |
 | `=== keypoints` | 4–7 bullets: the facts a learner needs for the tasks |
+| `=== patterns` | every pattern (technique) the lesson's problems use, and every combination of patterns; each task names its patterns, and each level covers all of them (see "Patterns and combinations") |
 | examples | **1 or 2** runnable programs with line-by-line notes |
 | animations | **1 or 2** traced programs with a caption on the important lines |
 | tasks | **exactly 30: 10 easy, then 10 medium, then 10 hard** (the build enforces the counts and order) |
@@ -328,6 +329,58 @@ why_space: The dictionary holds up to n numbers.
   apart (O(n) vs O(n²), O(log n) vs O(n)).
 - Write 5–8 tests, including the edge cases, and `fail[N]` for the ones that catch a specific mistake.
 
+### Patterns and combinations (every lesson)
+The learner asked to be fully equipped for any question on a lesson's topic. So every lesson lists the
+**patterns** (techniques) that problems on its topic use, and the **combinations** that need two or more of them:
+1. **Find them.** List what solving problems on this topic takes: each distinct technique, plus the situations
+   where one pattern isn't enough and two or more must be combined. The Hash maps lesson has 9 patterns
+   (counting, a partner lookup, positions, counting pairs, one-to-one matching, grouping, running totals, key
+   order, designing a class) and 11 combinations (a partner + positions, running totals + pair counts, ...).
+   Early Python lessons have techniques too (printing several values, `sep=` and `end=`, escape characters...).
+2. **Teach them.** One learn step per pattern, headed exactly with the pattern's title: what it is, the clue in
+   a question that says to use it, a worked example on a different problem (code, output, a table of the loop),
+   and its Big O. An overview step lists all the patterns with their clues. Then a "Combining patterns" step
+   explains every combination (its title in bold, when you need it, how the pieces fit), with a worked example
+   step for any combination that isn't obvious.
+3. **Practise them.** Each level (the 10 easy, the 10 medium, the 10 hard) uses **every** pattern at least
+   once, and at least one task in each level combines patterns. Every combination is practised by at least
+   one task. Easy tasks use one pattern on its own where possible; medium and hard tasks combine more.
+4. **Declare them**, so the build can check all of the above:
+```
+=== patterns
+- counting | Counting                       (id | the learn step heading, exactly)
+- prefix | Running totals
+combos:
+- prefix + counting | Counting running totals   (ids | a title that appears in the learn section)
+```
+   and in every task, `patterns: prefix + counting` (the ids it uses, joined with +). The app shows a "Show the
+   pattern" button on each task (it opens the pattern's learn step) and the patterns once it's solved.
+
+### The learn section must prepare for every task
+A learner should be able to solve every task from this lesson's learn section plus earlier lessons. Before
+writing tasks, list what each of the 30 needs: the technique (counting, a partner lookup, running totals, two
+pointers...), the Python tools (`.get()`, `sorted(key=...)`, `next(iter(d))`...) and the complexity facts its
+follow-up asks about. For each item, check that it is taught here or earlier (section 9 says what each lesson
+covers). If it isn't:
+- teach it in the learn section: a step for the pattern, with a worked example on a **different** problem from
+  the tasks (close enough that the task is the next step), its code and output, and a table of the loop so no
+  step is missing; or
+- choose a different problem. Never use a technique from a later lesson (no sliding window in Unit 3, no
+  binary search before `algo-binary`).
+
+Hard tasks may combine taught ideas or need a twist; the hints lead to the twist. Every building block must
+still be taught. The Hash maps lesson (`content/u3/05-hashmaps.lesson`) shows the pattern steps.
+
+Two steps prepare for the follow-ups, at the end of the learn section:
+- **Edge cases to test**: a table of the edge cases that matter for this topic (empty, one item, all the same,
+  negatives, ties, a stored 0...), an example of each and what can go wrong. From `py-functions` on.
+- **Time and space**: how to work out the complexity of solutions to this lesson's problems, including when a
+  structure's size has a fixed limit (26 letters, 10 digits) and so counts as O(1). From Unit 2 on.
+
+Learn code: keep lines to 50 characters (the learn pane fits about 53 on a desktop screen), and check every
+code block that has an ```` ```output ```` block under it with `python3 tools/learncheck.py <lesson file>`. It
+runs the blocks in order, sharing variables like notebook cells, and compares the output.
+
 ## 5. Feedback rules
 
 - `right:` — explain the mechanism that makes it right, in 1–3 sentences. It should teach something even to a
@@ -417,6 +470,7 @@ python3 tools/build.py --content $W/content --only <lesson-id> --check          
 ```
 Fix every error it prints. It checks the format, the counts, runs every program in CPython and in the
 in-browser runner, checks predict outputs, fill wrong answers, code tests, starters, rules, and speed checks.
+Check the learn section's code and output with `python3 tools/learncheck.py $W/content/<unit>/<file>.lesson`.
 Then run the browser test, which opens the page, plays every animation and submits a wrong and a right
 answer to every task:
 ```
@@ -427,7 +481,8 @@ Add `--shots $W/shots` to the UI test to save screenshots you can look at. When 
 
 Before you finish, re-read the lesson as a beginner would:
 - Is any step missing? Is every term defined before use? Is anything used that wasn't taught yet?
-- Do the tasks escalate from easy to hard? Is each task solvable from the learn section and examples?
+- Do the tasks escalate from easy to hard? Is each task solvable from the learn section, the examples and
+  earlier lessons, with every technique it needs taught before it?
 - Does every feedback text explain *why*? Do wrong[...] cover the likely mistakes?
 - Are titles specific ("Count the evens", not "Task 3")?
 

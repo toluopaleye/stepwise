@@ -24,7 +24,8 @@ import bundle_py  # noqa: E402
 
 TEXT_FIELDS = {"title", "prompt", "right", "wrong", "hint", "intro", "explain", "summary", "check", "answer", "expect",
                "labels", "start", "speed", "view", "show", "id", "indent", "name",
-               "complexity", "why_time", "why_space", "edge_count", "complexity_options", "complexity_note", "leetcode"}
+               "complexity", "why_time", "why_space", "edge_count", "complexity_options", "complexity_note", "leetcode",
+               "patterns"}
 CODE_FIELDS = {"code", "starter", "solution", "lines", "distractors", "compute", "after", "setup", "slow"}
 LIST_FIELDS = {"tests", "items", "options", "cases", "edges"}
 KEYED = {"wrong", "fail", "error", "require", "forbid"}
@@ -278,6 +279,26 @@ def parse_lesson(path):
             lesson["learn"] = out
         elif kind == "keypoints":
             lesson["keypoints"] = [re.sub(r"^[-*]\s+", "", l).strip() for l in sec["lines"] if l.strip()]
+        elif kind == "patterns":
+            pats, combos, into = [], [], None
+            for l in sec["lines"]:
+                t = l.strip()
+                if not t:
+                    continue
+                if t == "combos:":
+                    into = combos
+                    continue
+                m = re.match(r"^[-*]\s+(.+?)\s*\|\s*(.+)$", t)
+                if not m:
+                    raise BuildError(f"{ctx}: a pattern line is '- id | Learn step heading', a combo line '- id + id | Title'")
+                if into is combos:
+                    ids = [x.strip() for x in m.group(1).split("+")]
+                    combos.append({"ids": ids, "title": m.group(2).strip()})
+                else:
+                    if not re.fullmatch(r"[a-z][a-z0-9-]*", m.group(1)):
+                        raise BuildError(f"{ctx}: pattern id {m.group(1)!r}: use lowercase letters, digits and -")
+                    pats.append({"id": m.group(1), "title": m.group(2).strip()})
+            lesson["patterns"], lesson["combos"] = pats, combos
         elif kind == "example":
             fields, keyed, options, notes, lists = parse_fields(sec["lines"], ctx, allow_notes=True, bare_fence_code=True)
             if "code" not in fields:
@@ -505,7 +526,59 @@ def compile_lesson(lesson, cjobs, pjobs, checks):
     order = {"easy": 0, "medium": 1, "hard": 2}
     if any(order[a] > order[b] for a, b in zip(diffs, diffs[1:])):
         raise BuildError(f"{lid}: tasks must go easy -> medium -> hard (got {diffs})")
+    check_patterns(lesson, L)
     return L
+
+
+def check_patterns(lesson, L):
+    """A lesson with a patterns section: every pattern has a learn step, every combination is explained in the
+    learn section, every task names its patterns, each level (easy, medium, hard) uses every pattern and at least
+    one combination, and every combination is practised."""
+    lid = lesson["id"]
+    pats = lesson.get("patterns")
+    tasks = lesson["tasks"]
+    if pats is None:
+        if any(t["fields"].get("patterns") for t in tasks):
+            raise BuildError(f"{lid}: tasks name patterns, but the lesson has no '=== patterns' section")
+        return
+    ids = [p["id"] for p in pats]
+    if len(set(ids)) != len(ids):
+        raise BuildError(f"{lid}: pattern ids must be different")
+    heads = [s["h"] for s in lesson["learn"] if s["h"]]
+    for p in pats:
+        if p["title"] not in heads:
+            raise BuildError(f"{lid}: pattern '{p['id']}' needs a learn step headed exactly '### {p['title']}'")
+    learn_text = re.sub(r"\s+", " ", htmlstrip(" ".join((x["h"] or "") + " " + x["html"] for x in L["learn"]))).lower()
+    for c in lesson["combos"]:
+        bad = [i for i in c["ids"] if i not in ids]
+        if bad or len(c["ids"]) < 2:
+            raise BuildError(f"{lid}: combo {' + '.join(c['ids'])}: needs 2 or more known pattern ids")
+        if re.sub(r"\s+", " ", htmlstrip(inline_md(c["title"]))).lower() not in learn_text:
+            raise BuildError(f"{lid}: combo '{c['title']}' must be explained in the learn section (its title isn't there)")
+    by_level = {d: [] for d in ("easy", "medium", "hard")}
+    for i, t in enumerate(tasks):
+        raw = t["fields"].get("patterns")
+        if not raw:
+            raise BuildError(f"{t['ctx']}: needs 'patterns:' (ids from the lesson's patterns, joined with +)")
+        tp = [x.strip() for x in raw.split("+")]
+        bad = [x for x in tp if x not in ids]
+        if bad or len(set(tp)) != len(tp):
+            raise BuildError(f"{t['ctx']}: patterns: unknown or repeated ids {bad or tp}")
+        L["tasks"][i]["patterns"] = tp
+        by_level[t["diff"]].append(set(tp))
+    for d, sets in by_level.items():
+        if not sets:
+            continue
+        missing = [p for p in ids if not any(p in s for s in sets)]
+        if missing:
+            raise BuildError(f"{lid}: the {d} tasks don't use these patterns: {', '.join(missing)}")
+        if lesson["combos"] and not any(len(s) > 1 for s in sets):
+            raise BuildError(f"{lid}: at least one {d} task must combine patterns")
+    every = [s for sets in by_level.values() for s in sets]
+    for c in lesson["combos"]:
+        if not any(set(c["ids"]) <= s for s in every):
+            raise BuildError(f"{lid}: no task practises the combination {' + '.join(c['ids'])} ({c['title']})")
+    L["patterns"] = [{"id": p["id"], "title": p["title"]} for p in pats]
 
 
 def chart_frames(an):

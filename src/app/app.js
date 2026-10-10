@@ -312,7 +312,7 @@
   function learnLeft(L) {
     const info = INFO[L.id];
     const done = doneCount(L.id);
-    const steps = L.learn.map((s, i) => `<section class="step"><span class="step-n" aria-hidden="true">${i + 1}</span><div>${s.h ? `<h3>${esc(s.h)}</h3>` : ''}<div class="prose">${s.html}</div></div></section>`).join('');
+    const steps = L.learn.map((s, i) => `<section class="step"${s.h ? ` data-h="${esc(s.h)}"` : ''}><span class="step-n" aria-hidden="true">${i + 1}</span><div>${s.h ? `<h3>${esc(s.h)}</h3>` : ''}<div class="prose">${s.html}</div></div></section>`).join('');
     const where = info.parent ? `<b>Lesson ${info.num}</b> · part of ${esc(htmlToText(info.parent.title))}` : `<b>Lesson ${info.num} of ${info.total}</b> · ${esc(info.unit.title)}`;
     return `<div class="chip">${icon('book', 'style="color:var(--accent)"')}<span>${where} · ${done}/${L.tasks.length} tasks solved</span></div>
       <div class="block">
@@ -530,6 +530,12 @@
     else what = 'not tried yet';
     return `<div class="chip">${icon(tp && tp.s === 'ok' ? 'check' : 'x', `style="color:${tp && tp.s === 'ok' ? 'var(--pass)' : 'var(--muted)'}"`)}<span><b>Task ${pi + 1} · ${T.title}</b> — ${what}</span></div>`;
   }
+  function taskPatterns(L, T) {
+    return (T.patterns || []).map((id) => (L.patterns || []).find((p) => p.id === id)).filter(Boolean);
+  }
+  function patternLinks(pats) {
+    return pats.map((p) => `<button class="pat" data-act="pat-learn" data-h="${esc(p.title)}" title="Open this pattern in the learn section">${esc(p.title)}</button>`).join('<span class="pat-plus"> + </span>');
+  }
   function taskLeft(L, T, ts) {
     const recapOpen = S.step <= 2 ? ' open' : '';
     let checks = '';
@@ -553,6 +559,15 @@
     const hintBtn = hintsShown < T.hints.length
       ? `<button class="btn" data-act="hint">Hint ${hintsShown + 1} of ${T.hints.length}</button>`
       : (sampleFn ? `<button class="btn" data-act="ask-open">${icon('chat')}Ask Claude</button>` : '');
+    const pats = taskPatterns(L, T);
+    let patHtml = '';
+    if (pats.length) {
+      const tp = taskProg(L.id, S.step - 1);
+      const show = ts.showPat || (ts.result && ts.result.ok && !ts.result.followup) || (tp && tp.s === 'ok');
+      patHtml = show
+        ? `<div class="patrow">${icon('book')}<span>${pats.length > 1 ? 'Patterns' : 'Pattern'}: ${patternLinks(pats)}</span></div>`
+        : `<div class="hintrow"><div>${icon('book')}Which pattern does this need?</div><button class="btn" data-act="show-pat">Show the pattern</button></div>`;
+    }
     return `${chipForPrevious(L)}
       <details class="recap"${recapOpen}><summary><span class="label">Learn</span><span>Key points · ${L.title}</span></summary><ul>${L.keypoints.map((k) => `<li>${k}</li>`).join('')}</ul></details>
       <div class="block">
@@ -563,6 +578,7 @@
         ${checks}
       </div>
       <div class="hintbox">
+        ${patHtml}
         <div class="hintrow"><div>${icon('bulb')}${hintsShown < T.hints.length ? 'Stuck? Hints go from a nudge to almost the answer.' : (T.hints.length ? 'That was the last hint.' : 'No hints for this one.')}</div>${hintBtn}</div>
         ${hintsHtml}
       </div>`;
@@ -834,6 +850,8 @@
     let chips = '';
     if (r.bigo) chips = `<span class="bigo${r.bigo.ok ? ' good' : ''}">yours: ${esc(r.bigo.yours)}</span><span class="bigo good">goal: ${esc(r.bigo.goal)}</span>`;
     let body = '';
+    const pats = good ? taskPatterns(L, T) : [];
+    if (pats.length) body += `<div class="patrow solved">${icon('book')}<span>${pats.length > 1 ? 'Patterns' : 'Pattern'}: ${patternLinks(pats)}</span></div>`;
     if (r.specific) body += `<div class="prose specific">${r.specific}</div>`;
     body += `<div class="prose">${good ? (T.right || '') : (T.wrong || '')}</div>`;
     let actions = '';
@@ -1513,6 +1531,16 @@
       case 'hint': ts.hints = Math.min(T.hints.length, ts.hints + 1); { const lp2 = lessonProg(L.id); if (lp2.t[S.step - 1]) lp2.t[S.step - 1].hints = ts.hints; saveProgress(); } render({ keepScroll: true }); break;
       case 'submit': submit(); break;
       case 'fu-check': collectInputs(T, ts); checkFollowup(L, T, ts); break;
+      case 'show-pat': ts.showPat = true; render({ keepScroll: true }); break;
+      case 'pat-learn': {
+        const h = t.dataset.h;
+        goStep(0);
+        requestAnimationFrame(() => {
+          const sec = [...document.querySelectorAll('.lesson-pane section.step')].find((x) => x.dataset.h === h);
+          if (sec) sec.scrollIntoView({ block: 'start' });
+        });
+        break;
+      }
       case 'runtests': runTests(); break;
       case 'tryrun': tryRun(); break;
       case 'predict-run': { collectInputs(T, ts); const r = PR.run(T.code, { stepLimit: 500000 }); ts.liveRun = r.stdout + (r.error ? (r.error.traceback || r.error.message) : ''); render({ keepScroll: true }); break; }
