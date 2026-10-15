@@ -1,7 +1,7 @@
 === lesson
 id: py-dicts
 title: Dictionaries
-summary: A dictionary stores values under keys, so you can look a value up by its name instead of by its position. You'll add, change, check and remove pairs, loop over them, and use a dictionary to count things.
+summary: A dictionary stores values under keys, so you can look a value up by its name instead of by its position. You'll add, change, check and remove pairs, loop over them, and use a dictionary to count things. Then come the six patterns that dictionary problems use, and how to combine them.
 
 === learn
 ### A dictionary maps keys to values
@@ -150,6 +150,26 @@ if "Bob" in ages:
 
 A deleted key is gone completely, place and all. If you add it again later, the dictionary treats it as a brand-new key, so it goes at the end.
 
+Don't add or delete keys while a `for` loop is going over the same dictionary. The loop is walking through the keys, so Python stops it as soon as they change:
+
+```python
+counts = {"a": 0, "b": 2}
+for key in counts:
+    if counts[key] == 0:
+        del counts[key]
+```
+
+```output
+Traceback (most recent call last):
+  File "main.py", line 2, in <module>
+    for key in counts:
+               ^^^^^^
+RuntimeError: dictionary changed size during
+iteration
+```
+
+(Python prints that last message on one line.) Loop over `list(counts)` instead. It's a list copy of the keys, made before the loop starts, so deleting from the dictionary doesn't change it.
+
 ### Looping over a dictionary
 A `for` loop over a dictionary hands you its **keys**, one at a time, in the order they were first added. Use each key to read its value:
 
@@ -212,11 +232,11 @@ print(counts)
 
 Here is every pass of the loop:
 
-| word | `word in counts` | line that runs | counts afterwards |
+| word | already a key? | what runs | counts afterwards |
 | --- | --- | --- | --- |
-| `"red"` | `False` | `counts["red"] = 1` | `{'red': 1}` |
-| `"blue"` | `False` | `counts["blue"] = 1` | `{'red': 1, 'blue': 1}` |
-| `"red"` | `True` | `counts["red"] += 1` | `{'red': 2, 'blue': 1}` |
+| `"red"` | `False` | the `else`: set to 1 | `{'red': 1}` |
+| `"blue"` | `False` | the `else`: set to 1 | `{'red': 1, 'blue': 1}` |
+| `"red"` | `True` | the `if`: add 1 | `{'red': 2, 'blue': 1}` |
 
 The `if` matters. Without it, the very first `counts["red"] += 1` would raise `KeyError: 'red'`, because there is no old count to add to yet.
 
@@ -275,14 +295,84 @@ print(groups)
 
 A key needs its list **before** you can append to it: `groups["c"].append("corn")` raises `KeyError: 'c'`. Create the list first with `groups["c"] = []`.
 
+### Solving problems with dictionaries
+The tasks ask for functions, the way LeetCode sets its problems, and each one asks for edge-case tests once it passes. Six patterns from this lesson solve them. A clue in the question tells you which:
+
+| Pattern | Clue in the question |
+| --- | --- |
+| Counting with a dictionary | how many times, the most common, appears once, the same letters |
+| Avoiding KeyError: in and .get() | seen it before, is it there, find its partner |
+| Adding and changing pairs | remember a position, match one thing to another |
+| Looping over a dictionary | after counting: the biggest, the smallest, every count that fits a rule |
+| What can be a key, and what can be a value | group the items that share something, a list for each key |
+| Removing a pair: del | a window that moves along, how many different items it holds |
+
+### Combining patterns
+Harder tasks need two patterns together:
+
+- **Counting, then looping over the counts** (count + loop). Count everything first, in one pass. Then loop over the dictionary, often with `.items()`, to answer the question about the counts: the largest count, every key that appears exactly once, or whether two counts are equal.
+- **Checking items against a count** (count + lookup). Count one thing, then check another against it with `.get(key, 0)`, which gives 0 for a key that was never counted. A note can be cut from a magazine if each of its letters is still left in the magazine's count. It works while counting too: before you count an item, `.get()` tells you how many earlier items match it.
+- **Remembering what you've seen** (lookup + update). As a loop goes along, store what it needs to remember under each key: the last position of each letter, or the word that each letter stands for. Check with `in` or `.get()` first, then store the new value.
+- **Counts for a sliding window** (count + del). A window moves along a list one place at a time: count the item that comes in, and take 1 off the count of the item that goes out. Delete a key when its count reaches 0, so `len(counts)` is always the number of different items in the window.
+- **Grouping, then reading the groups** (group + loop). To group items that share something, use the shared thing as the key and a list as the value: create the list the first time you see the key, then `append` to it. Afterwards, a loop over the dictionary reads each group.
+
+```python
+def distinct_in_windows(nums, k):
+    counts = {}
+    out = []
+    for i in range(len(nums)):
+        x = nums[i]
+        counts[x] = counts.get(x, 0) + 1
+        if i >= k:
+            old = nums[i - k]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if i >= k - 1:
+            out.append(len(counts))
+    return out
+
+def group_by_length(words):
+    groups = {}
+    for w in words:
+        if len(w) not in groups:
+            groups[len(w)] = []
+        groups[len(w)].append(w)
+    return groups
+
+print(distinct_in_windows([1, 2, 1, 3, 3], 3))
+print(group_by_length(["hi", "tea", "go", "cup"]))
+```
+```output
+[2, 3, 2]
+{2: ['hi', 'go'], 3: ['tea', 'cup']}
+```
+The windows of 3 are [1, 2, 1], [2, 1, 3] and [1, 3, 3], holding 2, 3 and 2 different numbers. When the window moves on to [1, 3, 3], the 2 leaves: its count drops to 0 and its key is deleted, so `len(counts)` is 2 again.
+
 === keypoints
 - A dictionary stores **key: value** pairs: `ages = {"Ada": 36, "Alan": 41}`. `{}` is an empty dictionary.
 - `d[key]` reads a value. Reading a key that isn't there raises a `KeyError`.
 - `d[key] = value` adds a new pair at the end, or replaces the value if the key already exists. `del d[key]` removes a pair.
+- Don't add or delete keys while looping over the same dictionary: loop over `list(d)`, a copy of the keys, instead.
 - `key in d` checks the **keys** only. `d.get(key, default)` gives the default instead of an error when the key is missing.
 - `for k in d` loops over the keys in the order they were added. `.values()` gives the values and `.items()` gives each key with its value.
 - The counting pattern: `counts[x] = counts.get(x, 0) + 1`.
 - Keys must be immutable (strings, numbers, tuples). Values can be anything, even lists.
+- Combinations: counting, then looping over the counts; checking items against a count; remembering what you've seen; counts for a sliding window; and grouping, then reading the groups.
+
+=== patterns
+- count | Counting with a dictionary
+- lookup | Avoiding KeyError: in and .get()
+- update | Adding and changing pairs
+- loop | Looping over a dictionary
+- group | What can be a key, and what can be a value
+- del | Removing a pair: del
+combos:
+- count + loop | Counting, then looping over the counts
+- count + lookup | Checking items against a count
+- lookup + update | Remembering what you've seen
+- count + del | Counts for a sliding window
+- group + loop | Grouping, then reading the groups
 
 === example: A phone book
 intro: Every basic dictionary operation in one small program: look up, add, change, check, remove and loop.
@@ -365,722 +455,1862 @@ print(counts)
 3: letter is '{letter}'. Is it a key yet? {letter in counts}. So counts.get('{letter}', 0) gives {counts.get(letter, 0)}, plus 1 makes {counts.get(letter, 0) + 1}, which is stored under '{letter}'.
 4: Done: b once, a three times, n twice. {counts}
 
-=== task: mcq easy
-title: Look up a price
-prompt: What does this program print?
-code:
-```python
-prices = {"apple": 2, "pear": 3, "fig": 5}
-print(prices["pear"])
-```
-- `1` :: That would be the **position** of `"pear"` if this were a list. A dictionary has no positions: `prices["pear"]` looks up the key `"pear"` and gives its value.
-* `3` :: Right. `"pear"` is a key, and the value stored under it is 3.
-- `pear` :: The key goes *into* the square brackets. What comes *out* is the value stored under that key, not the key itself.
-- `KeyError` :: A KeyError only happens when the key is missing. `"pear"` is one of the three keys, spelled exactly the same, so the lookup works.
-hint: The text in the square brackets is a key. Find that key inside the curly brackets.
-hint: What is written after the colon next to `"pear"`?
-right: `prices["pear"]` finds the key `"pear"` and gives back the value paired with it, 3. Dictionaries look values up by key, never by position.
-wrong: Find the key `"pear"` inside the curly brackets. The number after its colon, 3, is its value, and that is what `prices["pear"]` gives back.
-
-=== task: predict easy
-title: Add or replace?
-code:
-```python
-stock = {"eggs": 6, "milk": 1}
-stock["milk"] = 2
-stock["bread"] = 1
-print(stock["milk"])
-print(len(stock))
-```
-wrong[1\n3]: Line 2 assigns to `stock["milk"]`, and `"milk"` already exists, so its old value 1 is replaced by 2. Line 4 reads the new value: `2`.
-wrong[3\n3]: `=` replaces the old value; it doesn't add to it. Adding would be `stock["milk"] += 2`. So milk is `2`, not 1 + 2.
-wrong[2\n4]: A key can appear only once. `stock["milk"] = 2` changes the existing milk pair instead of making a second one, so there are 3 pairs: eggs, milk and bread.
-wrong[2\n2]: Line 3 uses a key that isn't there yet, `"bread"`, and assigning to a new key adds a pair. So there are 3 pairs, not 2.
-hint: For each assignment, ask: is this key already in the dictionary?
-hint: An existing key gets its value replaced. A new key adds a new pair.
-hint: `len()` counts the pairs, and a key can appear only once.
-right: `"milk"` already existed, so line 2 replaced its 1 with 2. `"bread"` was new, so line 3 added a third pair. The dictionary ends as `{'eggs': 6, 'milk': 2, 'bread': 1}`: milk is `2`, and there are `3` pairs.
-wrong: Go one line at a time. Line 2: `"milk"` is already a key, so its value 1 is **replaced** by 2. Line 3: `"bread"` is a new key, so a pair is **added**. That leaves 3 pairs: eggs, milk and bread. So the program prints `2`, then `3`.
-
-=== task: mcq easy
-title: Which line crashes?
-prompt: This program stops with an error. On which line?
-code:
-```python
-menu = {"tea": 2, "cake": 4}
-print(menu.get("soup"))
-print("soup" in menu)
-print(menu["soup"])
-print(menu.get("soup", 0))
-```
-- Line 2 :: `.get()` never raises a KeyError. With no default given, it returns `None` for a missing key, so this line prints `None`.
-- Line 3 :: `in` only asks a question. `"soup"` isn't a key, so it prints `False` and the program carries on.
-* Line 4 :: Right. Square brackets insist that the key exists. `"soup"` isn't a key, so Python stops with `KeyError: 'soup'`.
-- Line 5 :: `.get()` with a default can't fail: it would print `0`. In fact line 5 never runs, because the program has already stopped.
-hint: Only one way of reading a dictionary insists that the key must exist.
-hint: Compare `menu.get("soup")` with `menu["soup"]`. Which one has a plan for a missing key?
-right: `menu["soup"]` raises `KeyError: 'soup'` because there is no `"soup"` key. `.get()` returns `None` or your default instead, and `in` returns `False`, so neither of them can fail.
-wrong: `"soup"` is not a key in `menu`. `.get()` handles a missing key by returning `None` (or the default you give it), and `in` answers `False`. Only square brackets, `menu["soup"]`, raise a KeyError.
-
 === task: code easy
-title: Price with a default
-prompt: `prices` (a dictionary) and `item` are already set, and the checks try several. Create `cost`: the price of `item`, or `0` if `item` isn't in `prices`. For `prices = {"tea": 2, "cake": 4}` and `item = "tea"`, `cost` is 2.
+title: First Unique Character in a String
+leetcode: 387 | First Unique Character in a String | first-unique-character-in-a-string
+patterns: count + lookup
+prompt: Write `first_uniq_char(s)` that returns the index of the first character in `s` that appears only once, or `-1` if every character appears more than once.
+
+**Example 1:** `first_uniq_char("leetcode")` returns `0`: the l at index 0 appears only once.
+
+**Example 2:** `first_uniq_char("loveleetcode")` returns `2`: l and o repeat, and v at index 2 appears once.
+
+**Example 3:** `first_uniq_char("aabb")` returns `-1`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100,000, and `s` has only lowercase English letters.
 starter:
 ```python
-# prices and item are already set before your code runs
-# your code here
-```
-solution:
-```python
-cost = prices.get(item, 0)
-```
-tests:
-- cost
-cases:
-- prices = {"tea": 2, "cake": 4}\nitem = "tea"
-- prices = {"tea": 2, "cake": 4}\nitem = "soup"
-- prices = {}\nitem = "x"
-fail[1]: "tea" is a key, so `cost` is its price, 2. Look it up with the variable `item`, not the text "item".
-fail[2]: "soup" isn't in the dictionary, so `cost` should be 0. `prices.get(item, 0)` gives 0 for a missing key.
-error[KeyError]: Square brackets raise a KeyError when the key is missing. Use `prices.get(item, 0)` instead.
-error[NameError]: Spell `prices`, `item` and `cost` exactly like this.
-require[.get(]: Use `.get()` so that a missing item gives 0.
-hint: `.get(key, default)` gives the default when the key is missing.
-hint: The key is the variable `item` (no quotes), and the default is 0.
-hint: `cost = prices.get(item, 0)`
-right: `prices.get(item, 0)` looks up the key stored in `item`. When it's there, you get its price; when it isn't, you get the default, 0, instead of a KeyError.
-wrong: Use `.get()` with a default: `cost = prices.get(item, 0)`. Square brackets would stop the program for a missing item.
-
-=== task: predict easy
-title: Read, change, read
-code:
-```python
-scores = {"Ada": 8, "Bo": 5}
-print(scores["Bo"])
-scores["Bo"] = scores["Bo"] + 3
-print(scores["Bo"])
-print(len(scores))
-```
-wrong[5\n5\n2]: Line 3 reads Bo's 5, adds 3, and stores 8 back under "Bo", so the second print shows 8.
-wrong[5\n8\n3]: Changing the value of "Bo" doesn't add a new pair. There are still 2 keys: Ada and Bo.
-wrong[8\n11\n2]: The first print runs before the change, so it shows Bo's original score, 5.
-hint: The first print runs before Bo's score changes.
-hint: Assigning to an existing key replaces its value; it doesn't add a pair.
-right: Bo starts at 5. Line 3 stores 5 + 3 = 8 under "Bo", replacing the old value. The dictionary still has two pairs, so `len` is 2.
-wrong: Print 5 (before the change). Then Bo becomes 5 + 3 = 8, printed next. The key "Bo" already existed, so there are still 2 pairs.
-
-=== task: fill easy
-title: Add a new pair
-prompt: Fill the blank so that a new pair is added for dogs:
-```output
-{'cat': 2, 'dog': 3}
-```
-code:
-```python
-pets = {"cat": 2}
-pets[??] = 3
-print(pets)
-```
-answer: "dog"
-wrong[dog]: Without quotes, `dog` is a variable name, and there's no such variable: NameError. The key is the text "dog".
-wrong["cat"]: "cat" already exists, so this replaces its value: `{'cat': 3}`. A new key adds a new pair.
-hint: The new key is a piece of text.
-hint: Assigning to a key that isn't there yet adds it.
-right: "dog" isn't a key yet, so `pets["dog"] = 3` adds the pair `'dog': 3` at the end. The cat pair is left as it was.
-wrong: Use the new key, in quotes: `pets["dog"] = 3`. A new key adds a pair; an existing key would only get a new value.
-
-=== task: multi easy
-title: Which give 41?
-prompt: `ages` holds `{"Ada": 36, "Alan": 41}`. Choose **every** expression whose value is `41`.
-* `ages["Alan"]` :: Right. The value stored under the key "Alan".
-* `ages.get("Alan")` :: Right. "Alan" is there, so `.get()` gives its value.
-* `ages.get("Alan", 0)` :: Right. The key exists, so the default 0 is ignored.
-- `ages[1]` :: A dictionary has no positions. This looks for the key 1, which doesn't exist: KeyError.
-- `ages["alan"]` :: Keys must match exactly, capital letters included: KeyError.
-* `ages.get("Bob", 41)` :: Right, in a sneaky way: "Bob" is missing, so `.get()` gives the default, which happens to be 41.
-hint: Square brackets and `.get()` both look up keys, never positions.
-hint: For `.get()` with a default, ask whether the key exists. Four are correct.
-right: "Alan" maps to 41, so the bracket lookup and both `.get()` lookups give 41. `.get("Bob", 41)` gives its default, also 41. Positions and wrong capitals don't find anything.
-wrong: Look up each key: "Alan" exists (41, whether by brackets or `.get()`). 1 and "alan" aren't keys, so those raise KeyErrors. "Bob" is missing, so `.get` returns the default you gave it: 41.
-
-=== task: cells easy
-title: Count the letters
-prompt: After this code runs, what do these expressions give?
-code:
-```python
-counts = {}
-for ch in "abcab":
-    counts[ch] = counts.get(ch, 0) + 1
-```
-labels: counts["a"] | counts["b"] | counts["c"] | len(counts)
-answer: 2 | 2 | 1 | 3
-wrong[2 | 2 | 1 | 5]: `len(counts)` counts the keys, and each letter is a key only once: a, b and c, so 3.
-wrong[1 | 1 | 1 | 3]: Each later appearance adds 1 to the count so far: "a" appears twice, so its count reaches 2.
-hint: Each letter becomes a key the first time it appears.
-hint: "abcab" has two a's, two b's and one c.
-right: The counting pattern adds 1 for every appearance: a → 2, b → 2, c → 1. There are 3 different letters, so 3 keys.
-wrong: Count each letter in "abcab": a twice, b twice, c once. The dictionary has one key per different letter: 3.
-
-=== task: parsons easy
-title: Look it up safely
-prompt: Arrange the lines so that the program looks up milk, which isn't in stock, without an error:
-```output
-milk: 0
-```
-lines:
-```python
-stock = {"eggs": 12}
-n = stock.get("milk", 0)
-print("milk:", n)
-```
-distractors:
-```python
-n = stock["milk"]
-n = stock.get(milk, 0)
-```
-hint: Square brackets fail for a missing key. Which lookup has a plan for that?
-hint: The key is text, so it needs quotes.
-right: `stock.get("milk", 0)` finds no "milk" key and gives the default 0 instead of raising a KeyError.
-wrong: Make the dictionary, look up with `stock.get("milk", 0)`, then print. `stock["milk"]` is a KeyError, and `milk` without quotes is a NameError.
-
-=== task: predict easy
-title: Keys, then values
-code:
-```python
-colors = {"red": 3, "blue": 1}
-for c in colors:
-    print(c)
-for n in colors.values():
-    print(n)
-```
-wrong[red 3\nblue 1]: A loop over a dictionary gives only the keys, and `.values()` gives only the values, in two separate loops.
-wrong[3\n1\nred\nblue]: The first loop is over the dictionary itself, which gives the keys: red and blue come first.
-wrong[red\nblue]: The second loop prints the values too: 3 and 1.
-hint: Looping over a dictionary gives its keys.
-hint: `.values()` gives the values, in the same order.
-right: The first loop goes through the keys in the order they were added: red, blue. The second goes through the values: 3, 1.
-wrong: Loop 1 prints the keys (red, blue). Loop 2 prints the values (3, 1).
-
-=== task: fill medium
-title: Count with .get()
-prompt: Fill in both blanks so that the loop counts each fruit and the program prints exactly:
-
-```output
-{'fig': 2, 'kiwi': 1}
-```
-code:
-```python
-counts = {}
-for fruit in ["fig", "kiwi", "fig"]:
-    counts[fruit] = counts.get(??, ??) + 1
-print(counts)
-```
-answer: fruit | 0
-wrong[fruit | 1]: With a default of 1, a new fruit gets 1 + 1 = 2 on its very first appearance, so every count ends up one too high: `{'fig': 3, 'kiwi': 2}`. A fruit you haven't seen yet has been counted 0 times.
-wrong["fruit" | 0]: In quotes, `"fruit"` is the text f-r-u-i-t, not the variable. That key never exists, so `.get()` always gives 0 and every count stays at 1. Use the variable `fruit`, without quotes.
-wrong[fruit | None]: For a new fruit, `.get()` gives `None`, and `None + 1` raises `TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'`. The default has to be a number you can add 1 to.
-wrong[counts | 0]: The first blank is the key to look up, which is the current fruit. A dictionary can't be a key, so this raises `TypeError: unhashable type: 'dict'`.
-hint: The first blank is the key to look up. Which variable holds the fruit for this pass of the loop?
-hint: The second blank is the default: the count to use when this fruit hasn't been seen before.
-hint: A fruit you haven't seen yet has been counted 0 times.
-right: `counts.get(fruit, 0)` gives the count so far, or 0 for a new fruit. Adding 1 and storing the result counts this appearance: fig becomes 1, kiwi becomes 1, then fig becomes 2.
-wrong: The first blank is the key: the loop variable `fruit`. The second blank is the default for a fruit that isn't a key yet, and a new fruit has been counted 0 times. So the line is `counts[fruit] = counts.get(fruit, 0) + 1`.
-
-=== task: cells medium
-title: Track the stock
-prompt: After this code runs, what value is stored under each key? (All four keys exist at the end.)
-code:
-```python
-stock = {"eggs": 12, "milk": 2, "jam": 1}
-stock["milk"] += 3
-stock["tea"] = 4
-del stock["jam"]
-stock["eggs"] = stock["eggs"] - 6
-stock["jam"] = stock.get("jam", 0) + 1
-```
-labels: eggs | milk | tea | jam
-answer: 6 | 5 | 4 | 1
-wrong[6 | 5 | 4 | 2]: jam's old value 1 disappeared with `del` on line 4. On line 6 the key is missing, so `.get("jam", 0)` gives the default 0, and 0 + 1 is 1.
-wrong[6 | 3 | 4 | 1]: `+=` adds to the old value instead of replacing it: milk was 2, and 2 + 3 is 5.
-wrong[12 | 5 | 4 | 1]: Line 5 stores `stock["eggs"] - 6` back under `"eggs"`, so eggs changes from 12 to 6.
-wrong[6 | 5 | 4 | 0]: `.get("jam", 0)` gives 0 because jam was deleted, but line 6 then adds 1 before storing, so jam ends at 1.
-hint: Go one line at a time, and keep a list of the pairs on paper.
-hint: `+=` adds to the old value, `=` replaces it, and `del` removes the key completely.
-hint: When line 6 runs, is `"jam"` still a key? What does `.get()` give for a missing key?
-right: milk is 2 + 3 = 5. tea is a new key with 4. eggs is 12 - 6 = 6. jam was deleted on line 4, so on line 6 `.get("jam", 0)` gives the default 0, and 0 + 1 stores 1.
-wrong: Trace each line. Line 2: milk becomes 2 + 3 = 5. Line 3: tea is added with 4. Line 4: jam is removed. Line 5: eggs becomes 12 - 6 = 6. Line 6: jam is missing, so `.get("jam", 0)` gives 0, and jam is added again with 0 + 1 = 1.
-
-=== task: multi medium
-title: What does in look at?
-prompt: Choose **every** expression that is `True`.
-code:
-```python
-ages = {"Ada": 36, "Alan": 41}
-```
-* `"Ada" in ages` :: Right. `"Ada"` is one of the keys, and `in` checks the keys.
-- `36 in ages` :: `in` on a dictionary only checks the **keys**. 36 is a value, so this is `False`.
-* `36 in ages.values()` :: Right. `.values()` gives the values, 36 and 41, and 36 is among them.
-- `"ada" in ages` :: Keys must match exactly, capital letters included. The key is `"Ada"`, so `"ada"` isn't found.
-* `"Grace" not in ages` :: Right. `"Grace"` isn't a key, so `in` would give `False`, and `not in` gives `True`.
-hint: Plain `in` on a dictionary looks at only one part of each pair. Which part?
-hint: `in` checks the keys. `.values()` lets you search the values instead. Three of the five are `True`.
-right: `in` checks the keys of a dictionary. To ask about a value, check `in ages.values()`. And `not in` flips the answer that `in` would give.
-wrong: Ask the same question for each option: is this a **key** of `ages`? The only keys are `"Ada"` and `"Alan"`. Only `.values()` makes `in` look at the values (36 and 41), and `not in` gives the opposite of `in`.
-
-=== task: code medium
-title: Count the words
-prompt: Write a function `word_counts(text)` that returns a dictionary. Each word in `text` is a key, and its value is how many times that word appears. Split the text into words with `text.split()`.
-
-For example, `word_counts("a b a")` returns `{'a': 2, 'b': 1}`, and `word_counts("")` returns `{}`.
-starter:
-```python
-def word_counts(text):
-    counts = {}
-    # count each word of text.split() here
-    return counts
-```
-solution:
-```python
-def word_counts(text):
-    counts = {}
-    for word in text.split():
-        counts[word] = counts.get(word, 0) + 1
-    return counts
-```
-tests:
-- word_counts("a b a")
-- word_counts("hi")
-- word_counts("")
-- word_counts("go go go")
-- word_counts("to be or not to be")
-fail[1]: In `"a b a"`, "a" appears twice and "b" once, so the answer is `{'a': 2, 'b': 1}`. Check that every appearance adds 1 to that word's count, and that `return` comes after the loop has finished, not inside it.
-fail[3]: An empty string has no words: `"".split()` gives `[]`, so the loop body never runs and the function should return the empty dictionary `{}`.
-fail[4]: The same word three times must end with a count of 3. Each appearance has to read the old count and add 1 to it, not set it back to 1.
-error[KeyError]: `counts[word] += 1` raises a KeyError the first time a word appears, because `+=` needs the old count and there isn't one yet. Use `counts.get(word, 0) + 1`, or check `if word in counts:` first and set the count to 1 when it isn't.
-hint: Loop over `text.split()`. Each pass of the loop gives you one word.
-hint: Use the counting pattern from the lesson: get the old count (0 if the word is new), add 1, and store it back.
-hint: Inside the loop: `counts[word] = counts.get(word, 0) + 1`.
-right: Each word becomes a key the first time it appears (`.get()` gives 0, plus 1 makes 1), and every later appearance adds 1 to its count. An empty text has no words, so the empty dictionary comes back unchanged.
-wrong: Start with `counts = {}`, loop over `text.split()`, and for each word store `counts.get(word, 0) + 1` under that word. Return the dictionary after the loop, not inside it.
-
-=== task: predict medium
-title: Only the ones in stock
-code:
-```python
-inv = {"apple": 3, "pear": 0, "fig": 7}
-for fruit, n in inv.items():
-    if n > 0:
-        print(f"{fruit}: {n}")
-print(len(inv))
-```
-wrong[apple: 3\npear: 0\nfig: 7\n3]: The if only lets counts above 0 through. Pear's 0 is skipped.
-wrong[apple: 3\nfig: 7\n2]: `len` counts every pair in the dictionary, including pear: 3.
-wrong[apple 3\nfig 7\n3]: The f-string puts a colon and a space between the fruit and the number.
-hint: `.items()` gives each key with its value. Which values are above 0?
-hint: `len()` counts all the pairs, whatever their values.
-right: The loop gives each fruit with its count, and only apple (3) and fig (7) pass `n > 0`. The dictionary still has 3 pairs, so `len` prints 3.
-wrong: Go through the pairs: apple 3 (printed), pear 0 (skipped), fig 7 (printed). Then `len(inv)` counts all 3 pairs.
-
-=== task: code medium
-title: Total of a shopping cart
-prompt: Write a function `cart_total(prices, cart)` where `prices` is a dictionary of prices and `cart` is a list of items. It returns the total price of the items in the cart. An item that isn't in `prices` counts as 0.
-
-For example, `cart_total({"tea": 2, "cake": 4}, ["tea", "cake", "tea"])` returns `8`.
-starter:
-```python
-def cart_total(prices, cart):
+def first_uniq_char(s):
     # your code here
     return 0
 ```
 solution:
 ```python
-def cart_total(prices, cart):
+def first_uniq_char(s):
+    counts = {}
+    for c in s:
+        counts[c] = counts.get(c, 0) + 1
+    for i, c in enumerate(s):
+        if counts[c] == 1:
+            return i
+    return -1
+```
+tests:
+- first_uniq_char("leetcode")
+- first_uniq_char("loveleetcode")
+- first_uniq_char("aabb")
+- first_uniq_char("z")
+- first_uniq_char("aabbc")
+- first_uniq_char("abcabd")
+- first_uniq_char("ab" * 5000 + "c")
+fail[2]: l, o and e all repeat, so the first character that appears once is v, at index 2.
+fail[3]: Every letter of `"aabb"` appears twice, so the answer is -1.
+fail[5]: Only c appears once, at index 4.
+fail[6]: c and d both appear once, and c comes first, at index 2.
+fail[7]: a and b each appear 5,000 times, so the only single character is the c at index 10,000.
+edges:
+- a single character :: len(s) == 1 :: first_uniq_char("q")
+- every character repeated :: all(s.count(c) > 1 for c in s) :: first_uniq_char("abab")
+- the only unique character at the end :: s.count(s[-1]) == 1 and all(s.count(c) > 1 for c in s[:-1]) :: first_uniq_char("aab")
+edge_count: 2
+hint: Count every character first: `counts[c] = counts.get(c, 0) + 1`.
+hint: Then go through `s` again, in order, with `for i, c in enumerate(s):`, and return the first index whose character has a count of 1.
+hint: If no character has a count of 1, return -1 after the loop.
+right: Counting first means every character's count is known before the second walk, which then stops at the first character with a count of 1.
+wrong: Count the characters; then `for i, c in enumerate(s)`, return `i` when `counts[c] == 1`; return -1 after the loop.
+
+=== task: code easy
+title: Unique Number of Occurrences
+leetcode: 1207 | Unique Number of Occurrences | unique-number-of-occurrences
+patterns: count + loop + lookup
+prompt: Write `unique_occurrences(arr)` that returns `True` if every value in `arr` appears a different number of times from every other value, and `False` otherwise.
+
+**Example 1:** `unique_occurrences([1, 2, 2, 1, 1, 3])` returns `True`: 1 appears 3 times, 2 twice and 3 once.
+
+**Example 2:** `unique_occurrences([1, 2])` returns `False`: 1 and 2 both appear once.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 1,000, and -1,000 ≤ `arr[i]` ≤ 1,000.
+starter:
+```python
+def unique_occurrences(arr):
+    # your code here
+    return False
+```
+solution:
+```python
+def unique_occurrences(arr):
+    counts = {}
+    for x in arr:
+        counts[x] = counts.get(x, 0) + 1
+    seen = {}
+    for c in counts.values():
+        if c in seen:
+            return False
+        seen[c] = True
+    return True
+```
+tests:
+- unique_occurrences([1, 2, 2, 1, 1, 3])
+- unique_occurrences([1, 2])
+- unique_occurrences([-3, 0, 1, -3, 1, 1, 1, -3, 10, 0])
+- unique_occurrences([5])
+- unique_occurrences([4, 4, 4, 4])
+- unique_occurrences([1, 1, 2, 2])
+- unique_occurrences([7, 8, 8, 9, 9, 9, 8])
+fail[2]: 1 and 2 both appear once, so two values share a count.
+fail[3]: 1 appears 4 times, -3 three times, 0 twice and 10 once: all different.
+fail[4]: A single value has nothing to share its count with.
+fail[6]: 1 and 2 both appear twice.
+fail[7]: 8 and 9 both appear 3 times.
+edges:
+- a single value repeated :: len(set(arr)) == 1 :: unique_occurrences([2, 2, 2])
+- two values with the same count :: len(set(arr.count(x) for x in set(arr))) < len(set(arr)) :: unique_occurrences([3, 3, 5, 5])
+- negative numbers :: any(x < 0 for x in arr) :: unique_occurrences([-1, -1, 0])
+edge_count: 2
+hint: Count each value with a dictionary.
+hint: Then loop over `counts.values()`, keeping a second dictionary, `seen`, with the counts you've met so far as its keys.
+hint: If a count is already in `seen`, two values share it: return False at once. Otherwise add it. Return True after the loop.
+right: The first dictionary turns the list into counts, and the second one remembers which counts have appeared, so the first repeated count proves the answer is False.
+wrong: Count the values; loop over `counts.values()`, returning False when a count is already in `seen` and adding it otherwise; return True after the loop.
+
+=== task: code easy
+title: Ransom Note
+leetcode: 383 | Ransom Note | ransom-note
+patterns: count + lookup
+prompt: You want to write a note using letters cut out of a magazine. Write `can_construct(ransom_note, magazine)` that returns `True` if you can make the note from the magazine's letters, and `False` otherwise. Each letter of the magazine can be used only once.
+
+**Example 1:** `can_construct("cab", "abacus")` returns `True`: the magazine has a c, an a and a b to cut out.
+
+**Example 2:** `can_construct("boo", "bob")` returns `False`: the note needs two o's, and the magazine has only one.
+
+**Constraints:** `ransom_note` and `magazine` each have 0 to 100,000 lowercase English letters.
+starter:
+```python
+def can_construct(ransom_note, magazine):
+    # your code here
+    return False
+```
+solution:
+```python
+def can_construct(ransom_note, magazine):
+    counts = {}
+    for ch in magazine:
+        counts[ch] = counts.get(ch, 0) + 1
+    for ch in ransom_note:
+        if counts.get(ch, 0) == 0:
+            return False
+        counts[ch] -= 1
+    return True
+```
+tests:
+- can_construct("cab", "abacus")
+- can_construct("boo", "bob")
+- can_construct("", "news")
+- can_construct("hi", "")
+- can_construct("aa", "aab")
+- can_construct("noon", "onion")
+- can_construct("x", "yyy")
+- can_construct("a" * 3000, "a" * 2999 + "b")
+fail[2]: The note needs two o's, and `"bob"` has only one. Count the magazine's letters, and use one up for each letter of the note.
+fail[3]: An empty note needs no letters, so you can always make it.
+fail[4]: The magazine is empty, so there are no letters to cut out.
+fail[6]: `"onion"` has two n's and two o's: enough for `"noon"`.
+fail[7]: The magazine has no x at all. `counts.get("x", 0)` gives 0 instead of a KeyError.
+fail[8]: The note needs 3,000 a's, and the magazine has 2,999.
+error[KeyError]: The note can have a letter the magazine never had, and reading `counts[ch]` for it is a KeyError. Use `counts.get(ch, 0)`.
+edges:
+- an empty note :: ransom_note == "" :: can_construct("", "abc")
+- an empty magazine :: magazine == "" and ransom_note != "" :: can_construct("a", "")
+- a letter the magazine has, but not enough times :: any(0 < magazine.count(c) < ransom_note.count(c) for c in set(ransom_note)) :: can_construct("noon", "on")
+- the note uses the whole magazine :: ransom_note != "" and sorted(ransom_note) == sorted(magazine) :: can_construct("tea", "eat")
+edge_count: 2
+hint: Count how many of each letter the magazine has.
+hint: Then go through the note. Each letter uses up one from its count.
+hint: If a letter's count is already 0, or the letter was never there, `counts.get(ch, 0)` is 0: return `False`. If the loop finishes, return `True`.
+right: The dictionary records how many of each letter are left, and each letter of the note uses one up, so a letter the note needs more often than the magazine has runs out.
+wrong: Count the magazine's letters with `counts[ch] = counts.get(ch, 0) + 1`. Then for each letter of the note: if `counts.get(ch, 0)` is 0, return `False`; otherwise take 1 off. Return `True` after the loop.
+
+=== task: code easy
+title: Word Pattern
+leetcode: 290 | Word Pattern | word-pattern
+patterns: update + lookup
+prompt: `pattern` is a string of letters, and `s` is a string of words separated by single spaces. `s` follows `pattern` when there's one word for each letter, every copy of a letter matches the same word, and different letters match different words. Write `word_pattern(pattern, s)` that returns `True` if `s` follows `pattern`, and `False` otherwise.
+
+**Example 1:** `word_pattern("aab", "tea tea cake")` returns `True`: a matches `"tea"` and b matches `"cake"`.
+
+**Example 2:** `word_pattern("aab", "tea cake cake")` returns `False`: a would have to match both `"tea"` and `"cake"`.
+
+**Constraints:** `pattern` has 1 to 300 lowercase letters. `s` has 1 to 3,000 characters: lowercase words separated by single spaces, with no space at the start or the end.
+starter:
+```python
+def word_pattern(pattern, s):
+    # your code here
+    return False
+```
+solution:
+```python
+def word_pattern(pattern, s):
+    words = s.split()
+    if len(words) != len(pattern):
+        return False
+    letter_to_word = {}
+    word_to_letter = {}
+    for i in range(len(words)):
+        letter = pattern[i]
+        word = words[i]
+        if letter in letter_to_word and letter_to_word[letter] != word:
+            return False
+        if word in word_to_letter and word_to_letter[word] != letter:
+            return False
+        letter_to_word[letter] = word
+        word_to_letter[word] = letter
+    return True
+```
+tests:
+- word_pattern("aab", "tea tea cake")
+- word_pattern("aab", "tea cake cake")
+- word_pattern("ab", "sun sun")
+- word_pattern("abc", "one two")
+- word_pattern("ab", "up down left")
+- word_pattern("z", "hello")
+- word_pattern("abcb", "up down left down")
+fail[3]: a and b would both match `"sun"`, but different letters must match different words. Keep a second dictionary, from words back to letters.
+fail[4]: There are 3 letters but only 2 words, so they can't match. Compare the counts first.
+fail[5]: There are 2 letters but 3 words. Compare `len(words)` with `len(pattern)` before matching them.
+fail[7]: a, b and c match up, down and left, and the second b matches down again.
+error[IndexError]: The pattern and the words can have different lengths, so `pattern[i]` or `words[i]` can run past the end. Return False when `len(words) != len(pattern)` before the loop.
+edges:
+- different numbers of letters and words :: len(pattern) != len(s.split()) :: word_pattern("ab", "go")
+- two letters for one word :: len(pattern) == len(s.split()) and len(set(pattern)) > len(set(s.split())) :: word_pattern("ab", "go go")
+- one letter for two words :: len(pattern) == len(s.split()) and len(set(pattern)) < len(set(s.split())) :: word_pattern("aa", "go stop")
+- one letter and one word :: len(pattern) == 1 and len(s.split()) == 1 :: word_pattern("q", "yes")
+edge_count: 2
+hint: Split `s` into words with `s.split()`. If the number of words isn't the number of letters, return `False` straight away.
+hint: Go through the positions with `for i in range(len(words)):`. The letter `pattern[i]` and the word `words[i]` must match each other.
+hint: Keep two dictionaries, letter to word and word to letter. If a letter already has a different word, or a word already has a different letter, return `False`. Otherwise store the match both ways.
+right: Two dictionaries keep the match one-to-one in both directions, and the length check catches extra or missing words before the loop starts.
+wrong: Split `s` and compare `len(words)` with `len(pattern)`. Then for each position, return `False` if the letter's stored word or the word's stored letter disagrees, and store both matches; return `True` at the end.
+
+=== task: code easy
+title: Decode the Message
+leetcode: 2325 | Decode the Message | decode-the-message
+patterns: update + lookup
+prompt: A secret message is decoded with a `key`, a string that holds every lowercase letter at least once. Go through `key` and give each letter, the first time it appears, the next letter of the alphabet: the first new letter stands for a, the second for b, all the way to z. Spaces in `key` are skipped. Write `decode_message(key, message)` that decodes `message` one letter at a time. Spaces in `message` stay spaces.
+
+**Example 1:** `decode_message("the quick brown fox jumps over the lazy dog", "vkbs bs t suepuv")` returns `"this is a secret"`: t stands for a, h for b, e for c, q for d, and onwards.
+
+**Example 2:** `decode_message("eljuxhpwnyrdgtqkviszcfmabo", "zwx hnfx lqantp mnoeius ycgk vcnjrdb")` returns `"the five boxing wizards jump quickly"`.
+
+**Constraints:** 26 ≤ `len(key)` ≤ 2,000, and `key` has lowercase letters and spaces, with every letter at least once. 1 ≤ `len(message)` ≤ 2,000, and `message` has lowercase letters and spaces.
+starter:
+```python
+def decode_message(key, message):
+    # your code here
+    return ""
+```
+solution:
+```python
+def decode_message(key, message):
+    alphabet = "abcdefghijklmnopqrstuvwxyz"
+    table = {}
+    for c in key:
+        if c != " " and c not in table:
+            table[c] = alphabet[len(table)]
+    result = ""
+    for c in message:
+        if c == " ":
+            result += " "
+        else:
+            result += table[c]
+    return result
+```
+tests:
+- decode_message("the quick brown fox jumps over the lazy dog", "vkbs bs t suepuv")
+- decode_message("eljuxhpwnyrdgtqkviszcfmabo", "zwx hnfx lqantp mnoeius ycgk vcnjrdb")
+- decode_message("abcdefghijklmnopqrstuvwxyz", "hello world")
+- decode_message("zyxwvutsrqponmlkjihgfedcba", "abc")
+- decode_message("hhh eee abcdefghijklmnopqrstuvwxyz", "he did")
+- decode_message("the quick brown fox jumps over the lazy dog", "   ")
+fail[3]: With the alphabet in order as the key, every letter stands for itself.
+fail[4]: z is the first new letter, so it stands for a, y for b and x for c: a, b and c decode to z, y and x.
+fail[5]: Only a letter's first appearance counts: h stands for a and e for b, and the repeats change nothing. After them come a, b, c and d, so d is the 6th new letter (f), and i is the 9th (i).
+fail[6]: Spaces stay spaces, so 3 spaces decode to 3 spaces.
+error[KeyError]: Spaces aren't in the table, so `table[" "]` is a KeyError. Add a space to the answer as it is, and look up only letters.
+edges:
+- the alphabet in order as the key :: key == "abcdefghijklmnopqrstuvwxyz" :: decode_message("abcdefghijklmnopqrstuvwxyz", "same")
+- letters repeated in the key :: len(key.replace(" ", "")) > 26 :: decode_message("zz yxwvutsrqponmlkjihgfedcba", "cab")
+- spaces in the message :: " " in message :: decode_message("abcdefghijklmnopqrstuvwxyz", "a b")
+edge_count: 2
+hint: Build a dictionary `table` from each letter of the key to the letter it stands for.
+hint: Go through `key`, skipping spaces and letters already in `table`. `len(table)` is how many letters already have a match, so the next new letter stands for `alphabet[len(table)]`.
+hint: Then build the answer one character of `message` at a time: `table[c]` for a letter, and a space for a space.
+right: The `in` check keeps only each letter's first appearance, and len(table), the number of letters matched so far, picks the next letter of the alphabet.
+wrong: For each `c` in `key` that isn't a space and isn't in `table`, set `table[c] = alphabet[len(table)]`; then build the answer from `table[c]` for each letter of `message`, keeping spaces.
+
+=== task: code easy
+title: Find Lucky Integer in an Array
+leetcode: 1394 | Find Lucky Integer in an Array | find-lucky-integer-in-an-array
+patterns: count + loop
+prompt: A number in a list is **lucky** if it appears exactly as many times as its value: 3 is lucky if it appears exactly 3 times. Write `find_lucky(arr)` that returns the largest lucky number in `arr`, or `-1` if there isn't one.
+
+**Example 1:** `find_lucky([2, 2, 3, 4])` returns `2`: 2 appears twice.
+
+**Example 2:** `find_lucky([1, 2, 2, 3, 3, 3])` returns `3`: 1, 2 and 3 are all lucky, and 3 is the largest.
+
+**Example 3:** `find_lucky([2, 2, 2, 3, 3])` returns `-1`.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 500, and 1 ≤ `arr[i]` ≤ 500.
+starter:
+```python
+def find_lucky(arr):
+    # your code here
+    return 0
+```
+solution:
+```python
+def find_lucky(arr):
+    counts = {}
+    for x in arr:
+        counts[x] = counts.get(x, 0) + 1
+    best = -1
+    for x, c in counts.items():
+        if x == c and x > best:
+            best = x
+    return best
+```
+tests:
+- find_lucky([2, 2, 3, 4])
+- find_lucky([1, 2, 2, 3, 3, 3])
+- find_lucky([2, 2, 2, 3, 3])
+- find_lucky([1])
+- find_lucky([5])
+- find_lucky([7] * 7)
+- find_lucky([3, 1, 3, 2, 3, 2])
+fail[2]: 1, 2 and 3 are all lucky. Return the largest, 3.
+fail[3]: 2 appears 3 times and 3 appears twice, so neither is lucky.
+fail[4]: 1 appears once, so it's lucky.
+fail[5]: 5 appears once, not 5 times.
+fail[7]: 3 appears 3 times, 2 twice and 1 once: all lucky, and 3 is the largest.
+edges:
+- a single number :: len(arr) == 1 :: find_lucky([1])
+- no lucky number :: all(arr.count(x) != x for x in arr) :: find_lucky([2, 3, 3])
+- several lucky numbers :: sum(1 for x in set(arr) if arr.count(x) == x) > 1 :: find_lucky([1, 2, 2])
+edge_count: 2
+hint: Count each number with a dictionary.
+hint: Loop over `counts.items()`, which gives each number together with its count. A number is lucky when the two are equal.
+hint: Keep the largest lucky number in `best`, starting at -1, so -1 is the answer when there's no lucky number.
+right: Counting first gives every number's count, and one loop over the pairs compares each number with its own count, keeping the largest match.
+wrong: Count the numbers; then for each `x, c` in `counts.items()`, if `x == c` and `x > best`, set `best = x`; start `best` at -1 and return it.
+
+=== task: code easy
+title: Substrings of Size Three with Distinct Characters
+leetcode: 1876 | Substrings of Size Three with Distinct Characters | substrings-of-size-three-with-distinct-characters
+patterns: count + del
+prompt: Write `count_good_substrings(s)` that returns how many substrings of length 3 in `s` have three different characters. Each position counts, so the same substring found twice counts twice.
+
+**Example 1:** `count_good_substrings("xyzzaz")` returns `1`: the substrings of length 3 are `"xyz"`, `"yzz"`, `"zza"` and `"zaz"`, and only `"xyz"` has three different characters.
+
+**Example 2:** `count_good_substrings("aababcabc")` returns `4`: `"abc"`, `"bca"`, `"cab"` and `"abc"` again.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100, and `s` has only lowercase English letters.
+starter:
+```python
+def count_good_substrings(s):
+    # your code here
+    return -1
+```
+solution:
+```python
+def count_good_substrings(s):
+    counts = {}
+    good = 0
+    for i in range(len(s)):
+        counts[s[i]] = counts.get(s[i], 0) + 1
+        if i >= 3:
+            old = s[i - 3]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+        if i >= 2 and len(counts) == 3:
+            good += 1
+    return good
+```
+tests:
+- count_good_substrings("xyzzaz")
+- count_good_substrings("aababcabc")
+- count_good_substrings("ab")
+- count_good_substrings("abc")
+- count_good_substrings("aaa")
+- count_good_substrings("abcabc")
+- count_good_substrings("abacaba")
+fail[2]: `"abc"`, `"bca"`, `"cab"` and `"abc"` again: a repeat at another position counts too.
+fail[3]: A string shorter than 3 has no substrings of length 3.
+fail[4]: The whole string, `"abc"`, has three different characters.
+fail[7]: Of `"aba"`, `"bac"`, `"aca"`, `"cab"` and `"aba"`, only `"bac"` and `"cab"` have three different letters.
+edges:
+- shorter than three :: len(s) < 3 :: count_good_substrings("ab")
+- only one letter :: len(set(s)) == 1 :: count_good_substrings("aaaa")
+- exactly three letters :: len(s) == 3 :: count_good_substrings("abc")
+edge_count: 2
+hint: Slide a window of 3 characters along `s`, counting the characters in it with a dictionary.
+hint: When character `i` comes in, the one at `i - 3` goes out: take 1 off its count, and `del` its key when the count reaches 0.
+hint: Then `len(counts)` is the number of different characters in the window. Once the window is full (`i >= 2`), it's good when `len(counts) == 3`.
+right: Deleting a key when its count reaches 0 keeps len(counts) equal to the number of different characters in the window, so each window is checked in one step.
+wrong: For each `i`, count `s[i]`; if `i >= 3`, take 1 off the count of `s[i - 3]` and delete its key at 0; when `i >= 2` and `len(counts) == 3`, add 1.
+
+=== task: code easy
+title: Remove Letter To Equalize Frequency
+leetcode: 2423 | Remove Letter To Equalize Frequency | remove-letter-to-equalize-frequency
+patterns: count + del + loop
+prompt: `word` is a string of lowercase letters, and you must remove exactly one letter from it. Write `equal_frequency(word)` that returns `True` if, after removing it, every letter left in the word appears the same number of times, and `False` otherwise.
+
+**Example 1:** `equal_frequency("abcc")` returns `True`: removing one c leaves a, b and c once each.
+
+**Example 2:** `equal_frequency("aazz")` returns `False`: removing any letter leaves one letter twice and the other once.
+
+**Constraints:** 2 ≤ `len(word)` ≤ 100, and every letter is lowercase.
+starter:
+```python
+def equal_frequency(word):
+    # your code here
+    return False
+```
+solution:
+```python
+def all_same(counts):
+    first = -1
+    for c in counts.values():
+        if first == -1:
+            first = c
+        elif c != first:
+            return False
+    return True
+
+def equal_frequency(word):
+    counts = {}
+    for ch in word:
+        counts[ch] = counts.get(ch, 0) + 1
+    for ch in list(counts):
+        counts[ch] -= 1
+        if counts[ch] == 0:
+            del counts[ch]
+        same = all_same(counts)
+        counts[ch] = counts.get(ch, 0) + 1
+        if same:
+            return True
+    return False
+```
+tests:
+- equal_frequency("abcc")
+- equal_frequency("aazz")
+- equal_frequency("zz")
+- equal_frequency("aaab")
+- equal_frequency("aabbb")
+- equal_frequency("aabbcc")
+- equal_frequency("abc")
+- equal_frequency("aabbccd")
+fail[3]: Removing one z leaves one z, and every letter left appears once.
+fail[4]: Removing the b leaves only a's, three of them. A letter whose count drops to 0 is gone, so delete its key and don't compare it.
+fail[5]: Removing one b leaves two a's and two b's. Try removing one copy of each different letter, not only of the most common or the rarest.
+fail[6]: Removing any letter leaves that letter once and the others twice. You must remove exactly one letter, even when the counts start out equal.
+fail[7]: Removing any letter leaves the other two once each.
+error[RuntimeError]: A loop over a dictionary can't delete or add keys. Loop over `list(counts)`, a copy of the keys, instead.
+edges:
+- a word of two letters :: len(word) == 2 :: equal_frequency("xy")
+- one letter repeated :: len(set(word)) == 1 :: equal_frequency("ppp")
+- counts that start out equal :: len(set(word)) > 1 and len(set(word.count(c) for c in word)) == 1 :: equal_frequency("aabb")
+- a letter that appears once among repeats :: len(set(word)) > 1 and any(word.count(c) == 1 for c in word) and any(word.count(c) > 1 for c in word) :: equal_frequency("aabbc")
+edge_count: 3
+hint: Count the letters first. The question is about the counts, not about where the letters are.
+hint: Try removing one copy of each different letter: take 1 off its count, and `del` the key if the count reaches 0, since that letter is gone. Loop over `list(counts)`, so the dictionary can change while you loop.
+hint: A helper `all_same(counts)` can loop over `counts.values()` and return False at the first count that differs from the first one. Put the removed copy back with `counts[ch] = counts.get(ch, 0) + 1` before the next try.
+right: Counting turns the word into at most 26 numbers, so trying every removal is quick, and deleting a key at 0 makes sure a letter that disappears isn't compared.
+wrong: Count the letters. For each letter in `list(counts)`, take 1 off its count (deleting the key at 0), check whether the counts left are all equal, then put the 1 back. Return True if any try works, and False otherwise.
+
+=== task: code easy
+title: Check Array Formation Through Concatenation
+leetcode: 1640 | Check Array Formation Through Concatenation | check-array-formation-through-concatenation
+patterns: group + lookup
+prompt: `arr` is a list of different numbers, and `pieces` is a list of lists that hold the same numbers between them. You may put the pieces in any order, but you can't change the order of the numbers inside a piece. Write `can_form_array(arr, pieces)` that returns `True` if joining the pieces in some order gives `arr`, and `False` otherwise.
+
+**Example 1:** `can_form_array([15, 88], [[88], [15]])` returns `True`: put [15] first, then [88].
+
+**Example 2:** `can_form_array([49, 18, 16], [[16, 18, 49]])` returns `False`: the piece's numbers are in the wrong order, and they can't be reordered.
+
+**Example 3:** `can_form_array([91, 4, 64, 78], [[78], [4, 64], [91]])` returns `True`.
+
+**Constraints:** 1 ≤ `len(pieces)` ≤ `len(arr)` ≤ 100, the pieces hold `len(arr)` numbers in all, 1 ≤ each number ≤ 100, and no number appears twice in `arr` or twice across the pieces.
+starter:
+```python
+def can_form_array(arr, pieces):
+    # your code here
+    return False
+```
+solution:
+```python
+def can_form_array(arr, pieces):
+    starts = {}
+    for piece in pieces:
+        starts[piece[0]] = piece
+    i = 0
+    while i < len(arr):
+        if arr[i] not in starts:
+            return False
+        for x in starts[arr[i]]:
+            if i >= len(arr) or arr[i] != x:
+                return False
+            i += 1
+    return True
+```
+tests:
+- can_form_array([15, 88], [[88], [15]])
+- can_form_array([49, 18, 16], [[16, 18, 49]])
+- can_form_array([91, 4, 64, 78], [[78], [4, 64], [91]])
+- can_form_array([1, 2, 3], [[2], [1, 3]])
+- can_form_array([1, 2, 3], [[1, 2, 3]])
+- can_form_array([5], [[5]])
+- can_form_array([12], [[1]])
+- can_form_array([1, 3, 5, 7], [[2, 4, 6, 8]])
+fail[2]: 49 isn't the first number of any piece, so no piece can start there.
+fail[4]: The piece [1, 3] needs 3 straight after 1, but `arr` has 2 there.
+fail[5]: One piece that matches `arr` exactly.
+fail[7]: 12 isn't the first number of any piece.
+edges:
+- one piece :: len(pieces) == 1 :: can_form_array([3, 1], [[3, 1]])
+- every piece a single number :: all(len(p) == 1 for p in pieces) :: can_form_array([2, 1], [[1], [2]])
+- a number that starts no piece :: arr[0] not in [p[0] for p in pieces] :: can_form_array([4, 5], [[5, 4]])
+edge_count: 2
+hint: All the numbers are different, so each piece can be found by its first number. Make a dictionary from each piece's first number to the whole piece: a value can be a list.
+hint: Walk through `arr` with an index `i`. The number at `i` must start a piece: if it isn't a key, return False.
+hint: Then check the piece's numbers one by one against `arr[i]`, `arr[i + 1]` and onwards, moving `i` along, and return False at the first difference. If the walk reaches the end, return True.
+right: The dictionary finds the piece that must come next from a single number, so arr is checked in one walk, piece by piece.
+wrong: Map each piece's first number to the piece; walk `i` through `arr`, returning False if `arr[i]` isn't a key, then compare the piece's numbers with `arr[i]` onwards, moving `i` past them; return True at the end.
+
+=== task: code easy
+title: Degree of an Array
+leetcode: 697 | Degree of an Array | degree-of-an-array
+patterns: count + update + loop
+prompt: The **degree** of a list is the largest number of times any value appears in it. Write `find_shortest_sub_array(nums)` that returns the length of the shortest run of numbers next to each other in `nums` (a subarray) that has the same degree as the whole of `nums`.
+
+**Example 1:** `find_shortest_sub_array([1, 2, 2, 3, 1])` returns `2`: the degree is 2, since 1 and 2 both appear twice, and [2, 2] is the shortest run with a degree of 2.
+
+**Example 2:** `find_shortest_sub_array([1, 2, 2, 3, 1, 4, 2])` returns `6`: 2 appears 3 times, and the run from the first 2 to the last one is 6 numbers long.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 50,000, and 0 ≤ `nums[i]` < 50,000.
+starter:
+```python
+def find_shortest_sub_array(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def find_shortest_sub_array(nums):
+    counts = {}
+    first = {}
+    last = {}
+    for i in range(len(nums)):
+        x = nums[i]
+        counts[x] = counts.get(x, 0) + 1
+        if x not in first:
+            first[x] = i
+        last[x] = i
+    degree = max(counts.values())
+    best = len(nums)
+    for x in counts:
+        if counts[x] == degree and last[x] - first[x] + 1 < best:
+            best = last[x] - first[x] + 1
+    return best
+```
+tests:
+- find_shortest_sub_array([1, 2, 2, 3, 1])
+- find_shortest_sub_array([1, 2, 2, 3, 1, 4, 2])
+- find_shortest_sub_array([1])
+- find_shortest_sub_array([1, 2, 3])
+- find_shortest_sub_array([5, 5, 5, 5])
+- find_shortest_sub_array([2, 1, 1, 2, 1, 3, 3, 3, 1, 3, 1, 3, 2])
+- find_shortest_sub_array(list(range(5000)) + [0])
+fail[1]: 1 and 2 both appear twice. The 2s sit next to each other, a run of 2, while the 1s need a run of 5.
+fail[2]: 2 appears 3 times, and the shortest run holding all three goes from index 1 to index 6: 6 numbers.
+fail[4]: Every number appears once, so the degree is 1 and a single number is enough.
+fail[6]: 1 and 3 both appear 5 times. The 3s fit in indexes 5 to 11, a run of 7, while the 1s need indexes 1 to 10.
+fail[7]: Only 0 appears twice, at the very start and the very end, so the run is the whole list.
+edges:
+- a single number :: len(nums) == 1 :: find_shortest_sub_array([4])
+- every number once :: len(set(nums)) == len(nums) :: find_shortest_sub_array([3, 1, 2])
+- a tie for the degree :: sum(1 for x in set(nums) if nums.count(x) == max(nums.count(y) for y in nums)) > 1 :: find_shortest_sub_array([1, 2, 2, 1])
+edge_count: 2
+hint: In one pass, count each number and remember where it first appears and where it last appears: three dictionaries, `counts`, `first` and `last`. Set `first[x]` only when `x not in first`, and set `last[x]` every time.
+hint: The degree is `max(counts.values())`.
+hint: Loop over the numbers whose count is the degree. The shortest run holding every copy of `x` goes from `first[x]` to `last[x]`, which is `last[x] - first[x] + 1` long. Return the smallest of these.
+right: The run must hold every copy of a most common number, and the first and last positions give that run's length directly, so one pass and one loop over the dictionary answer it.
+wrong: Record `counts`, `first` and `last` for each number in one pass; take `degree = max(counts.values())`; return the smallest `last[x] - first[x] + 1` over the `x` whose count is the degree.
+
+=== task: code medium
+title: Group the People Given the Group Size They Belong To
+leetcode: 1282 | Group the People Given the Group Size They Belong To | group-the-people-given-the-group-size-they-belong-to
+patterns: group + lookup
+prompt: There are n people with ids from 0 to n - 1, and person `i` must be in a group of exactly `group_sizes[i]` people. Everyone is in exactly one group. Write `group_the_people(group_sizes)` that returns the groups. There can be several ways to split people up, so build the groups this way: go through the people in order of id, add each person to the unfinished group of their size (starting one if there isn't one), and list the groups in the order they fill up.
+
+**Example 1:** `group_the_people([3, 3, 3, 3, 3, 1, 3])` returns `[[0, 1, 2], [5], [3, 4, 6]]`: 0, 1 and 2 fill a group of 3, person 5 fills a group of 1 alone, and 3, 4 and 6 fill a second group of 3.
+
+**Example 2:** `group_the_people([2, 1, 3, 3, 3, 2])` returns `[[1], [2, 3, 4], [0, 5]]`.
+
+**Constraints:** 1 ≤ n ≤ 500, 1 ≤ `group_sizes[i]` ≤ n, and the people can always be split this way.
+starter:
+```python
+def group_the_people(group_sizes):
+    # your code here
+    return []
+```
+solution:
+```python
+def group_the_people(group_sizes):
+    waiting = {}
+    groups = []
+    for person in range(len(group_sizes)):
+        size = group_sizes[person]
+        if size not in waiting:
+            waiting[size] = []
+        waiting[size].append(person)
+        if len(waiting[size]) == size:
+            groups.append(waiting[size])
+            waiting[size] = []
+    return groups
+```
+tests:
+- group_the_people([3, 3, 3, 3, 3, 1, 3])
+- group_the_people([2, 1, 3, 3, 3, 2])
+- group_the_people([1])
+- group_the_people([1, 1, 1])
+- group_the_people([2, 2, 2, 2])
+- group_the_people([3, 2, 3, 2, 3])
+fail[1]: The groups come out in the order they fill: [0, 1, 2] fills at person 2, [5] at person 5 and [3, 4, 6] at person 6. If a group in your answer is empty, you cleared the list you had added: give the size a new list with `waiting[size] = []` instead of calling `.clear()`.
+fail[4]: Each person wants a group of 1, so each one fills a group alone.
+fail[5]: Four people want groups of 2, so there are two groups: [0, 1] and [2, 3].
+fail[6]: [1, 3] fills at person 3, before [0, 2, 4] fills at person 4.
+edges:
+- one person :: len(group_sizes) == 1 :: group_the_people([1])
+- everyone in one group :: all(g == len(group_sizes) for g in group_sizes) :: group_the_people([3, 3, 3])
+- everyone alone :: all(g == 1 for g in group_sizes) :: group_the_people([1, 1])
+edge_count: 2
+hint: Keep a dictionary `waiting` from each group size to the list of people in the unfinished group of that size. Make the list the first time you meet a size.
+hint: Append each person to `waiting[size]`. When that list holds `size` people, the group is full: append it to the answer.
+hint: Then give that size a fresh list with `waiting[size] = []`. Calling `.clear()` instead would also empty the group you've added to the answer, because it's the same list.
+right: The dictionary holds one unfinished group per size, so each person joins the right group in one step, and a full group goes straight into the answer.
+wrong: For each person, append them to `waiting[size]` (making the list when the size is new); when its length equals `size`, append the list to `groups` and set `waiting[size] = []`.
+
+=== task: code medium
+title: Sort Characters By Frequency
+leetcode: 451 | Sort Characters By Frequency | sort-characters-by-frequency
+patterns: count + group + loop
+prompt: Write `frequency_sort(s)` that returns a string with the same characters as `s`, arranged so that the characters that appear most often come first. All copies of a character stay together. When two characters appear equally often, the one whose first copy comes earlier in `s` goes first.
+
+**Example 1:** `frequency_sort("banana")` returns `"aaannb"`: a appears three times, n twice and b once.
+
+**Example 2:** `frequency_sort("xyzzy")` returns `"yyzzx"`: y and z both appear twice, and y appears first in `s`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 500,000, and `s` has only letters and digits. Capital and small letters are different characters.
+starter:
+```python
+def frequency_sort(s):
+    # your code here
+    return ""
+```
+solution:
+```python
+def frequency_sort(s):
+    counts = {}
+    for c in s:
+        counts[c] = counts.get(c, 0) + 1
+    by_count = {}
+    for c in counts:
+        n = counts[c]
+        if n not in by_count:
+            by_count[n] = []
+        by_count[n].append(c)
+    sizes = list(by_count)
+    sizes.sort()
+    sizes.reverse()
+    result = ""
+    for n in sizes:
+        for c in by_count[n]:
+            result += c * n
+    return result
+```
+tests:
+- frequency_sort("banana")
+- frequency_sort("xyzzy")
+- frequency_sort("a")
+- frequency_sort("abc")
+- frequency_sort("Aaa")
+- frequency_sort("zzaab")
+- frequency_sort("1223334444")
+fail[2]: y and z both appear twice. y's first copy (index 1) comes before z's (index 2), so the y's go first.
+fail[4]: Every character appears once, so they keep the order they first appear in.
+fail[5]: `"A"` and `"a"` are different characters: a appears twice and A once.
+fail[6]: z and a both appear twice. z appears first in `s`, so it goes first, even though a comes first in the alphabet.
+edges:
+- one character :: len(s) == 1 :: frequency_sort("q")
+- every character once :: len(s) > 1 and len(set(s)) == len(s) :: frequency_sort("cab")
+- a tie between characters that repeat :: any(s.count(a) == s.count(b) > 1 for a in set(s) for b in set(s) if a != b) :: frequency_sort("baab")
+- the same letter as a capital and a small letter :: any(c.isalpha() and c.swapcase() in s for c in s) :: frequency_sort("bBb")
+edge_count: 2
+hint: Count each character. The dictionary's keys are in the order each character first appeared.
+hint: Group the characters by count: a second dictionary from each count to the list of characters with that count. Going through `counts` in order keeps each group in first-appearance order.
+hint: Put the counts from highest to lowest with `sizes = list(by_count)`, `sizes.sort()` and `sizes.reverse()`. Then add `c * n` for each character `c` in the group of each count `n`.
+right: The counts dictionary keeps first-appearance order, the groups keep it within each count, and reading the groups from the highest count down puts the most common characters first.
+wrong: Count the characters; group them in a dictionary from count to a list of characters; sort the counts and reverse them; for each count `n`, add `c * n` for every `c` in its group.
+
+=== task: code medium
+title: Bulls and Cows
+leetcode: 299 | Bulls and Cows | bulls-and-cows
+patterns: count + lookup
+prompt: In the game Bulls and Cows, one player picks a secret number and the other tries to guess it. `secret` and `guess` are strings of digits with the same length. A **bull** is a digit of the guess that matches the secret in the same position. A **cow** is a digit of the guess that the secret also has, but in a different position. Each digit of the secret can be matched only once, and a digit that is a bull can't also be a cow. Write `get_hint(secret, guess)` that returns the number of bulls, then `"A"`, then the number of cows, then `"B"`.
+
+**Example 1:** `get_hint("2024", "4022")` returns `"2A2B"`: the 0 and the 2 in the middle are bulls. The guess's other two digits, 4 and 2, match the secret's other two digits, 2 and 4, in different positions: 2 cows.
+
+**Example 2:** `get_hint("1234", "1111")` returns `"1A0B"`: the first 1 is a bull. The secret has no other 1 to match, so the other 1s aren't cows.
+
+**Constraints:** `secret` and `guess` have the same length, from 1 to 1,000, and hold only digits.
+starter:
+```python
+def get_hint(secret, guess):
+    # your code here
+    return "0A0B"
+```
+solution:
+```python
+def get_hint(secret, guess):
+    bulls = 0
+    secret_left = {}
+    guess_left = {}
+    for i in range(len(secret)):
+        s = secret[i]
+        g = guess[i]
+        if s == g:
+            bulls += 1
+        else:
+            secret_left[s] = secret_left.get(s, 0) + 1
+            guess_left[g] = guess_left.get(g, 0) + 1
+    cows = 0
+    for d in guess_left:
+        cows += min(guess_left[d], secret_left.get(d, 0))
+    return str(bulls) + "A" + str(cows) + "B"
+```
+tests:
+- get_hint("2024", "4022")
+- get_hint("1234", "1111")
+- get_hint("5678", "5678")
+- get_hint("1122", "2211")
+- get_hint("9", "0")
+- get_hint("1200", "0001")
+- get_hint("0", "0")
+fail[2]: Only the first 1 is in the secret, and it's a bull. The other 1s have no 1 left in the secret to match, so they aren't cows.
+fail[4]: No digit is in the right place, but every digit has a partner elsewhere: 4 cows.
+fail[6]: After the bull (the 0 at index 2), the guess has two 0s and a 1 left, and the secret has one 0 and one 1 left: 2 cows. Count the leftover digits on each side and take the smaller count for each digit.
+edges:
+- one digit :: len(secret) == 1 and len(guess) == 1 :: get_hint("7", "7")
+- the guess is the secret :: secret == guess :: get_hint("123", "123")
+- no digit in common :: len(secret) == len(guess) and not set(secret) & set(guess) :: get_hint("12", "34")
+- more copies of a digit in the guess than in the secret :: len(secret) == len(guess) and any(guess.count(d) > secret.count(d) > 0 for d in set(guess)) :: get_hint("12", "11")
+edge_count: 2
+hint: Count the bulls first: the positions where `secret[i] == guess[i]`. Those digits are used up.
+hint: For every other position, count the leftover digits of the secret and of the guess in two dictionaries.
+hint: Each digit gives `min(guess count, secret count)` cows: use `secret_left.get(d, 0)` for a digit the secret has none of. Return `str(bulls) + "A" + str(cows) + "B"`.
+right: Taking the bulls out first means no digit is counted twice, and the smaller of the two leftover counts is how many copies of that digit can be matched in other positions.
+wrong: Go through the positions: equal digits are bulls; otherwise count the secret's digit in `secret_left` and the guess's digit in `guess_left`. The cows are the sum of `min(guess_left[d], secret_left.get(d, 0))` over the digits `d` in `guess_left`.
+
+=== task: code medium
+title: Repeated DNA Sequences
+leetcode: 187 | Repeated DNA Sequences | repeated-dna-sequences
+patterns: count + loop
+prompt: A DNA strand is a string of the letters A, C, G and T. Write `find_repeated_dna_sequences(s)` that returns every sequence of 10 letters in a row that appears more than once in `s`. Copies may overlap. List each sequence once, in the order its first copy appears in `s`.
+
+**Example 1:** `find_repeated_dna_sequences("CATCATCATCATCAT")` returns `["CATCATCATC", "ATCATCATCA", "TCATCATCAT"]`: they start at indexes 0, 1 and 2, and each starts again 3 places later.
+
+**Example 2:** `find_repeated_dna_sequences("GATTACA")` returns `[]`: the strand is shorter than 10 letters.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100,000, and every letter is A, C, G or T.
+starter:
+```python
+def find_repeated_dna_sequences(s):
+    # your code here
+    return ["?"]
+```
+solution:
+```python
+def find_repeated_dna_sequences(s):
+    counts = {}
+    for i in range(len(s) - 9):
+        seq = s[i:i + 10]
+        counts[seq] = counts.get(seq, 0) + 1
+    result = []
+    for seq in counts:
+        if counts[seq] > 1:
+            result.append(seq)
+    return result
+```
+tests:
+- find_repeated_dna_sequences("CATCATCATCATCAT")
+- find_repeated_dna_sequences("GATTACA")
+- find_repeated_dna_sequences("AAAAAAAAAAAA")
+- find_repeated_dna_sequences("ACGTTGCAAC")
+- find_repeated_dna_sequences("ACGTTGCAACGGATCCATGAGGATCCATGAACGTTGCAAC")
+- find_repeated_dna_sequences("A")
+- find_repeated_dna_sequences("TTTTTGGGGGTTTTTGGGGGCCCCC")
+fail[2]: A strand shorter than 10 letters has no 10-letter sequences, so the answer is `[]`.
+fail[3]: `"AAAAAAAAAA"` starts at indexes 0, 1 and 2: the copies overlap. It goes in the answer once.
+fail[4]: Exactly 10 letters make one sequence, which can't appear twice.
+fail[5]: `"ACGTTGCAAC"` first appears at index 0 and `"GGATCCATGA"` at index 10, so that's the order, even though the second copy of `"GGATCCATGA"` comes before the second copy of `"ACGTTGCAAC"`. Collect the answer in the dictionary's order at the end.
+edges:
+- shorter than 10 letters :: all(c in "ACGT" for c in s) and len(s) < 10 :: find_repeated_dna_sequences("ACGT")
+- exactly 10 letters :: all(c in "ACGT" for c in s) and len(s) == 10 :: find_repeated_dna_sequences("AAAAAAAAAA")
+- overlapping copies :: all(c in "ACGT" for c in s) and any(s[i:i + 10] == s[j:j + 10] for i in range(len(s) - 9) for j in range(i + 1, min(i + 10, len(s) - 9))) :: find_repeated_dna_sequences("AAAAAAAAAAA")
+- a sequence that appears three or more times :: all(c in "ACGT" for c in s) and any(sum(1 for j in range(len(s) - 9) if s[j:j + 10] == s[i:i + 10]) >= 3 for i in range(len(s) - 9)) :: find_repeated_dna_sequences("CCCCCCCCCCCC")
+edge_count: 2
+hint: Look at every 10-letter window: `s[i:i + 10]` for `i` from 0 to `len(s) - 10`.
+hint: Count each window in a dictionary. Overlapping windows count too.
+hint: The dictionary's keys are in first-appearance order, so at the end, loop over it and collect the keys whose count is more than 1.
+right: Each window is a 10-letter string, which works as a dictionary key, so one pass counts them all, and collecting the repeats in the dictionary's order lists each sequence once, in the order its first copy appeared.
+wrong: Count `s[i:i + 10]` for every `i` in `range(len(s) - 9)`. Then loop over the dictionary and keep the sequences whose count is more than 1.
+
+=== task: code medium
+title: Count Number of Bad Pairs
+leetcode: 2364 | Count Number of Bad Pairs | count-number-of-bad-pairs
+patterns: count + lookup
+prompt: In a list of whole numbers `nums`, a pair of indexes `(i, j)` with `i < j` is a **bad pair** if `j - i != nums[j] - nums[i]`. Write `count_bad_pairs(nums)` that returns the number of bad pairs.
+
+**Example 1:** `count_bad_pairs([3, 4, 9, 6])` returns `3`: the bad pairs are (0, 2), (1, 2) and (2, 3). For example, indexes 0 and 2 are 2 apart, but their numbers are 6 apart.
+
+**Example 2:** `count_bad_pairs([7, 7])` returns `1`: the indexes are 1 apart, but the numbers are 0 apart.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100,000, and 1 ≤ `nums[i]` ≤ 1,000,000,000.
+starter:
+```python
+def count_bad_pairs(nums):
+    # your code here
+    return -1
+```
+solution:
+```python
+def count_bad_pairs(nums):
+    seen = {}
+    good = 0
+    for i, x in enumerate(nums):
+        key = x - i
+        good += seen.get(key, 0)
+        seen[key] = seen.get(key, 0) + 1
+    n = len(nums)
+    return n * (n - 1) // 2 - good
+```
+tests:
+- count_bad_pairs([3, 4, 9, 6])
+- count_bad_pairs([7, 7])
+- count_bad_pairs([5])
+- count_bad_pairs([4, 5, 6, 7, 8])
+- count_bad_pairs([9, 8, 7, 6])
+- count_bad_pairs([1, 3, 3, 5, 5])
+- count_bad_pairs([999999999, 1000000000])
+- count_bad_pairs(list(range(5000, 0, -1)))
+fail[2]: Indexes 0 and 1 are 1 apart, but the numbers are 0 apart (7 - 7), so the pair is bad.
+fail[3]: One number makes no pairs.
+fail[4]: Every pair here is good: each step adds 1 to the index and 1 to the number.
+fail[8]: Every pair is bad, all 12,497,500 of them. Checking each pair one by one takes too long: count the good pairs instead and subtract.
+error[TimeoutError]: Checking every pair takes too long for long lists. Rewrite the good-pair test as `nums[i] - i == nums[j] - j`, count the good pairs with a dictionary, and subtract them from all the pairs.
+edges:
+- one number :: len(nums) == 1 :: count_bad_pairs([4])
+- no bad pairs :: len(nums) > 1 and len(set(x - i for i, x in enumerate(nums))) == 1 :: count_bad_pairs([2, 3, 4])
+- every pair bad :: len(nums) > 1 and len(set(x - i for i, x in enumerate(nums))) == len(nums) :: count_bad_pairs([5, 5, 5])
+edge_count: 2
+hint: Rearrange the good-pair test: `j - i == nums[j] - nums[i]` is the same as `nums[i] - i == nums[j] - j`.
+hint: So count good pairs the way you'd count equal values: keep a dictionary counting `nums[i] - i` for the indexes seen so far. Each new index makes a good pair with every earlier index that has the same key: add `seen.get(key, 0)` before counting it.
+hint: There are `n * (n - 1) // 2` pairs in all. The bad pairs are all the pairs minus the good ones.
+right: Moving i and j to the same side turns "good pair" into "equal keys x - i", which the dictionary counts in one pass, and subtracting the good pairs from all of them avoids looking at each pair.
+wrong: For each `i, x` in `enumerate(nums)`: `key = x - i`; add `seen.get(key, 0)` to `good`, then add 1 to the key's count. Return `n * (n - 1) // 2 - good`.
+
+=== task: code medium
+title: Fruit Into Baskets
+leetcode: 904 | Fruit Into Baskets | fruit-into-baskets
+patterns: count + del
+prompt: You walk along a row of fruit trees, where `fruits[i]` is the type of fruit on tree `i`. You have two baskets, and each basket holds only one type of fruit, as much as you like. Starting at any tree, you pick one fruit from every tree as you move right, and you must stop at the first tree whose fruit fits in neither basket. Write `total_fruit(fruits)` that returns the most fruit you can pick.
+
+**Example 1:** `total_fruit([1, 2, 1])` returns `3`: every tree fits in the two baskets.
+
+**Example 2:** `total_fruit([0, 1, 2, 2])` returns `3`: start at the second tree and pick 1, 2 and 2.
+
+**Example 3:** `total_fruit([1, 2, 3, 2, 2])` returns `4`: start at the second tree and pick 2, 3, 2 and 2.
+
+**Constraints:** 1 ≤ `len(fruits)` ≤ 100,000, and 0 ≤ `fruits[i]` < `len(fruits)`.
+starter:
+```python
+def total_fruit(fruits):
+    # your code here
+    return 0
+```
+solution:
+```python
+def total_fruit(fruits):
+    counts = {}
+    left = 0
+    best = 0
+    for right in range(len(fruits)):
+        f = fruits[right]
+        counts[f] = counts.get(f, 0) + 1
+        while len(counts) > 2:
+            old = fruits[left]
+            counts[old] -= 1
+            if counts[old] == 0:
+                del counts[old]
+            left += 1
+        if right - left + 1 > best:
+            best = right - left + 1
+    return best
+```
+tests:
+- total_fruit([1, 2, 1])
+- total_fruit([0, 1, 2, 2])
+- total_fruit([1, 2, 3, 2, 2])
+- total_fruit([3, 3, 3, 1, 2, 1, 1, 2, 3, 3, 4])
+- total_fruit([5])
+- total_fruit([1, 1, 1])
+- total_fruit([0, 1] * 5000 + [2])
+fail[2]: Start at the second tree: 1, 2 and 2 are only two types.
+fail[4]: The best run is 1, 2, 1, 1, 2: 5 fruits of two types.
+fail[5]: One tree, one fruit.
+fail[7]: The first 10,000 trees take turns between two types, so you can pick all 10,000.
+error[TimeoutError]: Starting again from every tree takes too long for long rows. Slide a window instead: add each new tree's fruit, and move the left end on while the window holds more than two types.
+edges:
+- one tree :: len(fruits) == 1 :: total_fruit([4])
+- only one type :: len(set(fruits)) == 1 :: total_fruit([2, 2, 2])
+- every tree different :: len(fruits) > 2 and len(set(fruits)) == len(fruits) :: total_fruit([0, 1, 2, 3])
+edge_count: 2
+hint: The answer is the longest run of trees with at most two types of fruit. Slide a window along the row, from `left` to `right`, counting the types inside it in a dictionary.
+hint: Add each new tree's fruit to the count. While `len(counts) > 2`, the window has too many types: take 1 off the count of `fruits[left]`, `del` its key when it reaches 0, and move `left` on.
+hint: After that, the window from `left` to `right` is allowed: keep the longest length, `right - left + 1`.
+right: Deleting a type when its count reaches 0 keeps len(counts) equal to the number of types in the window, so the window shrinks only as far as it has to.
+wrong: For each right end, count its fruit; while `len(counts) > 2`, take 1 off `counts[fruits[left]]` (deleting the key at 0) and move `left` on; keep the best `right - left + 1`.
+
+=== task: code medium
+title: Fraction to Recurring Decimal
+leetcode: 166 | Fraction to Recurring Decimal | fraction-to-recurring-decimal
+patterns: lookup + update
+prompt: Write `fraction_to_decimal(numerator, denominator)` that returns `numerator / denominator` as a string in decimal form. If the digits after the decimal point repeat forever, put the repeating part in brackets: 1 / 3 is `"0.(3)"`. If the division comes out exact, write only the digits it needs: 1 / 4 is `"0.25"`, and 6 / 3 is `"2"`, with no decimal point. A negative answer starts with `"-"`.
+
+**Example 1:** `fraction_to_decimal(7, 12)` returns `"0.58(3)"`: 7 / 12 is 0.58333, where only the 3 repeats.
+
+**Example 2:** `fraction_to_decimal(-9, 4)` returns `"-2.25"`.
+
+**Example 3:** `fraction_to_decimal(12, 3)` returns `"4"`.
+
+**Constraints:** -2,147,483,648 ≤ `numerator`, `denominator` ≤ 2,147,483,647, `denominator` isn't 0, and the answer has fewer than 10,000 characters.
+starter:
+```python
+def fraction_to_decimal(numerator, denominator):
+    # your code here
+    return ""
+```
+solution:
+```python
+def fraction_to_decimal(numerator, denominator):
+    if numerator == 0:
+        return "0"
+    sign = ""
+    if (numerator < 0) != (denominator < 0):
+        sign = "-"
+    n = abs(numerator)
+    d = abs(denominator)
+    whole = str(n // d)
+    rem = n % d
+    if rem == 0:
+        return sign + whole
+    digits = []
+    seen = {}
+    while rem != 0 and rem not in seen:
+        seen[rem] = len(digits)
+        rem *= 10
+        digits.append(str(rem // d))
+        rem = rem % d
+    if rem == 0:
+        return sign + whole + "." + "".join(digits)
+    start = seen[rem]
+    return sign + whole + "." + "".join(digits[:start]) + "(" + "".join(digits[start:]) + ")"
+```
+tests:
+- fraction_to_decimal(7, 12)
+- fraction_to_decimal(-9, 4)
+- fraction_to_decimal(12, 3)
+- fraction_to_decimal(0, -7)
+- fraction_to_decimal(1, 7)
+- fraction_to_decimal(-50, 8)
+- fraction_to_decimal(1, 6)
+- fraction_to_decimal(-2147483648, -1)
+fail[2]: -9 / 4 is -2.25. Work with `abs()` of both numbers and add the `"-"` yourself: Python's `//` rounds down, so `-9 // 4` is -3, not -2.
+fail[3]: 12 / 3 is exactly 4. When the remainder is 0, return the whole part alone, with no decimal point.
+fail[4]: 0 divided by anything is 0, with no minus sign.
+fail[5]: 1 / 7 is 0.142857142857, so all six digits repeat.
+fail[7]: The 1 doesn't repeat, only the 6 does: `"0.1(6)"`. Remember where each remainder first appeared, and put the `"("` there.
+fail[8]: Both numbers are negative, so the answer is positive. Python's whole numbers have no size limit, so 2,147,483,648 is fine.
+error[TimeoutError]: The loop never stopped: a repeating decimal needs a way out. Store each remainder in a dictionary as you meet it, and stop as soon as a remainder comes back.
+edges:
+- a numerator of 0 :: numerator == 0 and denominator != 0 :: fraction_to_decimal(0, 3)
+- a whole-number answer :: numerator != 0 and denominator != 0 and numerator % denominator == 0 :: fraction_to_decimal(6, -3)
+- a negative answer :: numerator != 0 and denominator != 0 and (numerator < 0) != (denominator < 0) :: fraction_to_decimal(-1, 4)
+- a decimal that ends :: denominator != 0 and numerator % denominator != 0 and any(abs(numerator) * 10 ** p % abs(denominator) == 0 for p in range(1, 40)) :: fraction_to_decimal(1, 8)
+edge_count: 2
+hint: Do long division by hand: multiply the remainder by 10; the next digit is `rem // d`, and the new remainder is `rem % d`.
+hint: The digits start repeating exactly when a remainder comes back. Keep a dictionary from each remainder to the position of the digit it produced.
+hint: Handle the sign first: use `abs()` on both numbers, and put `"-"` in front if exactly one of them is negative. If the first remainder is 0, return the whole part alone.
+right: Each new digit depends only on the current remainder, so once a remainder comes back, the same digits follow forever, and the dictionary records where it first appeared, which is exactly where the bracket opens.
+wrong: Work out the sign, then use `n = abs(numerator)` and `d = abs(denominator)`. Write `n // d`; if `n % d` is 0, stop there. Otherwise store each remainder's position in `seen`, multiply it by 10, append the digit `rem // d` and keep `rem % d`, until the remainder is 0 or already in `seen`; then put the bracket at `seen[rem]`.
+
+=== task: code medium
+title: Determine if Two Strings Are Close
+leetcode: 1657 | Determine if Two Strings Are Close | determine-if-two-strings-are-close
+patterns: count + loop + lookup
+prompt: Two strings are **close** if you can turn one into the other with these two operations, as often as you like: swap any two characters (`"abcde"` can become `"aecdb"`), or turn every copy of one letter into another letter that's in the string and every copy of that letter into the first one, both at once (`"aacabb"` can become `"bbcbaa"`: all the a's become b's and all the b's become a's). Write `close_strings(word1, word2)` that returns `True` if `word1` and `word2` are close, and `False` otherwise.
+
+**Example 1:** `close_strings("abc", "bca")` returns `True`: swaps are enough.
+
+**Example 2:** `close_strings("a", "aa")` returns `False`: neither operation changes the length.
+
+**Example 3:** `close_strings("cabbba", "abbccc")` returns `True`.
+
+**Constraints:** 1 ≤ `len(word1)`, `len(word2)` ≤ 100,000, and both have only lowercase English letters.
+starter:
+```python
+def close_strings(word1, word2):
+    # your code here
+    return False
+```
+solution:
+```python
+def count_letters(word):
+    counts = {}
+    for c in word:
+        counts[c] = counts.get(c, 0) + 1
+    return counts
+
+def close_strings(word1, word2):
+    if len(word1) != len(word2):
+        return False
+    c1 = count_letters(word1)
+    c2 = count_letters(word2)
+    if len(c1) != len(c2):
+        return False
+    for c in c1:
+        if c not in c2:
+            return False
+    v1 = list(c1.values())
+    v1.sort()
+    v2 = list(c2.values())
+    v2.sort()
+    return v1 == v2
+```
+tests:
+- close_strings("abc", "bca")
+- close_strings("a", "aa")
+- close_strings("cabbba", "abbccc")
+- close_strings("cabbba", "aabbss")
+- close_strings("uau", "ssx")
+- close_strings("abbzzca", "babzzcz")
+- close_strings("aabbb", "bbaaa")
+- close_strings("aabbcc", "abcabd")
+fail[3]: Both use a, b and c. word1 has them 2, 3 and 1 times, and word2 has them 1, 2 and 3 times: the same counts on different letters, which the second operation can swap round.
+fail[4]: word2 has an s, which word1 doesn't, and no operation can bring in a new letter.
+fail[5]: The letters are different: u and a against s and x.
+fail[6]: The same letters appear, but word1's counts are 1, 2, 2, 2 and word2's are 1, 1, 2, 3.
+fail[7]: Swapping the letters a and b turns `"aabbb"` into `"bbaaa"`.
+fail[8]: word2 has a d, which word1 doesn't.
+edges:
+- different lengths :: len(word1) != len(word2) :: close_strings("ab", "abb")
+- the same string :: word1 == word2 :: close_strings("xyz", "xyz")
+- the same counts on different letters :: sorted(word1.count(c) for c in set(word1)) == sorted(word2.count(c) for c in set(word2)) and set(word1) != set(word2) :: close_strings("aab", "ccd")
+edge_count: 2
+hint: Swaps can put the letters in any order, so only the counts matter. The second operation swaps the counts of two letters, so counts can move between letters, but no letter can be added or removed.
+hint: So the strings are close when they use the same set of letters, and their counts, sorted, are the same list.
+hint: Count each word with a helper. Check that both counts have the same number of keys and that every key of the first is in the second. Then compare `list(c1.values())` and `list(c2.values())` after sorting each.
+right: Swaps make the order free and the second operation lets counts move between letters, so the same letters and the same sorted counts are exactly what's needed.
+wrong: Count both words; return False if their sets of letters differ; otherwise sort `list(c1.values())` and `list(c2.values())` and return whether they're equal.
+
+=== task: code medium
+title: Subarray Sums Divisible by K
+leetcode: 974 | Subarray Sums Divisible by K | subarray-sums-divisible-by-k
+patterns: count + lookup
+prompt: Write `subarrays_div_by_k(nums, k)` that returns how many subarrays of `nums` have a sum that divides exactly by `k` (`total % k == 0`). A **subarray** is a run of one or more numbers next to each other in the list. The numbers can be negative.
+
+**Example 1:** `subarrays_div_by_k([2, 3, 1, 4], 5)` returns `3`: [2, 3], [1, 4] and the whole list add up to 5, 5 and 10.
+
+**Example 2:** `subarrays_div_by_k([-1, 2, 9], 2)` returns `2`: [2] adds up to 2, and the whole list adds up to 10.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 30,000, -10,000 ≤ `nums[i]` ≤ 10,000, and 2 ≤ `k` ≤ 10,000.
+starter:
+```python
+def subarrays_div_by_k(nums, k):
+    # your code here
+    return -1
+```
+solution:
+```python
+def subarrays_div_by_k(nums, k):
+    seen = {0: 1}
     total = 0
-    for item in cart:
-        total += prices.get(item, 0)
+    count = 0
+    for x in nums:
+        total += x
+        r = total % k
+        count += seen.get(r, 0)
+        seen[r] = seen.get(r, 0) + 1
+    return count
+```
+tests:
+- subarrays_div_by_k([2, 3, 1, 4], 5)
+- subarrays_div_by_k([-1, 2, 9], 2)
+- subarrays_div_by_k([5], 5)
+- subarrays_div_by_k([7], 3)
+- subarrays_div_by_k([0, 0, 0], 4)
+- subarrays_div_by_k([-2, 5], 5)
+- subarrays_div_by_k([3, -3, 6, 1, -1], 3)
+- subarrays_div_by_k([1] * 6000, 7)
+fail[1]: [2, 3], [1, 4] and the whole list add up to 5, 5 and 10, which all divide by 5.
+fail[3]: The whole list, [5], divides by 5. Start the remainder counts as `{0: 1}`, for the empty start before index 0, so that runs starting at index 0 are counted.
+fail[5]: Every run of zeros adds up to 0, and 0 divides by any `k`: three runs of length 1, two of length 2 and one of length 3. Count how many times each remainder has appeared, not only whether it has.
+fail[6]: The running totals are -2 and 3, and the run between them, [5], divides by 5. In Python, `-2 % 5` is 3, the same remainder as 3, so use `total % k` as it is.
+fail[8]: A run of 1s divides by 7 when its length does: there are 2,569,286 of them. Checking every run takes too long here.
+error[TimeoutError]: Trying every start and end takes too long. Keep a running total and count the remainders `total % k` seen so far: two running totals with the same remainder differ by a multiple of `k`.
+edges:
+- one number :: len(nums) == 1 :: subarrays_div_by_k([6], 3)
+- zeros in the list :: 0 in nums :: subarrays_div_by_k([0, 1], 2)
+- negative numbers :: any(x < 0 for x in nums) :: subarrays_div_by_k([-3, 3], 3)
+- no run divides by k :: not any(sum(nums[i:j]) % k == 0 for i in range(len(nums)) for j in range(i + 1, len(nums) + 1)) :: subarrays_div_by_k([1, 1], 3)
+edge_count: 2
+hint: Keep a running total. The run from index `i + 1` to index `j` adds up to the total at `j` minus the total at `i`.
+hint: That difference divides by `k` exactly when the two running totals leave the same remainder: `total_i % k == total_j % k`.
+hint: Count the remainders seen so far in a dictionary, starting with `{0: 1}` for the empty start. At each number, add the count of the current remainder to the answer, then count the remainder.
+right: Two running totals with the same remainder differ by a multiple of k, so the run between them divides by k, and counting the remainders as you go finds all those runs in one pass.
+wrong: Keep `total = 0`, `count = 0` and `seen = {0: 1}`. For each `x`: `total += x`, `r = total % k`, `count += seen.get(r, 0)`, then `seen[r] = seen.get(r, 0) + 1`. Return `count`.
+
+=== task: code medium
+title: Find Duplicate File in System
+leetcode: 609 | Find Duplicate File in System | find-duplicate-file-in-system
+patterns: group + loop
+prompt: Each string in `paths` describes one folder: the folder's path, then the folder's files, all separated by single spaces. A file is written `name(content)`, so `"root/a 1.txt(abcd) 2.txt(efgh)"` is the folder `root/a` with a file `1.txt` holding `abcd` and a file `2.txt` holding `efgh`. Write `find_duplicate(paths)` that returns the groups of files that have the same content, writing each file as its full path, like `"root/a/1.txt"`. Leave out content that only one file has. List the groups in the order their content first appears, and the files in each group in the order they appear.
+
+**Example 1:** `find_duplicate(["root/a 1.txt(abcd) 2.txt(efgh)", "root/c 3.txt(abcd)", "root/c/d 4.txt(efgh)", "root 4.txt(efgh)"])` returns `[["root/a/1.txt", "root/c/3.txt"], ["root/a/2.txt", "root/c/d/4.txt", "root/4.txt"]]`.
+
+**Example 2:** `find_duplicate(["root a.txt(x) b.txt(y)"])` returns `[]`: no two files have the same content.
+
+**Constraints:** 1 ≤ `len(paths)` ≤ 20,000, no two folders have the same path, and no two files in one folder have the same name. Names and contents are letters, digits and dots.
+starter:
+```python
+def find_duplicate(paths):
+    # your code here
+    return [[]]
+```
+solution:
+```python
+def find_duplicate(paths):
+    groups = {}
+    for line in paths:
+        parts = line.split(" ")
+        folder = parts[0]
+        for i in range(1, len(parts)):
+            f = parts[i]
+            k = f.find("(")
+            content = f[k + 1:-1]
+            if content not in groups:
+                groups[content] = []
+            groups[content].append(folder + "/" + f[:k])
+    result = []
+    for content in groups:
+        if len(groups[content]) > 1:
+            result.append(groups[content])
+    return result
+```
+tests:
+- find_duplicate(["root/a 1.txt(abcd) 2.txt(efgh)", "root/c 3.txt(abcd)", "root/c/d 4.txt(efgh)", "root 4.txt(efgh)"])
+- find_duplicate(["root/a 1.txt(abcd) 2.txt(efgh)", "root/c 3.txt(abcd)", "root/c/d 4.txt(efgh)"])
+- find_duplicate(["root a.txt(x) b.txt(y)"])
+- find_duplicate(["root/x a.txt(z)", "root/y b.txt(z)", "root c.txt(z)"])
+- find_duplicate(["root p.txt(B) q.txt(A)", "root/z r.txt(A) s.txt(B)"])
+- find_duplicate(["root/m a.txt(hi) b.txt(hi)"])
+fail[1]: abcd is in root/a/1.txt and root/c/3.txt, and efgh is in three files. The abcd group comes first, because abcd appears first.
+fail[3]: Every file has different content, so there are no groups.
+fail[4]: All three files hold z, so they form one group of three.
+fail[5]: B appears before A in the first folder, so the B group comes first.
+fail[6]: Two files in the same folder can have the same content too.
+edges:
+- one folder :: len(paths) == 1 :: find_duplicate(["root/q a.txt(z) b.txt(z)"])
+- no content twice :: len(set(f[f.find("(") + 1:-1] for p in paths for f in p.split(" ")[1:])) == len([f for p in paths for f in p.split(" ")[1:]]) :: find_duplicate(["root a.txt(x)"])
+- a file in the root folder :: any("/" not in p.split(" ")[0] for p in paths) :: find_duplicate(["root a.txt(m)", "root/b c.txt(m)"])
+edge_count: 2
+hint: Split each string with `.split(" ")`: the first part is the folder, and each later part is a file like `"1.txt(abcd)"`.
+hint: Find the `"("` with `.find("(")`: the name is before it, and the content is between it and the last character, the `")"`.
+hint: Group the full paths in a dictionary from content to a list of paths. At the end, loop over the dictionary and keep the lists that hold more than one path.
+right: Using the content as the key gathers every file with that content into one list, and the loop at the end keeps only the lists that hold real duplicates.
+wrong: For each folder string, split it; for each file part, cut it at `"("` into the name and the content, and append `folder + "/" + name` to `groups[content]`; return the lists with 2 or more paths.
+
+=== task: code hard
+title: Minimum Window Substring
+leetcode: 76 | Minimum Window Substring | minimum-window-substring
+patterns: count + lookup
+prompt: Write `min_window(s, t)` that returns the shortest substring of `s` that contains every character of `t`, repeats included: if `t` has two a's, the substring needs at least two a's. If there's no such substring, return `""`. The shortest one is always unique.
+
+**Example 1:** `min_window("ADOBECODEBANC", "ABC")` returns `"BANC"`.
+
+**Example 2:** `min_window("a", "a")` returns `"a"`.
+
+**Example 3:** `min_window("a", "aa")` returns `""`: `t` needs two a's, and `s` has only one.
+
+**Constraints:** 1 ≤ `len(s)`, `len(t)` ≤ 100,000, and both have only English letters. Capital and small letters are different.
+starter:
+```python
+def min_window(s, t):
+    # your code here
+    return "?"
+```
+solution:
+```python
+def min_window(s, t):
+    need = {}
+    for c in t:
+        need[c] = need.get(c, 0) + 1
+    missing = len(t)
+    left = 0
+    best_start = 0
+    best_len = len(s) + 1
+    for right in range(len(s)):
+        c = s[right]
+        if c in need:
+            if need[c] > 0:
+                missing -= 1
+            need[c] -= 1
+        while missing == 0:
+            if right - left + 1 < best_len:
+                best_len = right - left + 1
+                best_start = left
+            d = s[left]
+            if d in need:
+                need[d] += 1
+                if need[d] > 0:
+                    missing += 1
+            left += 1
+    if best_len > len(s):
+        return ""
+    return s[best_start:best_start + best_len]
+```
+tests:
+- min_window("ADOBECODEBANC", "ABC")
+- min_window("a", "a")
+- min_window("a", "aa")
+- min_window("ab", "b")
+- min_window("aa", "aa")
+- min_window("cabwefgewcwaefgcf", "cae")
+- min_window("bba", "ab")
+- min_window("x" * 3000 + "abc" + "y" * 3000, "cba")
+fail[1]: `"ADOBEC"` holds A, B and C too, but `"BANC"` at the end is shorter.
+fail[3]: `t` needs two a's, and `s` has only one, so the answer is `""`.
+fail[5]: `t` needs two a's, and the only window with two a's is the whole of `s`.
+fail[6]: `"cwae"` holds a c, a w, an a and an e: the c, the a and the e are what `t` needs.
+fail[7]: The shortest window is `"ba"`, at the end.
+fail[8]: Checking every start and end takes too long on 6,003 characters. Slide a window instead.
+error[TimeoutError]: Checking every start and end takes too long. Slide a window: move the right end along, and while the window holds everything, move the left end on as far as it can go.
+edges:
+- t longer than s :: len(t) > len(s) :: min_window("ab", "abc")
+- t needs a letter twice :: any(t.count(c) > 1 for c in t) :: min_window("abaa", "aa")
+- t the same as s :: s == t :: min_window("xyz", "xyz")
+edge_count: 2
+hint: Count what `t` needs in a dictionary `need`, and keep `missing`, the number of characters the window still lacks, starting at `len(t)`.
+hint: Move the right end along `s`. When it brings in a character that is in `need`: if its count is above 0, `missing` drops by 1. Take 1 off its count either way: a negative count means the window has spares.
+hint: While `missing == 0`, the window holds everything: record it if it's the shortest so far, then move the left end on, giving its character back to `need`. If that count goes above 0, the window now lacks it, so `missing` goes up by 1.
+right: The need counts say exactly which characters the window still lacks, so the right end grows the window until nothing is missing, and the left end shrinks it as far as it can, checking every candidate in one pass.
+wrong: Count `t` into `need` and set `missing = len(t)`; for each right end, use up one need of its character (lowering `missing` if that need was above 0); while nothing is missing, record the window and give back the left character, moving `left` on.
+
+=== task: code hard
+title: Substring with Concatenation of All Words
+leetcode: 30 | Substring with Concatenation of All Words | substring-with-concatenation-of-all-words
+patterns: count + lookup
+prompt: All the strings in `words` have the same length. A **concatenation** is all of `words` joined together in any order, each one used once: for `["ab", "cd", "ef"]`, `"abcdef"` and `"efabcd"` are both concatenations. Write `find_substring(s, words)` that returns the starting indexes of all the substrings of `s` that are concatenations, from smallest to largest.
+
+**Example 1:** `find_substring("barfoothefoobarman", ["foo", "bar"])` returns `[0, 9]`: `"barfoo"` starts at 0 and `"foobar"` at 9.
+
+**Example 2:** `find_substring("wordgoodgoodgoodbestword", ["word", "good", "best", "word"])` returns `[]`.
+
+**Example 3:** `find_substring("barfoofoobarthefoobarman", ["bar", "foo", "the"])` returns `[6, 9, 12]`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10,000, 1 ≤ `len(words)` ≤ 5,000, 1 ≤ `len(words[i])` ≤ 30, and everything is lowercase English letters.
+starter:
+```python
+def find_substring(s, words):
+    # your code here
+    return [-1]
+```
+solution:
+```python
+def find_substring(s, words):
+    size = len(words[0])
+    total = size * len(words)
+    need = {}
+    for w in words:
+        need[w] = need.get(w, 0) + 1
+    result = []
+    for i in range(len(s) - total + 1):
+        seen = {}
+        j = 0
+        while j < len(words):
+            w = s[i + j * size:i + (j + 1) * size]
+            if w not in need:
+                break
+            seen[w] = seen.get(w, 0) + 1
+            if seen[w] > need[w]:
+                break
+            j += 1
+        if j == len(words):
+            result.append(i)
+    return result
+```
+tests:
+- find_substring("barfoothefoobarman", ["foo", "bar"])
+- find_substring("wordgoodgoodgoodbestword", ["word", "good", "best", "word"])
+- find_substring("barfoofoobarthefoobarman", ["bar", "foo", "the"])
+- find_substring("aaaaaa", ["aa", "aa"])
+- find_substring("a", ["a"])
+- find_substring("ab", ["abc"])
+- find_substring("wordgoodgoodgoodbestword", ["word", "good", "best", "good"])
+- find_substring("x" * 3000 + "foobar", ["foo", "bar"])
+fail[2]: A concatenation here needs `"word"` twice, plus `"good"` and `"best"`, and no part of `s` has that.
+fail[4]: Starts 0, 1 and 2 each give `"aaaa"`, which is `"aa"` twice: the substrings can overlap.
+fail[6]: `s` is shorter than the words joined together, so there's no answer.
+fail[7]: From index 8, `"goodgoodbestword"` is good, good, best and word: `"good"` is needed twice this time.
+edges:
+- one word :: len(words) == 1 :: find_substring("abab", ["ab"])
+- a repeated word :: len(set(words)) < len(words) :: find_substring("aaaa", ["a", "a"])
+- s too short :: len(s) < len(words) * len(words[0]) :: find_substring("ab", ["abc"])
+edge_count: 2
+hint: Every concatenation has the same length, `len(words) * size`, where `size` is the length of one word. Count how many times each word is needed in a dictionary `need`.
+hint: For each start `i`, cut the substring into chunks of `size` letters and count them in a fresh dictionary `seen`. Stop at the first chunk that isn't in `need`, or that appears more often than `need` allows.
+hint: If every chunk passed, `i` is an answer. Going through the starts in order gives the indexes from smallest to largest.
+right: Comparing the chunk counts with the needed counts accepts the words in any order, and stopping at the first bad chunk keeps most starts short.
+wrong: Count `words` into `need`; for each start `i`, read chunks of `size` letters, counting them in `seen` and stopping at a chunk that isn't needed or is seen too often; append `i` when all `len(words)` chunks pass.
+
+=== task: code hard
+title: Subarrays with K Different Integers
+leetcode: 992 | Subarrays with K Different Integers | subarrays-with-k-different-integers
+patterns: count + del
+prompt: Write `subarrays_with_k_distinct(nums, k)` that returns how many subarrays (runs of one or more numbers next to each other) of `nums` contain exactly `k` different numbers.
+
+**Example 1:** `subarrays_with_k_distinct([1, 2, 1, 2, 3], 2)` returns `7`: [1, 2], [2, 1], [1, 2], [2, 3], [1, 2, 1], [2, 1, 2] and [1, 2, 1, 2].
+
+**Example 2:** `subarrays_with_k_distinct([1, 2, 1, 3, 4], 3)` returns `3`: [1, 2, 1, 3], [2, 1, 3] and [1, 3, 4].
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 20,000, and 1 ≤ `nums[i]`, `k` ≤ `len(nums)`.
+starter:
+```python
+def subarrays_with_k_distinct(nums, k):
+    # your code here
+    return -1
+```
+solution:
+```python
+def at_most(nums, k):
+    counts = {}
+    left = 0
+    total = 0
+    for right in range(len(nums)):
+        x = nums[right]
+        counts[x] = counts.get(x, 0) + 1
+        while len(counts) > k:
+            y = nums[left]
+            counts[y] -= 1
+            if counts[y] == 0:
+                del counts[y]
+            left += 1
+        total += right - left + 1
+    return total
+
+def subarrays_with_k_distinct(nums, k):
+    return at_most(nums, k) - at_most(nums, k - 1)
+```
+tests:
+- subarrays_with_k_distinct([1, 2, 1, 2, 3], 2)
+- subarrays_with_k_distinct([1, 2, 1, 3, 4], 3)
+- subarrays_with_k_distinct([1], 1)
+- subarrays_with_k_distinct([1, 1, 1], 1)
+- subarrays_with_k_distinct([1, 2, 3], 4)
+- subarrays_with_k_distinct(list(range(1, 3001)), 1)
+- subarrays_with_k_distinct([1, 2] * 2000, 2)
+fail[4]: Every subarray of [1, 1, 1] holds exactly one different number: 3 of length 1, 2 of length 2 and 1 of length 3.
+fail[5]: There are only 3 different numbers, so no subarray holds 4.
+fail[6]: Every number is different, so only the 3,000 single numbers hold exactly one.
+fail[7]: Every subarray of 2 or more numbers holds both 1 and 2: 7,998,000 of them. Checking each one takes too long here.
+error[TimeoutError]: Checking every subarray takes too long. Count the subarrays with at most k different numbers with a sliding window, and take away the ones with at most k - 1.
+edges:
+- k is 1 :: k == 1 :: subarrays_with_k_distinct([2, 2, 3], 1)
+- k is more than the different numbers :: k > len(set(nums)) :: subarrays_with_k_distinct([1, 2], 3)
+- every number the same :: len(set(nums)) == 1 :: subarrays_with_k_distinct([4, 4, 4], 1)
+edge_count: 2
+hint: "Exactly k" is hard to slide, but "at most k" fits a sliding window well, and the subarrays with exactly k different numbers are the ones with at most k minus the ones with at most k - 1.
+hint: Write `at_most(nums, k)`: slide a window, counting the numbers in a dictionary. While `len(counts) > k`, take 1 off the count of `nums[left]`, `del` its key at 0, and move `left` on.
+hint: Every subarray that ends at `right` and starts at `left` or later has at most k different numbers, so add `right - left + 1` for each right end.
+right: The window gives, for every right end, how many subarrays ending there have at most k different numbers, and taking away the count for k - 1 leaves exactly k.
+wrong: Write `at_most(nums, k)` with a sliding window that deletes keys at 0 and shrinks while `len(counts) > k`, adding `right - left + 1` each time; return `at_most(nums, k) - at_most(nums, k - 1)`.
+
+=== task: code hard
+title: Total Appeal of A String
+leetcode: 2262 | Total Appeal of A String | total-appeal-of-a-string
+patterns: lookup + update
+prompt: The **appeal** of a string is the number of different characters in it: `"abbca"` has an appeal of 3, for a, b and c. Write `appeal_sum(s)` that returns the total appeal of all the substrings of `s`. Substrings at different positions count separately.
+
+**Example 1:** `appeal_sum("abbca")` returns `28`.
+
+**Example 2:** `appeal_sum("code")` returns `20`: the 4 substrings of length 1 have appeal 1, the 3 of length 2 have appeal 2, the 2 of length 3 have appeal 3, and `"code"` has appeal 4: 4 + 6 + 6 + 4.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100,000, and `s` has only lowercase English letters.
+starter:
+```python
+def appeal_sum(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def appeal_sum(s):
+    last = {}
+    total = 0
+    ending_here = 0
+    for i, c in enumerate(s):
+        ending_here += i - last.get(c, -1)
+        last[c] = i
+        total += ending_here
     return total
 ```
 tests:
-- cart_total({"tea": 2, "cake": 4}, ["tea", "cake", "tea"])
-- cart_total({"tea": 2}, ["soup", "tea"])
-- cart_total({"tea": 2}, [])
-- cart_total({}, ["x", "y"])
-fail[1]: tea (2) + cake (4) + tea (2) is 8. Loop over the cart and add each item's price. An item in the cart twice is paid twice.
-fail[2]: soup isn't in the price list, so it counts as 0, and the total is 2. Use `prices.get(item, 0)`.
-fail[3]: An empty cart costs 0.
-error[KeyError]: An item in the cart isn't in `prices`. Look prices up with `prices.get(item, 0)`.
-error[NameError]: Use the parameters `prices` and `cart` inside the function, and start the total before the loop.
-require[for]: Loop over the items in the cart.
-hint: Start a total at 0 and loop over the cart.
-hint: For each item, add `prices.get(item, 0)`.
-hint: After the loop, `return total`.
-right: Looping over the cart pays for every item, including repeats, and `.get(item, 0)` makes unknown items cost nothing instead of crashing. The total comes back after the loop.
-wrong: `total = 0`, then `for item in cart: total += prices.get(item, 0)`, then `return total`.
-
-=== task: cells medium
-title: The scoreboard
-prompt: After this code runs, what do these expressions give?
-code:
-```python
-score = {"red": 0, "blue": 0}
-score["red"] += 3
-score["blue"] += 2
-score["red"] -= 1
-score["green"] = score["blue"] * 2
-del score["blue"]
-```
-labels: score["red"] | score["green"] | len(score) | "blue" in score
-answer: 2 | 4 | 2 | False
-wrong[2 | 4 | 3 | False]: `del score["blue"]` removes the blue pair, so 2 pairs are left: red and green.
-wrong[2 | 4 | 2 | True]: After `del`, "blue" isn't a key anymore, so `in` gives False.
-wrong[3 | 4 | 2 | False]: red goes up by 3 and then down by 1: 0 + 3 - 1 = 2.
-hint: Go line by line. `+=` and `-=` change a value; `del` removes a whole pair.
-hint: green is worked out from blue before blue is deleted.
-right: red: 0 + 3 - 1 = 2. blue reaches 2, green becomes 2 × 2 = 4, and then blue is deleted. That leaves red and green: 2 pairs, and "blue" is no longer a key.
-wrong: red = 2, green = 4 (worked out while blue was still 2), and blue is deleted at the end, so `len` is 2 and `"blue" in score` is False.
-
-=== task: order medium
-title: The counts grow
-prompt: Put the states of `counts` in the order they appear as this code runs:
-```python
-counts = {}
-for w in ["a", "b", "a"]:
-    if w in counts:
-        counts[w] += 1
-    else:
-        counts[w] = 1
-```
-items:
-- `{}`
-- `{'a': 1}`
-- `{'a': 1, 'b': 1}`
-- `{'a': 2, 'b': 1}`
-hint: Each word either adds a new key or adds 1 to an existing one.
-hint: The second "a" finds its key already there.
-right: The dictionary starts empty. The first "a" is new, so it gets 1. "b" is new too. The second "a" is already a key, so its count goes up to 2, and "a" keeps its place at the front.
-wrong: {} → "a" is new → {'a': 1} → "b" is new → {'a': 1, 'b': 1} → "a" exists → {'a': 2, 'b': 1}.
-
-=== task: multi medium
-title: Which ones raise KeyError?
-prompt: `d` holds `{"x": 1}`. Choose **every** line that stops with a `KeyError`.
-* `d["y"]` :: Right. Reading a missing key with square brackets is a KeyError.
-- `d["y"] = 2` :: Writing to a missing key is fine: it adds the pair.
-* `d["y"] += 2` :: Right. `+=` has to read the old value first, and there isn't one.
-- `d.get("y")` :: `.get()` never raises a KeyError: it gives None for a missing key.
-* `del d["y"]` :: Right. You can't delete a key that isn't there.
-- `"y" in d` :: `in` only asks the question, and answers False.
-hint: Which lines need to read or remove a key that doesn't exist?
-hint: Three lines raise KeyError.
-right: Reading (`d["y"]`), reading-then-writing (`+=`) and deleting all need the key to exist already. Assigning adds a new key, and `.get()` and `in` are built to handle missing keys.
-wrong: Ask whether each line needs "y" to exist already. Reading, `+=` and `del` do, so they raise KeyError. Plain assignment adds the key, `.get()` returns None, and `in` returns False.
-
-=== task: fill medium
-title: Swap keys and values
-prompt: Fill the two blanks so that the program builds a new dictionary with the keys and values swapped:
-```output
-{1: 'a', 2: 'b'}
-```
-code:
-```python
-codes = {"a": 1, "b": 2}
-flipped = {}
-for k, v in codes.??():
-    flipped[??] = k
-print(flipped)
-```
-answer: items | v
-wrong[keys | v]: `.keys()` gives only the keys, one string each, which can't be split into the two variables k and v: ValueError. `.items()` gives each key with its value.
-wrong[items | k]: The new key should be the old **value**, v. With k you get `{'a': 'a', 'b': 'b'}`.
-wrong[values | v]: `.values()` gives only the numbers, which can't be split into k and v. You need `.items()`.
-hint: The loop has two variables, so it needs each key together with its value.
-hint: In the new dictionary, the old value becomes the key.
-right: `.items()` gives each pair as key and value, so k is "a" and v is 1, and so on. `flipped[v] = k` stores each old key under its old value: {1: 'a', 2: 'b'}.
-wrong: Loop over `codes.items()` to get k and v together, and store `flipped[v] = k`.
-
-=== task: predict hard
-title: Which order now?
-code:
-```python
-seats = {"A1": "Ada", "A2": "Alan", "A3": "Grace"}
-seats["A2"] = "Linus"
-del seats["A1"]
-seats["A1"] = "Mary"
-for seat, name in seats.items():
-    print(seat, name)
-```
-wrong[A1 Mary\nA2 Linus\nA3 Grace]: `del` removed A1 together with its place. On line 4, A1 is a brand-new key, and new keys always go at the end, after A3.
-wrong[A3 Grace\nA1 Mary\nA2 Linus]: Replacing a value doesn't move its key. A2 stays where it was. Only A1 moves to the end, because it was deleted and then added again.
-wrong[A1 Ada\nA2 Linus\nA3 Grace\nA1 Mary]: A key can't appear twice, and line 3 deleted A1 (with Ada) before line 4 added it again. So A1 shows up once, with Mary, at the end.
-wrong[A2 Alan\nA3 Grace\nA1 Mary]: Line 2 replaced Alan with Linus, so A2's value is now Linus.
-hint: A dictionary remembers the order in which its keys were first added. Which lines add a key, and which only change a value?
-hint: Line 2 changes the value of an existing key, so `"A2"` keeps its place. Line 3 removes `"A1"` completely.
-hint: After line 3, `"A1"` is not a key, so line 4 adds it as a brand-new key, at the end.
-right: Changing A2's value on line 2 doesn't move it. Deleting A1 on line 3 removes the key and its place, so line 4 adds A1 as a new key at the end. The loop then follows the order A2, A3, A1.
-wrong: Track the keys in order. Start: A1, A2, A3. Line 2 only replaces A2's value, so the order stays the same. Line 3 deletes A1, leaving A2, A3. Line 4 adds A1 as a new key at the end: A2, A3, A1. Their values are Linus, Grace and Mary.
-
-=== task: parsons hard
-title: Group words by length
-prompt: Arrange the lines so that the program groups the words by their length and prints exactly:
-
-```output
-{2: ['hi', 'to'], 3: ['cat', 'dog'], 4: ['bird']}
-```
-
-Each key is a word length, and each value is a list of the words with that length, in their original order. Not every line is needed.
-lines:
-```python
-words = ["hi", "cat", "to", "dog", "bird"]
-by_length = {}
-for word in words:
-    size = len(word)
-    if size not in by_length:
-        by_length[size] = []
-    by_length[size].append(word)
-print(by_length)
-```
-distractors:
-```python
-by_length[size] = word
-if size in by_length:
-```
-hint: Start with the list of words and an empty dictionary, then loop over the words.
-hint: Inside the loop, work out the word's length first. A length seen for the first time needs an empty list before anything can be appended to it.
-hint: The `append` line belongs to the loop, not to the `if`: every word gets appended, but only a new length gets a fresh `[]`.
-right: For each word you find its length, give that length an empty list the first time you see it, then append the word to the list for that length. `print` comes after the loop, so it runs once, with the finished dictionary.
-wrong: The order is: make the data, loop over the words, compute `size`, create `by_length[size] = []` only `if size not in by_length`, then append the word at the loop's level, not inside the `if`. `by_length[size] = word` would replace the list with a single word, and `if size in by_length:` tests the opposite of what you need.
+- appeal_sum("abbca")
+- appeal_sum("code")
+- appeal_sum("a")
+- appeal_sum("aaa")
+- appeal_sum("ab")
+- appeal_sum("abc" * 2000)
+fail[3]: One substring, `"a"`, with appeal 1.
+fail[4]: Every substring of `"aaa"` has appeal 1, and there are 6 of them.
+fail[5]: `"a"`, `"b"` and `"ab"` have appeals 1, 1 and 2.
+fail[6]: Working out every substring's appeal takes too long on 6,000 characters.
+error[TimeoutError]: Working out the appeal of every substring takes too long. Instead, add up how much each character adds to the substrings that end at its position.
+edges:
+- one character :: len(s) == 1 :: appeal_sum("q")
+- one letter repeated :: len(set(s)) == 1 :: appeal_sum("bbbb")
+- all letters different :: len(set(s)) == len(s) :: appeal_sum("xyz")
+edge_count: 2
+hint: Think about the substrings that end at index `i`. Adding `s[i]` to the end of a substring raises its appeal by 1 only if the substring didn't already hold `s[i]`: that's the ones that start after the last earlier copy of `s[i]`.
+hint: Keep a dictionary `last` from each character to the last index it was seen at. Then `i - last.get(c, -1)` substrings ending at `i` gain 1 from `c`.
+hint: Keep `ending_here`, the total appeal of the substrings that end at the current index: it grows by `i - last.get(c, -1)` at each step. Add it to the answer, then set `last[c] = i`.
+right: The last index of each character says exactly which substrings ending here gain a new character, so the total for each end is updated in one step.
+wrong: Keep `last`, `ending_here` and `total`; for each `i, c` in `enumerate(s)`: `ending_here += i - last.get(c, -1)`, then `last[c] = i` and `total += ending_here`.
 
 === task: code hard
-title: The most common word
-prompt: Write a function `most_common(words)` that takes a list of words (it always has at least one) and returns the word that appears most often. If several words are tied for the most, return the one that appears **first** in the list.
+title: Count the Number of Good Partitions
+leetcode: 2963 | Count the Number of Good Partitions | count-the-number-of-good-partitions
+patterns: lookup + update
+prompt: A **good partition** of `nums` cuts it into one or more runs of numbers next to each other, so that no number appears in two different runs. Write `number_of_good_partitions(nums)` that returns how many good partitions there are. The answer can be huge, so return it modulo 1,000,000,007: the remainder after dividing by 1,000,000,007.
 
-For example, `most_common(["cat", "dog", "cat"])` returns `'cat'`. `most_common(["red", "blue", "blue", "red"])` returns `'red'`: red and blue both appear twice, and red comes first.
+**Example 1:** `number_of_good_partitions([1, 2, 3, 4])` returns `8`: each of the 3 gaps can be cut or not.
 
-Count with a dictionary; `.count()` isn't allowed in this task.
+**Example 2:** `number_of_good_partitions([1, 1, 1, 1])` returns `1`: the 1s must all stay together.
+
+**Example 3:** `number_of_good_partitions([1, 2, 1, 3])` returns `2`: [1, 2, 1] and [3], or the whole list.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100,000, and 1 ≤ `nums[i]` ≤ 1,000,000,000.
 starter:
 ```python
-def most_common(words):
-    counts = {}
-    # 1. count every word
-    # 2. loop over counts.items() and keep the word with the biggest count
-    best = ""
-    return best
+def number_of_good_partitions(nums):
+    # your code here
+    return 0
 ```
 solution:
 ```python
-def most_common(words):
-    counts = {}
-    for word in words:
-        counts[word] = counts.get(word, 0) + 1
-    best = ""
-    best_count = 0
-    for word, n in counts.items():
-        if n > best_count:
-            best = word
-            best_count = n
-    return best
+def number_of_good_partitions(nums):
+    last = {}
+    for i in range(len(nums)):
+        last[nums[i]] = i
+    pieces = 0
+    end = 0
+    for i in range(len(nums)):
+        if last[nums[i]] > end:
+            end = last[nums[i]]
+        if i == end:
+            pieces += 1
+    answer = 1
+    for p in range(pieces - 1):
+        answer = answer * 2 % 1000000007
+    return answer
 ```
 tests:
-- most_common(["cat", "dog", "cat"])
-- most_common(["owl"])
-- most_common(["red", "blue", "blue", "red"])
-- most_common(["a", "b", "c", "c"])
-- most_common(["fig", "kiwi", "kiwi", "fig", "kiwi"])
-fail[1]: "cat" appears twice and "dog" once, so the answer is the word `'cat'` itself, not its count 2.
-fail[3]: red and blue are tied with 2 each, and red comes first. Replace your best word only when a count is **strictly bigger** (`>`), not when it's equal (`>=`). A dictionary keeps its keys in the order they were first added, so with `>` the first key in that order with the top count wins, and a later tie doesn't replace it.
-error[KeyError]: A KeyError means you read `counts[...]` with a key that isn't there, for example `counts[best]` while `best` is still `""`. Keep the best count in its own variable that starts at 0, like the "find the maximum by hand" pattern.
-forbid[.count(]: Count with a dictionary in this task. `.count()` scans the whole list again for every word, and practicing the counting pattern is the point here.
-hint: Two steps. First build `counts` with the counting pattern. Then find the biggest count by hand, the way you found the largest number in a list with a loop.
-hint: Loop with `for word, n in counts.items():` and keep two variables, `best` and `best_count`, updating both when `n > best_count`.
-hint: Use `>` and not `>=`, so that a later word with an equal count doesn't replace an earlier one.
-right: The first loop counts every word. The second loop walks through the counts in the order the words first appeared, and replaces the best only on a strictly bigger count, so a tie goes to the earliest word.
-wrong: Count first: `counts[word] = counts.get(word, 0) + 1` for every word. Then start with `best = ""` and `best_count = 0`, loop over `counts.items()`, and when `n > best_count` store both the word and its count. Return `best` after the loop.
+- number_of_good_partitions([1, 2, 3, 4])
+- number_of_good_partitions([1, 1, 1, 1])
+- number_of_good_partitions([1, 2, 1, 3])
+- number_of_good_partitions([5])
+- number_of_good_partitions([1, 2, 1, 2, 3, 3])
+- number_of_good_partitions(list(range(3000)))
+fail[1]: Each of the 3 gaps can be cut or not: 2 × 2 × 2 = 8.
+fail[3]: The two 1s must be in the same run, so the first cut can only come after index 2.
+fail[4]: One number can only be one run.
+fail[5]: [1, 2, 1, 2] must stay together, and so must [3, 3]: only the gap between them can be cut.
+fail[6]: All 2,999 gaps can be cut, so the answer is 2 to the power 2,999, modulo 1,000,000,007.
+edges:
+- one number :: len(nums) == 1 :: number_of_good_partitions([7])
+- all numbers different :: len(set(nums)) == len(nums) :: number_of_good_partitions([1, 2, 3])
+- the first number equals the last :: len(nums) > 1 and nums[0] == nums[-1] :: number_of_good_partitions([2, 1, 2])
+edge_count: 2
+hint: All copies of a number must be in the same run. Record the last index of each number in a dictionary.
+hint: Walk from the left, keeping `end`, the furthest last index of any number seen so far. When `i == end`, no number seen so far appears again later: a block ends here, and a cut after it is allowed.
+hint: With `pieces` blocks, each of the `pieces - 1` gaps between them can be cut or not, so the answer is 2 to the power `pieces - 1`. Multiply by 2 that many times, taking `% 1000000007` each time.
+right: The last indexes say where a block of numbers can close, and each gap between blocks is a free choice, which gives 2 to the power of the number of gaps.
+wrong: Store `last[x]` for every number; walk `i`, raising `end` to `last[nums[i]]` and counting a block when `i == end`; return 2 to the power `pieces - 1`, modulo 1,000,000,007.
 
 === task: code hard
-title: Count only the letters
-prompt: Write a function `letter_counts(text)` that returns a dictionary counting each letter in `text`. Capital and small letters count as the same letter, stored as the small letter. Anything that isn't a letter from a to z (spaces, digits, punctuation) is skipped.
+title: Number of Atoms
+leetcode: 726 | Number of Atoms | number-of-atoms
+patterns: count + loop
+prompt: A chemical formula is made of atoms. An atom's name is a capital letter, possibly followed by small letters, like `H` or `Mg`. It may be followed by a count, like `H2`; with no count, the count is 1. A part of the formula in brackets may also be followed by a count, which multiplies everything inside: `Mg(OH)2` has one Mg, two O and two H. Write `count_of_atoms(formula)` that returns the total count of each atom as a string: the names in alphabetical order, each followed by its count when the count is more than 1.
 
-For example, `letter_counts("Aab!")` returns `{'a': 2, 'b': 1}`.
+**Example 1:** `count_of_atoms("H2O")` returns `"H2O"`.
+
+**Example 2:** `count_of_atoms("Mg(OH)2")` returns `"H2MgO2"`.
+
+**Example 3:** `count_of_atoms("K4(ON(SO3)2)2")` returns `"K4N2O14S4"`.
+
+**Constraints:** 1 ≤ `len(formula)` ≤ 1,000, the formula is valid, and it has only letters, digits, `"("` and `")"`.
 starter:
 ```python
-def letter_counts(text):
-    counts = {}
+def count_of_atoms(formula):
     # your code here
-    return counts
+    return ""
 ```
 solution:
 ```python
-def letter_counts(text):
-    counts = {}
-    for ch in text.lower():
-        if "a" <= ch <= "z":
-            counts[ch] = counts.get(ch, 0) + 1
-    return counts
-```
-tests:
-- letter_counts("Aab!")
-- letter_counts("")
-- letter_counts("Hi hi")
-- letter_counts("2 B or not 2 b")
-fail[1]: "Aab!" has two a's (one capital) and one b, and the "!" is skipped: {'a': 2, 'b': 1}. Lowercase the text first, and count only characters from "a" to "z".
-fail[2]: An empty text gives an empty dictionary: {}.
-fail[3]: "Hi hi" has 2 h's and 2 i's, and the space is skipped: {'h': 2, 'i': 2}.
-fail[4]: The digits and spaces are skipped, and capital B counts as b: {'b': 2, 'o': 2, 'r': 1, 'n': 1, 't': 1}.
-error[KeyError]: The first time a letter appears it has no count yet. Use `counts.get(ch, 0) + 1`.
-error[NameError]: Use the parameter `text` inside the function.
-require[.lower()]: Turn the text into small letters with `.lower()`.
-hint: Loop over `text.lower()`, so capitals become small letters first.
-hint: A small letter is one where `"a" <= ch <= "z"` is True.
-hint: For those characters, `counts[ch] = counts.get(ch, 0) + 1`.
-right: Lowercasing first means "A" and "a" share one key. The chained comparison lets only letters through, and the counting pattern adds 1 per appearance. Keys appear in the order each letter is first seen.
-wrong: `for ch in text.lower():` with `if "a" <= ch <= "z":` and inside it `counts[ch] = counts.get(ch, 0) + 1`. Return counts after the loop.
-
-=== task: predict hard
-title: Lists inside a dictionary
-code:
-```python
-groups = {"a": ["apple"]}
-groups["a"].append("avocado")
-first = groups["a"]
-first.append("apricot")
-groups["b"] = first
-groups["b"].append("banana")
-print(len(groups["a"]), groups["b"][-1])
-```
-wrong[3 banana]: `groups["b"] = first` stores the **same** list under a second key, so "banana" goes into the list that groups["a"] holds too: 4 items.
-wrong[2 banana]: `first = groups["a"]` doesn't copy the list. Appending through `first` changes the list in the dictionary.
-wrong[4 apricot]: The last item appended is "banana", and groups["b"] is the same list, so its last item is "banana".
-hint: How many list objects are there in this program?
-hint: `first` and both dictionary values are names for one list.
-right: There's only one list: groups["a"], `first` and groups["b"] all refer to it. It collects apple, avocado, apricot and banana, so it has 4 items, and its last item is banana.
-wrong: Follow the single list: ["apple"] → + avocado → + apricot (through first) → + banana (through groups["b"]). All three names see 4 items, ending with banana.
-
-=== task: code hard
-title: Merge two inventories
-prompt: Write a function `merge(a, b)` that returns a **new** dictionary with all the keys of both. When a key is in both, its two counts are added together. `a` and `b` themselves must not change.
-
-For example, `merge({"x": 1, "y": 2}, {"y": 3, "z": 4})` returns `{'x': 1, 'y': 5, 'z': 4}`. The starter's `left` and `right` are used by the checks.
-starter:
-```python
-def merge(a, b):
-    # your code here
-    return a
-
-left = {"x": 1}
-right = {"x": 2}
-```
-solution:
-```python
-def merge(a, b):
-    result = {}
-    for k, v in a.items():
-        result[k] = v
-    for k, v in b.items():
-        result[k] = result.get(k, 0) + v
+def count_of_atoms(formula):
+    stack = [{}]
+    i = 0
+    while i < len(formula):
+        c = formula[i]
+        if c == "(":
+            stack.append({})
+            i += 1
+            continue
+        if c == ")":
+            i += 1
+            inner = stack.pop()
+        else:
+            start = i
+            i += 1
+            while i < len(formula) and "a" <= formula[i] <= "z":
+                i += 1
+            inner = {formula[start:i]: 1}
+        start = i
+        while i < len(formula) and formula[i].isdigit():
+            i += 1
+        times = 1
+        if i > start:
+            times = int(formula[start:i])
+        top = stack[-1]
+        for name in inner:
+            top[name] = top.get(name, 0) + inner[name] * times
+    counts = stack[0]
+    names = list(counts)
+    names.sort()
+    result = ""
+    for name in names:
+        result += name
+        if counts[name] > 1:
+            result += str(counts[name])
     return result
-
-left = {"x": 1}
-right = {"x": 2}
 ```
 tests:
-- merge({"x": 1, "y": 2}, {"y": 3, "z": 4})
-- merge({}, {})
-- merge({"a": 1}, {})
-- merge(left, right)
-- left
-fail[1]: x only in a (1), y in both (2 + 3 = 5), z only in b (4): {'x': 1, 'y': 5, 'z': 4}.
-fail[5]: `left` must still be {'x': 1} after `merge(left, right)`. Build a new dictionary instead of adding b's counts into a.
-error[KeyError]: A key from b may not be in the result yet. Use `result.get(k, 0) + v`.
-error[NameError]: Use the parameters `a` and `b`, and create the new dictionary before the loops.
-require[for]: Use loops over the two dictionaries.
-hint: Start with a new empty dictionary and copy every pair of a into it.
-hint: Then loop over `b.items()` and add each count to whatever the result already has for that key.
-hint: `result[k] = result.get(k, 0) + v`
-right: Copying a into a fresh dictionary means a itself is never touched, and `.get(k, 0)` handles keys that only b has. Shared keys get both counts added.
-wrong: `result = {}`; copy `a` with a loop over `a.items()`; then for each pair of `b`, `result[k] = result.get(k, 0) + v`; return result. Don't change `a`.
-
-=== task: cells hard
-title: When does the default count?
-prompt: After this code runs, what do these expressions give?
-code:
-```python
-d = {"a": 1}
-for k in ["a", "b", "a", "c"]:
-    d[k] = d.get(k, 10) * 2
-```
-labels: d["a"] | d["b"] | d["c"] | len(d)
-answer: 4 | 20 | 20 | 3
-wrong[4 | 2 | 2 | 3]: For a missing key, `.get(k, 10)` gives the default 10, not 1: b and c each become 10 × 2 = 20.
-wrong[2 | 20 | 20 | 3]: "a" appears twice in the list, so it's doubled twice: 1 → 2 → 4.
-wrong[40 | 20 | 20 | 3]: The default 10 is only used when the key is missing. "a" already holds 1, so it goes 1 → 2 → 4.
-hint: For each key, ask: is it in d already? If so, `.get` gives its value; if not, it gives 10.
-hint: "a" is in the list twice.
-right: "a" exists, so it doubles from 1 to 2, and later from 2 to 4. "b" and "c" are missing, so `.get` gives 10, doubled to 20. There are 3 keys.
-wrong: a: 1 → 2 (first time) → 4 (second time). b: missing → 10 × 2 = 20. c: missing → 20. Three keys in total.
+- count_of_atoms("H2O")
+- count_of_atoms("Mg(OH)2")
+- count_of_atoms("K4(ON(SO3)2)2")
+- count_of_atoms("Be32")
+- count_of_atoms("H")
+- count_of_atoms("(H)")
+- count_of_atoms("He(He)2")
+- count_of_atoms("((N42)24(OB40Li30CHe3O48LiNN26)33(C12Li48N30H13HBe31)21(BHN30Li26BCBe47N40)15(H5)16)14")
+fail[2]: The 2 after the bracket doubles everything inside: two O and two H. Names are sorted, so H comes before Mg.
+fail[3]: Brackets can be inside brackets: the inner 2 doubles S and O3, then the outer 2 doubles everything again.
+fail[4]: A count can have more than one digit: 32.
+fail[6]: Brackets with no count after them multiply by 1.
+fail[7]: The same atom inside and outside brackets adds up: 1 + 2 = 3.
+edges:
+- a count with two or more digits :: any(formula[i].isdigit() and formula[i + 1].isdigit() for i in range(len(formula) - 1)) :: count_of_atoms("C12")
+- brackets inside brackets :: any(formula[:i].count("(") - formula[:i].count(")") >= 2 for i in range(len(formula) + 1)) :: count_of_atoms("((H)2)3")
+- a name with a small letter :: any(c.islower() for c in formula) :: count_of_atoms("NaCl")
+edge_count: 2
+hint: Use a stack of dictionaries: the top one counts the atoms of the bracket you're in. `"("` pushes a new empty dictionary.
+hint: Read an atom's name (a capital letter, then any small letters) and the number after it (1 if there's none), and add that many to the top dictionary. `formula[i].isdigit()` tells you whether a digit comes next.
+hint: At `")"`, read the number after it, pop the inner dictionary, and add each of its counts, times that number, to the dictionary below. At the end, sort the names of the last dictionary (`names = list(counts)`, then `names.sort()`) and build the answer.
+right: Each bracket gets its own dictionary, so its counts can be multiplied together when it closes, and sorting the names at the end gives the order the answer needs.
+wrong: Keep a stack of dictionaries; push one at `"("`; add each atom with its count to the top; at `")"`, pop and add each count times the following number to the new top; finally join the sorted names with their counts above 1.
 
 === task: code hard
-title: Fix the dictionary bugs
-prompt: This program should add bread to the stock, print the number of eggs, and then list everything:
-```output
-12
-eggs 12
-milk 2
-bread 1
-```
-It has three bugs. Fix them.
+title: Jump Game IV
+leetcode: 1345 | Jump Game IV | jump-game-iv
+patterns: group + del + lookup
+prompt: You start at index 0 of `arr` and want to reach the last index. In one step from index `i`, you can move to `i + 1`, to `i - 1`, or to any index `j` where `arr[j] == arr[i]`. You can never leave the list. Write `min_jumps(arr)` that returns the smallest number of steps.
+
+**Example 1:** `min_jumps([100, -23, -23, 404, 100, 23, 23, 23, 3, 404])` returns `3`: 0 → 4 (the other 100) → 3 → 9 (the other 404).
+
+**Example 2:** `min_jumps([7])` returns `0`: you start at the last index.
+
+**Example 3:** `min_jumps([7, 6, 9, 6, 9, 6, 9, 7])` returns `1`: index 0 jumps straight to the other 7.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 50,000, and -100,000,000 ≤ `arr[i]` ≤ 100,000,000.
 starter:
 ```python
-stock = {"eggs": 12, "milk": 2}
-stock["bread"] += 1
-print(stock["Eggs"])
-for item, count in stock:
-    print(item, count)
+def min_jumps(arr):
+    # your code here
+    return -1
 ```
 solution:
 ```python
-stock = {"eggs": 12, "milk": 2}
-stock["bread"] = 1
-print(stock["eggs"])
-for item, count in stock.items():
-    print(item, count)
+def min_jumps(arr):
+    n = len(arr)
+    if n == 1:
+        return 0
+    places = {}
+    for i in range(n):
+        if arr[i] not in places:
+            places[arr[i]] = []
+        places[arr[i]].append(i)
+    visited = [False] * n
+    visited[0] = True
+    current = [0]
+    steps = 0
+    while len(current) > 0:
+        steps += 1
+        following = []
+        for i in current:
+            nexts = [i - 1, i + 1]
+            if arr[i] in places:
+                nexts = nexts + places[arr[i]]
+                del places[arr[i]]
+            for j in nexts:
+                if j >= 0 and j < n and not visited[j]:
+                    if j == n - 1:
+                        return steps
+                    visited[j] = True
+                    following.append(j)
+        current = following
+    return -1
 ```
-tests: stdout
-error[KeyError]: Either "bread" isn't a key yet, so `+=` has nothing to add to (assign 1 instead), or a key is spelled differently from the dictionary: keys match exactly, capital letters included.
-error[ValueError]: Looping over the dictionary itself gives one key at a time, which can't be split into item and count. Loop over `stock.items()`.
-hint: "bread" isn't in the stock yet. Can `+=` work on it?
-hint: Keys must match exactly: "Eggs" and "eggs" are different.
-hint: To get each key with its value in the loop, use `.items()`.
-right: A new key needs plain assignment (`stock["bread"] = 1`), because `+=` must read an old value first. The key is "eggs" with a small e. And `.items()` gives each item with its count, ready for two loop variables.
-wrong: Bug 1: `stock["bread"] = 1` (or `stock["bread"] = stock.get("bread", 0) + 1`). Bug 2: `stock["eggs"]`, small e. Bug 3: `for item, count in stock.items():`.
+tests:
+- min_jumps([100, -23, -23, 404, 100, 23, 23, 23, 3, 404])
+- min_jumps([7])
+- min_jumps([7, 6, 9, 6, 9, 6, 9, 7])
+- min_jumps([6, 1, 9])
+- min_jumps([11, 22, 7, 7, 7, 7, 7, 7, 7, 22, 13])
+- min_jumps([5] * 5000 + [6, 7])
+fail[2]: You start at the last index, so no steps are needed.
+fail[3]: The first and last numbers are both 7, so one jump does it.
+fail[4]: No two numbers are equal, so walk: 0 → 1 → 2.
+fail[5]: 0 → 1 (22) → 9 (the other 22) → 10.
+fail[6]: Every 5 is reached in one step, then 2 more steps walk to the end. Delete the list of 5s after its first use, or every 5 looks through all 5,000 positions again.
+error[TimeoutError]: Each group of equal numbers only needs to be used once. After the first jump through it, `del` its list from the dictionary, or every equal number looks through the whole group again.
+edges:
+- one number :: len(arr) == 1 :: min_jumps([3])
+- the first number equals the last :: len(arr) > 1 and arr[0] == arr[-1] :: min_jumps([4, 1, 2, 4])
+- all numbers different :: len(set(arr)) == len(arr) :: min_jumps([1, 2, 3, 4])
+edge_count: 2
+hint: Group the indexes by value: a dictionary from each value to the list of indexes that hold it.
+hint: Work out the steps level by level. `current` holds the indexes reached in `steps` steps, starting with `[0]`. From each one, try `i - 1`, `i + 1` and every index in the group of `arr[i]`, putting the ones not visited yet into the next level. Return `steps` as soon as the last index is reached.
+hint: Once a group has been used, `del` it from the dictionary: a later visit to the same value would only find indexes already visited, and looking through a big group again and again is far too slow.
+right: Going level by level finds the smallest number of steps, and deleting each group after its first use means every index is looked at only a few times.
+wrong: Group the indexes by value; starting from `[0]`, build each next level from `i - 1`, `i + 1` and the indexes in `arr[i]`'s group (deleting the group after use), skipping visited indexes; return the level number when the last index is reached.
 
-=== task: multi hard
-title: Which can be keys?
-prompt: Choose **every** value that can be used as a dictionary **key**.
-* `"red"` :: Right. Strings can't change, so they can be keys.
-* `42` :: Right. Numbers can be keys.
-* `3.5` :: Right. Floats are numbers too, so they can be keys.
-- `[1, 2]` :: Lists can change, so they can't be keys: `TypeError: unhashable type: 'list'`.
-- `{"a": 1}` :: A dictionary can change too, so it can't be a key.
-- `["x"]` :: Even a list with one string in it is still a list, which can change.
-hint: Keys must be values that can never change.
-hint: Lists and dictionaries can change. Three of these can be keys.
-right: Keys must be immutable, so Python can turn them into a hash and find them fast. Strings and numbers never change, while lists and dictionaries can, so they're "unhashable".
-wrong: Only immutable values can be keys: "red", 42 and 3.5. Any list or dictionary, however small, can change, so using one as a key is a TypeError.
+=== task: code hard
+title: Length of the Longest Valid Substring
+leetcode: 2781 | Length of the Longest Valid Substring | length-of-the-longest-valid-substring
+patterns: lookup
+prompt: A string is **valid** if none of its substrings is in the list `forbidden`. Write `longest_valid_substring(word, forbidden)` that returns the length of the longest valid substring of `word`.
 
-=== task: predict hard
-title: get doesn't add anything
-code:
+**Example 1:** `longest_valid_substring("cbaaaabc", ["aaa", "cb"])` returns `4`: `"aabc"` is valid, and every longer substring holds `"aaa"` or `"cb"`.
+
+**Example 2:** `longest_valid_substring("leetcode", ["de", "le", "e"])` returns `4`: `"tcod"` is valid.
+
+**Constraints:** 1 ≤ `len(word)` ≤ 100,000, 1 ≤ `len(forbidden)` ≤ 100,000, 1 ≤ `len(forbidden[i])` ≤ 10, and everything is lowercase English letters.
+starter:
 ```python
-d = {"a": 1}
-x = d.get("b", 5)
-print(x, len(d))
-d["b"] = d.get("b", 5) + 1
-print(d["b"], len(d))
-print("c" in d, d.get("c"))
+def longest_valid_substring(word, forbidden):
+    # your code here
+    return -1
 ```
-wrong[5 2\n6 2\nFalse None]: `.get()` only reads: it gives the default without adding the key, so after line 2 there's still only 1 pair.
-wrong[5 1\n6 2\nFalse 0]: `d.get("c")` has no default, so it gives None for the missing key.
-wrong[5 1\n2 2\nFalse None]: "b" still isn't a key when line 4 runs, so `.get("b", 5)` gives 5, and 5 + 1 = 6.
-hint: Does `.get()` ever add a key to the dictionary?
-hint: What does `.get()` give for a missing key when no default is given?
-right: `.get("b", 5)` gives 5 but leaves d alone, so `len(d)` is still 1. Line 4 stores 5 + 1 = 6 under "b", which adds the key: now 2 pairs. "c" isn't a key, and `.get("c")` with no default gives None.
-wrong: Line 2 only reads: x = 5, and d still has 1 pair. Line 4 writes: d["b"] = 6, so 2 pairs. Last line: "c" in d is False, and d.get("c") is None.
+solution:
+```python
+def longest_valid_substring(word, forbidden):
+    banned = {}
+    for f in forbidden:
+        banned[f] = True
+    best = 0
+    left = 0
+    for right in range(len(word)):
+        for size in range(1, 11):
+            start = right - size + 1
+            if start < left:
+                break
+            if word[start:right + 1] in banned:
+                left = start + 1
+                break
+        if right - left + 1 > best:
+            best = right - left + 1
+    return best
+```
+tests:
+- longest_valid_substring("cbaaaabc", ["aaa", "cb"])
+- longest_valid_substring("leetcode", ["de", "le", "e"])
+- longest_valid_substring("a", ["a"])
+- longest_valid_substring("abc", ["d"])
+- longest_valid_substring("aaaa", ["aa"])
+- longest_valid_substring("abcabc", ["bca"])
+- longest_valid_substring("zyzzyx", ["zz", "yx", "xyz"])
+- longest_valid_substring("a" * 1500 + "b" + "a" * 1500, ["ab"])
+fail[3]: The only character is forbidden, so no substring is valid: 0.
+fail[4]: Nothing in `word` is forbidden, so the whole word is valid.
+fail[5]: Any two a's together are forbidden, so the longest valid substring is a single a.
+fail[6]: `"cabc"` is valid, but every longer substring holds `"bca"`, and so does `"abca"`.
+fail[8]: Only `"ab"` is forbidden, so everything from the b to the end, 1,501 characters, is valid.
+error[TimeoutError]: Checking every substring takes too long. Forbidden strings are at most 10 letters long, so for each right end, only the 10 substrings ending there need checking.
+edges:
+- a forbidden single letter :: any(len(f) == 1 and f in word for f in forbidden) :: longest_valid_substring("abc", ["b"])
+- nothing forbidden appears :: not any(f in word for f in forbidden) :: longest_valid_substring("hello", ["xyz"])
+- the whole word is forbidden :: word in forbidden :: longest_valid_substring("ab", ["ab"])
+edge_count: 2
+hint: Put the forbidden strings in a dictionary (any value will do, like `True`), so `in` can check a substring in one step.
+hint: Slide a window: for each right end, look at the substrings that end there, shortest first, up to 10 letters and not starting before `left`. If one is forbidden, the window must start after it: set `left = start + 1` and stop looking.
+hint: After that, the window from `left` to the right end is valid: keep the longest length.
+right: Forbidden strings are short, so only the last 10 starts can make a new problem at each right end, and checking them shortest first moves left exactly past the nearest forbidden substring.
+wrong: Store the forbidden strings as dictionary keys; for each right end, check the substrings ending there from length 1 to 10 (not starting before `left`), set `left` to the index after the first forbidden one starts, and keep the best `right - left + 1`.
+
+=== task: code hard
+title: Count Complete Substrings
+leetcode: 2953 | Count Complete Substrings | count-complete-substrings
+patterns: count + del
+prompt: A substring of `word` is **complete** if each character in it appears exactly `k` times, and every two characters next to each other in it are at most 2 apart in the alphabet: a and c are 2 apart, while a and d are 3 apart. Write `count_complete_substrings(word, k)` that returns how many complete substrings `word` has. Substrings at different positions count separately.
+
+**Example 1:** `count_complete_substrings("igigee", 2)` returns `3`: `"igig"`, `"ee"` and `"igigee"`.
+
+**Example 2:** `count_complete_substrings("aaabbbccc", 3)` returns `6`: `"aaa"`, `"bbb"`, `"ccc"`, `"aaabbb"`, `"bbbccc"` and `"aaabbbccc"`.
+
+**Constraints:** 1 ≤ `len(word)` ≤ 100,000, `word` has only lowercase English letters, and 1 ≤ `k` ≤ `len(word)`.
+starter:
+```python
+def count_complete_substrings(word, k):
+    # your code here
+    return -1
+```
+solution:
+```python
+def count_in_piece(piece, k):
+    total = 0
+    for distinct in range(1, 27):
+        size = distinct * k
+        if size > len(piece):
+            break
+        counts = {}
+        exact = 0
+        for right in range(len(piece)):
+            c = piece[right]
+            counts[c] = counts.get(c, 0) + 1
+            if counts[c] == k:
+                exact += 1
+            elif counts[c] == k + 1:
+                exact -= 1
+            if right >= size:
+                old = piece[right - size]
+                if counts[old] == k:
+                    exact -= 1
+                counts[old] -= 1
+                if counts[old] == k:
+                    exact += 1
+                if counts[old] == 0:
+                    del counts[old]
+            if right >= size - 1 and exact == distinct:
+                total += 1
+    return total
+
+def count_complete_substrings(word, k):
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    total = 0
+    start = 0
+    for i in range(1, len(word) + 1):
+        if i == len(word) or abs(letters.find(word[i]) - letters.find(word[i - 1])) > 2:
+            total += count_in_piece(word[start:i], k)
+            start = i
+    return total
+```
+tests:
+- count_complete_substrings("igigee", 2)
+- count_complete_substrings("aaabbbccc", 3)
+- count_complete_substrings("a", 1)
+- count_complete_substrings("az", 1)
+- count_complete_substrings("abc", 1)
+- count_complete_substrings("aaa", 2)
+- count_complete_substrings("abcdefghijklmnopqrstuvwxyz" * 4, 1)
+fail[1]: `"igig"` has two i's and two g's, `"ee"` has two e's, and `"igigee"` has two of each. g and e are 2 apart in the alphabet, so the last one is allowed.
+fail[4]: a and z are far apart in the alphabet, so `"az"` isn't complete, but `"a"` and `"z"` on their own are.
+fail[5]: All 6 substrings of `"abc"` have each letter once, and a, b and c are next to each other in the alphabet.
+fail[6]: `"aa"` at index 0 and `"aa"` at index 1 both count: substrings at different positions count separately.
+fail[7]: The jump from z back to a is too far, so `word` splits into 4 alphabets, and every substring of each one is complete: 351 each.
+error[TimeoutError]: Checking every substring takes too long. Cut `word` where neighbours are more than 2 apart, then for each number of different letters, slide a window of exactly that many times `k` letters.
+edges:
+- k is 1 :: k == 1 :: count_complete_substrings("ab", 1)
+- neighbours far apart :: any(abs(ord(word[i]) - ord(word[i + 1])) > 2 for i in range(len(word) - 1)) :: count_complete_substrings("az", 1)
+- k longer than the word :: k > len(word) :: count_complete_substrings("aa", 3)
+edge_count: 2
+hint: A complete substring can't cross a place where two neighbours are more than 2 apart, so cut `word` into pieces at those places and count each piece on its own. `letters.find(c)` gives a letter's place in `"abcdefghijklmnopqrstuvwxyz"`.
+hint: A complete substring with `d` different letters is exactly `d * k` long. For each `d` from 1 to 26, slide a window of that length along the piece, counting the letters in a dictionary and deleting keys at 0.
+hint: Keep `exact`, the number of letters whose count is exactly `k`, updating it whenever a count reaches `k` or leaves it. A full window is complete when `exact == d`.
+right: Cutting at the big jumps and fixing the number of different letters turns the question into windows of a fixed length, and the exact counter checks each window in one step.
+wrong: Cut `word` where neighbours differ by more than 2; in each piece, for every `d` from 1 to 26, slide a window of `d * k` letters with a count dictionary (deleting keys at 0) and an `exact` counter, adding 1 whenever `exact == d`.
+
+=== task: code hard
+title: Sum of Prefix Scores of Strings
+leetcode: 2416 | Sum of Prefix Scores of Strings | sum-of-prefix-scores-of-strings
+patterns: count + lookup
+prompt: The **score** of a string `p` is the number of strings in `words` that start with `p`. Write `sum_prefix_scores(words)` that returns a list where item `i` is the total score of all the non-empty prefixes of `words[i]`. A word counts as a prefix of itself.
+
+**Example 1:** `sum_prefix_scores(["abc", "ab", "bc", "b"])` returns `[5, 4, 3, 2]`: the prefixes of `"abc"` are `"a"` (score 2, from `"abc"` and `"ab"`), `"ab"` (score 2) and `"abc"` (score 1).
+
+**Example 2:** `sum_prefix_scores(["abcd"])` returns `[4]`.
+
+**Constraints:** 1 ≤ `len(words)` ≤ 1,000, 1 ≤ `len(words[i])` ≤ 1,000, and every word has only lowercase English letters.
+starter:
+```python
+def sum_prefix_scores(words):
+    # your code here
+    return []
+```
+solution:
+```python
+def sum_prefix_scores(words):
+    counts = {}
+    for w in words:
+        for i in range(1, len(w) + 1):
+            counts[w[:i]] = counts.get(w[:i], 0) + 1
+    result = []
+    for w in words:
+        score = 0
+        for i in range(1, len(w) + 1):
+            score += counts[w[:i]]
+        result.append(score)
+    return result
+```
+tests:
+- sum_prefix_scores(["abc", "ab", "bc", "b"])
+- sum_prefix_scores(["abcd"])
+- sum_prefix_scores(["a", "a", "a"])
+- sum_prefix_scores(["ab", "ac", "ad"])
+- sum_prefix_scores(["xyz", "xy", "x", "y"])
+- sum_prefix_scores(["ab" * 15] * 300)[0]
+fail[2]: With one word, each of its 4 prefixes has a score of 1.
+fail[3]: `"a"` is a prefix of all 3 words, so each word scores 3.
+fail[4]: `"a"` is a prefix of all 3 words (3), and each whole word is a prefix of itself only (1): 4.
+fail[6]: All 300 words are the same, so each of the 30 prefixes scores 300. Checking every prefix against every word takes too long here.
+error[TimeoutError]: Checking every prefix against every word takes too long. Count all the prefixes of all the words in one dictionary first, then add up the counts.
+edges:
+- one word :: len(words) == 1 :: sum_prefix_scores(["hey"])
+- the same word twice :: len(set(words)) < len(words) :: sum_prefix_scores(["ab", "ab"])
+- no shared first letters :: len(words) > 1 and len(set(w[0] for w in words)) == len(words) :: sum_prefix_scores(["ab", "cd"])
+edge_count: 2
+hint: Count every prefix of every word in one dictionary: `w[:i]` for `i` from 1 to `len(w)`.
+hint: A prefix's count is the number of words that start with it, which is its score.
+hint: Then, for each word, add up the counts of its own prefixes.
+right: One dictionary holds the score of every prefix that appears, so each word's total is a sum of lookups instead of a comparison with every other word.
+wrong: Count `w[:i]` for every word and every `i` from 1 to `len(w)`; then for each word, add up `counts[w[:i]]` over its prefixes.
