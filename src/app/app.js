@@ -1172,13 +1172,19 @@
       const setNames = new Set();
       T.cases.forEach((cs) => cs.setup.split('\n').forEach((ln) => { const m = ln.match(/^\s*([A-Za-z_]\w*)\s*=(?!=)/); if (m) setNames.add(m[1]); }));
       const mine = stripComments(code);
-      // only an unindented line that gives the name a value of its own counts (`n = 27`), not an update
-      // that uses the inputs (`n = n // 2`, `a = b`) or any line inside a loop or if
-      const usesInput = (rhs) => [...setNames].some((other) => new RegExp('\\b' + other + '\\b').test(rhs));
-      const clash = [...setNames].filter((nm) => mine.split('\n').some((ln) => {
-        const m = ln.match(new RegExp('^' + nm + '\\s*=(?!=)(.*)$'));
-        return m !== null && !usesInput(m[1]);
-      }));
+      // it only counts when the code's first mention of the name is an unindented line that gives it a plain
+      // value (`n = 27`, `name = "Ann"`): the input is replaced before it's ever read. Updates that use other
+      // names (`n = n // 2`, `right = temp`) and lines inside a loop or if don't count.
+      const noStrings = (t) => t.replace(/(["'])(?:\\.|(?!\1).)*\1/g, '""');
+      const plainValue = (rhs) => !(noStrings(rhs).match(/[A-Za-z_]\w*/g) || []).some((w) => !['True', 'False', 'None'].includes(w));
+      const lines = mine.split('\n');
+      const clash = [...setNames].filter((nm) => {
+        const re = new RegExp('\\b' + nm + '\\b');
+        const firstUse = lines.findIndex((ln) => re.test(noStrings(ln)));
+        if (firstUse < 0) return false;
+        const m = lines[firstUse].match(new RegExp('^' + nm + '\\s*=(?!=)(.*)$'));
+        return m !== null && plainValue(m[1]);
+      });
       if (clash.length) specific = `<p>Your code sets <code class="ic">${esc(clash[0])}</code> itself, so every check ends up using your value instead of the one it set. Remove that line: <code class="ic">${esc(clash[0])}</code> is already set before your code runs.</p>` + specific;
     }
     const ruleFail = rules.length > 0;

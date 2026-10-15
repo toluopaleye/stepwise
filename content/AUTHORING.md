@@ -31,7 +31,12 @@ Task mix per lesson (30 tasks): **every task is a `code` task, asked the way Lee
   LeetCode fits the lesson (for example the early Python lessons on print or variables) write your own problem.
 - Easy = one idea from the lesson in a short function. Medium = two ideas together, or a classic problem that
   needs the lesson's main technique. Hard = a harder classic, edge cases that need care, or a design problem.
-  LeetCode's own label is a guide, not a rule: judge difficulty for a learner at this point in the course.
+- **A LeetCode problem's level is its LeetCode difficulty**: Easy problems are easy tasks, Medium problems medium
+  tasks, Hard problems hard tasks. The build checks every `leetcode:` line against `tools/leetcode.json` (the
+  number, title and slug must match, and Premium problems are refused). `python3 tools/lc.py --tag "Hash Table"
+  --hard --unused` lists free problems by topic and difficulty. A problem you write yourself takes the level you
+  judge right for a learner at this point in the course: use one when LeetCode has no fitting problem of the
+  difficulty a level needs (often the case for hard tasks in early lessons).
 - Cover every key point and every learn step across the 30 problems, and never repeat a problem in the course.
 - Every task has a `title`, 2–3 `hint:` lines (nudge → specific → almost the answer), `right:` and `wrong:`.
 - Every task's feedback must explain **why** (the mechanism), never just "Correct!" or "Try again".

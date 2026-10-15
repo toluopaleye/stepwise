@@ -412,6 +412,27 @@ def target_function(t, solution):
     raise BuildError(f"{t['ctx']}: edges: the solution doesn't define {fn}()")
 
 
+LEETCODE = None
+
+
+def check_leetcode(t, parts):
+    """The leetcode: line must name a real, free problem exactly, and the task's level must be its LeetCode
+    difficulty (an easy task is Easy on LeetCode, a hard task is Hard)."""
+    global LEETCODE
+    if LEETCODE is None:
+        LEETCODE = json.loads((ROOT / "tools" / "leetcode.json").read_text())
+    p = LEETCODE.get(parts[0])
+    if not p:
+        raise BuildError(f"{t['ctx']}: leetcode: {parts[0]} isn't a LeetCode problem number (see tools/lc.py)")
+    if p["title"] != parts[1] or p["slug"] != parts[2]:
+        raise BuildError(f"{t['ctx']}: leetcode: {parts[0]} is '{p['title']} | {p['slug']}'")
+    if p["paid"]:
+        raise BuildError(f"{t['ctx']}: leetcode: {parts[0]} is a Premium problem; free users can't open it")
+    if p["difficulty"].lower() != t["diff"]:
+        raise BuildError(f"{t['ctx']}: LeetCode {parts[0]} is {p['difficulty']}, so it must be a {p['difficulty'].lower()} task "
+                         f"(this one is {t['diff']})")
+
+
 def compile_followup(t, f, T, cjobs, checks):
     """After the tests pass, a code task can ask for edge-case tests and the time and space complexity."""
     fu = {}
@@ -782,6 +803,7 @@ def compile_task(lid, idx, t, cjobs, pjobs, checks):
             if len(parts) != 3 or not parts[0].isdigit():
                 raise BuildError(f"{t['ctx']}: leetcode: needs 'number | title | slug'")
             T["leetcode"] = {"num": int(parts[0]), "title": parts[1], "url": f"https://leetcode.com/problems/{parts[2]}/"}
+            check_leetcode(t, parts)
         compile_followup(t, f, T, cjobs, checks)
         if f.get("slow") and not f.get("speed"):
             raise BuildError(f"{t['ctx']}: 'slow:' only makes sense with 'speed:'")
