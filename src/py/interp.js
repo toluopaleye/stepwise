@@ -13,7 +13,8 @@ function markLoc(err, f, node) {
     if (tb[k].fr === f) { if (!tb[k].loc) tb[k].loc = node; return; }
   }
 }
-class StepLimit extends Error { constructor() { super('StepLimit'); } }
+// wall: stopped by the clock (a statement that does slow work each time round) rather than by the step count
+class StepLimit extends Error { constructor(wall) { super('StepLimit'); this.wall = !!wall; } }
 
 let VM = null;
 
@@ -186,6 +187,10 @@ class Interp {
     this.truncated = false;
     this.steps = 0;
     this.limit = opts.stepLimit || 5000000;
+    // a second limit, in milliseconds per run: some steps (len() of a huge string, say) take far longer than others
+    this.wallMs = opts.wallMs || 10000;
+    this.deadline = Infinity;
+    this.nextClock = 0;
     this.depth = 0;
     this.maxDepth = opts.maxDepth || 1000;
     this.callStack = [this.module];
@@ -211,7 +216,14 @@ class Interp {
   }
   takeOut() { const s = this.out.join(''); this.out = []; this.outLen = 0; this.truncated = false; return s; }
 
-  tick(n) { this.steps += n; if (this.steps > this.limit) throw new StepLimit(); }
+  tick(n) {
+    this.steps += n;
+    if (this.steps > this.limit) throw new StepLimit();
+    if (this.steps >= this.nextClock) {
+      this.nextClock = this.steps + 4096;
+      if (Date.now() > this.deadline) throw new StepLimit(true);
+    }
+  }
   snapshot() { return this.callStack.map((f) => ({ name: f.name, line: f.line, src: f.src, fr: f, stmt: f.stmt })); }
   currentLine() { const f = this.callStack[this.callStack.length - 1]; return f ? f.line : 0; }
 
@@ -347,6 +359,10 @@ class Interp {
     f.line = s.line;
     f.stmt = s;
     if (++this.steps > this.limit) throw new StepLimit();
+    if (this.steps >= this.nextClock) {
+      this.nextClock = this.steps + 4096;
+      if (Date.now() > this.deadline) throw new StepLimit(true);
+    }
     if (this.onLine !== null) this.onLine(s, f);
     switch (s.type) {
       case 'Expr': this.eval(s.value, f); return undefined;
@@ -1182,8 +1198,9 @@ class Interp {
     if (typeof obj === 'string') { const c = strChars(obj); this.tick(c.length >> 2); return c; }
     const it = this.iterOf(obj);
     const out = [];
-    for (;;) { const v = it.next(); if (v === STOP) break; out.push(v); }
-    this.tick(out.length);
+    // count the steps as the list grows, so list(range(10 ** 9)) stops at the step limit instead of filling memory
+    for (;;) { const v = it.next(); if (v === STOP) break; out.push(v); if ((out.length & 1023) === 0) this.tick(1024); }
+    this.tick(out.length & 1023);
     return out;
   }
 

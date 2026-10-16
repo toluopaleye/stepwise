@@ -87,6 +87,14 @@ Interp.prototype.describeError = function (e, filename) {
       traceback: `  File "${filename}", line ${e.line}\n` + shown + `${e.kind}: ${e.msg}`,
     };
   }
+  if (e instanceof StepLimit && e.wall) {
+    const secs = Math.round(this.wallMs / 1000);
+    return {
+      type: 'TimeoutError', timeout: true, line: this.currentLine(), file: filename,
+      message: `stopped after ${secs} seconds. A loop that never ends, or one that does slow work each time round, is the usual cause.`,
+      traceback: `TimeoutError: stopped after ${secs} seconds (is there a loop that never ends?)`,
+    };
+  }
   if (e instanceof StepLimit) {
     return {
       type: 'TimeoutError', timeout: true, line: this.currentLine(), file: filename,
@@ -134,6 +142,9 @@ Interp.prototype.describeError = function (e, filename) {
       exc,
     };
   }
+  if (e instanceof RangeError && /Invalid (array|string|typed array) length|allocation failed/i.test(e.message)) {
+    return { type: 'MemoryError', message: 'out of memory: a list or string grew too large for this runner', line: this.currentLine(), file: filename, traceback: 'MemoryError: out of memory (a list or string grew too large for this runner)' };
+  }
   if (e instanceof RangeError) {
     return { type: 'RecursionError', message: 'maximum recursion depth exceeded', line: this.currentLine(), file: filename, traceback: 'RecursionError: maximum recursion depth exceeded' };
   }
@@ -147,6 +158,8 @@ Interp.prototype.runSource = function (src, filename) {
   this.sources.set(filename, src.replace(/\r\n?/g, '\n').split('\n'));
   this.module.src = filename;
   this.module.line = 0;
+  this.deadline = Date.now() + this.wallMs;
+  this.nextClock = 0;
   let error = null;
   try {
     const body = parseProgram(src);
@@ -170,6 +183,8 @@ Interp.prototype.evalSource = function (src, filename) {
   VM = this;
   this.sources.set(filename, src.replace(/\r\n?/g, '\n').split('\n'));
   this.module.src = filename;
+  this.deadline = Date.now() + this.wallMs;
+  this.nextClock = 0;
   let error = null, value = NONE;
   try {
     const body = parseProgram(src);
