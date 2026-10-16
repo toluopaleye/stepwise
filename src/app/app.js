@@ -806,7 +806,7 @@
           else if (rr.error) out.msg = `This call stops with ${esc(rr.error.type)} even in a correct solution, so it isn't an input the problem allows. Check the constraints.`;
           else if (!rr.ok) out.msg = `The right answer for this call is <code class="ic">${esc(rr.gotRepr)}</code>, not <code class="ic">${esc(exp)}</code>.`;
           else {
-            const er = PR.runTests(fu.edgeSrc, [{ code: '__edges(' + call.slice(fu.fn.length + 1), expect: '[]' }], lim);
+            const er = PR.runTests(T.solution + '\n\n' + fu.edgeSrc, [{ code: '__edges(' + call.slice(fu.fn.length + 1), expect: '[]' }], lim);
             let hits = [];
             try { hits = er.load.ok && !er.results[0].error ? JSON.parse(er.results[0].gotRepr) : []; } catch (e) { hits = []; }
             const mine = PR.runTests(ts.code, [{ code: call, expect: exp }], lim);
