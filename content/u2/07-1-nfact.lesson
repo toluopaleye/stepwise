@@ -1,7 +1,7 @@
 === lesson
 id: bigo-nfact
 title: O(n!): factorial time
-summary: Trying every **order** of n items is even worse than trying every subset: there are n × (n − 1) × ... × 1 = n! orders, so each extra item multiplies the work by n. That's O(n!), factorial time. You'll list every ordering, see why 10 items already means 3.6 million orders and 20 items is out of reach, and meet the travelling salesman problem.
+summary: Trying every **order** of n items is even worse than trying every subset: there are n! of them (n × (n − 1) × (n − 2), all the way down to 1), so each extra item multiplies the work by n. That's O(n!), factorial time. You'll list every ordering, see why 10 items already means 3.6 million orders and 20 items is out of reach, and meet the travelling salesman problem. Then you'll learn the ways around it: stopping early, counting without listing, jumping to the next or the kth ordering, and remembering which items are used.
 
 === learn
 ### How many ways to line up?
@@ -15,7 +15,7 @@ print(count)
 ```output
 6
 ```
-One arrangement of items in a row is called an **ordering**, or a **permutation**. n different items have n × (n − 1) × ... × 2 × 1 orderings. That number is written **n!** and said "n factorial", like the `factorial` function in the Recursion lesson: 4! = 4 × 3 × 2 × 1 = 24. By agreement, 0! = 1: there's exactly one way to line up nobody.
+One arrangement of items in a row is called an **ordering**, or a **permutation**. n different items have n choices for the first place, n − 1 for the second, and one fewer for each place after that, down to 1 for the last: n × (n − 1) × (n − 2), all the way down to × 1. That number is written **n!** and said "n factorial", like the `factorial` function in the Recursion lesson: 4! = 4 × 3 × 2 × 1 = 24. By agreement, 0! = 1: there's exactly one way to line up nobody.
 
 ### Listing every ordering
 To list the orderings, pick each item in turn to go **first**, and put every ordering of the remaining items after it. The orderings of the remaining items come from the same function, called on a shorter list:
@@ -69,6 +69,55 @@ print(len(perms))
 
 An ordering of k items has k + 1 gaps, so the k-th item multiplies the count by k. Animation 1 shows it.
 
+### Building an ordering place by place
+Orderings can also be built by filling the places one at a time, from the left. A list `used` says which items are already placed: each call tries every item that's still free in the next place, calls itself for the place after, and then takes the item back out so that the next one can be tried. Building this way lets you check a rule as each item is placed. These are the orderings of 1 to 4 where no number stands in its own place: 1 can't go in place 1, 2 can't go in place 2, and the same for 3 and 4.
+```python
+def place(n, pos, used, row, found):
+    if pos > n:
+        found.append(row[:])
+        return
+    for x in range(1, n + 1):
+        if used[x] or x == pos:
+            continue
+        used[x] = True
+        row.append(x)
+        place(n, pos + 1, used, row, found)
+        row.pop()
+        used[x] = False
+
+found = []
+place(4, 1, [False] * 5, [], found)
+print(len(found))
+print(found[:3])
+```
+```output
+9
+[[2, 1, 4, 3], [2, 3, 4, 1], [2, 4, 1, 3]]
+```
+`row` holds the ordering built so far, and `pos` is the place being filled. `row.pop()` and `used[x] = False` undo the choice after the call, so the same `row` and `used` serve every branch. A number that breaks the rule is never placed, so an ordering that starts badly is dropped at once, with everything that would have followed it: here only 9 of the 24 orderings are finished. In the worst case no rule stops anything, and the work is still O(n × n!).
+
+### Orderings with repeated items
+When some items are the same, different orderings can look identical: the letters of "aab" have 3! = 6 orderings, but only 3 different words, because swapping the two a's changes nothing. To build each different ordering once, keep a count of each item that's left, and try each **different** item in the next place:
+```python
+def words(counts, current, found):
+    if sum(counts.values()) == 0:
+        found.append(current)
+        return
+    for letter in counts:
+        if counts[letter] > 0:
+            counts[letter] -= 1
+            words(counts, current + letter, found)
+            counts[letter] += 1
+
+found = []
+words({"a": 2, "b": 1}, "", found)
+print(found)
+```
+```output
+['aab', 'aba', 'baa']
+```
+The loop goes over the different letters, not over the positions, so the two a's are never both tried in the same place. The same counts answer "is one list a rearrangement of the other?" without trying any orderings: two lists are orderings of each other exactly when every item appears the same number of times in both.
+
 ### How fast n! grows
 Code that tries every ordering is **O(n!)**, or **factorial time**. Each extra item multiplies the work by the new n, so it speeds up as it goes: × 5, then × 6, then × 7. At 100 million steps a second:
 
@@ -98,6 +147,68 @@ Going from 10 items to 20 doesn't double the time: it multiplies it by more than
 
 A subset only decides **which** items: in or out, 2 choices each. An ordering also decides **where** each one goes, which is why there are so many more. Animation 2 shows the two curves.
 
+### Counting orderings without listing them
+Often only the number of orderings is needed, and it can be worked out directly, in far fewer steps than listing them:
+
+| Question | Count |
+| --- | --- |
+| orderings of n different items | n! |
+| ordered picks of k of the n items, like a podium of 3 from 10 runners | n × (n − 1) × (n − 2), k numbers multiplied: n! / (n − k)! |
+| orderings of n items where some are the same | n!, divided by the factorial of each item's count |
+| ways to choose which k of n places get something, when the order among them doesn't matter | `math.comb(n, k)`, which is n! / (k! × (n − k)!) |
+| two groups, each ordered separately | the two counts multiplied |
+
+```python
+import math
+
+print(math.factorial(10))
+print(math.factorial(10) // math.factorial(7))
+print(math.comb(5, 2))
+```
+```output
+3628800
+720
+10
+```
+10 runners can finish in 3,628,800 orders, but a podium of 3 has only 10 × 9 × 8 = 720 possibilities, and there are 10 ways to choose 2 places out of 5. "aab" has 3! / 2! = 3 different orderings. Counts like these grow huge, so problems often ask for the count modulo 1,000,000,007 (10⁹ + 7): multiply step by step, and take `% 1000000007` after each multiplication to keep the numbers small.
+
+### The next ordering
+Listed in dictionary order, the orderings change like the digits of a counter: the right end changes fastest. To find the ordering that comes after p:
+
+1. From the right, find the first position i where `p[i]` is smaller than the item after it. Everything after i is in decreasing order, the last ordering of those items. If there's no such i, p is the very last ordering.
+2. Swap `p[i]` with the smallest item after it that's bigger than it.
+3. Reverse everything after i, so that it's increasing: the first ordering of those items.
+
+```python
+def next_ordering(p):
+    p = p[:]
+    i = len(p) - 2
+    while i >= 0 and p[i] >= p[i + 1]:
+        i -= 1
+    if i < 0:
+        return None
+    j = len(p) - 1
+    while p[j] <= p[i]:
+        j -= 1
+    p[i], p[j] = p[j], p[i]
+    p[i + 1:] = p[i + 1:][::-1]
+    return p
+
+p = [1, 2, 3]
+while p is not None:
+    print(p)
+    p = next_ordering(p)
+```
+```output
+[1, 2, 3]
+[1, 3, 2]
+[2, 1, 3]
+[2, 3, 1]
+[3, 1, 2]
+[3, 2, 1]
+```
+After `[1, 4, 3, 2]`, i is 0, because 4, 3, 2 is decreasing. The smallest item after it that's bigger than 1 is 2, so the swap gives `[2, 4, 3, 1]`, and reversing the end gives `[2, 1, 3, 4]`. Each step is O(n), and it works with repeated items too, because it compares with `>=` and `<=`.
+
 ### The travelling salesman
 A delivery van starts at its depot, visits every customer once, and comes back. Which order gives the shortest trip? `dist[a][b]` is the distance between places a and b, and the depot is place 0. The brute-force way is to try every ordering of the customers:
 ```python
@@ -111,7 +222,8 @@ def orderings(items):
             result.append([items[i]] + perm)
     return result
 
-dist = [[0, 2, 9, 10], [2, 0, 6, 4], [9, 6, 0, 3], [10, 4, 3, 0]]
+dist = [[0, 2, 9, 10], [2, 0, 6, 4],
+        [9, 6, 0, 3], [10, 4, 3, 0]]
 best = None
 for order in orderings([1, 2, 3]):
     route = [0] + order + [0]
@@ -150,21 +262,197 @@ Each route and its reverse have the same length (0 → 1 → 3 → 2 → 0 and 0
 
 Nobody has found a method that is always fast and always finds the very best route. Real route planners use clever methods that find a very good route quickly, without checking them all.
 
+### Remembering the items used
+Trying every route throws away a useful fact: the best way to finish a route only depends on which places have been visited and where the van is now, not on the order of the visits so far. A route that went to A then B and one that went to B then A, both now at C, have the same best way home. So remember the answer for each (places visited, place now), with the places visited kept as a mask, as in the O(2ⁿ) lesson:
+```python
+def tour(dist, seen, last, memo):
+    n = len(dist)
+    if seen == (1 << n) - 1:
+        return dist[last][0]
+    key = (seen, last)
+    if key not in memo:
+        best = None
+        for nxt in range(n):
+            if seen >> nxt & 1:
+                continue
+            new = seen | (1 << nxt)
+            d = dist[last][nxt]
+            d += tour(dist, new, nxt, memo)
+            if best is None or d < best:
+                best = d
+        memo[key] = best
+    return memo[key]
+
+dist = [[0, 2, 9, 10], [2, 0, 6, 4],
+        [9, 6, 0, 3], [10, 4, 3, 0]]
+print(tour(dist, 1, 0, {}))
+```
+```output
+18
+```
+`tour(dist, seen, last, memo)` is the shortest way to visit the places not in `seen`, starting from `last`, and get back to place 0. It starts with only place 0 seen, the mask 1. There are 2ⁿ masks and n places to be at, and each question tries up to n next places: O(n² × 2ⁿ) instead of O(n!). For 15 places that's about 7 million steps instead of 87 billion routes. The same idea works whenever the rest of a problem only depends on which items are used, and maybe the last one, not on their order.
+
 ### Recognising O(n!) code
 Code is O(n!) when:
 
 - it tries every ordering (arrangement) of n items: line-ups, seating plans, routes, schedules, every rearrangement of a word's letters,
-- or a recursive function loops over the items that are left and calls itself on one fewer item: n choices, then n − 1, then n − 2, ... down to 1.
+- or a recursive function loops over the items that are left and calls itself on one fewer item: n choices, then n − 1, then n − 2, down to 1.
 
 Compare the three brute-force searches: every **pair** is O(n²), every **subset** (in or out) is O(2ⁿ), and every **ordering** is O(n!). (Building each ordering also takes about n steps, so listing them all is O(n × n!), but it's still called factorial time.)
 
+It is **not** O(n!) when the orderings are counted with a formula (O(n) multiplications), when only the next ordering is needed (O(n)), or when a memo of the items used replaces the orderings (O(n² × 2ⁿ)).
+
+### Solving problems in factorial time
+The tasks in this lesson put things in order: line-ups, seating plans, routes, digits and letters. Trying every ordering only works up to about 10 items, so a bigger input is a clue that the answer has to be counted, or that a memo is needed. Six patterns cover the tasks, and a clue in the question tells you which:
+
+| Pattern | Clue in the question | Steps |
+| --- | --- | --- |
+| Listing every ordering | "every order", "arrange", "pair up", "route", with up to about 8 items | O(n × n!) |
+| Building an ordering place by place | a rule for each place, or for each pair of neighbours | O(n × n!) at worst, usually far fewer |
+| Orderings with repeated items | "different" or "distinct" orderings, repeated letters or digits, "rearrange" | n!, divided by the factorial of each count |
+| Counting orderings without listing them | "how many orderings", "modulo 10⁹ + 7", n in the thousands | O(n) multiplications |
+| The next ordering | "next bigger", "next permutation", "the kth" | O(n) for each step |
+| Remembering the items used | the best or the number of orderings, with up to about 14 to 20 items | O(n² × 2ⁿ) |
+
+### Combining patterns
+Harder tasks need two patterns together:
+
+- **The kth ordering, by counting** (count + next). Every first item heads a block of orderings of the same size, so dividing k by the size of a block says which item goes first, without listing the orderings before it. The same goes for each place after that.
+- **Stopping early with repeated items** (prune + dupes). Build from a count of each item, so that each different ordering is made once, and check the rule as each item is placed.
+- **Rules with a memo** (prune + memo). When the rule only looks at neighbours, the rest of an ordering only depends on which items are used and which one is last: remember the count or the best answer for each (used, last).
+
+The kth ordering, by counting: codes of 3 different letters from "abcde", in dictionary order, start abc, abd, abe, acb. Which is the 20th?
+```python
+def kth_code(letters, length, k):
+    letters = sorted(letters)
+    code = ""
+    k -= 1
+    for place in range(length):
+        block = 1
+        for i in range(1, length - place):
+            block *= len(letters) - i
+        code += letters.pop(k // block)
+        k = k % block
+    return code
+
+print(kth_code("abcde", 3, 20))
+```
+```output
+bdc
+```
+Each first letter heads 4 × 3 = 12 codes, so codes 1 to 12 start with a and codes 13 to 24 with b: the 20th is the 8th code that starts with b. Each second letter then heads 3 codes, so the 8th is in the third block, the one for d, the third of the letters a, c, d and e. That leaves the 2nd code of the block: c, the second of a, c and e. `k -= 1` counts from 0, so that `k // block` is the number of whole blocks to skip. It takes a few steps for each place, where listing would build all 60 codes.
+
+Stopping early with repeated items: in how many different ways can the letters of "aabbc" be arranged with no two equal letters side by side?
+```python
+def arrange(counts, last, left):
+    if left == 0:
+        return 1
+    total = 0
+    for ch in counts:
+        if counts[ch] > 0 and ch != last:
+            counts[ch] -= 1
+            total += arrange(counts, ch, left - 1)
+            counts[ch] += 1
+    return total
+
+print(arrange({"a": 2, "b": 2, "c": 1}, "", 5))
+```
+```output
+12
+```
+The loop goes over the different letters left, so each different arrangement is built at most once: there are 5! / (2! × 2!) = 30 of them in all. The check `ch != last` stops a branch as soon as it would put two equal letters together, so only the 12 good arrangements are finished.
+
+Rules with a memo: in how many orders can the numbers be lined up so that neighbours differ by at most 2?
+```python
+def ways(nums, used, last, memo):
+    n = len(nums)
+    if used == (1 << n) - 1:
+        return 1
+    key = (used, last)
+    if key not in memo:
+        total = 0
+        for i in range(n):
+            if used >> i & 1:
+                continue
+            if abs(nums[i] - nums[last]) <= 2:
+                new = used | (1 << i)
+                total += ways(nums, new, i, memo)
+        memo[key] = total
+    return memo[key]
+
+def close_orders(nums):
+    memo = {}
+    total = 0
+    for first in range(len(nums)):
+        total += ways(nums, 1 << first, first, memo)
+    return total
+
+print(close_orders([1, 2, 3, 4, 5]))
+print(close_orders(list(range(1, 13))))
+```
+```output
+20
+470
+```
+Whether the rest of a line-up can be finished only depends on which numbers are used and which one is last, so `ways` is remembered for each `(used, last)`. 12 numbers have 479,001,600 orders, but only 2¹² × 12 = 49,152 different questions, each trying up to 12 next numbers.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| nothing to order, or one item | `[]` or `[7]` | there's exactly one ordering, `[[]]` or `[[7]]`, because 0! = 1 |
+| repeated items | `[2, 2, 2]` or `"aab"` | the same ordering counted or listed more than once |
+| no ordering works | a rule nothing can meet | returning `None` instead of 0, `[]` or −1 |
+| the last ordering | `[3, 2, 1]` | there's no next one: check before swapping |
+| k too big | k bigger than the number of orderings | an index error instead of the empty answer |
+| leading zeros | the digits 0, 1 and 2 | a number like 012 that isn't allowed |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Work it out from the code:
+
+1. Listing every ordering makes n! of them, each built in n steps: O(n × n!). Checking or scoring each one in O(n) keeps it O(n × n!).
+2. Building place by place with a rule is O(n × n!) in the worst case, when the rule stops nothing; usually it's far less.
+3. With repeated items, building from counts makes n! divided by the factorial of each count different orderings, each in O(n) steps.
+4. A count from a formula takes O(n) multiplications, and the next ordering O(n) steps. The kth ordering takes up to n steps for each of the n places: O(n²).
+5. A memo over (used, last) has n × 2ⁿ questions with up to n tries each: O(n² × 2ⁿ). A memo over the used items alone has 2ⁿ questions: O(n × 2ⁿ).
+6. When the number of items can never change, like 4 cards or 4 digits, trying every ordering is a fixed amount of work: O(1), however big that amount is.
+
+**Space** is the **extra** memory the code keeps as the input grows:
+
+| The code keeps | Space |
+| --- | --- |
+| every ordering in a list | O(n × n!) |
+| one ordering being built, a `used` list, and n calls waiting | O(n) |
+| a count of each item | O(n), or O(1) for letters or digits |
+| a memo over (used, last) | O(n × 2ⁿ) |
+
+Trying every ordering only works for about 10 items, so whenever n can be bigger, look for a formula, a memo, or a way to jump straight to the answer.
+
 === keypoints
-- n! ("n factorial") = n × (n − 1) × ... × 2 × 1 is the number of orderings of n different items. 0! = 1.
+- n! ("n factorial") is n × (n − 1) × (n − 2), all the way down to 1: the number of orderings of n different items. 0! = 1.
 - O(n!), factorial time: each extra item multiplies the work by the new n, which is worse than doubling.
 - 5! = 120, 10! = 3,628,800 and 20! ≈ 2.4 × 10¹⁸: trying every ordering only works up to about 10 or 12 items.
 - From n = 4 on, n! is bigger than 2ⁿ, and the gap grows fast: an ordering decides where each item goes, not only whether it's in.
-- To list orderings: pick each item to go first and add every ordering of the rest, or insert each new item into every gap.
-- The travelling salesman by brute force tries (n − 1)! routes from a fixed start: hopeless beyond about a dozen places.
+- To list orderings, pick each item to go first and add every ordering of the rest, or fill the places one at a time with a `used` list, checking any rule as you go. Listing them all is O(n × n!).
+- With repeated items, build from a count of each item, so that each different ordering appears once: there are n! divided by the factorial of each count.
+- Counting with a formula (n!, n! / (n − k)!, `math.comb`) and finding the next ordering take O(n) steps, not n!.
+- The travelling salesman by brute force tries (n − 1)! routes. When the rest of a problem only depends on which items are used and which is last, a memo over (used, last) needs O(n² × 2ⁿ) steps instead.
+- Combinations: the kth ordering, by counting; stopping early with repeated items; and rules with a memo.
+
+=== patterns
+- orders | Listing every ordering
+- prune | Building an ordering place by place
+- dupes | Orderings with repeated items
+- count | Counting orderings without listing them
+- next | The next ordering
+- memo | Remembering the items used
+combos:
+- count + next | The kth ordering, by counting
+- prune + dupes | Stopping early with repeated items
+- prune + memo | Rules with a memo
 
 === example: How fast n! grows
 intro: 2ⁿ and n! side by side, from 1 to 12 items.
@@ -175,7 +463,7 @@ for n in range(1, 13):
     print(n, 2 ** n, fact)
 ```
 1: 0! = 1: one way to line up nothing.
-2-3: Each turn multiplies by the new n: 1, 1 × 2, 1 × 2 × 3, ...
+2-3: Each turn multiplies by the new n: 1, then 1 × 2, then 1 × 2 × 3, and onwards.
 4: For n = 1, 2 and 3, 2ⁿ is bigger. From n = 4 on, n! is bigger.
   By n = 12, 2ⁿ has reached 4,096, but n! is 479,001,600: over a hundred thousand times as big.
 
@@ -233,409 +521,99 @@ view: chart fns=n**3,2**n,factorial(n) labels=n³,2ⁿ,n! n=1..12 step=1
 intro: n³, 2ⁿ and n! side by side. For a while they look alike, then n! shoots past everything.
 1: At n = {n}: n³ is {n³}, 2ⁿ is {2ⁿ}, and n! is {n!}.
 
-=== task: predict easy
-title: Five runners
-code:
+=== task: code easy
+title: Prime Arrangements
+leetcode: 1175 | Prime Arrangements | prime-arrangements
+patterns: count
+prompt: Write `num_prime_arrangements(n)` that returns how many orderings of the numbers 1 to n put every prime number in a prime position, counting positions from 1. A prime is a whole number above 1 that only 1 and itself divide exactly. Return the count modulo 10⁹ + 7: its remainder after dividing by 1,000,000,007.
+
+**Example 1:** `num_prime_arrangements(5)` returns `12`. The primes 2, 3 and 5 go in positions 2, 3 and 5, in any of 3! = 6 orders, and 1 and 4 fill positions 1 and 4 in 2! = 2 orders: 6 × 2 = 12.
+
+**Example 2:** `num_prime_arrangements(100)` returns `682289015`.
+
+**Constraints:** 1 ≤ n ≤ 100. Count the primes, then multiply two factorials: don't list the orderings.
+starter:
 ```python
-count = 1
-for k in range(1, 6):
-    count = count * k
-print(count)
+def num_prime_arrangements(n):
+    # your code here
+    return 0
 ```
-wrong[15]: That's 1 + 2 + 3 + 4 + 5. The count is **multiplied** by each k: 1 × 2 × 3 × 4 × 5.
-wrong[24]: `range(1, 6)` gives 1 to 5, so the last multiplication is by 5: 24 × 5 = 120.
-wrong[720]: `range(1, 6)` stops before 6, so this is 5!, not 6!.
-hint: Multiply 1 × 2 × 3 × 4 × 5.
-hint: That's 5!.
-right: 5! = 120: the number of different finishing orders for 5 runners. Any of the 5 can win, then 4 are left for second place, 3 for third, 2 for fourth and 1 for last.
-wrong: count goes 1 → 2 → 6 → 24 → 120: it's multiplied by 1, 2, 3, 4 and 5 in turn.
-
-=== task: mcq easy
-title: Four in a row
-prompt: In how many different orders can 4 different books stand on a shelf?
-- 4 :: That's one order per book. Each position can hold any of the books still left.
-- 16 :: That's 4 × 4, as if a book could be used twice. Once a book is placed, only the others are left.
-* 24 :: Right. 4 choices for the first place, 3 for the second, 2 for the third and 1 for the last: 4! = 24.
-- 10 :: That's 4 + 3 + 2 + 1. The choices multiply, because each choice for the first place combines with every choice after it.
-hint: How many books could go in the first place? How many are left for the second?
-hint: 4 × 3 × 2 × 1.
-right: 4! = 4 × 3 × 2 × 1 = 24 orderings. A fifth book would multiply that by 5.
-wrong: 4 choices, then 3, then 2, then 1: 4 × 3 × 2 × 1 = 24.
-
-=== task: fill easy
-title: Everything except item i
-prompt: Fill in the blank so that `rest` holds every item except the one at position `i`, and the function lists both orderings:
-
-```output
-[['x', 'y'], ['y', 'x']]
-```
-code:
+solution:
 ```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[??:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
+def is_prime(x):
+    if x < 2:
+        return False
+    d = 2
+    while d * d <= x:
+        if x % d == 0:
+            return False
+        d += 1
+    return True
 
-print(orderings(["x", "y"]))
+
+def num_prime_arrangements(n):
+    primes = 0
+    for x in range(1, n + 1):
+        if is_prime(x):
+            primes += 1
+    mod = 1000000007
+    ways = 1
+    for k in range(1, primes + 1):
+        ways = ways * k % mod
+    for k in range(1, n - primes + 1):
+        ways = ways * k % mod
+    return ways
 ```
-answer: i + 1
-wrong[i]: `items[:i] + items[i:]` is the whole list again, so `orderings` calls itself on a list that never gets shorter: `RecursionError`.
-wrong[i - 1]: For i = 0, `items[-1:]` is the last item, and for i = 1 it would keep the item itself. Skip exactly one item: start after it, at `i + 1`.
-hint: `items[:i]` is everything before position i.
-hint: Everything after position i starts at `i + 1`.
-right: `items[:i] + items[i + 1:]` is the list without the item at position i, so each item goes first exactly once, followed by the orderings of the rest.
-wrong: `items[i + 1:]`. The part before i plus the part after i leaves out exactly item i.
+tests:
+- num_prime_arrangements(5)
+- num_prime_arrangements(100)
+- num_prime_arrangements(1)
+- num_prime_arrangements(2)
+- num_prime_arrangements(4)
+- num_prime_arrangements(30)
+fail[2]: There are 25 primes up to 100, so it's 25! × 75! modulo 10⁹ + 7: 682,289,015.
+fail[3]: The only number is 1, which isn't prime: 1 ordering.
+fail[4]: 2 is prime and has to stay in position 2, so 1 stays in position 1: 1 ordering.
+fail[5]: The primes 2 and 3 can swap, and so can 1 and 4: 2 × 2 = 4.
+fail[6]: There are 10 primes up to 30: 10! × 20!, which is 13,697,484 modulo 10⁹ + 7. Take `%` after every multiplication.
+edges:
+- n is 1 :: n == 1 :: num_prime_arrangements(1)
+- n is prime :: n > 1 and is_prime(n) :: num_prime_arrangements(7)
+- n isn't prime :: n > 1 and not is_prime(n) :: num_prime_arrangements(10)
+edge_count: 2
+complexity: time=O(n√n) | space=O(1)
+complexity_options: O(n√n)
+complexity_note: n is the argument. Count a prime test as trying every divisor up to the square root.
+why_time: Each of the n numbers is tested with up to √n divisions, and the two factorials take n multiplications in all.
+why_space: A count of the primes and the running product.
+hint: Write `is_prime(x)`: x is at least 2, and no d with `d * d <= x` divides it.
+hint: With p primes, they can go in the p prime positions in p! ways, and the other n − p numbers in the other positions in (n − p)! ways.
+hint: Start with `ways = 1`, and do `ways = ways * k % 1000000007` for k from 1 to p, then for k from 1 to n − p.
+right: Two groups, each ordered separately: multiply their counts. Listing the 100! orderings would take longer than the age of the universe.
+wrong: Count the primes p from 1 to n. Then `ways = 1`, multiplied by every k from 1 to p and every k from 1 to n − p, with `% 1000000007` each time.
 
 === task: code easy
-title: Seating plans
-prompt: Write a function `seatings(n)` that returns how many ways n guests can sit in a row of n chairs, which is n! = 1 × 2 × ... × n. Use a loop. With no guests there is exactly 1 way (0! = 1).
+title: Minimum Sum of Four Digit Number After Splitting Digits
+leetcode: 2160 | Minimum Sum of Four Digit Number After Splitting Digits | minimum-sum-of-four-digit-number-after-splitting-digits
+patterns: orders
+prompt: num has 4 digits. Split them into two new numbers, new1 and new2: every digit is used exactly once, in any order, and leading zeros are allowed. Write `minimum_sum(num)` that returns the smallest possible new1 + new2.
 
-For example, `seatings(3)` returns 6.
+**Example 1:** `minimum_sum(2932)` returns `52`: 29 + 23. Other splits, like 223 + 9 = 232, are bigger.
+
+**Example 2:** `minimum_sum(4009)` returns `13`: 04 + 09.
+
+**Constraints:** 1000 ≤ num ≤ 9999. Try every ordering of the 4 digits, and every place to cut it in two.
 starter:
 ```python
-def seatings(n):
-    ways = 1
+def minimum_sum(num):
     # your code here
-    return ways
+    return 0
 ```
 solution:
-```python
-def seatings(n):
-    ways = 1
-    for k in range(1, n + 1):
-        ways = ways * k
-    return ways
-```
-tests:
-- seatings(3)
-- seatings(0)
-- seatings(1)
-- seatings(5)
-- seatings(10)
-fail[1]: 3 guests: 3 × 2 × 1 = 6. Multiply by every number from 1 to n.
-fail[4]: 5! = 1 × 2 × 3 × 4 × 5 = 120. Make the range go up to n itself: `range(1, n + 1)`.
-fail[5]: 10! = 3,628,800.
-forbid[factorial]: Multiply the numbers yourself with a loop.
-hint: Start at 1, and multiply by k for every k from 1 to n.
-hint: `for k in range(1, n + 1): ways = ways * k`.
-hint: For n = 0 the loop doesn't run, and 1 is the right answer.
-right: The loop makes n multiplications. The number it builds is the problem: 10 guests already have 3,628,800 seating plans, so checking each plan would be O(n!).
-wrong: `for k in range(1, n + 1):` with `ways = ways * k` inside. Return `ways`.
-
-=== task: predict easy
-title: Every order of 1, 2, 3
-code:
-```python
-def orders(s):
-    if len(s) <= 1:
-        return [s]
-    result = []
-    for i in range(len(s)):
-        for p in orders(s[:i] + s[i + 1:]):
-            result.append(s[i] + p)
-    return result
-
-print(orders("123"))
-```
-wrong[['123', '132', '213', '231', '321', '312']]: For "3" first, the rest is "12", whose orders come out as "12" then "21". So "312" comes before "321".
-wrong[['123', '231', '312']]: Every character takes a turn in front, and for each one, **both** orders of the other two follow: 6 strings.
-wrong[['123', '132', '213', '231', '312', '321', '123']]: Each ordering is made once: 3 × 2 × 1 = 6 strings.
-hint: "1" goes first with "23" and "32" after it. Then "2" goes first.
-hint: There are 3! = 6 strings.
-right: Each character takes a turn in front, followed by both orders of the other two: 123, 132, 213, 231, 312, 321.
-wrong: "1" first: 123, 132. "2" first: 213, 231. "3" first: 312, 321.
-
-=== task: multi easy
-title: Which are O(n!)?
-prompt: Choose **every** brute-force search that is O(n!) for n items.
-* Trying every order to visit n customers :: Right. n customers can be visited in n! orders.
-* Trying every seating plan for n guests at a long table :: Right. A seating plan is an ordering of the guests.
-* Listing every rearrangement of the letters of an n-letter word :: Right. n different letters have n! orderings.
-- Trying every subset of n items :: In or out for each item: 2ⁿ, which is far less than n!.
-- Comparing every pair of n items :: About n²/2 pairs: O(n²).
-- Sorting n items with `sorted` :: Sorting finds one ordering cleverly, in O(n log n). It doesn't try them all.
-hint: Which ones try every **order** of the items?
-hint: Three of them are O(n!).
-right: Routes, seating plans and rearrangements all try every ordering: n!. Subsets are 2ⁿ, pairs n², and sorting is O(n log n).
-wrong: O(n!) searches try every ordering: routes, seating plans and rearranged words. Subsets, pairs and sorting grow far more slowly.
-
-=== task: parsons easy
-title: Factorial by recursion
-prompt: Arrange the lines so that the recursive `fact(n)` returns n!, with 1! = 1 and 0! = 1, and the program prints:
-
-```output
-120
-```
-
-Not every line is needed.
-lines:
-```python
-def fact(n):
-    if n <= 1:
-        return 1
-    return n * fact(n - 1)
-
-print(fact(5))
-```
-distractors:
-```python
-    return n * fact(n)
-    return n + fact(n - 1)
-```
-hint: The base case: for n of 1 or less, the answer is 1.
-hint: Otherwise n! = n × (n − 1)!.
-right: fact(5) = 5 × fact(4) = 5 × 4 × fact(3) = ... = 120. Calling `fact(n)` again would never reach the base case, and `+` would add instead of multiply.
-wrong: `if n <= 1: return 1`, then `return n * fact(n - 1)`, and `print(fact(5))` after the function.
-
-=== task: cells easy
-title: Factorials
-prompt: Fill in n! for each n.
-labels: 1! | 3! | 4! | 6!
-answer: 1 | 6 | 24 | 720
-wrong[1 | 6 | 10 | 21]: Those are sums, 1 + 2 + 3 + ... A factorial multiplies: 4! = 4 × 3 × 2 × 1.
-wrong[1 | 9 | 16 | 36]: Those are n × n. n! multiplies all the numbers from n down to 1.
-hint: 4! = 4 × 3 × 2 × 1.
-hint: 6! = 6 × 5!, and 5! = 120.
-right: 1, 6, 24 and 720. Each factorial is the one before multiplied by the new n: 4! = 4 × 6, and 6! = 6 × 120.
-wrong: 1! = 1, 3! = 3 × 2 × 1 = 6, 4! = 24, and 6! = 6 × 5 × 4 × 3 × 2 × 1 = 720.
-
-=== task: mcq easy
-title: Ten items
-prompt: About how many orderings do 10 different items have?
-- About 100 :: That's 10 × 10. An ordering chooses from 10, then 9, then 8 items, and all the choices multiply.
-- About 1,000 :: That's about 2¹⁰, the number of subsets. Orderings are many more.
-* About 3,600,000 :: Right. 10! = 3,628,800.
-- About 55 :: That's 1 + 2 + ... + 10. The choices multiply, they don't add.
-hint: 10! = 10 × 9 × 8 × ... × 1.
-hint: 5! is 120, and 10 × 9 × 8 × 7 × 6 is 30,240.
-right: 10! = 3,628,800: fine for a computer, but 20 items would have about 2.4 × 10¹⁸ orderings.
-wrong: 10 × 9 × 8 × 7 × 6 × 5 × 4 × 3 × 2 × 1 = 3,628,800.
-
-=== task: predict easy
-title: Who's ahead?
-code:
-```python
-fact = 1
-for n in range(1, 6):
-    fact = fact * n
-    if n >= 3:
-        print(n, 2 ** n, fact)
-```
-wrong[3 8 6\n4 16 16\n5 32 32]: From n = 4 the factorial pulls ahead of 2ⁿ: 4! = 6 × 4 = 24 and 5! = 24 × 5 = 120, while 2ⁿ is 16 and 32.
-wrong[1 2 1\n2 4 2\n3 8 6\n4 16 24\n5 32 120]: The `print` only runs when `n >= 3`.
-wrong[3 6 6\n4 8 24\n5 10 120]: `2 ** n` is 2 to the power n, not 2 × n.
-hint: Work out `fact` after each turn: 1, 2, 6, 24, 120.
-hint: Print only for n = 3, 4 and 5.
-right: 2ⁿ is ahead at n = 3 (8 against 6), but from n = 4 on, n! is bigger, and at n = 5 it's already almost 4 times 2ⁿ.
-wrong: For n = 3, 4, 5: 2ⁿ is 8, 16, 32 and n! is 6, 24, 120.
-
-=== task: code medium
-title: Length of a route
-prompt: `dist[a][b]` is the distance between places a and b. Write `route_length(route, dist)` that adds up the distances between each place in `route` and the next one. The route already lists the return to the start, like `[0, 1, 3, 2, 0]`.
-
-For example, with the distances from the learn section, `route_length([0, 1, 3, 2, 0], dist)` is 2 + 4 + 3 + 9 = 18.
-starter:
-```python
-def route_length(route, dist):
-    total = 0
-    # your code here
-    return total
-```
-solution:
-```python
-def route_length(route, dist):
-    total = 0
-    for i in range(len(route) - 1):
-        total += dist[route[i]][route[i + 1]]
-    return total
-```
-tests:
-- route_length([0, 1, 3, 2, 0], [[0, 2, 9, 10], [2, 0, 6, 4], [9, 6, 0, 3], [10, 4, 3, 0]])
-- route_length([0, 2, 0], [[0, 4, 7], [4, 0, 5], [7, 5, 0]])
-- route_length([0], [[0]])
-- route_length([0, 1, 2, 0], [[0, 4, 7], [4, 0, 5], [7, 5, 0]])
-- route_length([2, 1], [[0, 4, 7], [4, 0, 5], [7, 5, 0]])
-fail[1]: 0 → 1 is 2, 1 → 3 is 4, 3 → 2 is 3 and 2 → 0 is 9: 18.
-fail[3]: A route with one place has no legs: 0.
-error[IndexError]: Each leg goes from `route[i]` to `route[i + 1]`, so stop one before the end: `range(len(route) - 1)`.
-hint: Each leg of the route is a pair of neighbours in the list.
-hint: Loop over `range(len(route) - 1)` and add `dist[route[i]][route[i + 1]]`.
-hint: Return the total after the loop.
-right: One pass over the route: O(n) for one route. The brute-force salesman does this for each of (n − 1)! routes, which is where the time goes.
-wrong: `for i in range(len(route) - 1): total += dist[route[i]][route[i + 1]]`, then return `total`.
-
-=== task: code medium
-title: Insert into every gap
-prompt: Write `insert_everywhere(p, item)` that returns a list of new orderings: `item` put into each gap of the list `p`, from the front to the back. A list of k items has k + 1 gaps.
-
-For example, `insert_everywhere([1, 2], 3)` returns `[[3, 1, 2], [1, 3, 2], [1, 2, 3]]`.
-starter:
-```python
-def insert_everywhere(p, item):
-    result = []
-    # your code here
-    return result
-```
-solution:
-```python
-def insert_everywhere(p, item):
-    result = []
-    for i in range(len(p) + 1):
-        result.append(p[:i] + [item] + p[i:])
-    return result
-```
-tests:
-- insert_everywhere([1, 2], 3)
-- insert_everywhere([], "x")
-- insert_everywhere(["a"], "b")
-- len(insert_everywhere([1, 2, 3, 4], 5))
-fail[1]: Three gaps: before 1, between 1 and 2, and after 2. Loop over `range(len(p) + 1)`.
-fail[2]: An empty list has one gap, so the answer is `[['x']]`.
-fail[4]: 4 items have 5 gaps, so there are 5 new orderings.
-error[TypeError]: Put the item in a list before joining: `p[:i] + [item] + p[i:]`.
-hint: For each gap position `i` from 0 to `len(p)`, the new ordering is `p[:i] + [item] + p[i:]`.
-hint: `range(len(p) + 1)` gives every gap, the last one included.
-hint: Append each new ordering to `result`.
-right: k items give k + 1 new orderings. Doing this for every ordering, item after item, multiplies the count by 1, 2, 3, ..., which is how n! orderings come about.
-wrong: `for i in range(len(p) + 1): result.append(p[:i] + [item] + p[i:])`, then return `result`.
-
-=== task: predict medium
-title: Three gaps
-code:
-```python
-p = [1, 2]
-new = []
-for i in range(len(p) + 1):
-    new.append(p[:i] + [3] + p[i:])
-print(new)
-```
-wrong[[[3, 1, 2], [1, 3, 2]]]: `range(len(p) + 1)` is `range(3)`, so there are three gaps, and the last one is after the 2.
-wrong[[[1, 2, 3], [1, 3, 2], [3, 1, 2]]]: i counts up from 0, and i = 0 is the gap at the **front**: `[] + [3] + [1, 2]`.
-wrong[[[3, 1, 2], [1, 3, 2], [1, 2, 3], [1, 2, 3]]]: The loop runs 3 times, once per gap.
-hint: i takes the values 0, 1 and 2.
-hint: For i = 0, `p[:0]` is empty and `p[0:]` is the whole list.
-right: The 3 goes in front, in the middle, and at the end: 2 items have 3 gaps. Doing this for both orderings of two items gives 2 × 3 = 6 orderings of three.
-wrong: i = 0: `[3, 1, 2]`. i = 1: `[1, 3, 2]`. i = 2: `[1, 2, 3]`.
-
-=== task: fill medium
-title: Back to the start
-prompt: Fill in the blank so that the program adds the last leg of the trip, back to where the route started, and prints the route's full length:
-
-```output
-17
-```
-code:
-```python
-dist = [[0, 2, 9], [2, 0, 6], [9, 6, 0]]
-route = [0, 2, 1]
-total = 0
-for i in range(len(route) - 1):
-    total += dist[route[i]][route[i + 1]]
-total += dist[route[-1]][route[??]]
-print(total)
-```
-answer: 0
-wrong[1]: `route[1]` is place 2, so the last leg would go from 1 to 2 again (6) instead of back home (2): 21.
-wrong[-1]: `route[-1]` is the last place, 1, so the leg would go from 1 to 1: 0 extra, 15 in all.
-hint: The trip ends where it started.
-hint: The starting place is the first item of `route`.
-right: 0 → 2 is 9, 2 → 1 is 6, and back from 1 to 0 is 2: 17. Every brute-force route is measured like this, once for each of the (n − 1)! routes.
-wrong: `route[0]`: the last leg goes from the last place, `route[-1]`, back to the first, `route[0]`.
-
-=== task: cells medium
-title: Gaps make orderings
-prompt: The insert-into-every-gap method adds the items A, B, C, D one at a time. How many orderings are there after each item?
-code:
-```python
-perms = [[]]
-for item in ["A", "B", "C", "D"]:
-    new = []
-    for p in perms:
-        for i in range(len(p) + 1):
-            new.append(p[:i] + [item] + p[i:])
-    perms = new
-```
-labels: after A | after B | after C | after D
-answer: 1 | 2 | 6 | 24
-wrong[2 | 4 | 8 | 16]: The count isn't doubled each time: an ordering of k items has k + 1 gaps, so the multipliers are 1, 2, 3 and 4.
-wrong[1 | 3 | 6 | 10]: The counts multiply, they don't add: 2 orderings with 3 gaps each make 2 × 3 = 6.
-hint: Before A there's one ordering, the empty one, with 1 gap.
-hint: After A: 1 ordering with 2 gaps. After B: 2 orderings with 3 gaps each.
-right: 1, 2, 6 and 24: the counts multiply by 1, 2, 3 and 4, giving 4! = 24.
-wrong: 1 × 1 = 1, 1 × 2 = 2, 2 × 3 = 6, 6 × 4 = 24.
-
-=== task: order medium
-title: Ten items
-prompt: For n = 10, put these step counts in order, from the fewest to the most.
-items:
-- n²
-- n³
-- 2ⁿ
-- n!
-hint: Work them out for n = 10.
-hint: n³ and 2ⁿ are close: 1,000 and 1,024.
-right: 100, 1,000, 1,024 and 3,628,800. At n = 10, 2ⁿ has barely passed n³, but n! is already thousands of times bigger than both.
-wrong: n² = 100, n³ = 1,000, 2ⁿ = 1,024 and n! = 3,628,800.
-
-=== task: predict medium
-title: Routes for more places
-code:
-```python
-for places in [3, 4, 5, 6]:
-    routes = 1
-    for k in range(1, places):
-        routes = routes * k
-    print(places, routes)
-```
-wrong[3 6\n4 24\n5 120\n6 720]: `range(1, places)` stops before `places`, so this is (places − 1)!. The start is fixed, so only the other places are put in order.
-wrong[3 2\n4 4\n5 6\n6 8]: The routes don't grow by 2 for each place: they're multiplied by each k, 1 × 2 × 3 = 6 for 4 places.
-wrong[3 3\n4 6\n5 10\n6 15]: The numbers multiply: 1 × 2 × 3 × 4 = 24 for 5 places.
-hint: For 4 places, k takes the values 1, 2 and 3.
-hint: So it prints 3! for 4 places.
-right: (n − 1)!: 2, 6, 24 and 120. With the start fixed, the other n − 1 places can be visited in any order.
-wrong: The loop multiplies 1 × 2 × ... × (places − 1): 2 for 3 places, 6 for 4, 24 for 5 and 120 for 6.
-
-=== task: mcq medium
-title: One more city
-prompt: A brute-force route finder tries every route from a fixed start. With 10 places it takes 1 second. About how long does it take with 11 places?
-- About 2 seconds :: That would be exponential, O(2ⁿ). Here the number of routes is (n − 1)!, which grows faster.
-* About 10 seconds :: Right. 10 places have 9! routes and 11 have 10! = 10 × 9!: ten times as many.
-- About 1.1 seconds :: The number of routes doesn't grow in proportion to the places: it's multiplied by the new count.
-- About 100 seconds :: That's 10 × 10. One more place multiplies the routes by 10 only once.
-hint: How many routes do 10 places have? And 11?
-hint: 9! routes and 10! routes.
-right: 10! / 9! = 10, so about 10 seconds. A 12th place would multiply by 11 more: almost 2 minutes.
-wrong: 11 places give 10! = 10 × 9! routes, ten times as many as 10 places: about 10 seconds.
-
-=== task: multi medium
-title: True about factorials
-prompt: Choose **every** true sentence.
-* For every n from 4 on, n! is bigger than 2ⁿ :: Right. 4! = 24 > 16, and from there n! is multiplied by more than 2 at each step.
-* Adding one item to n items multiplies the number of orderings by n + 1 :: Right. (n + 1)! = (n + 1) × n!.
-* 0! is 1 :: Right. There's exactly one way to arrange no items.
-- 20! is about 2 million :: It's about 2.4 × 10¹⁸. 10! is already over 3.6 million.
-- n! grows more slowly than 2ⁿ :: Only for n up to 3. After that it grows much faster.
-- Trying every ordering of 15 items takes a few seconds :: 15! is about 1.3 × 10¹², which takes hours even at 100 million a second.
-hint: Compare 4! with 2⁴.
-hint: Three of them are true.
-right: n! beats 2ⁿ from n = 4 on, each new item multiplies the orderings by the new count, and 0! = 1. 20! is astronomical, and 15 items already take hours.
-wrong: True: n! > 2ⁿ for n ≥ 4, (n + 1)! = (n + 1) × n!, and 0! = 1. False: 20! ≈ 2.4 × 10¹⁸, n! grows faster than 2ⁿ, and 15! is about 1.3 trillion.
-
-=== task: code medium
-title: Keep two guests apart
-prompt: Write `count_apart(guests)` that counts the seating plans (orderings of `guests` in a row) where "Ann" and "Bob" do **not** sit next to each other. The starter gives you `orderings`, which returns every ordering. If either name isn't in the list, every plan counts.
-
-For example, `count_apart(["Ann", "Bob", "Cat"])` returns 2: only Ann, Cat, Bob and Bob, Cat, Ann keep them apart.
-starter:
 ```python
 def orderings(items):
     if len(items) <= 1:
-        return [items]
+        return [items[:]]
     result = []
     for i in range(len(items)):
         rest = items[:i] + items[i + 1:]
@@ -643,74 +621,249 @@ def orderings(items):
             result.append([items[i]] + perm)
     return result
 
-def count_apart(guests):
-    count = 0
-    # your code here
-    return count
-```
-solution:
-```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
 
-def count_apart(guests):
-    count = 0
-    for plan in orderings(guests):
-        if "Ann" in plan and "Bob" in plan:
-            if abs(plan.index("Ann") - plan.index("Bob")) == 1:
-                continue
-        count += 1
-    return count
-```
-tests:
-- count_apart(["Ann", "Bob", "Cat"])
-- count_apart(["Ann", "Bob"])
-- count_apart(["Ann", "Cat", "Dan"])
-- count_apart(["Ann", "Bob", "Cat", "Dan"])
-fail[1]: Of the 6 plans, 4 seat Ann and Bob side by side. Two seats are next to each other when their positions differ by 1.
-fail[2]: With only two chairs, Ann and Bob are always next to each other: 0.
-fail[3]: There's no Bob, so all 3! = 6 plans count. Check that both names are in the plan before using `index`.
-error[ValueError]: `index` fails when the name isn't in the plan. Check `"Ann" in plan and "Bob" in plan` first.
-hint: Loop over `orderings(guests)`.
-hint: Ann and Bob sit together when `abs(plan.index("Ann") - plan.index("Bob")) == 1`.
-hint: Count every plan where that's not the case, or where one of them is missing.
-right: The function checks all n! plans, each in O(n): fine for 8 guests (40,320 plans), hopeless for 20.
-wrong: For each `plan` in `orderings(guests)`: if both names are there and `abs(plan.index("Ann") - plan.index("Bob")) == 1`, skip it; otherwise add 1.
-
-=== task: code hard
-title: The best route by brute force
-prompt: Write `shortest_trip(dist)` that returns the length of the shortest round trip that starts at place 0, visits every other place once, and comes back to 0. `dist[a][b]` is the distance from a to b, and there are `len(dist)` places (at least 2). Try every ordering of the places 1 to n − 1, using the `orderings` function in the starter.
-
-For example, for the distances in the learn section, `shortest_trip(dist)` returns 18.
-starter:
-```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
-
-def shortest_trip(dist):
+def minimum_sum(num):
+    digits = [int(ch) for ch in str(num)]
     best = None
-    # your code here
+    for order in orderings(digits):
+        for cut in range(1, len(order)):
+            first = 0
+            for d in order[:cut]:
+                first = first * 10 + d
+            second = 0
+            for d in order[cut:]:
+                second = second * 10 + d
+            if best is None or first + second < best:
+                best = first + second
     return best
 ```
+tests:
+- minimum_sum(2932)
+- minimum_sum(4009)
+- minimum_sum(1000)
+- minimum_sum(9999)
+- minimum_sum(1234)
+- minimum_sum(5555)
+fail[2]: 04 + 09 = 13: leading zeros are allowed.
+fail[3]: The digits are 1, 0, 0 and 0: 01 + 00 = 1.
+fail[4]: Two 2-digit numbers are best: 99 + 99 = 198.
+fail[5]: 13 + 24 = 37: the small digits go in the tens places.
+fail[6]: 55 + 55 = 110.
+edges:
+- a 0 among the digits :: "0" in str(num) :: minimum_sum(4009)
+- all four digits the same :: len(set(str(num))) == 1 :: minimum_sum(7777)
+- four different digits, none of them 0 :: "0" not in str(num) and len(set(str(num))) == 4 :: minimum_sum(5281)
+edge_count: 2
+complexity: time=O(n² × n!) | space=O(n × n!)
+complexity_options: O(n² × n!); O(n × n!)
+complexity_note: n is the number of digits: 4 here. Count the work for a number with n digits.
+why_time: n! orderings, each cut in n − 1 places, and each cut builds two numbers from n digits.
+why_space: The list of n! orderings, each n digits long.
+hint: Turn num into a list of its digits, and list every ordering of them, as in the learn section.
+hint: For each ordering and each cut from 1 to 3, build one number from the digits before the cut and one from the digits after it: `value = value * 10 + d`.
+hint: Keep the smallest sum of the two.
+right: 24 orderings × 3 cuts. There's a shortcut too: sort the digits and put the two smallest in the tens places, so 2932 sorts to 2, 2, 3, 9 and gives 23 + 29 = 52.
+wrong: For each ordering of the digits and each cut from 1 to `len(order) - 1`: build `first` from `order[:cut]` and `second` from `order[cut:]`, and keep the smallest `first + second`.
+
+=== task: code easy
+title: Finding 3-Digit Even Numbers
+leetcode: 2094 | Finding 3-Digit Even Numbers | finding-3-digit-even-numbers
+patterns: dupes
+prompt: Write `find_even_numbers(digits)` that returns, in increasing order, every different even number you can make by putting 3 of the digits side by side, with no leading zero. Each digit can be used as many times as it appears in the list.
+
+**Example 1:** `find_even_numbers([2, 1, 3, 0])` returns `[102, 120, 130, 132, 210, 230, 302, 310, 312, 320]`.
+
+**Example 2:** `find_even_numbers([2, 2, 8, 8, 2])` returns `[222, 228, 282, 288, 822, 828, 882]`. 888 needs three 8s, and there are only two.
+
+**Constraints:** 3 ≤ `len(digits)` ≤ 100, and 0 ≤ `digits[i]` ≤ 9. Count each digit, then check the even numbers from 100 to 998 against the counts.
+starter:
+```python
+def find_even_numbers(digits):
+    # your code here
+    return []
+```
+solution:
+```python
+def find_even_numbers(digits):
+    counts = [0] * 10
+    for d in digits:
+        counts[d] += 1
+    result = []
+    for x in range(100, 1000, 2):
+        need = [0] * 10
+        for ch in str(x):
+            need[int(ch)] += 1
+        ok = True
+        for d in range(10):
+            if need[d] > counts[d]:
+                ok = False
+        if ok:
+            result.append(x)
+    return result
+```
+tests:
+- find_even_numbers([2, 1, 3, 0])
+- find_even_numbers([2, 2, 8, 8, 2])
+- find_even_numbers([3, 7, 5])
+- find_even_numbers([0, 0, 0])
+- find_even_numbers([1, 0, 0])
+- len(find_even_numbers([i % 10 for i in range(100)]))
+fail[2]: 888 isn't there: it needs three 8s, and the list has two. Each number appears once, however many ways it can be made.
+fail[3]: No digit is even, so no number ends in an even digit: `[]`.
+fail[4]: A number can't start with 0: `[]`.
+fail[5]: 100 uses the 1 and both 0s, and it's the only even number those digits make.
+fail[6]: Every digit appears 10 times, so every even number from 100 to 998 works: 450 of them. Picking 3 of the 100 positions in order takes 970,200 tries; checking the 450 candidates against the counts is far faster.
+edges:
+- a repeated digit :: len(set(digits)) < len(digits) :: find_even_numbers([2, 2, 4])
+- no even digit :: len(set(digits)) == len(digits) and all(d % 2 == 1 for d in digits) :: find_even_numbers([1, 3, 5])
+- all different, with an even digit :: len(set(digits)) == len(digits) and any(d % 2 == 0 for d in digits) :: find_even_numbers([1, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of digits. The 450 candidates are the same whatever the input.
+why_time: One pass to count the digits, then a fixed 450 candidates, each checked against 10 counts.
+why_space: 10 counts, and at most 450 numbers in the answer.
+hint: Count how many times each digit from 0 to 9 appears: `counts = [0] * 10`.
+hint: Go through x from 100 to 998 in steps of 2. Count x's own digits, and keep x if it never needs a digit more often than the list has it.
+hint: The candidates come out in increasing order, so no sorting is needed.
+right: Checking the 450 possible answers against the counts never builds the same number twice, and it doesn't depend on how many orderings of positions there are.
+wrong: `counts[d] += 1` for each digit. For x in `range(100, 1000, 2)`: count its digits in `need`, and append x if `need[d] <= counts[d]` for every d.
+
+=== task: code easy
+title: Make Two Arrays Equal by Reversing Subarrays
+leetcode: 1460 | Make Two Arrays Equal by Reversing Subarrays | make-two-arrays-equal-by-reversing-subarrays
+patterns: dupes
+prompt: In one step you can reverse any run of neighbouring items in arr. Write `can_be_equal(target, arr)` that returns `True` if some number of steps can make arr equal to target, and `False` if not.
+
+**Example 1:** `can_be_equal([1, 2, 3, 4], [2, 4, 1, 3])` returns `True`.
+
+**Example 2:** `can_be_equal([7], [7])` returns `True`: no steps needed.
+
+**Example 3:** `can_be_equal([3, 7, 9], [3, 7, 11])` returns `False`: arr has no 9.
+
+**Constraints:** `len(target)` equals `len(arr)`, 1 ≤ length ≤ 1000, and 1 ≤ every number ≤ 1000. Aim for O(n) time.
+starter:
+```python
+def can_be_equal(target, arr):
+    # your code here
+    return False
+```
+solution:
+```python
+def can_be_equal(target, arr):
+    counts = {}
+    for x in target:
+        counts[x] = counts.get(x, 0) + 1
+    for x in arr:
+        counts[x] = counts.get(x, 0) - 1
+    for c in counts.values():
+        if c != 0:
+            return False
+    return True
+```
+tests:
+- can_be_equal([1, 2, 3, 4], [2, 4, 1, 3])
+- can_be_equal([7], [7])
+- can_be_equal([3, 7, 9], [3, 7, 11])
+- can_be_equal([1, 1, 2], [1, 2, 2])
+- can_be_equal([5, 5], [5, 5])
+- can_be_equal([i % 50 + 1 for i in range(1000)], [i % 50 + 1 for i in range(999, -1, -1)])
+fail[2]: Nothing to change: `True`.
+fail[3]: arr has 11 where target has 9, and reversing never changes which numbers there are: `False`.
+fail[4]: target has two 1s and arr has one, which no reordering can fix: `False`.
+fail[5]: Already equal: `True`.
+fail[6]: arr is target reversed, so one step, reversing the whole list, does it. Compare the counts in one pass instead of searching through orderings.
+edges:
+- one number each :: len(arr) == 1 :: can_be_equal([4], [5])
+- already equal :: len(arr) > 1 and arr == target :: can_be_equal([1, 2], [1, 2])
+- the same numbers in a different order :: len(arr) > 1 and arr != target and sorted(arr) == sorted(target) :: can_be_equal([1, 2], [2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of the lists.
+why_time: One pass over each list to update the counts, then one pass over the counts.
+why_space: A dictionary with up to n different numbers.
+hint: Reversing two neighbours swaps them, and swapping neighbours again and again can make any ordering of the list.
+hint: So arr can become target exactly when it holds the same numbers, each the same number of times.
+hint: Count target's numbers in a dictionary, subtract arr's, and check that every count is 0.
+right: Since every ordering can be reached, the question is only whether the two lists hold the same items: O(n) with counts, where searching the n! orderings would never finish.
+wrong: Add 1 to `counts[x]` for each x in target and subtract 1 for each x in arr; return `True` if every count is 0.
+
+=== task: code easy
+title: Every Ordering
+patterns: orders
+prompt: Write `all_orderings(items)` that returns every ordering of the different items in a list, as a list of lists. List them the way the learn section does: each item takes a turn going first, in the order they appear in items, followed by every ordering of the rest.
+
+**Example 1:** `all_orderings([1, 2, 3])` returns `[[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]]`.
+
+**Example 2:** `all_orderings(["a", "b"])` returns `[["a", "b"], ["b", "a"]]`.
+
+**Constraints:** 0 ≤ `len(items)` ≤ 7, and the items are all different.
+starter:
+```python
+def all_orderings(items):
+    # your code here
+    return []
+```
+solution:
+```python
+def all_orderings(items):
+    if len(items) <= 1:
+        return [items[:]]
+    result = []
+    for i in range(len(items)):
+        rest = items[:i] + items[i + 1:]
+        for perm in all_orderings(rest):
+            result.append([items[i]] + perm)
+    return result
+```
+tests:
+- all_orderings([1, 2, 3])
+- all_orderings(["a", "b"])
+- all_orderings([])
+- all_orderings([7])
+- len(all_orderings([1, 2, 3, 4, 5, 6]))
+- all_orderings([1, 2, 3, 4])[6:9]
+fail[2]: "a" first, then "b" first: `[["a", "b"], ["b", "a"]]`.
+fail[3]: An empty list has exactly one ordering, the empty one: `[[]]`.
+fail[4]: One item has one ordering: `[[7]]`.
+fail[5]: 6 items have 6! = 720 orderings.
+fail[6]: Orderings 7 to 9 of `[1, 2, 3, 4]` are the first three that start with 2: `[2, 1, 3, 4]`, `[2, 1, 4, 3]` and `[2, 3, 1, 4]`.
+edges:
+- no items :: len(items) == 0 :: all_orderings([])
+- one item :: len(items) == 1 :: all_orderings(["x"])
+- several items :: len(items) >= 2 :: all_orderings([5, 6, 7])
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n × n!)
+complexity_options: O(n × n!)
+complexity_note: n is the length of items.
+why_time: n! orderings, each built up one item at a time from the orderings of the rest: n steps each.
+why_space: The answer holds n! orderings of n items.
+hint: With 0 or 1 items, the only ordering is a copy of the list: return `[items[:]]`.
+hint: Otherwise, for each position i, take `items[i]` as the first item, with `rest = items[:i] + items[i + 1:]`.
+hint: For every ordering `perm` of the rest, from the same function, append `[items[i]] + perm`.
+right: n choices for the first item, then n − 1 for the second, down to 1: n! orderings, each n items long.
+wrong: Return `[items[:]]` for 0 or 1 items. Otherwise for each i, `rest = items[:i] + items[i + 1:]`, and for each perm in `all_orderings(rest)`, append `[items[i]] + perm`.
+
+=== task: code easy
+title: Shortest Round Trip
+patterns: orders
+prompt: `dist[a][b]` is the distance between places a and b, the same both ways. Write `shortest_route(dist)` that returns the length of the shortest trip that starts at place 0, visits every other place exactly once, and comes back to place 0. With only place 0, the trip has length 0.
+
+**Example 1:** `shortest_route([[0, 2, 9, 10], [2, 0, 6, 4], [9, 6, 0, 3], [10, 4, 3, 0]])` returns `18`: 0 → 1 → 3 → 2 → 0 is 2 + 4 + 3 + 9.
+
+**Example 2:** `shortest_route([[0, 5], [5, 0]])` returns `10`: there and back.
+
+**Constraints:** 1 ≤ n ≤ 8, where n is `len(dist)`; 0 ≤ `dist[a][b]` ≤ 100, and `dist[a][a]` is 0. Try every ordering of places 1 to n − 1.
+starter:
+```python
+def shortest_route(dist):
+    # your code here
+    return 0
+```
 solution:
 ```python
 def orderings(items):
     if len(items) <= 1:
-        return [items]
+        return [items[:]]
     result = []
     for i in range(len(items)):
         rest = items[:i] + items[i + 1:]
@@ -718,10 +871,11 @@ def orderings(items):
             result.append([items[i]] + perm)
     return result
 
-def shortest_trip(dist):
+
+def shortest_route(dist):
+    n = len(dist)
     best = None
-    others = list(range(1, len(dist)))
-    for order in orderings(others):
+    for order in orderings(list(range(1, n))):
         route = [0] + order + [0]
         length = 0
         for i in range(len(route) - 1):
@@ -731,164 +885,303 @@ def shortest_trip(dist):
     return best
 ```
 tests:
-- shortest_trip([[0, 2, 9, 10], [2, 0, 6, 4], [9, 6, 0, 3], [10, 4, 3, 0]])
-- shortest_trip([[0, 4, 7], [4, 0, 5], [7, 5, 0]])
-- shortest_trip([[0, 6], [6, 0]])
-- shortest_trip([[0, 3, 4, 2, 7], [3, 0, 4, 6, 3], [4, 4, 0, 5, 8], [2, 6, 5, 0, 6], [7, 3, 8, 6, 0]])
-fail[1]: The best routes are 0 → 1 → 3 → 2 → 0 and the same route backwards: 2 + 4 + 3 + 9 = 18.
-fail[2]: Both routes, 0 → 1 → 2 → 0 and 0 → 2 → 1 → 0, are 4 + 5 + 7 = 16.
-fail[3]: With one other place, the trip goes there and back: 6 + 6 = 12. Remember the leg back to 0.
-fail[4]: With 5 places there are 4! = 24 routes to try, and the best is 19. Make sure every route starts and ends at 0.
-error[TypeError]: Compare with `best` only after it has a value: `best is None or length < best`.
-hint: The places to order are `list(range(1, len(dist)))`.
-hint: For each `order`, the route is `[0] + order + [0]`. Add up its legs.
-hint: Keep the smallest length in `best`.
-right: (n − 1)! routes, each measured in O(n): under a second for 10 places, hundreds of years for 20. It always finds the best route, but only small problems can wait for it.
-wrong: For each `order` in `orderings(list(range(1, len(dist))))`, build `route = [0] + order + [0]`, add up `dist[route[i]][route[i + 1]]`, and keep the smallest total.
+- shortest_route([[0, 2, 9, 10], [2, 0, 6, 4], [9, 6, 0, 3], [10, 4, 3, 0]])
+- shortest_route([[0, 5], [5, 0]])
+- shortest_route([[0]])
+- shortest_route([[0, 1, 1], [1, 0, 1], [1, 1, 0]])
+- shortest_route([[0, 1, 9, 1], [1, 0, 1, 9], [9, 1, 0, 1], [1, 9, 1, 0]])
+- shortest_route([[abs(i - j) * (i + j + 1) for j in range(7)] for i in range(7)])
+fail[2]: Out to place 1 and back: 5 + 5 = 10.
+fail[3]: Only place 0, and no trip: 0.
+fail[4]: Every trip round three places has three legs of length 1: 3.
+fail[5]: Round the edge of the square, 0 → 1 → 2 → 3 → 0, is 1 + 1 + 1 + 1 = 4. Crossing the middle costs 9.
+fail[6]: 7 places make 6! = 720 routes, and the shortest is 84.
+edges:
+- only one place :: len(dist) == 1 :: shortest_route([[0]])
+- two places :: len(dist) == 2 :: shortest_route([[0, 3], [3, 0]])
+- three or more places :: len(dist) >= 3 :: shortest_route([[0, 1, 2], [1, 0, 3], [2, 3, 0]])
+edge_count: 2
+complexity: time=O(n!) | space=O(n!)
+complexity_note: n is the number of places, place 0 included.
+why_time: (n − 1)! routes, each measured in n steps: n × (n − 1)! = n!.
+why_space: The list of (n − 1)! orderings, each n − 1 long.
+hint: List every ordering of `list(range(1, n))`, the places other than 0.
+hint: For each ordering, the route is `[0] + order + [0]`: add up `dist[route[i]][route[i + 1]]` along it.
+hint: Keep the shortest. With n = 1, the only ordering of no places is `[]`, and the route `[0, 0]` has length 0.
+right: Fixing the start at place 0 leaves (n − 1)! routes. Every route and its reverse have the same length, so half could be skipped, but that's still factorial.
+wrong: For each ordering of places 1 to n − 1: `route = [0] + order + [0]`; add up `dist[route[i]][route[i + 1]]`, and keep the smallest total.
 
-=== task: code hard
-title: Every anagram
-prompt: Write `all_anagrams(word)` that returns a **sorted** list of all the different strings you can make by rearranging the letters of `word`, each string once. Build them recursively, like the orderings: each position's letter goes first, followed by every anagram of the remaining letters. Collect them in a set, so repeated letters don't give the same string twice, then sort.
+=== task: code easy
+title: Count the Rearrangements
+patterns: count
+prompt: Write `count_rearrangements(word)` that returns how many different strings you can make by putting all the letters of word in some order, word itself included.
 
-For example, `all_anagrams("aab")` returns `["aab", "aba", "baa"]`.
+**Example 1:** `count_rearrangements("abc")` returns `6`: abc, acb, bac, bca, cab and cba.
+
+**Example 2:** `count_rearrangements("aab")` returns `3`: aab, aba and baa.
+
+**Constraints:** 1 ≤ `len(word)` ≤ 20, lowercase letters. Work the number out from the letter counts: listing could take 20! steps.
 starter:
 ```python
-def all_anagrams(word):
-    if len(word) <= 1:
-        return [word]
-    found = set()
-    # your code here
-    return sorted(found)
-```
-solution:
-```python
-def all_anagrams(word):
-    if len(word) <= 1:
-        return [word]
-    found = set()
-    for i in range(len(word)):
-        rest = word[:i] + word[i + 1:]
-        for p in all_anagrams(rest):
-            found.add(word[i] + p)
-    return sorted(found)
-```
-tests:
-- all_anagrams("ab")
-- all_anagrams("a")
-- all_anagrams("")
-- all_anagrams("aab")
-- len(all_anagrams("abcd"))
-- all_anagrams("cat")
-fail[1]: Two letters make two strings: "ab" and "ba".
-fail[4]: The two a's can swap without changing the word, so there are only 3 different strings. A set keeps each one once.
-fail[5]: 4 different letters make 4! = 24 strings.
-error[RecursionError]: Call the function on a shorter word, `word[:i] + word[i + 1:]`.
-hint: For each position `i`, `rest = word[:i] + word[i + 1:]`.
-hint: For every anagram `p` of `rest`, add `word[i] + p` to `found`.
-hint: Return `sorted(found)`.
-right: n letters make up to n! strings, so this is O(n!): an 8-letter word has up to 40,320 anagrams, and a 15-letter word over a trillion.
-wrong: For each `i`, take `rest = word[:i] + word[i + 1:]` and add `word[i] + p` to `found` for every `p` in `all_anagrams(rest)`. Return `sorted(found)`.
-
-=== task: code hard
-title: Count without listing
-prompt: Write `count_anagrams(word)` that returns **how many** different strings the letters of `word` can make, without listing them. If all n letters were different, there would be n! strings. But if a letter appears k times, swapping its copies doesn't make a new string, so divide by k! for each letter. For "aab": 3! = 6, divided by 2! = 2 for the two a's, gives 3. Use the `fact` function in the starter, and count the letters with a dictionary.
-
-For example, `count_anagrams("banana")` returns 60.
-starter:
-```python
-def fact(n):
-    result = 1
-    for k in range(1, n + 1):
-        result = result * k
-    return result
-
-def count_anagrams(word):
+def count_rearrangements(word):
     # your code here
     return 0
 ```
 solution:
 ```python
-def fact(n):
-    result = 1
-    for k in range(1, n + 1):
-        result = result * k
-    return result
-
-def count_anagrams(word):
+def count_rearrangements(word):
+    total = 1
+    for k in range(1, len(word) + 1):
+        total = total * k
     counts = {}
     for ch in word:
         counts[ch] = counts.get(ch, 0) + 1
-    total = fact(len(word))
-    for k in counts.values():
-        total = total // fact(k)
+    for c in counts.values():
+        for k in range(1, c + 1):
+            total = total // k
     return total
 ```
 tests:
-- count_anagrams("ab")
-- count_anagrams("aab")
-- count_anagrams("aabb")
-- count_anagrams("aaaa")
-- count_anagrams("banana")
-- count_anagrams("")
-- count_anagrams("aaaaaaaaaabbbbbbbbbb")
-fail[2]: 3! = 6 orderings, but each string appears twice (once for each order of the two a's): 6 / 2 = 3.
-fail[3]: 4! / (2! × 2!) = 24 / 4 = 6.
-fail[5]: "banana" has 6 letters: three a's, two n's and one b. 720 / (6 × 2 × 1) = 60.
-fail[7]: 20 letters: ten a's and ten b's. Listing 20! orderings is impossible, but the formula gives 20! / (10! × 10!) = 184,756 at once.
-error[KeyError]: Count each letter with `counts.get(ch, 0) + 1`.
-hint: First count how many times each letter appears.
-hint: Start with `fact(len(word))`.
-hint: Divide by `fact(k)` for every count k, using `//` so the answer stays a whole number.
-right: Counting the letters is one pass, and the factorials take about n multiplications: O(n), instead of listing up to n! strings. 20 letters is instant this way, and impossible by listing.
-wrong: Count the letters in a dictionary, then `total = fact(len(word))`, and for each count k, `total = total // fact(k)`. Return `total`.
+- count_rearrangements("abc")
+- count_rearrangements("aab")
+- count_rearrangements("a")
+- count_rearrangements("aaaa")
+- count_rearrangements("banana")
+- count_rearrangements("abcdefghijklmnopqrst")
+fail[2]: Swapping the two a's changes nothing, so the 3! = 6 orderings make only 3 different strings.
+fail[3]: One letter: 1.
+fail[4]: Four a's look the same in every order: 4! / 4! = 1.
+fail[5]: banana has 3 a's, 2 n's and a b: 6! / (3! × 2!) = 720 / 12 = 60.
+fail[6]: 20 different letters: 20!, which is 2,432,902,008,176,640,000.
+edges:
+- one letter :: len(word) == 1 :: count_rearrangements("z")
+- every letter the same :: len(word) > 1 and len(set(word)) == 1 :: count_rearrangements("zzz")
+- some letters repeat, but not all the same :: 1 < len(set(word)) < len(word) :: count_rearrangements("zzy")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of word. Count each multiplication and division as one step.
+why_time: n multiplications for n!, one pass to count the letters, and at most n divisions.
+why_space: Counts for at most 26 letters.
+hint: Start with n!: multiply together every number from 1 to n.
+hint: Count each letter. A letter that appears c times can be shuffled among its own places in c! ways that all look the same, so divide by c! for each letter.
+hint: Divide with `//` by each k from 1 to c in turn: every step gives a whole number.
+right: n! divided by the factorial of each letter's count: a few dozen steps for 20 letters, instead of listing 20! orderings.
+wrong: `total` starts as n!. Count the letters, and for each count c, do `total = total // k` for k from 1 to c. Return `total`.
 
-=== task: code hard
-title: The biggest number from the digits
-prompt: `biggest(digits)` should return the biggest number you can make by putting all the digits (a list of whole numbers from 0 to 9) side by side. The starter tries every ordering, which is O(n!), and it has a bug: it keeps the **smallest** number. Rewrite it in O(n log n): putting the digits in order from biggest to smallest always makes the biggest number. Build the number with `num = num * 10 + d`.
+=== task: code easy
+title: Position of an Ordering
+patterns: count + next
+prompt: perm is an ordering of the numbers 1 to n. Write `ordering_rank(perm)` that returns its position, counting from 1, when all n! orderings of 1 to n are listed in increasing order, from `[1, 2, 3]` up to `[3, 2, 1]` for n = 3.
 
-For example, `biggest([3, 9, 1])` returns 931.
+**Example 1:** `ordering_rank([1, 2, 3])` returns `1`.
+
+**Example 2:** `ordering_rank([3, 2, 1])` returns `6`.
+
+**Constraints:** 1 ≤ n ≤ 12. Count the orderings that come before perm instead of listing them: 12! is 479 million.
 starter:
 ```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
-
-def biggest(digits):
-    best = None
-    for order in orderings(digits):
-        num = 0
-        for d in order:
-            num = num * 10 + d
-        if best is None or num < best:
-            best = num
-    return best
+def ordering_rank(perm):
+    # your code here
+    return 0
 ```
 solution:
 ```python
-def biggest(digits):
-    num = 0
-    for d in sorted(digits, reverse=True):
-        num = num * 10 + d
-    return num
+def ordering_rank(perm):
+    n = len(perm)
+    fact = [1] * (n + 1)
+    for k in range(1, n + 1):
+        fact[k] = fact[k - 1] * k
+    used = [False] * (n + 1)
+    rank = 0
+    for i in range(n):
+        smaller = 0
+        for x in range(1, perm[i]):
+            if not used[x]:
+                smaller += 1
+        rank += smaller * fact[n - 1 - i]
+        used[perm[i]] = True
+    return rank + 1
 ```
 tests:
-- biggest([3, 9, 1])
-- biggest([0, 0, 5])
-- biggest([7])
-- biggest([2, 2, 1, 9])
-- biggest([1, 0])
-speed: setup=digits = [i % 10 for i in range(n)] | call=biggest(digits) | target=O(n log n)
-slow:
+- ordering_rank([1, 2, 3])
+- ordering_rank([3, 2, 1])
+- ordering_rank([1])
+- ordering_rank([2, 1, 3])
+- ordering_rank([2, 3, 1, 4])
+- ordering_rank([12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1])
+fail[2]: `[3, 2, 1]` is the last of the 3! = 6 orderings.
+fail[3]: One number, one ordering: 1.
+fail[4]: The 2 orderings that start with 1 come first, then `[2, 1, 3]`: position 3.
+fail[5]: The 6 orderings that start with 1 come first, then the 2 that start 2, 1. `[2, 3, 1, 4]` is the first that starts 2, 3: 6 + 2 + 1 = 9.
+fail[6]: The very last ordering of 12 numbers: 12! = 479,001,600.
+edges:
+- one number :: len(perm) == 1 :: ordering_rank([1])
+- the first ordering :: len(perm) > 1 and perm == sorted(perm) :: ordering_rank([1, 2, 3, 4])
+- any other ordering :: len(perm) > 1 and perm != sorted(perm) :: ordering_rank([4, 1, 3, 2])
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the length of perm.
+why_time: For each of the n places, count the smaller numbers that aren't used yet: up to n checks.
+why_space: The `used` list and the factorials.
+hint: The orderings whose first number is smaller than `perm[0]` all come first, and each smaller first number heads (n − 1)! of them.
+hint: Do the same at every place i: count the numbers smaller than `perm[i]` that aren't used yet, and add that count × (n − 1 − i)!.
+hint: That counts the orderings before perm, so add 1 at the end.
+right: Each place skips whole blocks of orderings at once: 12 places with 12 checks each, instead of 479 million orderings.
+wrong: For each i: count the x < `perm[i]` not used yet, add `count * fact[n - 1 - i]` to the rank, and mark `perm[i]` used. Return the rank + 1.
+
+=== task: code easy
+title: No Neighbours Side by Side
+patterns: prune
+prompt: Write `no_neighbours(n)` that returns how many orderings of the numbers 1 to n have no two consecutive numbers, like 3 and 4, side by side.
+
+**Example 1:** `no_neighbours(4)` returns `2`: `[2, 4, 1, 3]` and `[3, 1, 4, 2]`.
+
+**Example 2:** `no_neighbours(1)` returns `1`.
+
+**Constraints:** 1 ≤ n ≤ 8. Build each ordering place by place, and never put a number next to one that's 1 bigger or smaller.
+starter:
+```python
+def no_neighbours(n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def place(n, last, used, placed):
+    if placed == n:
+        return 1
+    total = 0
+    for x in range(1, n + 1):
+        if used[x]:
+            continue
+        if last != 0 and abs(x - last) == 1:
+            continue
+        used[x] = True
+        total += place(n, x, used, placed + 1)
+        used[x] = False
+    return total
+
+
+def no_neighbours(n):
+    return place(n, 0, [False] * (n + 1), 0)
+```
+tests:
+- no_neighbours(4)
+- no_neighbours(1)
+- no_neighbours(2)
+- no_neighbours(3)
+- no_neighbours(5)
+- no_neighbours(7)
+fail[2]: One number has no neighbours: 1.
+fail[3]: 1 and 2 always sit side by side: 0.
+fail[4]: Wherever 2 goes, it sits next to 1 or 3: 0.
+fail[5]: 14 of the 120 orderings work.
+fail[6]: 646 of the 5,040 orderings work. Skip a number as soon as it would sit next to a consecutive one, so a bad start is never finished.
+edges:
+- one number :: n == 1 :: no_neighbours(1)
+- too few numbers for any ordering to work :: 2 <= n <= 3 :: no_neighbours(3)
+- four or more :: n >= 4 :: no_neighbours(5)
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n)
+complexity_options: O(n × n!)
+complexity_note: n is the argument.
+why_time: At worst every ordering is built, with n tries at each of n places. The rule cuts many branches, but the bound stays factorial.
+why_space: The `used` list, and up to n calls waiting.
+hint: Write `place(n, last, used, placed)`: the number of ways to finish when `placed` numbers are in the row and `last` is the last of them, or 0 when the row is empty.
+hint: When `placed` is n, that's one good ordering: return 1. Otherwise try every x that isn't used, skipping it if `abs(x - last) == 1`.
+hint: Mark x used, add the count from `place(n, x, used, placed + 1)`, then mark it free again.
+right: A number next to a consecutive one is never placed, so a bad ordering stops at its first mistake. For 7 numbers, only 646 orderings are finished out of 5,040.
+wrong: `place(n, last, used, placed)`: 1 when placed is n; otherwise for each free x with `abs(x - last) != 1`, mark it, add `place(n, x, used, placed + 1)`, and free it again.
+
+=== task: code easy
+title: Friendly Seating Plans
+patterns: prune + memo
+prompt: n people sit in a row. `likes[i][j]` is 1 when people i and j get on and 0 when they don't; it's the same both ways, and `likes[i][i]` is 0. Write `friendly_seatings(likes)` that returns how many orderings of everyone put only people who get on side by side.
+
+**Example 1:** `friendly_seatings([[0, 1, 1], [1, 0, 0], [1, 0, 0]])` returns `2`: `[1, 0, 2]` and `[2, 0, 1]`. Person 0 has to sit between 1 and 2.
+
+**Example 2:** `friendly_seatings([[0, 1], [1, 0]])` returns `2`.
+
+**Constraints:** 1 ≤ n ≤ 12, where n is `len(likes)`. Remember the count for each (people seated, last person), instead of trying all n! orderings.
+starter:
+```python
+def friendly_seatings(likes):
+    # your code here
+    return 0
+```
+solution:
+```python
+def seat(likes, seated, last, memo):
+    n = len(likes)
+    if seated == (1 << n) - 1:
+        return 1
+    key = (seated, last)
+    if key not in memo:
+        total = 0
+        for nxt in range(n):
+            if not seated >> nxt & 1 and likes[last][nxt]:
+                total += seat(likes, seated | (1 << nxt), nxt, memo)
+        memo[key] = total
+    return memo[key]
+
+
+def friendly_seatings(likes):
+    memo = {}
+    total = 0
+    for first in range(len(likes)):
+        total += seat(likes, 1 << first, first, memo)
+    return total
+```
+tests:
+- friendly_seatings([[0, 1, 1], [1, 0, 0], [1, 0, 0]])
+- friendly_seatings([[0, 1], [1, 0]])
+- friendly_seatings([[0]])
+- friendly_seatings([[0, 0], [0, 0]])
+- friendly_seatings([[0, 1, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1], [1, 0, 1, 0]])
+- friendly_seatings([[1 if i != j else 0 for j in range(9)] for i in range(9)])
+fail[2]: Two people who get on: `[0, 1]` and `[1, 0]`.
+fail[3]: One person, one ordering: 1.
+fail[4]: The two people don't get on, so they can't sit together: 0.
+fail[5]: The people get on in a ring, 0-1-2-3-0. Each of the 4 can start, going either way round: 8.
+fail[6]: Everyone gets on, so all 9! = 362,880 orderings work: too many to try one by one. With a memo there are only 2⁹ × 9 different questions.
+edges:
+- one person :: len(likes) == 1 :: friendly_seatings([[0]])
+- nobody gets on :: len(likes) > 1 and all(v == 0 for row in likes for v in row) :: friendly_seatings([[0, 0], [0, 0]])
+- some people get on :: len(likes) > 1 and any(v == 1 for row in likes for v in row) :: friendly_seatings([[0, 1, 0], [1, 0, 1], [0, 1, 0]])
+edge_count: 2
+complexity: time=O(n² × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n² × 2ⁿ); O(n × 2ⁿ)
+complexity_note: n is the number of people.
+why_time: n × 2ⁿ different (seated, last) questions, each trying up to n next people.
+why_space: The memo has up to n × 2ⁿ entries.
+hint: Write `seat(likes, seated, last, memo)`: the number of ways to finish the row when the people in the mask `seated` are placed and `last` is at the end. When everyone is seated, it's 1.
+hint: Otherwise add up `seat` for each person `nxt` who isn't seated and gets on with `last`, with them added to the mask: `seated | (1 << nxt)`.
+hint: The count doesn't depend on the order the others sat in, so remember it under `(seated, last)`. The answer adds up the counts for every first person.
+right: Rows that seat the same people and end with the same person finish in the same number of ways, so each (seated, last) is worked out once: 4,608 questions for 9 people, instead of 362,880 orderings.
+wrong: `seat(likes, seated, last, memo)`: 1 when everyone is seated; otherwise the sum of `seat(likes, seated | (1 << nxt), nxt, memo)` over every `nxt` not seated with `likes[last][nxt]` = 1, stored under `(seated, last)`. Add it up over every first person.
+
+=== task: code medium
+title: Maximum Compatibility Score Sum
+leetcode: 1947 | Maximum Compatibility Score Sum | maximum-compatibility-score-sum
+patterns: orders
+prompt: A survey has n yes-or-no questions, answered by m students and m mentors: `students[i]` and `mentors[j]` are lists of n answers, each 0 or 1. Each student is paired with a different mentor, and a pair scores 1 for each question they answered the same way. Write `max_compatibility_sum(students, mentors)` that returns the highest total score of the m pairs.
+
+**Example 1:** `max_compatibility_sum([[1, 1, 0], [1, 0, 1], [0, 0, 1]], [[1, 0, 0], [0, 0, 1], [1, 1, 0]])` returns `8`: student 0 with mentor 2 (3), student 1 with mentor 0 (2) and student 2 with mentor 1 (3).
+
+**Example 2:** `max_compatibility_sum([[0, 0], [0, 0], [0, 0]], [[1, 1], [1, 1], [1, 1]])` returns `0`.
+
+**Constraints:** 1 ≤ m, n ≤ 8. Try every ordering of the mentors.
+starter:
+```python
+def max_compatibility_sum(students, mentors):
+    # your code here
+    return 0
+```
+solution:
 ```python
 def orderings(items):
     if len(items) <= 1:
-        return [items]
+        return [items[:]]
     result = []
     for i in range(len(items)):
         rest = items[:i] + items[i + 1:]
@@ -896,152 +1189,1437 @@ def orderings(items):
             result.append([items[i]] + perm)
     return result
 
-def biggest(digits):
-    best = None
-    for order in orderings(digits):
-        num = 0
-        for d in order:
-            num = num * 10 + d
-        if best is None or num > best:
-            best = num
+
+def max_compatibility_sum(students, mentors):
+    m = len(students)
+    score = []
+    for s in students:
+        row = []
+        for t in mentors:
+            same = 0
+            for a, b in zip(s, t):
+                if a == b:
+                    same += 1
+            row.append(same)
+        score.append(row)
+    best = 0
+    for order in orderings(list(range(m))):
+        total = 0
+        for i in range(m):
+            total += score[i][order[i]]
+        best = max(best, total)
     return best
 ```
-fail[1]: The biggest digit should come first: 9, then 3, then 1, making 931.
-fail[2]: 5 first, then the zeros: 500. The smallest arrangement, 005, is only 5.
-fail[4]: Sorted from biggest to smallest: 9, 2, 2, 1, making 9221.
-hint: Which digit should come first in the biggest number?
-hint: `sorted(digits, reverse=True)` puts the biggest digit first.
-hint: Build the number: `num = num * 10 + d` for each digit in that order.
-right: Sorting is O(n log n) and building the number is O(n), so 1,000 digits take moments. Trying every ordering of only 15 digits would take hours, and it would find the same answer.
-wrong: `for d in sorted(digits, reverse=True): num = num * 10 + d`, starting from `num = 0`. Return `num`.
+tests:
+- max_compatibility_sum([[1, 1, 0], [1, 0, 1], [0, 0, 1]], [[1, 0, 0], [0, 0, 1], [1, 1, 0]])
+- max_compatibility_sum([[0, 0], [0, 0], [0, 0]], [[1, 1], [1, 1], [1, 1]])
+- max_compatibility_sum([[1]], [[1]])
+- max_compatibility_sum([[1, 0], [0, 1]], [[0, 1], [1, 0]])
+- max_compatibility_sum([[1, 1, 1], [0, 0, 0]], [[1, 1, 0], [0, 0, 1]])
+- max_compatibility_sum([[(i * j + i) % 2 for j in range(6)] for i in range(6)], [[(i + j * j) % 2 for j in range(6)] for i in range(6)])
+fail[2]: Every student answered 0 and every mentor 1, so no pair agrees on anything: 0.
+fail[3]: One student, one mentor, one matching answer: 1.
+fail[4]: Pair student 0 with mentor 1 and student 1 with mentor 0: both pairs agree on both answers, 2 + 2 = 4.
+fail[5]: Student 0 with mentor 0 agree on 2 questions, and so do student 1 and mentor 1: 4. The other pairing scores only 1 + 1.
+fail[6]: 6 students make 720 pairings, and the best scores 27. Work out each pair's score once, in a table, before trying the orderings.
+edges:
+- one student :: len(students) == 1 :: max_compatibility_sum([[0, 1]], [[1, 1]])
+- everyone answered the same :: len(students) > 1 and all(r == students[0] for r in students + mentors) :: max_compatibility_sum([[1, 0], [1, 0]], [[1, 0], [1, 0]])
+- different answers :: len(students) > 1 and any(r != students[0] for r in students + mentors) :: max_compatibility_sum([[1, 0], [0, 1]], [[0, 1], [1, 1]])
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n × n!)
+complexity_options: O(n × n!)
+complexity_note: n is the number of students, which is also the number of mentors. There are at most 8 questions, so comparing two people's answers is O(1).
+why_time: n! orderings of the mentors, each adding up n pair scores.
+why_space: The list of n! orderings, each n long, and the n × n table of scores.
+hint: Work out `score[i][j]`, the number of answers student i and mentor j share, for every pair.
+hint: An ordering `order` of the mentors pairs student i with mentor `order[i]`. List every ordering of `list(range(m))`.
+hint: For each ordering, add up `score[i][order[i]]`, and keep the biggest total.
+right: 8! = 40,320 pairings for the biggest input, each added up in 8 steps. The table means each pair's answers are compared once, not once for every ordering.
+wrong: Fill `score[i][j]` with the number of equal answers. For each ordering `order` of `range(m)`, total `score[i][order[i]]` over every i, and return the biggest total.
 
-=== task: predict hard
-title: Counting the orderings calls
-code:
+=== task: code medium
+title: Beautiful Arrangement
+leetcode: 526 | Beautiful Arrangement | beautiful-arrangement
+patterns: prune
+prompt: An ordering of the numbers 1 to n is beautiful if, at every position i (counting from 1), the number there divides i, or i divides the number. Write `count_arrangement(n)` that returns how many beautiful orderings there are.
+
+**Example 1:** `count_arrangement(2)` returns `2`: `[1, 2]` and `[2, 1]`.
+
+**Example 2:** `count_arrangement(1)` returns `1`.
+
+**Constraints:** 1 ≤ n ≤ 15. Fill the positions in order, and only place a number where it fits the rule.
+starter:
 ```python
-log = []
-
-def orderings(items):
-    log.append(len(items))
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
-
-print(len(orderings([1, 2, 3])), len(log))
+def count_arrangement(n):
+    # your code here
+    return 0
 ```
-wrong[6 6]: Not only the calls at the bottom count. The first call and the calls on 2 items count too: 1 + 3 + 6.
-wrong[6 4]: The call on 3 items makes 3 calls (one per first item), and each of those makes 2 more.
-wrong[3 10]: There are 3! = 6 orderings of three items.
-hint: The call on 3 items makes 3 calls on 2 items.
-hint: Each call on 2 items makes 2 calls on 1 item.
-right: 6 orderings, from 1 + 3 + 6 = 10 calls. The number of calls grows like n! too: for 10 items it's over 6 million.
-wrong: 1 call on 3 items, 3 calls on 2 items, and 3 × 2 = 6 calls on 1 item: 10 calls, which return the 6 orderings.
-
-=== task: predict hard
-title: Every route, measured
-code:
+solution:
 ```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
-    return result
-
-dist = [[0, 5, 8, 6], [5, 0, 3, 7], [8, 3, 0, 4], [6, 7, 4, 0]]
-lengths = []
-for order in orderings([1, 2, 3]):
-    route = [0] + order + [0]
+def place(n, pos, used):
+    if pos > n:
+        return 1
     total = 0
-    for i in range(len(route) - 1):
-        total += dist[route[i]][route[i + 1]]
-    lengths.append(total)
-print(lengths)
+    for x in range(1, n + 1):
+        if not used[x] and (x % pos == 0 or pos % x == 0):
+            used[x] = True
+            total += place(n, pos + 1, used)
+            used[x] = False
+    return total
+
+
+def count_arrangement(n):
+    return place(n, 1, [False] * (n + 1))
 ```
-wrong[[18, 24, 24, 24, 24]]: There are 3! = 6 routes: 1 2 3, 1 3 2, 2 1 3, 2 3 1, 3 1 2 and 3 2 1.
-wrong[[12, 16, 18, 19, 16, 13]]: Each route also comes back to 0 at the end: add that last leg.
-wrong[[18, 24, 24, 18, 24, 24]]: Route 2 3 1 is 0 → 2 → 3 → 1 → 0: 8 + 4 + 7 + 5 = 24.
-hint: The routes go in the order 1 2 3, 1 3 2, 2 1 3, 2 3 1, 3 1 2, 3 2 1, each starting and ending at 0.
-hint: 0 → 1 → 2 → 3 → 0 is 5 + 3 + 4 + 6.
-right: 18, 24, 24, 24, 24, 18. Each route and its reverse have the same length (1 2 3 and 3 2 1, for example), so the 6 routes come in 3 matching pairs.
-wrong: 0-1-2-3-0 = 18, 0-1-3-2-0 = 24, 0-2-1-3-0 = 24, 0-2-3-1-0 = 24, 0-3-1-2-0 = 24, 0-3-2-1-0 = 18.
+tests:
+- count_arrangement(2)
+- count_arrangement(1)
+- count_arrangement(3)
+- count_arrangement(4)
+- count_arrangement(6)
+- count_arrangement(9)
+fail[2]: One number, and 1 divides 1: 1.
+fail[3]: 3 can only go in position 1 or 3, and 2 only in position 1 or 2: `[1, 2, 3]`, `[2, 1, 3]` and `[3, 2, 1]`.
+fail[4]: 8 of the 24 orderings of 1 to 4 are beautiful.
+fail[5]: 36 of the 720 orderings of 1 to 6 are beautiful.
+fail[6]: 250 of the 362,880 orderings are beautiful. Check the rule as each number is placed, so the others stop at their first bad position.
+edges:
+- n is 1 :: n == 1 :: count_arrangement(1)
+- n is 2 or 3 :: 2 <= n <= 3 :: count_arrangement(3)
+- n is 4 or more :: n >= 4 :: count_arrangement(5)
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n)
+complexity_options: O(n × n!)
+complexity_note: n is the argument.
+why_time: At worst every ordering is built, with n tries at each of n positions; the rule stops most branches early.
+why_space: The `used` list, and up to n calls waiting.
+hint: Write `place(n, pos, used)`: the number of ways to fill positions pos to n. When pos is n + 1, every position is filled: return 1.
+hint: Try each x from 1 to n that isn't used and fits: `x % pos == 0 or pos % x == 0`.
+hint: Mark x used, add `place(n, pos + 1, used)`, then mark it free again.
+right: The rule is checked as each number is placed, so a branch stops at its first bad position, which makes n = 15 quick even though 15! is over a trillion. A memo over the used numbers would make it O(n × 2ⁿ).
+wrong: `place(n, pos, used)`: 1 when pos > n; otherwise for each free x with `x % pos == 0 or pos % x == 0`, mark it, add `place(n, pos + 1, used)`, and free it again.
 
-=== task: cells hard
-title: One more item each time
-prompt: A program that tries every ordering of its n items takes 1 second for 8 items. About how many seconds does it take for each of these sizes?
-labels: 9 items | 10 items | 11 items
-answer: 9 | 90 | 990
-wrong[2 | 4 | 8]: That's doubling, O(2ⁿ). Going from 8 to 9 items multiplies the orderings by 9.
-wrong[9 | 18 | 27]: The multipliers multiply: 9 seconds, then 10 times that, then 11 times that.
-hint: 9! = 9 × 8!.
-hint: 10! = 10 × 9!, and 11! = 11 × 10!.
-right: 9, 90 and 990 seconds: each extra item multiplies the time by the new count of items. 12 items would take over 3 hours.
-wrong: 9 items: 9 × 1 = 9 s. 10 items: 10 × 9 = 90 s. 11 items: 11 × 90 = 990 s.
+=== task: code medium
+title: Construct the Lexicographically Largest Valid Sequence
+leetcode: 1718 | Construct the Lexicographically Largest Valid Sequence | construct-the-lexicographically-largest-valid-sequence
+patterns: prune
+prompt: Write `construct_distanced_sequence(n)` that returns a list of 2n − 1 numbers in which 1 appears once, every number from 2 to n appears exactly twice, and the two copies of each number i are exactly i positions apart. Return the largest such list in dictionary order: compare from the start, and the first difference decides.
 
-=== task: mcq hard
-title: Subsets or orderings?
-prompt: Which brute-force search tries about n! possibilities?
-* Finding the best order in which to do n jobs :: Right. Every order of the n jobs is an ordering: n!.
-- Finding the best group of jobs to do, from n jobs :: A group decides only in or out for each job: 2ⁿ subsets.
-- Finding the two jobs that fit together best :: That's every pair: about n²/2.
-- Finding the single best job :: That's one pass: n.
-hint: Does the search decide **which** items, or the **order** of the items?
-hint: Orderings give n!, subsets give 2ⁿ.
-right: Deciding an order is the factorial kind of search. Deciding a group is exponential, deciding a pair is quadratic, and choosing one item is linear.
-wrong: Only the order of all n jobs has n! possibilities. Groups are 2ⁿ, pairs about n², and single jobs n.
+**Example 1:** `construct_distanced_sequence(3)` returns `[3, 1, 2, 3, 2]`. `[2, 3, 2, 1, 3]` also works, but it's smaller.
 
-=== task: multi hard
-title: The travelling salesman
-prompt: Choose **every** true sentence about solving the travelling salesman problem by trying every route.
-* With the start fixed, n places give (n − 1)! routes :: Right. The other n − 1 places can be visited in any order.
-* Each route has the same length as the same route backwards :: Right. The legs are the same, in reverse.
-* 20 places are far too many to try every route :: Right. 19! is about 1.2 × 10¹⁷ routes.
-- Skipping the backwards routes makes it O(2ⁿ) :: It halves the work, and half of a factorial is still factorial.
-- Adding one place doubles the routes :: It multiplies them by the number of places to arrange, which is more than 2 once there are 3 or more.
-- Always going to the nearest place next finds the best route :: That's quick, but it can miss the best route. Only checking every route is sure to find it.
-hint: Count the routes, then think about which changes really alter their growth.
-hint: Three of them are true.
-right: (n − 1)! routes, matching reverse pairs, and 20 places being hopeless are all true. Halving doesn't change the growth, adding a place multiplies the routes by more than 2, and the nearest-place shortcut isn't always best.
-wrong: True: (n − 1)! routes, reverse routes have equal lengths, 20 places is far too many. False: halving stays factorial, a new place multiplies (not doubles), and nearest-next can miss the best route.
+**Example 2:** `construct_distanced_sequence(5)` returns `[5, 3, 1, 4, 3, 5, 2, 4, 2]`.
 
-=== task: parsons hard
-title: List every ordering
-prompt: Arrange the lines so that `orderings` returns every ordering of the list, by putting each item first in turn, and the program prints:
-
-```output
-[['x', 'y', 'z'], ['x', 'z', 'y'], ['y', 'x', 'z'], ['y', 'z', 'x'], ['z', 'x', 'y'], ['z', 'y', 'x']]
-```
-
-Not every line is needed.
-lines:
+**Constraints:** 1 ≤ n ≤ 20. Fill the positions from the left, trying the biggest number first: the first complete list is the largest.
+starter:
 ```python
-def orderings(items):
-    if len(items) <= 1:
-        return [items]
-    result = []
-    for i in range(len(items)):
-        rest = items[:i] + items[i + 1:]
-        for perm in orderings(rest):
-            result.append([items[i]] + perm)
+def construct_distanced_sequence(n):
+    # your code here
+    return []
+```
+solution:
+```python
+def fill(n, seq, pos, used):
+    if pos == len(seq):
+        return True
+    if seq[pos] != 0:
+        return fill(n, seq, pos + 1, used)
+    for x in range(n, 0, -1):
+        if used[x]:
+            continue
+        if x == 1:
+            seq[pos] = 1
+            used[1] = True
+            if fill(n, seq, pos + 1, used):
+                return True
+            seq[pos] = 0
+            used[1] = False
+        elif pos + x < len(seq) and seq[pos + x] == 0:
+            seq[pos] = x
+            seq[pos + x] = x
+            used[x] = True
+            if fill(n, seq, pos + 1, used):
+                return True
+            seq[pos] = 0
+            seq[pos + x] = 0
+            used[x] = False
+    return False
+
+
+def construct_distanced_sequence(n):
+    seq = [0] * (2 * n - 1)
+    fill(n, seq, 0, [False] * (n + 1))
+    return seq
+```
+tests:
+- construct_distanced_sequence(3)
+- construct_distanced_sequence(5)
+- construct_distanced_sequence(1)
+- construct_distanced_sequence(2)
+- construct_distanced_sequence(4)
+- construct_distanced_sequence(8)
+fail[2]: The 5s go at positions 0 and 5, the 3s at 1 and 4, the 4s at 3 and 7, and the 2s at 6 and 8, with 1 at position 2.
+fail[3]: Only 1, once: `[1]`.
+fail[4]: The 2s must be 2 apart, so 1 goes between them: `[2, 1, 2]`.
+fail[5]: `[4, 2, 3, 2, 4, 3, 1]`: the 4s are 4 apart, the 3s 3 apart and the 2s 2 apart.
+fail[6]: For n = 8 the list has 15 numbers. Place the biggest number that fits at each empty position, and take a number back out when the rest can't be finished.
+edges:
+- n is 1 :: n == 1 :: construct_distanced_sequence(1)
+- n is 2 :: n == 2 :: construct_distanced_sequence(2)
+- n is 3 or more :: n >= 3 :: construct_distanced_sequence(4)
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n)
+complexity_options: O(n × n!)
+complexity_note: n is the argument.
+why_time: Each empty position tries up to n numbers, and each number is placed once, so at worst the search tries every order of the n numbers.
+why_space: The list of 2n − 1 positions, the used flags, and up to 2n calls waiting.
+hint: Write `fill(n, seq, pos, used)`, which fills `seq` from position pos onwards and returns `True` if it can finish. Skip positions that are already filled.
+hint: At an empty position, try x from n down to 1. 1 only needs this position; any other x also needs position `pos + x` to be inside the list and empty.
+hint: Place x, call `fill` for the next position, and take x back out if that fails. Trying the biggest first means the first finished list is the largest.
+right: Each position gets the biggest number that can still lead to a finished list, so the first complete list is the answer and the search stops there. It rarely needs to back up far.
+wrong: `fill(n, seq, pos, used)`: `True` at the end of the list; skip filled positions; for x from n down to 1, if it's free and fits (1 alone, or `seq[pos + x]` inside the list and empty), place it, return `True` if the next call does, and take it out again otherwise.
+
+=== task: code medium
+title: Letter Tile Possibilities
+leetcode: 1079 | Letter Tile Possibilities | letter-tile-possibilities
+patterns: dupes
+prompt: Each tile has a letter on it. Write `num_tile_possibilities(tiles)` that returns how many different non-empty sequences of letters you can make with the tiles, using each tile at most once.
+
+**Example 1:** `num_tile_possibilities("AAB")` returns `8`: A, B, AA, AB, BA, AAB, ABA and BAA.
+
+**Example 2:** `num_tile_possibilities("AAABBC")` returns `188`.
+
+**Example 3:** `num_tile_possibilities("V")` returns `1`.
+
+**Constraints:** 1 ≤ `len(tiles)` ≤ 7, uppercase letters. Build the sequences from a count of each letter, so that equal tiles don't make the same sequence twice.
+starter:
+```python
+def num_tile_possibilities(tiles):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_sequences(counts):
+    total = 0
+    for letter in counts:
+        if counts[letter] > 0:
+            counts[letter] -= 1
+            total += 1 + count_sequences(counts)
+            counts[letter] += 1
+    return total
+
+
+def num_tile_possibilities(tiles):
+    counts = {}
+    for ch in tiles:
+        counts[ch] = counts.get(ch, 0) + 1
+    return count_sequences(counts)
+```
+tests:
+- num_tile_possibilities("AAB")
+- num_tile_possibilities("AAABBC")
+- num_tile_possibilities("V")
+- num_tile_possibilities("AA")
+- num_tile_possibilities("AB")
+- num_tile_possibilities("ABCDEF")
+fail[2]: 188 different sequences, with lengths from 1 to 6.
+fail[3]: One tile: "V".
+fail[4]: Two equal tiles make "A" and "AA": 2.
+fail[5]: A, B, AB and BA: 4.
+fail[6]: 6 different letters make 6 + 30 + 120 + 360 + 720 + 720 = 1,956 sequences of lengths 1 to 6.
+edges:
+- one tile :: len(tiles) == 1 :: num_tile_possibilities("Q")
+- every tile the same :: len(tiles) > 1 and len(set(tiles)) == 1 :: num_tile_possibilities("QQQ")
+- different letters :: len(set(tiles)) > 1 :: num_tile_possibilities("QQR")
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n)
+complexity_options: O(n × n!)
+complexity_note: n is the number of tiles.
+why_time: At most about 2.7 × n! sequences, the ordered picks of every length, each trying up to n letters next.
+why_space: The counts, and up to n calls waiting.
+hint: Count each letter in a dictionary.
+hint: Write `count_sequences(counts)`: for each letter with a count above 0, use one (subtract 1), count that sequence (1) and every longer sequence that continues it (a call), then put the letter back.
+hint: Going through the different letters, not the tiles, means two equal tiles never make two copies of the same sequence.
+right: Each different sequence is made exactly once, because each step picks a different letter, not a different tile. For n tiles that's at most the ordered picks of every length, about 2.7 × n!.
+wrong: `count_sequences(counts)`: for each letter with `counts[letter] > 0`, subtract 1, add `1 + count_sequences(counts)` to the total, and add 1 back. Call it with the counts of the tiles.
+
+=== task: code medium
+title: Reordered Power of 2
+leetcode: 869 | Reordered Power of 2 | reordered-power-of-2
+patterns: dupes
+prompt: Write `reordered_power_of_2(n)` that returns `True` if the digits of n can be put in some order, with no leading zero, to make a power of 2 (1, 2, 4, 8, 16 and onwards), and `False` if not.
+
+**Example 1:** `reordered_power_of_2(1)` returns `True`.
+
+**Example 2:** `reordered_power_of_2(10)` returns `False`.
+
+**Constraints:** 1 ≤ n ≤ 10⁹. n can have 10 digits, with 10! = 3,628,800 orderings: compare digit counts with the powers of 2 instead.
+starter:
+```python
+def reordered_power_of_2(n):
+    # your code here
+    return False
+```
+solution:
+```python
+def digit_counts(x):
+    counts = [0] * 10
+    while x > 0:
+        counts[x % 10] += 1
+        x = x // 10
+    return counts
+
+
+def reordered_power_of_2(n):
+    want = digit_counts(n)
+    limit = 10 ** len(str(n))
+    power = 1
+    while power < limit:
+        if digit_counts(power) == want:
+            return True
+        power = power * 2
+    return False
+```
+tests:
+- reordered_power_of_2(1)
+- reordered_power_of_2(10)
+- reordered_power_of_2(46)
+- reordered_power_of_2(821)
+- reordered_power_of_2(123456789)
+- reordered_power_of_2(536870912)
+fail[2]: The orderings are 10 and 01, and 01 has a leading zero: `False`.
+fail[3]: 46 reordered is 64, which is 2⁶: `True`.
+fail[4]: 821 reordered is 128, which is 2⁷: `True`.
+fail[5]: No power of 2 has the digits 1 to 9 once each: `False`. Comparing counts with the 30 powers of 2 below 10⁹ is fast; trying 362,880 orderings isn't.
+fail[6]: 536,870,912 is 2²⁹ itself: `True`.
+edges:
+- n is itself a power of 2 :: n & (n - 1) == 0 :: reordered_power_of_2(64)
+- a reordering is a power of 2 :: n & (n - 1) != 0 and reordered_power_of_2(n) :: reordered_power_of_2(61)
+- no reordering works :: not reordered_power_of_2(n) :: reordered_power_of_2(62)
+edge_count: 2
+complexity: time=O(log² n) | space=O(1)
+complexity_options: O(log² n)
+complexity_note: n is the number: it has about log₁₀ n digits.
+why_time: About 3.3 powers of 2 are checked for each digit of n, and counting the digits of one takes O(log n).
+why_space: Two lists of 10 counts.
+hint: Two numbers are reorderings of each other exactly when they have the same count of each digit. Write `digit_counts(x)` with `% 10` and `// 10`.
+hint: Go through the powers of 2, 1, 2, 4 and onwards, while they have no more digits than n: below `10 ** len(str(n))`.
+hint: Return `True` if any power has the same counts as n. A power of 2 never starts with 0, so leading zeros take care of themselves.
+right: Comparing counts checks every ordering of n's digits at once: about 30 powers of 2 instead of up to 3.6 million orderings.
+wrong: `want = digit_counts(n)`. For power = 1, 2, 4 and onwards, while `power < 10 ** len(str(n))`: return `True` if `digit_counts(power) == want`. Return `False` after the loop.
+
+=== task: code medium
+title: Count the Number of Computer Unlocking Permutations
+leetcode: 3577 | Count the Number of Computer Unlocking Permutations | count-the-number-of-computer-unlocking-permutations
+patterns: count
+prompt: There are n computers, numbered 0 to n − 1, and `complexity[i]` is the complexity of computer i's password. Computer 0 starts unlocked. Computer i can be unlocked with an unlocked computer j only if j < i and `complexity[j] < complexity[i]`. Write `count_permutations(complexity)` that returns how many orderings of 0 to n − 1, starting with computer 0, are valid orders to unlock the computers in. Return the count modulo 10⁹ + 7.
+
+**Example 1:** `count_permutations([1, 2, 3])` returns `2`: `[0, 1, 2]` and `[0, 2, 1]`.
+
+**Example 2:** `count_permutations([3, 3, 3, 4, 4, 4])` returns `0`.
+
+**Constraints:** 2 ≤ n ≤ 10⁵, and 1 ≤ `complexity[i]` ≤ 10⁹. Work out what decides the count, instead of trying orderings.
+starter:
+```python
+def count_permutations(complexity):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_permutations(complexity):
+    for i in range(1, len(complexity)):
+        if complexity[i] <= complexity[0]:
+            return 0
+    mod = 1000000007
+    ways = 1
+    for k in range(1, len(complexity)):
+        ways = ways * k % mod
+    return ways
+```
+tests:
+- count_permutations([1, 2, 3])
+- count_permutations([3, 3, 3, 4, 4, 4])
+- count_permutations([1, 1])
+- count_permutations([5, 9])
+- count_permutations([2, 1, 3])
+- count_permutations(list(range(1, 20001)))
+fail[2]: Computers 1 and 2 have the same complexity as computer 0, and no computer has a smaller one to unlock them with: 0.
+fail[3]: Computer 1's complexity isn't bigger than computer 0's, so nothing can unlock it: 0.
+fail[4]: Computer 0 unlocks computer 1: 1 ordering.
+fail[5]: Computer 1 has complexity 1, smaller than computer 0's 2, so no computer can unlock it: 0.
+fail[6]: Computer 0 has the smallest complexity, so it can unlock any computer at any time, and all 19,999! orders of the others work. That's 608,168,443 modulo 10⁹ + 7.
+edges:
+- two computers :: len(complexity) == 2 :: count_permutations([4, 7])
+- computer 0 isn't the smallest :: len(complexity) > 2 and min(complexity[1:]) <= complexity[0] :: count_permutations([5, 2, 9])
+- computer 0 is the smallest :: len(complexity) > 2 and min(complexity[1:]) > complexity[0] :: count_permutations([1, 5, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of complexity.
+why_time: One pass to check computer 0, and n − 1 multiplications for (n − 1)!.
+why_space: A running product.
+hint: Suppose some computer after 0 has a complexity no bigger than computer 0's. Take the one with the smallest complexity among computers 1 to n − 1: no computer at all has a smaller complexity, computer 0 included, so it can never be unlocked, and the answer is 0.
+hint: Otherwise computer 0 can unlock any computer at any time, so every order of computers 1 to n − 1 works.
+hint: That's (n − 1)!: multiply every number from 1 to n − 1, taking `% 1000000007` each time.
+right: Once computer 0 has the smallest complexity, the rule never blocks anything, so the answer is a plain factorial: O(n) instead of (n − 1)! orders to check.
+wrong: Return 0 if any `complexity[i] <= complexity[0]` for i ≥ 1. Otherwise `ways = 1`, and `ways = ways * k % 1000000007` for k from 1 to n − 1.
+
+=== task: code medium
+title: Next Greater Element III
+leetcode: 556 | Next Greater Element III | next-greater-element-iii
+patterns: next
+prompt: Write `next_greater_element(n)` that returns the smallest number bigger than n that uses exactly the same digits. Return −1 if there's no such number, or if it doesn't fit in a 32-bit signed integer: if it's above 2³¹ − 1, which is 2,147,483,647.
+
+**Example 1:** `next_greater_element(12)` returns `21`.
+
+**Example 2:** `next_greater_element(21)` returns `-1`.
+
+**Constraints:** 1 ≤ n ≤ 2³¹ − 1. Find the next ordering of the digits.
+starter:
+```python
+def next_greater_element(n):
+    # your code here
+    return -1
+```
+solution:
+```python
+def next_greater_element(n):
+    digits = list(str(n))
+    i = len(digits) - 2
+    while i >= 0 and digits[i] >= digits[i + 1]:
+        i -= 1
+    if i < 0:
+        return -1
+    j = len(digits) - 1
+    while digits[j] <= digits[i]:
+        j -= 1
+    digits[i], digits[j] = digits[j], digits[i]
+    digits[i + 1:] = reversed(digits[i + 1:])
+    result = int("".join(digits))
+    if result > 2 ** 31 - 1:
+        return -1
     return result
+```
+tests:
+- next_greater_element(12)
+- next_greater_element(21)
+- next_greater_element(1)
+- next_greater_element(230241)
+- next_greater_element(2147483476)
+- next_greater_element(1999999999)
+fail[2]: 21's digits are in decreasing order, the last ordering: −1.
+fail[3]: One digit has no other ordering: −1.
+fail[4]: From the right, the first digit smaller than the one after it is the second 2, in 241. Swap it with 4, the smallest bigger digit after it, to get 421, then reverse the end: 230412.
+fail[5]: The next ordering of 2147483476 is 2147483647: exactly 2³¹ − 1, so it still fits.
+fail[6]: The next ordering is 9199999999, which is too big for 32 bits: −1.
+edges:
+- one digit :: n < 10 :: next_greater_element(7)
+- digits in decreasing order :: n >= 10 and list(str(n)) == sorted(str(n), reverse=True) :: next_greater_element(54321)
+- a bigger ordering exists :: n >= 10 and list(str(n)) != sorted(str(n), reverse=True) :: next_greater_element(1243)
+edge_count: 2
+complexity: time=O(log n) | space=O(log n)
+complexity_note: n is the number: it has about log₁₀ n digits.
+why_time: The steps go along the digits a few times.
+why_space: The list of digits.
+hint: Turn n into a list of digits. From the right, find the first position i whose digit is smaller than the one after it. If there's none, return −1.
+hint: From the right, find the first digit bigger than `digits[i]`, swap the two, and reverse everything after position i.
+hint: Turn the digits back into a number, and return −1 if it's above `2 ** 31 - 1`.
+right: The next ordering changes as little as possible at the right end, so it's the smallest bigger number: a few passes over at most 10 digits, instead of trying all their orderings.
+wrong: Find the last i with `digits[i] < digits[i + 1]` (−1 if there's none), swap `digits[i]` with the last digit bigger than it, reverse `digits[i + 1:]`, and check the result against `2 ** 31 - 1`.
 
-print(orderings(["x", "y", "z"]))
-```
-distractors:
+=== task: code medium
+title: Minimum Adjacent Swaps to Reach the Kth Smallest Number
+leetcode: 1850 | Minimum Adjacent Swaps to Reach the Kth Smallest Number | minimum-adjacent-swaps-to-reach-the-kth-smallest-number
+patterns: next
+prompt: num is a string of digits. An ordering of its digits that makes a bigger number than num is called wonderful. Write `get_min_swaps(num, k)` that returns the fewest swaps of two neighbouring digits that turn num into the kth smallest wonderful number. It always exists.
+
+**Example 1:** `get_min_swaps("5489355142", 4)` returns `2`: the 4th smallest wonderful number is "5489355421", reached by swapping positions 7 and 8, then 8 and 9.
+
+**Example 2:** `get_min_swaps("11112", 4)` returns `4`: the 4th is "21111", and the 2 moves 4 places left.
+
+**Example 3:** `get_min_swaps("00123", 1)` returns `1`: the 1st is "00132".
+
+**Constraints:** 2 ≤ `len(num)` ≤ 1000, 1 ≤ k ≤ 1000, and num has only digits. Step to the next ordering k times, then count the swaps.
+starter:
 ```python
-        rest = items[i + 1:]
-            result.append(perm)
+def get_min_swaps(num, k):
+    # your code here
+    return 0
 ```
-hint: The base case: a list of 0 or 1 items has exactly one ordering, itself.
-hint: For each position i, the rest is everything except item i, and item i goes in front of each ordering of the rest.
-hint: `return result` comes after the loop, indented once.
-right: Each item takes a turn in front, followed by every ordering of the others: 3 × 2 × 1 = 6 orderings. `items[i + 1:]` alone would lose the items before i, and appending `perm` alone would drop the first item.
-wrong: Base case first, then `result = []`, the loop over i with `rest = items[:i] + items[i + 1:]`, the inner loop appending `[items[i]] + perm`, and `return result` after the loops.
+solution:
+```python
+def next_ordering(p):
+    i = len(p) - 2
+    while i >= 0 and p[i] >= p[i + 1]:
+        i -= 1
+    j = len(p) - 1
+    while p[j] <= p[i]:
+        j -= 1
+    p[i], p[j] = p[j], p[i]
+    p[i + 1:] = reversed(p[i + 1:])
+
+
+def get_min_swaps(num, k):
+    target = list(num)
+    for _ in range(k):
+        next_ordering(target)
+    current = list(num)
+    swaps = 0
+    for i in range(len(current)):
+        j = i
+        while current[j] != target[i]:
+            j += 1
+        while j > i:
+            current[j], current[j - 1] = current[j - 1], current[j]
+            j -= 1
+            swaps += 1
+    return swaps
+```
+tests:
+- get_min_swaps("5489355142", 4)
+- get_min_swaps("11112", 4)
+- get_min_swaps("00123", 1)
+- get_min_swaps("12", 1)
+- get_min_swaps("059", 5)
+- get_min_swaps("98765432101234567890", 1000)
+fail[2]: The wonderful numbers go 11121, 11211, 12111, 21111. Moving the 2 to the front takes 4 swaps.
+fail[3]: The next ordering of 00123 is 00132: one swap.
+fail[4]: The only wonderful number is 21: one swap.
+fail[5]: The orderings bigger than 059 are 095, 509, 590, 905 and 950. Turning 059 into 950 takes 3 swaps.
+fail[6]: After 1,000 steps only the end of the 20 digits has changed, and 9 swaps put it right. For each position from the left, bring the digit that belongs there to it, one swap at a time.
+edges:
+- k is 1 :: k == 1 :: get_min_swaps("1243", 1)
+- repeated digits :: k > 1 and len(set(num)) < len(num) :: get_min_swaps("1123", 3)
+- all different digits :: k > 1 and len(set(num)) == len(num) :: get_min_swaps("1234", 5)
+edge_count: 2
+complexity: time=O(k × n + n²) | space=O(n)
+complexity_options: O(k × n + n²); O(k × n)
+complexity_note: n is the length of num.
+why_time: k next orderings at O(n) each, then up to n swaps for each of the n positions.
+why_space: Two lists of n digits.
+hint: Write `next_ordering(p)`, which changes the list p into the next ordering, as in the learn section, and call it k times on a copy of num.
+hint: Then go through the positions from the left. At position i, find the first j ≥ i where the current digit equals the target's `target[i]`.
+hint: Move it to position i with neighbour swaps, counting each one. Taking the first match never costs extra swaps: equal digits never need to pass each other.
+right: k steps of O(n), then a pass that brings the right digit to each position in turn: O(k × n + n²), where listing the orderings could take n! steps.
+wrong: Call `next_ordering(target)` k times. Then for each i: find the first j ≥ i with `current[j] == target[i]`, swap it down to position i one step at a time, and count the swaps.
+
+=== task: code medium
+title: Special Permutations
+leetcode: 2741 | Special Permutations | special-permutations
+patterns: prune + memo
+prompt: nums holds n different positive numbers. An ordering of them is special if, for every two neighbours, one divides the other. Write `special_perm(nums)` that returns how many special orderings there are, modulo 10⁹ + 7.
+
+**Example 1:** `special_perm([2, 3, 6])` returns `2`: `[3, 6, 2]` and `[2, 6, 3]`.
+
+**Example 2:** `special_perm([1, 4, 3])` returns `2`: `[3, 1, 4]` and `[4, 1, 3]`.
+
+**Constraints:** 2 ≤ n ≤ 14, and 1 ≤ `nums[i]` ≤ 10⁹. Remember the count for each (numbers used, last number): 14! is 87 billion.
+starter:
+```python
+def special_perm(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count(nums, used, last, memo):
+    n = len(nums)
+    if used == (1 << n) - 1:
+        return 1
+    key = (used, last)
+    if key not in memo:
+        total = 0
+        for i in range(n):
+            if used >> i & 1:
+                continue
+            if nums[i] % nums[last] == 0 or nums[last] % nums[i] == 0:
+                total += count(nums, used | (1 << i), i, memo)
+        memo[key] = total % 1000000007
+    return memo[key]
+
+
+def special_perm(nums):
+    memo = {}
+    total = 0
+    for first in range(len(nums)):
+        total += count(nums, 1 << first, first, memo)
+    return total % 1000000007
+```
+tests:
+- special_perm([2, 3, 6])
+- special_perm([1, 4, 3])
+- special_perm([5, 7])
+- special_perm([1, 2, 4, 8])
+- special_perm([1, 2, 3, 4, 6, 8, 12, 24])
+- special_perm([1, 2, 4, 8, 16, 32, 64, 128])
+fail[2]: 1 divides both 4 and 3, but 4 and 3 don't divide each other, so 1 has to be in the middle: 2.
+fail[3]: Neither divides the other: 0.
+fail[4]: Of every two powers of 2, the smaller divides the bigger, so all 4! = 24 orderings are special.
+fail[5]: 5,124 of the 40,320 orderings are special.
+fail[6]: All 8! = 40,320 orderings are special, too many to try one by one. Only 2⁸ × 8 = 2,048 different (used, last) questions come up.
+edges:
+- two numbers :: len(nums) == 2 :: special_perm([3, 9])
+- a number that divides all the others :: len(nums) > 2 and any(all(x % d == 0 for x in nums) for d in nums) :: special_perm([2, 4, 6])
+- no number divides all the others :: len(nums) > 2 and not any(all(x % d == 0 for x in nums) for d in nums) :: special_perm([2, 3, 6])
+edge_count: 2
+complexity: time=O(n² × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n² × 2ⁿ); O(n × 2ⁿ)
+complexity_note: n is the length of nums.
+why_time: n × 2ⁿ different (used, last) questions, each trying up to n next numbers.
+why_space: The memo has up to n × 2ⁿ entries.
+hint: Write `count(nums, used, last, memo)`: the number of ways to finish an ordering when the numbers in the mask `used` are placed and `nums[last]` is at the end. When all are used, it's 1.
+hint: Otherwise, add up `count` for every i not in `used` where `nums[i] % nums[last] == 0` or `nums[last] % nums[i] == 0`.
+hint: Store each answer under `(used, last)`, modulo 10⁹ + 7. The answer adds up the counts for every first number.
+right: The rule only looks at neighbours, so the rest of an ordering only depends on which numbers are used and which is last: 14 × 2¹⁴ = 229,376 questions for 14 numbers, instead of 87 billion orderings.
+wrong: `count(nums, used, last, memo)`: 1 when all are used; otherwise the sum of `count(nums, used | (1 << i), i, memo)` over every free i where one of `nums[i]` and `nums[last]` divides the other, stored under `(used, last)`. Add it up over every first number.
+
+=== task: code medium
+title: The k-th Lexicographical String of All Happy Strings of Length n
+leetcode: 1415 | The k-th Lexicographical String of All Happy Strings of Length n | the-k-th-lexicographical-string-of-all-happy-strings-of-length-n
+patterns: count + next
+prompt: A happy string uses only the letters a, b and c, and never has the same letter twice in a row. Write `get_happy_string(n, k)` that returns the kth happy string of length n in dictionary order, counting from 1, or `""` if there are fewer than k of them.
+
+**Example 1:** `get_happy_string(1, 3)` returns `"c"`: the happy strings of length 1 are a, b and c.
+
+**Example 2:** `get_happy_string(1, 4)` returns `""`.
+
+**Example 3:** `get_happy_string(3, 9)` returns `"cab"`.
+
+**Constraints:** 1 ≤ n ≤ 10, and 1 ≤ k ≤ 100. Count the strings that start with each letter, instead of listing them.
+starter:
+```python
+def get_happy_string(n, k):
+    # your code here
+    return ""
+```
+solution:
+```python
+def get_happy_string(n, k):
+    if k > 3 * 2 ** (n - 1):
+        return ""
+    k -= 1
+    result = []
+    for pos in range(n):
+        block = 2 ** (n - 1 - pos)
+        options = []
+        for c in "abc":
+            if not result or c != result[-1]:
+                options.append(c)
+        result.append(options[k // block])
+        k = k % block
+    return "".join(result)
+```
+tests:
+- get_happy_string(1, 3)
+- get_happy_string(1, 4)
+- get_happy_string(3, 9)
+- get_happy_string(2, 1)
+- get_happy_string(2, 6)
+- get_happy_string(10, 100)
+fail[2]: There are only 3 happy strings of length 1: `""`.
+fail[3]: The happy strings of length 3 go aba, abc, aca, acb, bab, bac, bca, bcb, and then cab is the 9th.
+fail[4]: The first happy string of length 2 is `"ab"`: `"aa"` repeats a letter.
+fail[5]: ab, ac, ba, bc, ca, cb: the 6th, and last, is `"cb"`.
+fail[6]: Each first letter heads 2⁹ = 512 strings of length 10, so the 100th starts with a. After that, each letter heads half as many as the one before it.
+edges:
+- k too big :: k > 3 * 2 ** (n - 1) :: get_happy_string(2, 7)
+- n is 1 :: n == 1 and k <= 3 :: get_happy_string(1, 2)
+- longer strings :: n > 1 and k <= 3 * 2 ** (n - 1) :: get_happy_string(3, 5)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of the strings. Count `2 ** m` as one step.
+why_time: One step for each of the n letters, each choosing among at most 3 letters.
+why_space: The string being built.
+hint: There are 3 × 2ⁿ⁻¹ happy strings: 3 choices for the first letter, and 2 for each after it. If k is bigger, return `""`.
+hint: Count from 0 with `k -= 1`. At position `pos`, each allowed letter heads `2 ** (n - 1 - pos)` strings, so the letter to take is number `k // block` among the allowed ones, in order.
+hint: The allowed letters are a, b and c, without the one before. After choosing, keep `k % block`, the position inside that letter's block.
+right: Each letter is chosen by dividing k by the size of a block, so no string before the kth is ever built: n steps instead of up to 3 × 2ⁿ⁻¹.
+wrong: Return `""` if `k > 3 * 2 ** (n - 1)`. Then `k -= 1`, and for each pos: `block = 2 ** (n - 1 - pos)`, the options are the letters different from the last one, take `options[k // block]`, and keep `k % block`.
+
+=== task: code hard
+title: Permutation Sequence
+leetcode: 60 | Permutation Sequence | permutation-sequence
+patterns: count + next
+prompt: Write `get_permutation(n, k)` that returns the kth ordering of the numbers 1 to n, counting from 1, when all n! orderings are listed in increasing order. Return it as a string of digits.
+
+**Example 1:** `get_permutation(3, 3)` returns `"213"`: the orderings are 123, 132, 213, 231, 312 and 321.
+
+**Example 2:** `get_permutation(4, 9)` returns `"2314"`.
+
+**Example 3:** `get_permutation(3, 1)` returns `"123"`.
+
+**Constraints:** 1 ≤ n ≤ 9, and 1 ≤ k ≤ n!. Jump to the kth ordering by counting blocks, instead of listing the ones before it.
+starter:
+```python
+def get_permutation(n, k):
+    # your code here
+    return ""
+```
+solution:
+```python
+def get_permutation(n, k):
+    fact = [1] * (n + 1)
+    for i in range(1, n + 1):
+        fact[i] = fact[i - 1] * i
+    numbers = list(range(1, n + 1))
+    k -= 1
+    result = []
+    for pos in range(n):
+        block = fact[n - 1 - pos]
+        result.append(str(numbers.pop(k // block)))
+        k = k % block
+    return "".join(result)
+```
+tests:
+- get_permutation(3, 3)
+- get_permutation(4, 9)
+- get_permutation(3, 1)
+- get_permutation(1, 1)
+- get_permutation(3, 6)
+- get_permutation(9, 100000)
+fail[2]: The 6 orderings that start with 1 come first, so the 9th is the 3rd that starts with 2: 2134, 2143, 2314.
+fail[3]: The first ordering has the numbers in increasing order: `"123"`.
+fail[4]: One number: `"1"`.
+fail[5]: The last ordering has the numbers in decreasing order: `"321"`.
+fail[6]: 9! = 362,880 orderings are too many to list. Each first number heads 8! = 40,320 of them, so the 100,000th starts with the 3rd number, 3, and the same goes for each place after it.
+edges:
+- n is 1 :: n == 1 :: get_permutation(1, 1)
+- the first ordering :: n > 1 and k == 1 :: get_permutation(4, 1)
+- a later ordering :: n > 1 and k > 1 :: get_permutation(4, 24)
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the argument.
+why_time: n places, and taking a number out of the list of numbers left costs up to n steps.
+why_space: The factorials, the numbers left and the answer.
+hint: Each first number heads (n − 1)! orderings. Count from 0 with `k -= 1`: the first number is number `k // (n - 1)!` in the list of numbers left, in increasing order.
+hint: Take it out of the list with `pop`, keep `k % (n - 1)!`, and do the same for the next place with (n − 2)!.
+hint: Work out the factorials first, and join the numbers into a string at the end.
+right: Each place skips whole blocks of orderings with one division: 9 places instead of up to 362,880 orderings.
+wrong: Work out `fact[i]` = i!. `numbers = list(range(1, n + 1))` and `k -= 1`. For each place: `block = fact[n - 1 - pos]`, append `numbers.pop(k // block)`, and keep `k % block`. Join them as a string.
+
+=== task: code hard
+title: Permutations IV
+leetcode: 3470 | Permutations IV | permutations-iv
+patterns: count + next
+prompt: An ordering of the numbers 1 to n is alternating if no two neighbours are both odd or both even. Write `permute(n, k)` that returns the kth alternating ordering in dictionary order, counting from 1, or `[]` if there are fewer than k of them.
+
+**Example 1:** `permute(4, 6)` returns `[3, 4, 1, 2]`. The 8 alternating orderings are `[1, 2, 3, 4]`, `[1, 4, 3, 2]`, `[2, 1, 4, 3]`, `[2, 3, 4, 1]`, `[3, 2, 1, 4]`, `[3, 4, 1, 2]`, `[4, 1, 2, 3]` and `[4, 3, 2, 1]`.
+
+**Example 2:** `permute(3, 2)` returns `[3, 2, 1]`.
+
+**Example 3:** `permute(2, 3)` returns `[]`.
+
+**Constraints:** 1 ≤ n ≤ 100, and 1 ≤ k ≤ 10¹⁵. Count how many alternating orderings start with each choice: there can be far too many to list.
+starter:
+```python
+def permute(n, k):
+    # your code here
+    return []
+```
+solution:
+```python
+def rest_ways(odds, evens, start_odd, fact):
+    if start_odd:
+        ok = odds == evens or odds == evens + 1
+    else:
+        ok = evens == odds or evens == odds + 1
+    if not ok:
+        return 0
+    return fact[odds] * fact[evens]
+
+
+def permute(n, k):
+    fact = [1] * (n + 1)
+    for i in range(1, n + 1):
+        fact[i] = fact[i - 1] * i
+    odds = (n + 1) // 2
+    evens = n // 2
+    used = [False] * (n + 1)
+    result = []
+    for pos in range(n):
+        placed = False
+        for x in range(1, n + 1):
+            if used[x] or (result and result[-1] % 2 == x % 2):
+                continue
+            if x % 2 == 1:
+                ways = rest_ways(odds - 1, evens, False, fact)
+            else:
+                ways = rest_ways(odds, evens - 1, True, fact)
+            if k > ways:
+                k -= ways
+                continue
+            result.append(x)
+            used[x] = True
+            if x % 2 == 1:
+                odds -= 1
+            else:
+                evens -= 1
+            placed = True
+            break
+        if not placed:
+            return []
+    return result
+```
+tests:
+- permute(4, 6)
+- permute(3, 2)
+- permute(2, 3)
+- permute(1, 1)
+- permute(5, 3)
+- permute(100, 1000000000000000)[80:]
+fail[2]: n = 3 has only `[1, 2, 3]` and `[3, 2, 1]`: with two odd numbers and one even, an odd one has to come first and last.
+fail[3]: `[1, 2]` and `[2, 1]` are the only two: `[]`.
+fail[4]: One number: `[1]`.
+fail[5]: The alternating orderings of 1 to 5 start `[1, 2, 3, 4, 5]`, `[1, 2, 5, 4, 3]`, `[1, 4, 3, 2, 5]`: the 3rd.
+fail[6]: With 50 odd and 50 even numbers there are 2 × (50!)² alternating orderings, so the 10¹⁵th keeps 1 to 78 in place and only rearranges the last 22. The test shows its last 20.
+edges:
+- n is 1 :: n == 1 :: permute(1, 1)
+- k is 1 :: n > 1 and k == 1 :: permute(4, 1)
+- k bigger than 1 :: n > 1 and k > 1 :: permute(4, 9)
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the argument. Count each multiplication of two factorials as one step.
+why_time: n places, each trying up to n numbers, with each count made from two factorials worked out in advance.
+why_space: The factorials, the used flags and the answer.
+hint: After some numbers are placed, the rest must alternate too. With o odd and e even numbers left and the next one odd, that works only if o = e or o = e + 1, in o! × e! ways; with the next one even, only if e = o or e = o + 1.
+hint: At each place, try the unused numbers in increasing order, skipping any with the same parity as the one before. If k is bigger than the number of orderings that continue with it, subtract that number and try the next; otherwise take it.
+hint: If no number can be taken, k is too big: return `[]`. Work out the factorials up to n first.
+right: Each place skips whole blocks with one subtraction, so n = 100 and k = 10¹⁵ take about 100 × 100 steps, though there are about 10¹²⁹ alternating orderings.
+wrong: For each place, for each unused x of the other parity: `ways` = o! × e! for the numbers left after x, if they can alternate starting with the other parity, and 0 if not. If `k > ways`, subtract it; otherwise take x. Return `[]` if no x could be taken.
+
+=== task: code hard
+title: Number of Squareful Arrays
+leetcode: 996 | Number of Squareful Arrays | number-of-squareful-arrays
+patterns: prune + dupes
+prompt: An ordering of nums is squareful if every two neighbours add up to a perfect square: 0, 1, 4, 9, 16 and onwards. Write `num_squareful_perms(nums)` that returns how many different squareful orderings there are; orderings that only differ by swapping equal numbers count once. `math.isqrt(x)` is the whole-number square root of x, rounded down, so x is a perfect square when `math.isqrt(x) ** 2 == x`.
+
+**Example 1:** `num_squareful_perms([1, 17, 8])` returns `2`: `[1, 8, 17]` and `[17, 8, 1]`.
+
+**Example 2:** `num_squareful_perms([2, 2, 2])` returns `1`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 12, and 0 ≤ `nums[i]` ≤ 10⁹. Build from a count of each number, checking each pair of neighbours as you go.
+starter:
+```python
+import math
+
+
+def num_squareful_perms(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+import math
+
+
+def is_square(x):
+    r = math.isqrt(x)
+    return r * r == x
+
+
+def count_from(counts, last, left):
+    if left == 0:
+        return 1
+    total = 0
+    for v in counts:
+        if counts[v] == 0:
+            continue
+        if last is not None and not is_square(last + v):
+            continue
+        counts[v] -= 1
+        total += count_from(counts, v, left - 1)
+        counts[v] += 1
+    return total
+
+
+def num_squareful_perms(nums):
+    counts = {}
+    for x in nums:
+        counts[x] = counts.get(x, 0) + 1
+    return count_from(counts, None, len(nums))
+```
+tests:
+- num_squareful_perms([1, 17, 8])
+- num_squareful_perms([2, 2, 2])
+- num_squareful_perms([1])
+- num_squareful_perms([0, 0])
+- num_squareful_perms([1, 2])
+- num_squareful_perms([1, 3, 6, 10, 15, 21, 28, 36])
+fail[2]: 2 + 2 = 4 is a square, and the three 2s look the same in every order: 1.
+fail[3]: One number has no neighbours to check: 1.
+fail[4]: 0 + 0 = 0 is a perfect square, and the two 0s make one different ordering: 1.
+fail[5]: 1 + 2 = 3 isn't a square: 0.
+fail[6]: Neighbouring triangle numbers add up to squares: 1 + 3 = 4, 3 + 6 = 9, 6 + 10 = 16. 4 orderings work, including the increasing and the decreasing one.
+edges:
+- one number :: len(nums) == 1 :: num_squareful_perms([5])
+- repeated numbers :: len(set(nums)) < len(nums) :: num_squareful_perms([2, 2, 7])
+- all different :: len(nums) > 1 and len(set(nums)) == len(nums) :: num_squareful_perms([1, 3, 6])
+edge_count: 2
+complexity: time=O(n × n!) | space=O(n)
+complexity_options: O(n × n!)
+complexity_note: n is the length of nums. Count the square check as O(1).
+why_time: At worst every ordering is built, trying up to n different numbers at each of n places; the square check stops most branches early.
+why_space: The counts, and up to n calls waiting.
+hint: Count each number in a dictionary, and write `count_from(counts, last, left)`: the number of ways to finish when `left` numbers are still to be placed and `last` is the number at the end (`None` at the start).
+hint: When `left` is 0, return 1. Otherwise try each different number v with a count above 0, as long as `last` is `None` or `last + v` is a perfect square.
+hint: Take one v (subtract 1), add `count_from(counts, v, left - 1)`, and put it back. Looping over the different numbers, not the positions, makes each different ordering once.
+right: The counts stop equal numbers from making the same ordering twice, and the square check cuts a branch at its first bad pair, so only good orderings are finished.
+wrong: Count the numbers. `count_from(counts, last, left)`: 1 when left is 0; otherwise for each v with `counts[v] > 0`, and `last is None` or `last + v` a perfect square, subtract 1, add `count_from(counts, v, left - 1)`, and add 1 back.
+
+=== task: code hard
+title: Verbal Arithmetic Puzzle
+leetcode: 1307 | Verbal Arithmetic Puzzle | verbal-arithmetic-puzzle
+patterns: prune
+prompt: In a puzzle like SEND + MORE = MONEY, each letter stands for a different digit from 0 to 9, and no word of two or more letters starts with 0. Write `is_solvable(words, result)` that returns `True` if some choice of digits makes the words add up to result, and `False` if not.
+
+**Example 1:** `is_solvable(["SEND", "MORE"], "MONEY")` returns `True`: 9567 + 1085 = 10652.
+
+**Example 2:** `is_solvable(["SIX", "SEVEN", "SEVEN"], "TWENTY")` returns `True`: 650 + 68782 + 68782 = 138214.
+
+**Example 3:** `is_solvable(["LEET", "CODE"], "POINT")` returns `False`.
+
+**Constraints:** 2 ≤ `len(words)` ≤ 5, each word and result has 1 to 7 letters, all uppercase, and there are at most 10 different letters. Give each letter a weight, and choose digits letter by letter, stopping as soon as the rest can't balance the sum.
+starter:
+```python
+def is_solvable(words, result):
+    # your code here
+    return False
+```
+solution:
+```python
+def add_weights(word, sign, weight, leading):
+    place = 1
+    for ch in reversed(word):
+        weight[ch] = weight.get(ch, 0) + sign * place
+        place = place * 10
+    if len(word) > 1:
+        leading.add(word[0])
+
+
+def assign(letters, weights, bound, leading, i, total, used):
+    if i == len(letters):
+        return total == 0
+    if abs(total) > bound[i]:
+        return False
+    for d in range(10):
+        if used[d] or (d == 0 and letters[i] in leading):
+            continue
+        used[d] = True
+        new_total = total + weights[i] * d
+        if assign(letters, weights, bound, leading, i + 1, new_total, used):
+            return True
+        used[d] = False
+    return False
+
+
+def is_solvable(words, result):
+    weight = {}
+    leading = set()
+    for w in words:
+        add_weights(w, 1, weight, leading)
+    add_weights(result, -1, weight, leading)
+    letters = sorted(weight, key=lambda ch: -abs(weight[ch]))
+    weights = [weight[ch] for ch in letters]
+    bound = [0] * (len(letters) + 1)
+    for i in range(len(letters) - 1, -1, -1):
+        bound[i] = bound[i + 1] + 9 * abs(weights[i])
+    return assign(letters, weights, bound, leading, 0, 0, [False] * 10)
+```
+tests:
+- is_solvable(["SEND", "MORE"], "MONEY")
+- is_solvable(["SIX", "SEVEN", "SEVEN"], "TWENTY")
+- is_solvable(["LEET", "CODE"], "POINT")
+- is_solvable(["A", "B"], "A")
+- is_solvable(["AB", "CD"], "EF")
+- is_solvable(["THIS", "IS", "TOO"], "FUNNY")
+fail[2]: S = 6, I = 5, X = 0, E = 8, V = 7, N = 2, T = 1, W = 3 and Y = 4 make it work.
+fail[3]: No choice of digits works. Every assignment has to be ruled out, so stopping branches early matters most here.
+fail[4]: B = 0 works: A + 0 = A. A one-letter word can be 0.
+fail[5]: 12 + 35 = 47 is one way.
+fail[6]: THIS + IS + TOO = FUNNY has 9 different letters, and a choice of digits that works.
+edges:
+- a word of one letter :: any(len(w) == 1 for w in words + [result]) :: is_solvable(["A", "B"], "C")
+- a result longer than every word :: all(len(w) > 1 for w in words + [result]) and len(result) > max(len(w) for w in words) :: is_solvable(["AB", "CD"], "EFG")
+- a result no longer than the longest word :: all(len(w) > 1 for w in words + [result]) and len(result) <= max(len(w) for w in words) :: is_solvable(["AB", "CD"], "EF")
+edge_count: 2
+complexity: time=O(10!/(10 − n)!) | space=O(n)
+complexity_options: O(10!/(10 − n)!); O(10ⁿ); O(n × n!)
+complexity_note: n is the number of different letters, at most 10. Working out the weights takes one pass over at most 42 letters, so count it as O(1).
+why_time: Letter by letter, each takes one of the digits left: at most 10 × 9 × 8, with n numbers multiplied, which is 10!/(10 − n)! choices. The bound check cuts most of them.
+why_space: The weights, the used digits, and up to n calls waiting.
+hint: Give each letter a weight. In the words, a letter in the units place adds 1, in the tens place 10, in the hundreds place 100; in result, the places count negative. The puzzle works exactly when the sum of weight × digit over all the letters is 0.
+hint: Choose digits for the letters one at a time: each digit unused so far, and not 0 for the first letter of a word with two or more letters. Keep the running total of weight × digit.
+hint: Take the letters in order of the size of their weight, biggest first. The letters still to come can change the total by at most 9 × the sum of their weights' sizes: if the total is further from 0 than that, stop this branch.
+right: The weights turn the column sums into one sum, and the bound stops a branch as soon as the letters left can't bring it back to 0. Big weights go first, so the bound bites early, and up to 3,628,800 choices shrink to a few thousand.
+wrong: Weight each letter by its place, + in the words and − in result. Choose digits in order of weight size, skipping used digits and leading zeros, adding weight × digit to the total; stop when `abs(total)` is more than 9 × the sizes of the weights left; succeed if the total is 0 at the end.
+
+=== task: code hard
+title: Number of Ways to Reorder Array to Get Same BST
+leetcode: 1569 | Number of Ways to Reorder Array to Get Same BST | number-of-ways-to-reorder-array-to-get-same-bst
+patterns: count
+prompt: Put the numbers of nums, in order, into a binary search tree: the first becomes the root, and each later number goes down from the root, left past every number bigger than it and right past every number smaller, until it finds an empty place. nums is an ordering of 1 to n. Write `num_of_ways(nums)` that returns how many **other** orderings of nums build exactly the same tree, modulo 10⁹ + 7. `math.comb(a, b)` counts the ways to choose b of a things.
+
+**Example 1:** `num_of_ways([2, 1, 3])` returns `1`: `[2, 3, 1]` builds the same tree.
+
+**Example 2:** `num_of_ways([3, 4, 5, 1, 2])` returns `5`: `[3, 1, 2, 4, 5]`, `[3, 1, 4, 2, 5]`, `[3, 1, 4, 5, 2]`, `[3, 4, 1, 2, 5]` and `[3, 4, 1, 5, 2]`.
+
+**Example 3:** `num_of_ways([1, 2, 3])` returns `0`.
+
+**Constraints:** 1 ≤ n ≤ 1000. Count with combinations, instead of trying orderings.
+starter:
+```python
+import math
+
+
+def num_of_ways(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+import math
+
+
+def ways(nums):
+    if len(nums) <= 2:
+        return 1
+    root = nums[0]
+    left = [x for x in nums if x < root]
+    right = [x for x in nums if x > root]
+    mix = math.comb(len(left) + len(right), len(left))
+    return mix * ways(left) * ways(right) % 1000000007
+
+
+def num_of_ways(nums):
+    return (ways(nums) - 1) % 1000000007
+```
+tests:
+- num_of_ways([2, 1, 3])
+- num_of_ways([3, 4, 5, 1, 2])
+- num_of_ways([1, 2, 3])
+- num_of_ways([1])
+- num_of_ways([3, 1, 2, 5, 4])
+- num_of_ways([16, 8, 24, 4, 12, 20, 28, 2, 6, 10, 14, 18, 22, 26, 30, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31])
+fail[2]: The root 3 has to come first. 1 must come before 2, and 4 before 5, but the two pairs can be mixed in C(4, 2) = 6 ways: 6 − 1 = 5 others.
+fail[3]: 1, 2, 3 must come in exactly this order to build the chain: 0 others.
+fail[4]: One number: no other ordering, 0.
+fail[5]: The left part 1, 2 and the right part 5, 4 can be mixed in 6 ways: 5 others.
+fail[6]: A full tree of 31 numbers: at the root, the 15 smaller and 15 bigger numbers mix in C(30, 15) ways, and each side splits the same way again. That's 203,434,153 modulo 10⁹ + 7.
+edges:
+- one or two numbers :: len(nums) <= 2 :: num_of_ways([2, 1])
+- a chain, with one way only :: len(nums) > 2 and num_of_ways(nums) == 0 :: num_of_ways([1, 3, 2])
+- a tree with two sides somewhere :: len(nums) > 2 and num_of_ways(nums) > 0 :: num_of_ways([2, 1, 3])
+edge_count: 2
+complexity: time=O(n²) | space=O(n²)
+complexity_note: n is the length of nums. Count `math.comb` as one step.
+why_time: Each call splits its list into the smaller and bigger numbers in one pass, and a lopsided tree has n levels: n + (n − 1) + (n − 2), down to 1, which is O(n²).
+why_space: The lists of smaller and bigger numbers on the way down: up to n − 1, then n − 2 and onwards at once.
+hint: The root `nums[0]` has to come first. The numbers smaller than it build the left part, in their own order, and the bigger ones build the right part.
+hint: The two parts' orders can be mixed in any way: choose which of the `len(left) + len(right)` places after the root go to the left numbers, in `math.comb(len(left) + len(right), len(left))` ways.
+hint: Multiply by the ways for each part (recursive calls), with 1 for 2 or fewer numbers, take `% 1000000007`, and subtract 1 at the end for nums itself.
+right: Each split multiplies: the ways to mix the two sides, times each side's own count. That's O(n²) list work, where trying the orderings would take n!.
+wrong: `ways(nums)`: 1 for 2 or fewer numbers. Otherwise `left` and `right` are the numbers smaller and bigger than `nums[0]`, and the result is `math.comb(len(left) + len(right), len(left)) * ways(left) * ways(right) % 1000000007`. The answer is `(ways(nums) - 1) % 1000000007`.
+
+=== task: code hard
+title: Count Number of Balanced Permutations
+leetcode: 3343 | Count Number of Balanced Permutations | count-number-of-balanced-permutations
+patterns: count
+prompt: A string of digits is balanced if the digits at even positions (0, 2, 4 and onwards) add up to the same as the digits at odd positions. Write `count_balanced_permutations(num)` that returns how many different orderings of num's digits are balanced, modulo 10⁹ + 7.
+
+**Example 1:** `count_balanced_permutations("123")` returns `2`: 132 and 231.
+
+**Example 2:** `count_balanced_permutations("112")` returns `1`: 121.
+
+**Example 3:** `count_balanced_permutations("12345")` returns `0`.
+
+**Constraints:** 2 ≤ `len(num)` ≤ 80, digits only. Decide how many of each digit go to even positions, and count the orderings with `math.comb`.
+starter:
+```python
+import math
+
+
+def count_balanced_permutations(num):
+    # your code here
+    return 0
+```
+solution:
+```python
+import math
+
+
+def count_balanced_permutations(num):
+    mod = 1000000007
+    counts = [0] * 10
+    total = 0
+    for ch in num:
+        counts[int(ch)] += 1
+        total += int(ch)
+    if total % 2 == 1:
+        return 0
+    even_slots = (len(num) + 1) // 2
+    odd_slots = len(num) // 2
+    target = total // 2
+    ways = {(0, 0): 1}
+    placed = 0
+    for d in range(10):
+        c = counts[d]
+        new = {}
+        for key in ways:
+            used_even, s = key
+            used_odd = placed - used_even
+            for k in range(c + 1):
+                if used_even + k > even_slots:
+                    break
+                if used_odd + c - k > odd_slots:
+                    continue
+                new_sum = s + d * k
+                if new_sum > target:
+                    break
+                w = ways[key] * math.comb(even_slots - used_even, k) % mod
+                w = w * math.comb(odd_slots - used_odd, c - k) % mod
+                new_key = (used_even + k, new_sum)
+                new[new_key] = (new.get(new_key, 0) + w) % mod
+        ways = new
+        placed += c
+    return ways.get((even_slots, target), 0)
+```
+tests:
+- count_balanced_permutations("123")
+- count_balanced_permutations("112")
+- count_balanced_permutations("12345")
+- count_balanced_permutations("0000")
+- count_balanced_permutations("1122334455")
+- count_balanced_permutations("1234567890" * 2)
+fail[2]: 112, 121 and 211 are the different orderings, and only 121 has 1 + 1 = 2.
+fail[3]: The digits add up to 15, which is odd, so they can't split into two equal halves: 0.
+fail[4]: Every ordering is 0000, and 0 + 0 = 0 + 0: 1.
+fail[5]: 19,800 of the 113,400 different orderings are balanced.
+fail[6]: 20 digits, two of each, have about 2.4 × 10¹⁵ different orderings, so count them through the choices of digits for the even positions. The count is 900,134,141 modulo 10⁹ + 7.
+edges:
+- an odd digit sum :: sum(int(c) for c in num) % 2 == 1 :: count_balanced_permutations("12")
+- every digit the same :: sum(int(c) for c in num) % 2 == 0 and len(set(num)) == 1 :: count_balanced_permutations("44")
+- different digits with an even sum :: sum(int(c) for c in num) % 2 == 0 and len(set(num)) > 1 :: count_balanced_permutations("1234")
+edge_count: 2
+complexity: time=O(n³) | space=O(n²)
+complexity_note: n is the length of num. Count `math.comb` as one step. The digit sums go up to 9n.
+why_time: The table has up to n/2 counts × 9n/2 sums of entries, and the digits try up to n choices for them in all.
+why_space: The table of (digits in even places, their sum) entries.
+hint: The digits must add up to an even total S, and the even positions must hold S / 2. There are E = `(n + 1) // 2` even positions and O = `n // 2` odd ones.
+hint: Go through the digits 0 to 9. For a digit with count c, choose k copies for even positions: `math.comb(even places left, k)` ways to pick their places, and `math.comb(odd places left, c - k)` for the rest.
+hint: Keep a table: `ways[(evens used, sum so far)]` = number of ways. Each digit makes a new table, and the answer is the entry for `(E, S // 2)`. Take `% 1000000007` as you go.
+right: Equal digits are placed together with one `math.comb`, so each different ordering is counted once, and the table merges every choice that leads to the same count and sum. That's O(n³) steps, where there can be up to 80! orderings.
+wrong: Return 0 for an odd digit sum. Start with `{(0, 0): 1}`. For each digit d with count c, for each `(used_even, s)` and each k from 0 to c that fits, add `ways × comb(E − used_even, k) × comb(O − used_odd, c − k)` to `new[(used_even + k, s + d * k)]`. Return the entry for `(E, S // 2)`.
+
+=== task: code hard
+title: Find the Minimum Cost Array Permutation
+leetcode: 3149 | Find the Minimum Cost Array Permutation | find-the-minimum-cost-array-permutation
+patterns: memo
+prompt: nums is an ordering of 0 to n − 1. The score of an ordering perm of 0 to n − 1 is the sum of `abs(perm[i] - nums[perm[i + 1]])` over every i, going round, so that the last term is `abs(perm[n - 1] - nums[perm[0]])`. Write `find_permutation(nums)` that returns the ordering with the smallest score; if several tie, the smallest in dictionary order.
+
+**Example 1:** `find_permutation([1, 0, 2])` returns `[0, 1, 2]`: its score is |0 − 0| + |1 − 2| + |2 − 1| = 2.
+
+**Example 2:** `find_permutation([0, 2, 1])` returns `[0, 2, 1]`: its score is |0 − 1| + |2 − 2| + |1 − 0| = 2.
+
+**Constraints:** 2 ≤ n ≤ 14. The score goes round in a circle, so the best ordering can start with 0. Remember the best finish for each (numbers used, last number).
+starter:
+```python
+def find_permutation(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def best(nums, used, last, memo):
+    n = len(nums)
+    if used == (1 << n) - 1:
+        return abs(last - nums[0])
+    key = (used, last)
+    if key not in memo:
+        result = None
+        for nxt in range(n):
+            if used >> nxt & 1:
+                continue
+            rest = best(nums, used | (1 << nxt), nxt, memo)
+            cost = abs(last - nums[nxt]) + rest
+            if result is None or cost < result:
+                result = cost
+        memo[key] = result
+    return memo[key]
+
+
+def find_permutation(nums):
+    n = len(nums)
+    memo = {}
+    perm = [0]
+    used = 1
+    last = 0
+    while len(perm) < n:
+        goal = best(nums, used, last, memo)
+        for nxt in range(n):
+            if used >> nxt & 1:
+                continue
+            rest = best(nums, used | (1 << nxt), nxt, memo)
+            cost = abs(last - nums[nxt]) + rest
+            if cost == goal:
+                perm.append(nxt)
+                used = used | (1 << nxt)
+                last = nxt
+                break
+    return perm
+```
+tests:
+- find_permutation([1, 0, 2])
+- find_permutation([0, 2, 1])
+- find_permutation([0, 1])
+- find_permutation([1, 0])
+- find_permutation([3, 0, 2, 1])
+- find_permutation([4, 2, 6, 0, 5, 7, 1, 3])
+fail[2]: `[0, 2, 1]` scores 1 + 0 + 1 = 2, and no ordering scores less.
+fail[3]: `[0, 1]` and `[1, 0]` both score 2, and `[0, 1]` is smaller.
+fail[4]: `[0, 1]` scores |0 − 0| + |1 − 1| = 0.
+fail[5]: `[0, 1, 2, 3]` scores 0 + 1 + 1 + 0 = 2, the least possible here.
+fail[6]: 8 numbers make 8! = 40,320 orderings, too many to try one by one. Put 0 first, remember the best finish for each (used, last), then rebuild the ordering by taking the smallest next number that keeps the best score.
+edges:
+- two numbers :: len(nums) == 2 :: find_permutation([1, 0])
+- nums in increasing order :: len(nums) > 2 and nums == sorted(nums) :: find_permutation([0, 1, 2])
+- any other order :: len(nums) > 2 and nums != sorted(nums) :: find_permutation([2, 0, 1])
+edge_count: 2
+complexity: time=O(n² × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n² × 2ⁿ); O(n × 2ⁿ)
+complexity_note: n is the length of nums.
+why_time: n × 2ⁿ (used, last) questions, each trying up to n next numbers; rebuilding the answer asks n of them again.
+why_space: The memo has up to n × 2ⁿ entries.
+hint: Turning a circle round doesn't change its score, so every ordering can be turned to start with 0, and the smallest of the best ones does start with 0.
+hint: Write `best(nums, used, last, memo)`: the smallest score to finish from `last` through the numbers not in `used` and back round to 0. When all are used, it's the last step, `abs(last - nums[0])`.
+hint: To rebuild the answer, start from `[0]`, and at each step take the smallest next number whose step cost plus `best` from there equals `best` from here.
+right: The finish only depends on which numbers are used and which is last, so 14 × 2¹⁴ questions replace 13! orderings. Taking the smallest next number that keeps the best score gives the smallest ordering in dictionary order.
+wrong: `best(nums, used, last, memo)`: `abs(last - nums[0])` when all are used; otherwise the smallest `abs(last - nums[nxt]) + best(nums, used | (1 << nxt), nxt, memo)`. Rebuild from `[0]`, taking the first nxt that matches the best each time.
+
+=== task: code hard
+title: Concatenated Divisibility
+leetcode: 3533 | Concatenated Divisibility | concatenated-divisibility
+patterns: memo
+prompt: Writing the numbers of an ordering of nums one after another makes one long number: `[3, 12, 45]` makes 31245. Write `concatenated_divisibility(nums, k)` that returns the smallest ordering in dictionary order (comparing the numbers, not their digits) whose long number is divisible by k, or `[]` if there's none.
+
+**Example 1:** `concatenated_divisibility([3, 12, 45], 5)` returns `[3, 12, 45]`: 31245 and 12345 are both divisible by 5, and `[3, 12, 45]` is smaller than `[12, 3, 45]` because 3 < 12.
+
+**Example 2:** `concatenated_divisibility([10, 5], 10)` returns `[5, 10]`: 510 is divisible by 10, and 105 isn't.
+
+**Example 3:** `concatenated_divisibility([1, 2, 3], 5)` returns `[]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 13, 1 ≤ `nums[i]` ≤ 10⁵, and 1 ≤ k ≤ 100. Remember, for each (numbers used, remainder so far), whether the rest can finish with remainder 0.
+starter:
+```python
+def concatenated_divisibility(nums, k):
+    # your code here
+    return []
+```
+solution:
+```python
+def can_finish(nums, k, shifts, used, rem, memo):
+    n = len(nums)
+    if used == (1 << n) - 1:
+        return rem == 0
+    key = (used, rem)
+    if key not in memo:
+        ok = False
+        for i in range(n):
+            if used >> i & 1:
+                continue
+            new_rem = (rem * shifts[i] + nums[i]) % k
+            if can_finish(nums, k, shifts, used | (1 << i), new_rem, memo):
+                ok = True
+                break
+        memo[key] = ok
+    return memo[key]
+
+
+def concatenated_divisibility(nums, k):
+    nums = sorted(nums)
+    n = len(nums)
+    shifts = [10 ** len(str(x)) for x in nums]
+    memo = {}
+    if not can_finish(nums, k, shifts, 0, 0, memo):
+        return []
+    result = []
+    used = 0
+    rem = 0
+    for _ in range(n):
+        for i in range(n):
+            if used >> i & 1:
+                continue
+            new_rem = (rem * shifts[i] + nums[i]) % k
+            if can_finish(nums, k, shifts, used | (1 << i), new_rem, memo):
+                result.append(nums[i])
+                used = used | (1 << i)
+                rem = new_rem
+                break
+    return result
+```
+tests:
+- concatenated_divisibility([3, 12, 45], 5)
+- concatenated_divisibility([10, 5], 10)
+- concatenated_divisibility([1, 2, 3], 5)
+- concatenated_divisibility([7], 7)
+- concatenated_divisibility([1, 1, 1], 3)
+- concatenated_divisibility([11, 2, 33, 4, 5, 66, 7, 8], 13)
+fail[2]: 105 isn't divisible by 10, but 510 is: `[5, 10]`.
+fail[3]: Every ordering ends in 1, 2 or 3, so none is divisible by 5: `[]`.
+fail[4]: 7 is divisible by 7: `[7]`.
+fail[5]: 111 = 3 × 37, so the only ordering works.
+fail[6]: 8 numbers make 40,320 orderings. Keep only the remainder: appending x to a number with remainder r gives `(r * 10 ** len(str(x)) + x) % k`.
+edges:
+- one number :: len(nums) == 1 :: concatenated_divisibility([12], 4)
+- no ordering works :: len(nums) > 1 and concatenated_divisibility(nums, k) == [] :: concatenated_divisibility([1, 3], 2)
+- some ordering works :: len(nums) > 1 and concatenated_divisibility(nums, k) != [] :: concatenated_divisibility([1, 2], 4)
+edge_count: 2
+complexity: time=O(n × k × 2ⁿ) | space=O(k × 2ⁿ)
+complexity_options: O(n × k × 2ⁿ); O(k × 2ⁿ); O(n × 2ⁿ)
+complexity_note: n is the length of nums, and k the divisor.
+why_time: Up to k × 2ⁿ (used, remainder) questions, each trying up to n next numbers.
+why_space: The memo has up to k × 2ⁿ entries.
+hint: Only the remainder matters as the long number grows: appending x to a number with remainder r gives remainder `(r * 10 ** len(str(x)) + x) % k`.
+hint: Write `can_finish(nums, k, shifts, used, rem, memo)`: `True` if the numbers not in `used` can be appended to reach remainder 0. Remember it under `(used, rem)`.
+hint: Sort nums. Then build the answer from the start: at each step, take the smallest unused number that still lets `can_finish` succeed.
+right: Different orders of the same numbers reach the same remainder, and the memo answers each (used, remainder) once: at most 100 × 2¹³ questions, instead of 13! orderings.
+wrong: Sort nums, with `shifts[i] = 10 ** len(str(nums[i]))`. `can_finish` is `rem == 0` when everything is used; otherwise it's `True` if some free i, appended with the new remainder `(rem * shifts[i] + nums[i]) % k`, can still finish. Return `[]` if it fails from the start; otherwise take the smallest number that keeps it `True` at each step.
+
+=== task: code hard
+title: Maximum Profit from Valid Topological Order in DAG
+leetcode: 3530 | Maximum Profit from Valid Topological Order in DAG | maximum-profit-from-valid-topological-order-in-dag
+patterns: prune + memo
+prompt: There are n tasks, numbered 0 to n − 1, and each edge `[u, v]` means task u must come before task v; the rules never go round in a circle. Do the tasks in an order that follows every rule: the task in position p, counting from 1, earns `score[task] * p`. Write `max_profit(n, edges, score)` that returns the highest total.
+
+**Example 1:** `max_profit(2, [[0, 1]], [2, 3])` returns `8`: only `[0, 1]` follows the rule, and 2 × 1 + 3 × 2 = 8.
+
+**Example 2:** `max_profit(3, [[0, 1], [0, 2]], [1, 6, 3])` returns `25`: `[0, 2, 1]` earns 1 × 1 + 3 × 2 + 6 × 3.
+
+**Constraints:** 1 ≤ n ≤ 22, 1 ≤ `score[i]` ≤ 10⁵, and 0 ≤ `len(edges)` ≤ n(n − 1) / 2, with no repeated edge. Keep the best total for each set of tasks done.
+starter:
+```python
+def max_profit(n, edges, score):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_profit(n, edges, score):
+    need = [0] * n
+    for u, v in edges:
+        need[v] = need[v] | (1 << u)
+    best = [-1] * (1 << n)
+    best[0] = 0
+    for mask in range(1 << n):
+        if best[mask] < 0:
+            continue
+        position = bin(mask).count("1") + 1
+        for i in range(n):
+            if mask >> i & 1:
+                continue
+            if need[i] & mask != need[i]:
+                continue
+            nxt = mask | (1 << i)
+            value = best[mask] + score[i] * position
+            if value > best[nxt]:
+                best[nxt] = value
+    return best[(1 << n) - 1]
+```
+tests:
+- max_profit(2, [[0, 1]], [2, 3])
+- max_profit(3, [[0, 1], [0, 2]], [1, 6, 3])
+- max_profit(1, [], [5])
+- max_profit(3, [], [3, 1, 2])
+- max_profit(3, [[0, 1], [1, 2]], [9, 1, 1])
+- max_profit(9, [[0, 8]], [5, 3, 8, 1, 9, 2, 7, 4, 6])
+fail[2]: Task 0 has to come first. Putting the 6 last earns the most: 1 + 6 + 18 = 25.
+fail[3]: One task, in position 1: 5.
+fail[4]: No rules, so put the biggest scores last: 1 × 1 + 2 × 2 + 3 × 3 = 14.
+fail[5]: The rules force the order 0, 1, 2: 9 + 2 + 3 = 14.
+fail[6]: 9 tasks with one rule allow 181,440 orders, far too many to try. The position of the next task is the number already done plus 1, so the best total only depends on the set done: 2⁹ masks.
+edges:
+- no rules :: len(edges) == 0 :: max_profit(3, [], [1, 2, 3])
+- one rule :: len(edges) == 1 :: max_profit(3, [[2, 0]], [1, 2, 3])
+- several rules :: len(edges) >= 2 :: max_profit(3, [[0, 1], [1, 2]], [3, 2, 1])
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the number of tasks.
+why_time: 2ⁿ masks, each trying up to n next tasks; checking a task's rules is one `&`.
+why_space: The table has one entry for each mask.
+hint: For each task, make a mask `need[v]` of the tasks that must come before it: `need[v] = need[v] | (1 << u)` for each edge.
+hint: Let `best[mask]` be the highest total for doing the tasks in mask first. The next task goes in position `bin(mask).count("1") + 1`, and task i can go next if `need[i] & mask == need[i]`.
+hint: Go through the masks in increasing order from `best[0] = 0`, with −1 for masks not reached, and return `best[(1 << n) - 1]`.
+right: The next position only depends on how many tasks are done, not their order, so one best total for each set is enough: at most 2²² × 22, about 92 million steps, where 22! is about 10²¹.
+wrong: Set `need[v]` for each edge. `best = [-1] * (1 << n)` and `best[0] = 0`. For each reached mask and each i not in it with `need[i] & mask == need[i]`, update `best[mask | (1 << i)]` with `best[mask] + score[i] * position` if that's bigger.
+
+=== task: code hard
+title: 24 Game
+leetcode: 679 | 24 Game | 24-game
+patterns: orders
+prompt: cards holds 4 numbers from 1 to 9. Write `judge_point24(cards)` that returns `True` if they can make 24 with `+`, `-`, `*`, `/` and brackets, using every card exactly once, and `False` if not. Division is ordinary division, so fractions are allowed; `-` can't stand in front of a single number, and cards can't be joined into a longer number.
+
+**Example 1:** `judge_point24([4, 1, 8, 7])` returns `True`: (8 − 4) × (7 − 1) = 24.
+
+**Example 2:** `judge_point24([1, 2, 1, 2])` returns `False`.
+
+**Constraints:** There are 4 cards, each from 1 to 9. Try every way to pick two numbers, combine them, and carry on with the result.
+starter:
+```python
+def judge_point24(cards):
+    # your code here
+    return False
+```
+solution:
+```python
+def solve(nums):
+    if len(nums) == 1:
+        return abs(nums[0] - 24) < 0.000001
+    for i in range(len(nums)):
+        for j in range(len(nums)):
+            if i == j:
+                continue
+            rest = []
+            for k in range(len(nums)):
+                if k != i and k != j:
+                    rest.append(nums[k])
+            a = nums[i]
+            b = nums[j]
+            options = [a + b, a - b, a * b]
+            if abs(b) > 0.000001:
+                options.append(a / b)
+            for value in options:
+                if solve(rest + [value]):
+                    return True
+    return False
+
+
+def judge_point24(cards):
+    return solve([float(c) for c in cards])
+```
+tests:
+- judge_point24([4, 1, 8, 7])
+- judge_point24([1, 2, 1, 2])
+- judge_point24([6, 6, 6, 6])
+- judge_point24([3, 3, 8, 8])
+- judge_point24([1, 5, 5, 5])
+- judge_point24([1, 1, 2, 3])
+fail[2]: Nothing makes 24 from 1, 2, 1 and 2; 12 + 12 would need cards joined.
+fail[3]: 6 + 6 + 6 + 6 = 24.
+fail[4]: 8 / (3 − 8 / 3) = 24, with a fraction along the way. Compare with 24 allowing a tiny error, like `abs(x - 24) < 0.000001`, because divisions aren't exact.
+fail[5]: 5 × (5 − 1 / 5) = 24.
+fail[6]: Nothing works for 1, 1, 2 and 3, so every pick and every operation has to be tried before answering `False`.
+edges:
+- every card the same :: len(set(cards)) == 1 :: judge_point24([3, 3, 3, 3])
+- some cards the same :: 1 < len(set(cards)) < 4 :: judge_point24([2, 2, 3, 4])
+- four different cards :: len(set(cards)) == 4 :: judge_point24([1, 2, 3, 4])
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: There are always exactly 4 cards.
+why_time: 4 cards give 12 ordered pairs × 4 operations, then 6 × 4, then 2 × 4: at most 9,216 final values, the same for every input.
+why_space: Lists of at most 4 numbers, and at most 4 calls waiting.
+hint: Write `solve(nums)` on a list of floats. With one number left, return `abs(nums[0] - 24) < 0.000001`.
+hint: Otherwise pick every ordered pair i ≠ j, so that both a − b and b − a, and both a / b and b / a, get tried. Make a + b, a − b, a × b, and a / b if b isn't 0.
+hint: Call `solve` on the other numbers plus each result, and return `True` as soon as one works.
+right: Combining two numbers at a time tries every order and every way to bracket them: at most 9,216 ways for 4 cards. With n cards it would grow faster than n!, so it only works because n is 4.
+wrong: `solve(nums)`: with one number, compare it with 24; otherwise for each ordered pair (i, j), try `solve(rest + [value])` for value in a + b, a − b, a × b and a / b (when b isn't 0), and return `True` if any works.
