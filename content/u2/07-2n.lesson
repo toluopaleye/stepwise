@@ -15,7 +15,7 @@ print(count)
 ```output
 8
 ```
-A choice of items from a list, in any amount from none to all, is called a **subset** of the list. n items have 2 × 2 × ... × 2 = **2ⁿ** subsets ("2 to the power n"): one factor of 2 for every item. Code whose steps grow like 2ⁿ is **O(2ⁿ)**, or **exponential time**.
+A choice of items from a list, in any amount from none to all, is called a **subset** of the list. n items have **2ⁿ** subsets ("2 to the power n", n 2s multiplied together): one factor of 2 for every item. Code whose steps grow like 2ⁿ is **O(2ⁿ)**, or **exponential time**.
 
 ### Listing every subset
 To list the subsets, start with the empty subset. Then, for each item, keep every subset you already have and add a copy of it with the new item:
@@ -51,6 +51,72 @@ for s in subsets:
 | tomato | 8 |
 
 Every item doubles the list. Animation 1 shows it happening.
+
+### Subsets as binary numbers
+Number the items from 0. A subset can then be written as a whole number whose bits say which items are in it: bit i is 1 if item i is in, and 0 if it's out. A number used like this is called a **mask**. With 3 items, the 8 subsets are the numbers 0 to 7, `000` to `111` in binary.
+
+Python has operators that work on the bits of whole numbers:
+```python
+print(1 << 3, 13 >> 2)
+print(12 & 10, 12 | 10, 12 ^ 10)
+print(bin(13), bin(13).count("1"))
+```
+```output
+8 3
+8 14 6
+0b1101 3
+```
+
+- `1 << i` moves 1 left by i places, giving 2ⁱ: the number with only bit i set. `1 << 3` is `1000` in binary, which is 8, and `1 << n` is 2ⁿ.
+- `x >> i` moves x right by i places, and its last i bits drop off: `13 >> 2` turns `1101` into `11`, which is 3.
+- `x & y` (AND) keeps the bits that are 1 in both: in `12 & 10`, `1100` and `1010` share only `1000`, which is 8.
+- `x | y` (OR) keeps the bits that are 1 in either: `12 | 10` is `1110`, which is 14.
+- `x ^ y` (XOR, "exclusive or") keeps the bits that are 1 in exactly one of them: `12 ^ 10` is `0110`, which is 6.
+- `bin(x)` writes x in binary as a string that starts with `0b`, so `bin(x).count("1")` counts its 1 bits.
+
+This lists every subset with a mask:
+```python
+items = ["ham", "cheese", "tomato"]
+n = len(items)
+for mask in range(1 << n):
+    chosen = []
+    for i in range(n):
+        if mask >> i & 1:
+            chosen.append(items[i])
+    print(mask, bin(mask), chosen)
+```
+```output
+0 0b0 []
+1 0b1 ['ham']
+2 0b10 ['cheese']
+3 0b11 ['ham', 'cheese']
+4 0b100 ['tomato']
+5 0b101 ['ham', 'tomato']
+6 0b110 ['cheese', 'tomato']
+7 0b111 ['ham', 'cheese', 'tomato']
+```
+`range(1 << n)` goes through all 2ⁿ masks, from 0 to 2ⁿ − 1. `mask >> i & 1` moves bit i to the end and keeps only that bit: 1 if item i is in. Python works out `>>` before `&`, so this needs no brackets. To add item i to a subset, use `mask | (1 << i)`: it sets bit i and leaves the others alone. Each of the 2ⁿ masks checks n bits, so the loop is O(n × 2ⁿ).
+
+### More than two choices
+Some problems have more than two options for each item. A dessert topping can be left off, added once or added twice: 3 choices. With 4 toppings that's 3 × 3 × 3 × 3 = 3⁴ = 81 ways. In general, n positions with c choices each give **cⁿ** combinations: a PIN of 4 digits has 10⁴ = 10,000. Trying them all is **O(cⁿ)**, and the bigger c is, the faster it grows: 4ⁿ is the same as 2²ⁿ, like 2ⁿ for twice as many items.
+
+The doubling method works here too, but now every combination so far grows into c new ones. These are all the codes of 2 letters, each a, b or c:
+```python
+codes = [""]
+for position in range(2):
+    longer = []
+    for code in codes:
+        for letter in "abc":
+            longer.append(code + letter)
+    codes = longer
+print(len(codes))
+print(" ".join(codes))
+```
+```output
+9
+aa ab ac ba bb bc ca cb cc
+```
+Each round multiplies the list by 3: 1, then 3, then 9. Unlike subsets, every code uses every position, so each round replaces the old list instead of adding to it.
 
 ### One more item, twice the work
 In O(n) code, one more item adds one step. In O(2ⁿ) code, one more item **doubles** the steps. At 100 million steps a second:
@@ -131,6 +197,23 @@ print(fib(10), fib(80))
 ```
 Now each value from 2 to n is worked out once, and every later request is an O(1) dictionary lookup: about 2n calls, so **O(n)**. `fib(80)` is instant, where the plain version would make about 10¹⁷ calls. A loop that keeps the last two values, `a, b = b, a + b`, is also O(n).
 
+The rule for any memo: the time is the number of **different** questions times the work for each one. Here there are n questions, each one addition.
+
+A memo can also be a list, filled in by a loop from the smallest question up, so that every answer it needs is ready:
+```python
+def fib(n):
+    fibs = [0, 1]
+    for i in range(2, n + 1):
+        fibs.append(fibs[i - 1] + fibs[i - 2])
+    return fibs[n]
+
+print(fib(10), len(str(fib(5000))))
+```
+```output
+55 1045
+```
+That's still O(n), and it matters for a big n: the recursive version has n calls waiting at once, and Python stops at about 1,000 with a RecursionError. The loop finds `fib(5000)`, a number with 1,045 digits, without any waiting calls.
+
 ### Take it or leave it
 Many brute-force searches try every subset with recursion. For each item, make **two** calls: one where you take the item and one where you leave it. This counts the subsets that add up to a target:
 ```python
@@ -139,7 +222,9 @@ def count_ways(nums, target):
         return 1 if target == 0 else 0
     first = nums[0]
     rest = nums[1:]
-    return count_ways(rest, target - first) + count_ways(rest, target)
+    take = count_ways(rest, target - first)
+    leave = count_ways(rest, target)
+    return take + leave
 
 print(count_ways([1, 2, 3, 4], 5))
 ```
@@ -148,10 +233,13 @@ print(count_ways([1, 2, 3, 4], 5))
 ```
 The two subsets are 1 + 4 and 2 + 3. Each call on a list of n items makes two calls on n − 1 items, so the calls double with every item: 2ⁿ⁺¹ − 1 of them in all, and 2ⁿ of them reach the empty list, one for every take-or-leave choice. That's O(2ⁿ).
 
+When the numbers are all positive, a branch whose target has gone below 0 can stop straight away: no more numbers can bring it back. Stopping early like this often skips most of the calls, but in the worst case every branch still runs, so it stays O(2ⁿ). With c choices for each item instead of two (putting it in one of c boxes, say), each call makes c calls, and the calls grow like cⁿ.
+
 ### Recognising O(2ⁿ) code
 Code is exponential when:
 
-- it tries every subset, or every yes/no combination of n choices,
+- it tries every subset, or every yes/no combination of n choices: a doubling list, or a loop over every mask in `range(1 << n)`,
+- it tries every combination of c choices for n positions: that's O(cⁿ),
 - or a function calls itself **twice** (or more) on a problem only a little smaller, like `n - 1` or `n - 2`, without remembering answers.
 
 It is **not** exponential when:
@@ -160,13 +248,147 @@ It is **not** exponential when:
 - it calls itself on **halves** (`n // 2`), like binary search or merge sort: the problem shrinks so fast that the steps stay O(log n) or O(n log n),
 - it remembers answers it has already worked out (memoization), so each value is computed once.
 
+### Solving problems in exponential time
+The tasks in this lesson try every subset, every combination of choices or every way to build something, so their inputs are small: at most 15 or 20 items, where 2ⁿ is about a million steps. Small limits like these are a clue that an exponential solution is expected. Five patterns cover the tasks, and a clue in the question tells you which:
+
+| Pattern | Clue in the question | Steps |
+| --- | --- | --- |
+| Listing every subset | "every subset", "any of the items", the sums or totals of chosen items | O(2ⁿ) |
+| Subsets as binary numbers | every subset needs a check of its items, or a number of its own | O(n × 2ⁿ) |
+| More than two choices | each item has a few options: "0, 1 or 2 times", `+`, `-` or `*` between digits, "which of k workers" | O(cⁿ) |
+| Take it or leave it | a yes-or-no decision for each item, with a rule that can stop a branch early | O(2ⁿ) |
+| Remembering answers: O(n) | the same smaller question comes up again and again: "how many ways", "the cheapest way" | the number of different questions × the work for each |
+
+### Combining patterns
+Harder tasks need two patterns together:
+
+- **A memo for a branching recursion** (branch + memo). A function that calls itself two or more times repeats work when different branches reach the same smaller question. Store each answer under the arguments that decide it, like `(i, total)`, and the steps fall to the number of different questions.
+- **A memo for every subset** (masks + memo). When the best answer for a group of items depends only on which items are used, not on the order they were used in, keep one answer for each subset: a list with 2ⁿ entries, one for each mask.
+- **Building choice by choice** (choices + branch). A recursive function builds the answer one position at a time, trying each choice for the next position. It checks the rules as it goes, so a branch that breaks one stops at once.
+
+A memo for a branching recursion: how many paths go from one corner of a grid to the opposite one, moving one square at a time, only down or right? `paths(r, c, memo)` counts them when r moves down and c moves right are left.
+```python
+def paths(r, c, memo):
+    if r == 0 or c == 0:
+        return 1
+    if (r, c) not in memo:
+        down = paths(r - 1, c, memo)
+        right = paths(r, c - 1, memo)
+        memo[(r, c)] = down + right
+    return memo[(r, c)]
+
+print(paths(2, 2, {}), paths(16, 16, {}))
+```
+```output
+6 601080390
+```
+With only down moves or only right moves left, there's one path. Otherwise the first move is down or right, and the two counts add up. Without the memo, `paths(16, 16)` would make over 1.2 billion calls. But there are only 17 × 17 different questions, with r and c from 0 to 16, so with the memo it's O(r × c).
+
+A memo for every subset: people pair up, two at a time, and only friends can pair. `friends[i]` lists the friends of person i. In how many ways can everyone be paired?
+```python
+def pairings(friends):
+    n = len(friends)
+    ways = [0] * (1 << n)
+    ways[0] = 1
+    for mask in range(1 << n):
+        a = 0
+        while a < n and mask >> a & 1:
+            a += 1
+        if a == n or ways[mask] == 0:
+            continue
+        for b in friends[a]:
+            if not mask >> b & 1:
+                both = (1 << a) | (1 << b)
+                ways[mask | both] += ways[mask]
+    return ways[(1 << n) - 1]
+
+friends = [[1, 2, 3], [0, 2], [0, 1, 3], [0, 2]]
+print(pairings(friends))
+```
+```output
+2
+```
+`ways[mask]` counts the ways to pair up the people in mask. Each turn takes a, the first person not in mask, and pairs them with each friend b who isn't in it either: the new mask has both their bits set, and gets all of mask's ways. Here the two answers are 0 with 1 and 2 with 3, or 0 with 3 and 1 with 2. Pairing people always makes a bigger mask, so a mask's count is complete before the loop reaches it. That's 2ⁿ masks with up to n friends each: O(n × 2ⁿ).
+
+Building choice by choice: every code of 3 digits, each from 1 to 4, whose digits add up to 6.
+```python
+def codes(n, left, current, result):
+    if len(current) == n:
+        if left == 0:
+            result.append(current)
+        return
+    for d in range(1, 5):
+        if d <= left:
+            nxt = current + str(d)
+            codes(n, left - d, nxt, result)
+
+result = []
+codes(3, 6, "", result)
+print(len(result))
+print(" ".join(result))
+```
+```output
+10
+114 123 132 141 213 222 231 312 321 411
+```
+`left` is how much the digits still have to add up to. Each call tries the 4 digits for the next position, but only those no bigger than `left`, so a branch stops as soon as its digits add up to too much: after 4 and 2, no digit is left to try. The calls drop from 85 to 38. The worst case is still O(4ⁿ), when no branch can stop early.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| nothing to choose | n = 0, or a target of 0 | the empty choice still counts: `[""]`, `[[]]` or 1 way, not 0 |
+| one item | `[5]` | a loop over pairs that never runs |
+| no choice works | a target bigger than everything added up | returning `None`, or the wrong default |
+| equal items | `[2, 2, 2]` | subsets with the same numbers still count separately, by position |
+| zeros or negative numbers | `[0, 0, 1]` or `[-1, 1]` | stopping when a total passes the target only works when every number is positive |
+| the biggest input | n = 20 for subsets, or n = 45 for a memo | 2²⁰ is about a million steps, but 1.6⁴⁵ calls is over a billion |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Work it out from the code:
+
+1. A doubling list makes 2ⁿ subsets, sums or strings. Copying a subset or a string of up to n items costs n, so building all of them is O(n × 2ⁿ); a single number for each, like a sum, makes it O(2ⁿ).
+2. A loop over every mask, `range(1 << n)`, makes 2ⁿ turns. Checking the n bits of each mask makes it O(n × 2ⁿ), and checking every pair of items in each makes it O(n² × 2ⁿ).
+3. A recursion with c calls for each of n positions makes up to cⁿ calls: O(cⁿ), or O(2ⁿ) for take it or leave it. Stopping branches early saves time, but not in the worst case.
+4. Two calls on n − 1 and n − 2 make about 1.6ⁿ calls. That grows more slowly than 2ⁿ, so O(2ⁿ) is a safe upper limit, and it's the usual way to write it.
+5. With a memo, multiply the number of different questions by the work for each one: n questions with O(1) work is O(n), a memo keyed by `(i, total)` has up to n × S questions for totals up to S, and a list with an entry for every mask has 2ⁿ.
+
+**Space** is the **extra** memory the code keeps as the input grows:
+
+| The code keeps | Space |
+| --- | --- |
+| a list of all 2ⁿ sums | O(2ⁿ) |
+| a list of all 2ⁿ subsets or strings of up to n items | O(n × 2ⁿ) |
+| a list with an entry for every mask | O(2ⁿ) |
+| a recursion n calls deep | O(n): each call waits for the ones it made |
+| a memo | one entry for each different question |
+| the answer list | count it too: 2ⁿ − 1 moves, or every valid string |
+
+Python stops a recursion about 1,000 calls deep, so when n is in the thousands, fill the memo with a loop instead.
+
 === keypoints
 - O(2ⁿ), exponential time: every extra item **doubles** the steps.
-- n items have 2ⁿ subsets, because each item is either in or out.
+- n items have 2ⁿ subsets, because each item is either in or out. With c choices for each of n positions, there are cⁿ combinations.
 - 2¹⁰ ≈ 1,000, 2²⁰ ≈ 1,000,000, 2³⁰ ≈ a billion and 2⁴⁰ ≈ a trillion: 40 items is already far too many.
-- 2ⁿ overtakes n², n³ and every other power of n: exponential code only works for small n.
+- 2ⁿ overtakes n², n³ and every other power of n: exponential code only works for small n, about 20 to 25 items.
+- A subset can be a mask, a number whose bit i is 1 when item i is in. `range(1 << n)` goes through all 2ⁿ masks, `mask >> i & 1` checks item i, and `mask | (1 << i)` adds it.
 - A function that calls itself twice on `n - 1` and `n - 2` (plain recursive `fib`) redoes the same work again and again, so its calls grow exponentially.
-- Memoization (storing answers in a dictionary) or a loop brings Fibonacci down to O(n).
+- Memoization (storing answers in a dictionary) or a loop brings Fibonacci down to O(n). With any memo, the time is the number of different questions times the work for each.
+- Combinations: a memo for a branching recursion; a memo for every subset; and building choice by choice.
+
+=== patterns
+- choices | More than two choices
+- subsets | Listing every subset
+- masks | Subsets as binary numbers
+- branch | Take it or leave it
+- memo | Remembering answers: O(n)
+combos:
+- branch + memo | A memo for a branching recursion
+- masks + memo | A memo for every subset
+- choices + branch | Building choice by choice
 
 === example: How fast the subsets grow
 intro: The doubling method, printing how many subsets there are after each item.
@@ -232,770 +454,1928 @@ view: chart fns=n**2,n**3,2**n labels=n²,n³,2ⁿ n=1..20 step=1
 intro: n², n³ and 2ⁿ side by side. For small n, 2ⁿ looks harmless, but it doubles with every step and soon leaves the others far behind.
 1: At n = {n}: n² is {n²}, n³ is {n³}, and 2ⁿ is {2ⁿ}.
 
-=== task: predict easy
-title: Five toppings
-code:
-```python
-count = 1
-for topping in ["cheese", "olives", "peppers", "onion", "basil"]:
-    count = count * 2
-print(count)
-```
-wrong[10]: That's 5 × 2. The count is multiplied by 2 for each topping: 2 × 2 × 2 × 2 × 2.
-wrong[25]: That's 5 × 5. Each of the 5 toppings doubles the count: 2⁵.
-wrong[16]: There are 5 toppings, so the count doubles 5 times, not 4: 1 → 2 → 4 → 8 → 16 → 32.
-hint: Start at 1 and double once per topping.
-hint: 2 × 2 × 2 × 2 × 2.
-right: Each topping is either on or off, so every topping doubles the number of pizzas: 2⁵ = 32.
-wrong: The count doubles five times: 1 → 2 → 4 → 8 → 16 → 32.
-
-=== task: mcq easy
-title: One more item
-prompt: An O(2ⁿ) function takes 1 second for a list of 30 items. About how long does it take for 31 items?
-- About 1 second :: One item more seems small, but in O(2ⁿ) code every extra item doubles the work.
-* About 2 seconds :: Right. 2³¹ = 2 × 2³⁰: one more item doubles the steps.
-- About 4 seconds :: That's two doublings, for 32 items.
-- About 30 seconds :: The time isn't multiplied by n. It's multiplied by 2 for each extra item.
-hint: How does 2³¹ compare with 2³⁰?
-hint: 2³¹ = 2 × 2³⁰.
-right: Exponential time doubles with every extra item: 31 items take about 2 seconds, 40 items about 1,000 seconds, and 50 items about 12 days.
-wrong: One more item doubles O(2ⁿ) steps, so 31 items take about 2 seconds.
-
-=== task: fill easy
-title: Add the item to each copy
-prompt: Fill in the blank so that the program builds every subset of the two items:
-
-```output
-[[], ['x'], ['y'], ['x', 'y']]
-```
-code:
-```python
-items = ["x", "y"]
-subsets = [[]]
-for item in items:
-    new = []
-    for s in subsets:
-        new.append(s + ??)
-    subsets = subsets + new
-print(subsets)
-```
-answer: [item]
-wrong[item]: `s` is a list and `item` is a string, and `+` can't join them: `TypeError: can only concatenate list (not "str") to list`. Put the item in a list: `[item]`.
-wrong[[s]]: That would nest whole subsets inside each other, like `[[]]`, instead of adding the new item.
-hint: `s + ...` must give a new list: the old subset plus the new item.
-hint: Wrap the item in brackets so `+` can join two lists.
-right: `s + [item]` makes a copy of the subset with the item added, so each item doubles the list: 1, then 2, then 4 subsets.
-wrong: `s + [item]`. Adding a list to a list joins them, so `[] + ['x']` is `['x']` and `['x'] + ['y']` is `['x', 'y']`.
-
 === task: code easy
-title: Every subset
-prompt: Write a function `all_subsets(items)` that returns a list of every subset of `items` (each one a list), using the doubling method: start with `[[]]`, and for each item, add a copy of every subset so far with the item appended.
+title: Climbing Stairs
+leetcode: 70 | Climbing Stairs | climbing-stairs
+patterns: branch + memo
+prompt: A staircase has n steps, and each move climbs 1 step or 2. Write `climb_stairs(n)` that returns how many different ways there are to climb to the top.
 
-For example, `all_subsets([1, 2])` returns `[[], [1], [2], [1, 2]]`.
+**Example 1:** `climb_stairs(2)` returns `2`: 1 + 1, or 2.
+
+**Example 2:** `climb_stairs(3)` returns `3`: 1 + 1 + 1, 1 + 2, or 2 + 1.
+
+**Constraints:** 1 ≤ n ≤ 45. Aim for O(n) time: the count calls itself twice, once for each kind of last move, so remember the answers.
 starter:
 ```python
-def all_subsets(items):
-    subsets = [[]]
+def climb_stairs(n):
     # your code here
-    return subsets
+    return 0
 ```
 solution:
 ```python
-def all_subsets(items):
-    subsets = [[]]
-    for item in items:
-        new = []
-        for s in subsets:
-            new.append(s + [item])
-        subsets = subsets + new
-    return subsets
-```
-tests:
-- all_subsets([1, 2])
-- all_subsets([])
-- all_subsets(["a"])
-- all_subsets(["a", "b", "c"])
-- len(all_subsets([1, 2, 3, 4, 5]))
-fail[1]: Keep the old subsets and add a copy of each with the new item: `[[], [1]]`, then `[[], [1], [2], [1, 2]]`.
-fail[2]: An empty list still has one subset: the empty one. The answer is `[[]]`.
-fail[5]: 5 items make 2⁵ = 32 subsets. Make sure every item doubles the list.
-error[TypeError]: Add an item to a subset with `s + [item]`: a list plus a list.
-hint: For each item, make a list `new` of copies: `s + [item]` for every `s` in `subsets`.
-hint: Then `subsets = subsets + new`.
-hint: Return `subsets` after the loop.
-right: Each item doubles the list, so n items make 2ⁿ subsets. Writing them out takes at least 2ⁿ steps, so no method can be faster than O(2ⁿ); copying their items makes it about n × 2ⁿ.
-wrong: `for item in items:`, build `new` from `s + [item]` for every `s` in `subsets`, then `subsets = subsets + new`. Return `subsets`.
-
-=== task: predict easy
-title: Counting the calls
-code:
-```python
-def calls(n):
-    if n < 2:
+def ways(n, memo):
+    if n <= 1:
         return 1
-    return 1 + calls(n - 1) + calls(n - 2)
-
-print(calls(2), calls(3), calls(4))
-```
-wrong[2 3 4]: Each call that isn't a base case makes two more calls, so the counts grow faster than n.
-wrong[1 2 3]: For n = 2, there's the call itself plus calls(1) and calls(0): 1 + 1 + 1 = 3.
-wrong[3 5 8]: calls(4) = 1 + calls(3) + calls(2) = 1 + 5 + 3 = 9. Don't forget the 1 for the call itself.
-hint: calls(0) and calls(1) are 1.
-hint: calls(2) = 1 + calls(1) + calls(0), and calls(3) = 1 + calls(2) + calls(1).
-right: calls(2) = 3, calls(3) = 1 + 3 + 1 = 5, calls(4) = 1 + 5 + 3 = 9. Each step of n adds more calls than the step before.
-wrong: Build them up: calls(2) = 1 + 1 + 1 = 3, calls(3) = 1 + 3 + 1 = 5, calls(4) = 1 + 5 + 3 = 9.
-
-=== task: multi easy
-title: Which are exponential?
-prompt: Choose **every** piece of code that is O(2ⁿ) for an input of size n.
-* Listing every subset of a list of n items :: Right. There are 2ⁿ subsets to list.
-* The plain recursive `fib(n)`, which returns `fib(n - 1) + fib(n - 2)` :: Right. The calls grow about 1.6 times with each step of n: exponential.
-* Trying every yes/no answer to n questions :: Right. Two answers per question: 2ⁿ combinations.
-- Sorting a list of n items :: That's O(n log n).
-- Two nested loops over n items :: That's O(n²), which grows far more slowly than 2ⁿ.
-- Halving n until it reaches 1 :: That's O(log n).
-hint: Exponential code doubles its work for every extra item.
-hint: Three of them are O(2ⁿ).
-right: Subsets and yes/no combinations double with each extra item, and plain recursive Fibonacci's calls grow about 1.6 times: all exponential. Sorting, nested loops and halving all grow like a power of n or slower.
-wrong: The exponential ones try every combination or call themselves twice on slightly smaller problems: subsets, plain `fib`, and yes/no combinations.
-
-=== task: parsons easy
-title: The call counter
-prompt: Arrange the lines so that `calls(n)` counts the calls the plain recursive Fibonacci makes (itself included), and the program prints:
-
-```output
-9
-```
-
-Not every line is needed.
-lines:
-```python
-def calls(n):
-    if n < 2:
-        return 1
-    return 1 + calls(n - 1) + calls(n - 2)
-
-print(calls(4))
-```
-distractors:
-```python
-    return calls(n - 1) + calls(n - 2)
-        return 0
-```
-hint: A base case, n < 2, is one call.
-hint: Any other call is 1, plus the calls of `calls(n - 1)` and `calls(n - 2)`.
-right: calls(4) = 1 + calls(3) + calls(2) = 1 + 5 + 3 = 9. The counts grow like the Fibonacci numbers themselves: exponentially.
-wrong: `if n < 2: return 1`, then `return 1 + calls(n - 1) + calls(n - 2)`. Without the `1 +`, the call itself wouldn't be counted.
-
-=== task: cells easy
-title: Powers of 2
-prompt: Fill in 2ⁿ for each n.
-labels: n = 1 | n = 3 | n = 5 | n = 8
-answer: 2 | 8 | 32 | 256
-wrong[2 | 6 | 10 | 16]: That's 2 × n. 2ⁿ multiplies by 2 n times: 2 × 2 × 2 for n = 3.
-wrong[1 | 9 | 25 | 64]: That's n × n. 2ⁿ is 2 multiplied by itself n times.
-hint: 2³ = 2 × 2 × 2.
-hint: Each step of n doubles the value: 2, 4, 8, 16, 32, ...
-right: 2, 8, 32 and 256: each extra item doubles the value. 2¹⁰ = 1,024.
-wrong: 2¹ = 2, 2³ = 8, 2⁵ = 32 and 2⁸ = 256.
-
-=== task: mcq easy
-title: Forty items
-prompt: About how many subsets does a list of 40 items have?
-- About 1,600 :: That's 40², n². Subsets double with every item: 2⁴⁰.
-- About 1,000,000 :: That's 2²⁰, for 20 items. 20 more items multiply it by another million.
-* About 1,000,000,000,000 :: Right. 2⁴⁰ = (2¹⁰)⁴, about 1,000 × 1,000 × 1,000 × 1,000: a trillion.
-- About 80 :: That's 2 × 40. Each item doubles the count, so the 2s multiply.
-hint: 2¹⁰ is about 1,000.
-hint: 2⁴⁰ = 2¹⁰ × 2¹⁰ × 2¹⁰ × 2¹⁰.
-right: A trillion subsets: at 100 million a second, listing them would take about 3 hours. That's why 40 items is already too many for exponential code.
-wrong: 2⁴⁰ = (2¹⁰)⁴ ≈ 1,000⁴ = 1,000,000,000,000.
-
-=== task: predict easy
-title: No items at all
-code:
-```python
-def count_subsets(items):
-    count = 1
-    for item in items:
-        count = count * 2
-    return count
-
-print(count_subsets([]), count_subsets(["a", "b", "c", "d"]))
-```
-wrong[0 16]: The empty list has one subset: the empty one. The loop doesn't run, so the count stays 1.
-wrong[1 8]: Four items double the count four times: 2 × 2 × 2 × 2 = 16.
-wrong[0 8]: The count starts at 1 (the empty subset), and 4 items double it 4 times: 16.
-hint: What does the function return when the loop never runs?
-hint: 2⁴.
-right: 2⁰ = 1 (only the empty subset) and 2⁴ = 16. The formula 2ⁿ works for n = 0 too.
-wrong: With no items the loop never runs, so the answer is 1. With 4 items: 1 → 2 → 4 → 8 → 16.
-
-=== task: code medium
-title: Fibonacci in O(n)
-prompt: Write `fib_fast(n)` that returns the n-th Fibonacci number (0, 1, 1, 2, 3, 5, 8, ...) in O(n) with a loop. Keep the last two numbers in `a` and `b`, and move them along one step per turn with `a, b = b, a + b`.
-
-For example, `fib_fast(10)` returns 55.
-starter:
-```python
-def fib_fast(n):
-    a = 0
-    b = 1
-    # your code here
-    return a
-```
-solution:
-```python
-def fib_fast(n):
-    a = 0
-    b = 1
-    for i in range(n):
-        a, b = b, a + b
-    return a
-```
-tests:
-- fib_fast(0)
-- fib_fast(1)
-- fib_fast(2)
-- fib_fast(10)
-- fib_fast(15)
-speed: setup=m = n | call=fib_fast(m) | target=O(n)
-slow:
-```python
-def fib_fast(n):
-    if n < 2:
-        return n
-    return fib_fast(n - 1) + fib_fast(n - 2)
-```
-fail[2]: fib(1) is 1, so the loop must run exactly once for n = 1: `for i in range(n)`.
-fail[4]: The numbers go 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55. After 10 turns, `a` is 55.
-error[NameError]: Use `a` and `b` from the starter.
-hint: Loop n times with `for i in range(n):`.
-hint: Each turn: `a, b = b, a + b`.
-hint: Return `a` after the loop.
-right: n turns of O(1) work: O(n). The plain recursive version would make 1,973 calls for n = 15 and over 300 million for n = 40.
-wrong: `for i in range(n): a, b = b, a + b`, then return `a`. Updating both at once keeps the old `a` for the sum.
-
-=== task: code medium
-title: What fits the budget?
-prompt: Write a recursive function `count_at_most(prices, budget)` that counts the subsets of `prices` (the empty one included) whose total is at most `budget`. Use take it or leave it: if the budget has gone below 0, return 0; if no prices are left, return 1. Otherwise add the count when you **take** the first price (budget minus it, rest of the list) and the count when you **leave** it (same budget, rest of the list).
-
-For example, `count_at_most([2, 3], 4)` returns 3: nothing, 2 alone, and 3 alone. Both together cost 5.
-starter:
-```python
-def count_at_most(prices, budget):
-    if budget < 0:
-        return 0
-    # your code here
-    return 1
-```
-solution:
-```python
-def count_at_most(prices, budget):
-    if budget < 0:
-        return 0
-    if len(prices) == 0:
-        return 1
-    first = prices[0]
-    rest = prices[1:]
-    return count_at_most(rest, budget - first) + count_at_most(rest, budget)
-```
-tests:
-- count_at_most([2, 3], 4)
-- count_at_most([], 0)
-- count_at_most([5], 4)
-- count_at_most([1, 1, 1], 2)
-- count_at_most([4, 6, 1], 10)
-fail[1]: Nothing (0), 2 and 3 fit in 4, but 2 + 3 = 5 doesn't: 3 subsets.
-fail[3]: 5 is more than 4, so only the empty subset fits: 1.
-fail[4]: The empty subset, each 1 on its own (3 ways) and each pair of 1s (3 ways) fit: 7. All three cost 3.
-error[RecursionError]: Each call must pass a shorter list, `prices[1:]`, so it reaches the empty list.
-hint: When `prices` is empty, return 1: the subset chosen so far fits.
-hint: Take: `count_at_most(prices[1:], budget - prices[0])`. Leave: `count_at_most(prices[1:], budget)`.
-hint: Return the sum of take and leave.
-right: Each call makes two calls on a list one shorter, so the calls double with every price: O(2ⁿ). Fine for 20 prices, hopeless for 60.
-wrong: Base cases: budget below 0 gives 0, no prices left gives 1. Otherwise return take (budget minus the first price) plus leave (same budget), both on `prices[1:]`.
-
-=== task: predict medium
-title: Every sum of 1, 2 and 4
-code:
-```python
-subsets = [[]]
-for item in [1, 2, 4]:
-    subsets = subsets + [s + [item] for s in subsets]
-print(sorted(sum(s) for s in subsets))
-```
-wrong[[1, 2, 3, 4, 5, 6, 7]]: The empty subset is in the list too, and its sum is 0.
-wrong[[0, 1, 2, 4, 7]]: Pairs count too: 1 + 2 = 3, 1 + 4 = 5 and 2 + 4 = 6.
-wrong[[0, 1, 2, 3, 4, 5, 6, 7, 7]]: There are 2³ = 8 subsets, so there are 8 sums, and each total from 0 to 7 appears once.
-hint: List the 8 subsets: [], [1], [2], [1, 2], [4], [1, 4], [2, 4], [1, 2, 4].
-hint: Add up each one, then sort.
-right: The 8 subsets add up to 0, 1, 2, 3, 4, 5, 6 and 7: each total exactly once. 3 items, 2³ = 8 subsets.
-wrong: The sums of [], [1], [2], [1, 2], [4], [1, 4], [2, 4], [1, 2, 4] are 0, 1, 2, 3, 4, 5, 6, 7.
-
-=== task: fill medium
-title: The second call
-prompt: Fill in the blank so that `calls(n)` counts the calls of the plain recursive Fibonacci, which calls itself on `n - 1` and `n - 2`, and the program prints:
-
-```output
-15
-```
-code:
-```python
-def calls(n):
-    if n < 2:
-        return 1
-    return 1 + calls(n - 1) + calls(n - ??)
-
-print(calls(5))
-```
-answer: 2
-wrong[1]: Calling `calls(n - 1)` twice doubles the count at every step: calls(5) would be 31. Fibonacci's second call is on `n - 2`.
-wrong[3]: Fibonacci adds the two numbers before n, `fib(n - 1)` and `fib(n - 2)`. With `n - 3`, calls(5) would be 11.
-hint: Fibonacci adds the two numbers right before n.
-hint: Those are n - 1 and n - 2.
-right: calls(5) = 1 + calls(4) + calls(3) = 1 + 9 + 5 = 15. The counts 1, 1, 3, 5, 9, 15, 25 grow about 1.6 times per step: exponential.
-wrong: `calls(n - 2)`. Then calls(2) = 3, calls(3) = 5, calls(4) = 9 and calls(5) = 15.
-
-=== task: cells medium
-title: The same work, again
-prompt: The plain recursive `fib(5)` calls `fib(4)` and `fib(3)`, and those make more calls. How many times is each value worked out inside `fib(5)`?
-code:
-```python
-def fib(n):
-    if n < 2:
-        return n
-    return fib(n - 1) + fib(n - 2)
-
-print(fib(5))
-```
-labels: fib(4) | fib(3) | fib(2) | fib(1)
-answer: 1 | 2 | 3 | 5
-wrong[1 | 1 | 1 | 1]: Each value is worked out again every time some call asks for it. `fib(3)` is asked for by `fib(5)` and by `fib(4)`.
-wrong[1 | 2 | 4 | 8]: Not every call branches the same way: `fib(1)` and `fib(0)` stop at once. `fib(2)` is worked out 3 times, by `fib(4)` once and by each of the two `fib(3)`s.
-hint: `fib(5)` asks for `fib(4)` once and `fib(3)` once. `fib(4)` asks for `fib(3)` again.
-hint: The counts follow the Fibonacci numbers: 1, 1, 2, 3, 5.
-right: fib(4) once, fib(3) twice, fib(2) three times and fib(1) five times. All that repeated work is why the calls grow exponentially, and why remembering answers helps so much.
-wrong: fib(4): asked by fib(5) only. fib(3): by fib(5) and fib(4). fib(2): by fib(4) and by both fib(3)s. fib(1): 3 times by the fib(2)s and twice by the fib(3)s.
-
-=== task: order medium
-title: Thirty items
-prompt: For n = 30, put these step counts in order, from the fewest to the most.
-items:
-- n log₂ n
-- n²
-- n³
-- 2ⁿ
-hint: Work them out: log₂ 30 is about 4.9.
-hint: 2³⁰ is about a billion.
-right: About 147, then 900, then 27,000, then 1,073,741,824. Already at n = 30, 2ⁿ is 40,000 times n³.
-wrong: n log₂ n ≈ 147, n² = 900, n³ = 27,000, and 2ⁿ ≈ 1,073,741,824.
-
-=== task: predict medium
-title: Memo calls
-code:
-```python
-memo = {}
-log = []
-
-def fib(n):
-    log.append(n)
-    if n < 2:
-        return n
-    if n in memo:
-        return memo[n]
-    memo[n] = fib(n - 1) + fib(n - 2)
+    if n not in memo:
+        memo[n] = ways(n - 1, memo) + ways(n - 2, memo)
     return memo[n]
 
-print(fib(6), len(log))
-print(fib(6), len(log))
+
+def climb_stairs(n):
+    return ways(n, {})
 ```
-wrong[8 25\n8 50]: The memo stops the repeats. Each value from 2 to 6 is worked out once, so `fib(6)` makes only 11 calls.
-wrong[8 11\n8 22]: The second `fib(6)` finds 6 in `memo` straight away and returns: only 1 more call.
-wrong[13 11\n13 12]: fib(6) is 8: 0, 1, 1, 2, 3, 5, 8.
-hint: The first `fib(6)` works out 6, 5, 4, 3 and 2 once each. How many calls is that, counting the base cases?
-hint: The second time, `memo` already holds the answer for 6.
-right: The first call makes 11 calls (2n − 1): each value is computed once, and each later request is a lookup. The second call is a single lookup: 12 in total. Without the memo, `fib(6)` alone makes 25 calls.
-wrong: First: 11 calls for fib(6) = 8, because each value is computed once. Second: `6 in memo` is True at once, so 1 call: 12 in total.
+tests:
+- climb_stairs(2)
+- climb_stairs(3)
+- climb_stairs(1)
+- climb_stairs(4)
+- climb_stairs(5)
+- climb_stairs(20)
+fail[2]: Three steps: 1 + 1 + 1, 1 + 2 or 2 + 1. That's 3 ways.
+fail[3]: One step can only be climbed one way: a single move of 1.
+fail[4]: The last move is 1 step, after one of the 3 ways up 3 steps, or 2 steps, after one of the 2 ways up 2 steps: 3 + 2 = 5.
+fail[5]: `climb_stairs(5)` is `climb_stairs(4) + climb_stairs(3)`: 5 + 3 = 8.
+fail[6]: Each count is the sum of the two before it: 1, 2, 3, 5, 8, 13, 21 and onwards. 20 steps can be climbed in 10,946 ways.
+speed: setup=steps = n | call=climb_stairs(steps) | target=O(n) | sizes=5,10,20,40
+slow:
+```python
+def climb_stairs(n):
+    if n <= 1:
+        return 1
+    return climb_stairs(n - 1) + climb_stairs(n - 2)
+```
+fail[speed]: `climb_stairs(n - 1) + climb_stairs(n - 2)` with nothing remembered makes about 1.6ⁿ calls: 40 steps would take over 300 million. Store each count in a dictionary, so that each n is worked out once.
+edges:
+- one step :: n == 1 :: climb_stairs(1)
+- two steps :: n == 2 :: climb_stairs(2)
+- a large n :: n >= 30 :: climb_stairs(45)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of steps.
+why_time: Each count from 2 to n is worked out once; every other request for it is a dictionary lookup.
+why_space: The dictionary holds up to n counts, and the recursion has up to n calls waiting.
+hint: Look at the last move: it's 1 step, from step n − 1, or 2 steps, from step n − 2. So `ways(n) = ways(n - 1) + ways(n - 2)`, with `ways(0)` and `ways(1)` both 1.
+hint: That calls itself twice, like `fib`. Pass a dictionary `memo` along, and store each answer in it before returning it.
+hint: Or go up from the bottom with a loop that keeps the last two counts: `a, b = b, a + b`.
+right: Each count is worked out once: 45 steps take 44 additions, where the plain recursion would make over 3 billion calls.
+wrong: `ways(n, memo)`: return 1 if n ≤ 1. If n isn't in memo, store `ways(n - 1, memo) + ways(n - 2, memo)` in `memo[n]`. Return `memo[n]`, and call `ways(n, {})`.
 
-=== task: mcq medium
-title: Ten more items
-prompt: An O(2ⁿ) brute-force search takes 1 second for 20 items. About how long does it take for 30 items?
-- About 1.5 seconds :: 30 is 1.5 times 20, but exponential time doesn't grow in proportion to n.
-- About 10 seconds :: Each extra item doubles the time, so 10 extra items are 2 × 2 × ... × 2, ten times over.
-* About 1,000 seconds :: Right. 2¹⁰ = 1,024, so 10 more items multiply the time by about 1,000: roughly 17 minutes.
-- About 100 seconds :: That's 10 × 10. The doublings multiply: 2¹⁰ = 1,024.
-hint: Each extra item doubles the time.
-hint: 10 extra items: 2¹⁰.
-right: 2¹⁰ ≈ 1,000, so 10 more items mean about 1,000 seconds. 40 items would take about 12 days.
-wrong: 10 more items double the time 10 times: 2¹⁰ = 1,024, so about 1,000 seconds.
+=== task: code easy
+title: Min Cost Climbing Stairs
+leetcode: 746 | Min Cost Climbing Stairs | min-cost-climbing-stairs
+patterns: memo
+prompt: `cost[i]` is what you pay to leave step i of a staircase. You can start on step 0 or step 1 for free, and each move climbs 1 step or 2. Write `min_cost_climbing_stairs(cost)` that returns the cheapest way to reach the top: the place one past the last step.
 
-=== task: multi medium
-title: Calls that explode
-prompt: Choose **every** recursive pattern that makes an exponential number of calls (no memo).
-* `f(n)` calls `f(n - 1)` twice :: Right. Every level doubles the calls: about 2ⁿ.
-* `f(n)` calls `f(n - 1)` and `f(n - 2)` :: Right. That's plain Fibonacci: the calls grow about 1.6 times per step of n.
-* For each item, one call that takes it and one that leaves it :: Right. Two calls per item on a list one shorter: 2ⁿ.
-- `f(n)` calls `f(n - 1)` once :: One call per level: n calls, O(n), like factorial.
-- `f(n)` calls `f(n // 2)` once :: Halving: about log₂ n calls.
-- `f(n)` calls `f(n - 1)` twice, but stores each answer in a dictionary :: With memoization each value is worked out once: about n calls.
-hint: Exponential means two or more calls on problems only a little smaller, with nothing remembered.
-hint: Three of them are exponential.
-right: Two calls on n - 1, Fibonacci's two calls, and take-or-leave all branch at every level, so the calls multiply. One call per level, halving, or remembering answers all keep the calls small.
-wrong: Branching (two calls each time, on a problem only a little smaller) multiplies the calls level by level. A single call per level, halving, or a memo keep it O(n) or less.
+**Example 1:** `min_cost_climbing_stairs([10, 15, 20])` returns `15`: start on step 1, pay 15 and climb 2 steps to the top.
 
-=== task: code medium
-title: Every binary string
-prompt: Write a recursive function `all_binary(n)` that returns a list of every string of n characters made from "0" and "1", in increasing order. For n = 0 the only string is the empty string `""`. For bigger n, get the list for `n - 1`, and put "0" in front of each of them, then "1" in front of each.
+**Example 2:** `min_cost_climbing_stairs([1, 100, 1, 1, 1, 100, 1, 1, 100, 1])` returns `6`: start on step 0 and use only the steps that cost 1: 0, 2, 4, 6, 7 and 9.
 
-For example, `all_binary(2)` returns `["00", "01", "10", "11"]`.
+**Constraints:** 2 ≤ `len(cost)` ≤ 1000, and 0 ≤ `cost[i]` ≤ 999. Aim for O(n) time: remember the cheapest way to reach each step.
 starter:
 ```python
-def all_binary(n):
-    if n == 0:
-        return [""]
+def min_cost_climbing_stairs(cost):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_cost_climbing_stairs(cost):
+    n = len(cost)
+    best = [0] * (n + 1)
+    for i in range(2, n + 1):
+        best[i] = min(best[i - 1] + cost[i - 1], best[i - 2] + cost[i - 2])
+    return best[n]
+```
+tests:
+- min_cost_climbing_stairs([10, 15, 20])
+- min_cost_climbing_stairs([1, 100, 1, 1, 1, 100, 1, 1, 100, 1])
+- min_cost_climbing_stairs([5, 3])
+- min_cost_climbing_stairs([0, 0, 0])
+- min_cost_climbing_stairs([1, 2, 3, 4])
+- min_cost_climbing_stairs([i * 7 % 10 for i in range(20)])
+fail[2]: Start on step 0 and pay only for the steps that cost 1: 0, 2, 4, 6, 7 and 9. That's 6.
+fail[3]: With two steps, start on either one and climb straight to the top: pay 5 or 3, so 3.
+fail[4]: Every step is free, so the cheapest way costs 0.
+fail[5]: Start on step 0: pay 1 to climb to step 2, then 3 to climb to the top. That's 4.
+fail[6]: The costs are 0, 7, 4, 1, 8, 5, 2, 9, 6, 3, twice over. Fill in the cheapest cost of every step from the bottom up, and the top costs 36.
+speed: setup=cost = [i * 7 % 10 for i in range(n)] | call=min_cost_climbing_stairs(cost) | target=O(n) | sizes=10,20,40,80
+slow:
+```python
+def cheapest(cost, i):
+    if i <= 1:
+        return 0
+    one_step = cheapest(cost, i - 1) + cost[i - 1]
+    two_steps = cheapest(cost, i - 2) + cost[i - 2]
+    return min(one_step, two_steps)
+
+
+def min_cost_climbing_stairs(cost):
+    return cheapest(cost, len(cost))
+```
+fail[speed]: Working out each step's cheapest cost with two recursive calls, and nothing remembered, makes about 1.6ⁿ calls. Fill in a list `best` from the bottom up, so that each step is worked out once.
+edges:
+- two steps :: len(cost) == 2 :: min_cost_climbing_stairs([4, 9])
+- a step that costs 0 :: len(cost) > 2 and 0 in cost :: min_cost_climbing_stairs([3, 0, 5])
+- every step costs the same :: len(cost) > 2 and 0 not in cost and len(set(cost)) == 1 :: min_cost_climbing_stairs([2, 2, 2, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of `cost`. Count the space for a list with the cheapest cost of every step.
+why_time: One turn for each step, comparing the two ways to reach it.
+why_space: The list `best` has n + 1 entries. Keeping only the last two would make it O(1).
+hint: Let `best[i]` be the cheapest way to stand on step i. `best[0]` and `best[1]` are 0, because you can start on either for free.
+hint: You reach step i from step i − 1, paying `cost[i - 1]`, or from step i − 2, paying `cost[i - 2]`: take the cheaper.
+hint: The top is step n, where n is `len(cost)`. Fill in `best` from 2 up to n, and return `best[n]`.
+right: Each step is worked out once, from the two below it: O(n). The plain recursion would ask for the same steps again and again.
+wrong: `best = [0] * (n + 1)`, then for i from 2 to n: `best[i] = min(best[i - 1] + cost[i - 1], best[i - 2] + cost[i - 2])`. Return `best[n]`.
+
+=== task: code easy
+title: Binary Watch
+leetcode: 401 | Binary Watch | binary-watch
+patterns: masks
+prompt: A binary watch has 4 lights for the hour and 6 for the minutes, each a bit that's on or off. The hour lights stand for 8, 4, 2 and 1, and the minute lights for 32, 16, 8, 4, 2 and 1. A time is valid when the hour is at most 11 and the minutes at most 59. Write `read_binary_watch(turned_on)` that returns every valid time the watch can show with exactly turned_on lights on, from earliest to latest, as strings like `"3:05"`: no leading zero on the hour, and always two digits for the minutes. `f"{m:02d}"` writes m with at least two digits, so 5 becomes `"05"`.
+
+**Example 1:** `read_binary_watch(1)` returns `["0:01", "0:02", "0:04", "0:08", "0:16", "0:32", "1:00", "2:00", "4:00", "8:00"]`.
+
+**Example 2:** `read_binary_watch(9)` returns `[]`.
+
+**Constraints:** 0 ≤ turned_on ≤ 10. Go through all 2¹⁰ = 1,024 ways to light the 10 lights, as masks.
+starter:
+```python
+def read_binary_watch(turned_on):
     # your code here
     return []
 ```
 solution:
 ```python
-def all_binary(n):
+def read_binary_watch(turned_on):
+    times = []
+    for mask in range(1 << 10):
+        hours = mask >> 6
+        minutes = mask & 63
+        if hours < 12 and minutes < 60 and bin(mask).count("1") == turned_on:
+            times.append(f"{hours}:{minutes:02d}")
+    return times
+```
+tests:
+- read_binary_watch(1)
+- read_binary_watch(9)
+- read_binary_watch(0)
+- read_binary_watch(8)
+- read_binary_watch(2)[:6]
+- len(read_binary_watch(4))
+fail[2]: 9 lights means all 4 hour lights (15 o'clock) or all 6 minute lights (63 minutes), and neither is a valid time: `[]`.
+fail[3]: With no lights on, the watch shows `"0:00"`: the only time.
+fail[4]: 8 lights: the hour is 7 or 11 (3 lights each), with 5 minute lights making 31, 47, 55 or 59 (61 and 62 are too big). Times with hour 7 come first.
+fail[5]: Two minute lights make 3, 5, 6, 9, 10 and 12 first, all with hour 0. Order by the hour, then by the minutes.
+fail[6]: 181 valid times have exactly 4 lights on. Check every mask from 0 to 1023, and keep only the valid ones.
+edges:
+- no lights on :: turned_on == 0 :: read_binary_watch(0)
+- too many lights for any time :: turned_on >= 9 :: read_binary_watch(10)
+- some times possible :: 1 <= turned_on <= 8 :: read_binary_watch(7)
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the number of lights: 10 on this watch. Count the work for a watch with n lights.
+why_time: 2ⁿ masks, and counting the 1 bits of each takes up to n steps.
+why_space: The list of times: at most one for each of the 2ⁿ masks.
+hint: Every way to light the 10 lights is a mask from 0 to 1023: `for mask in range(1 << 10):`.
+hint: The hour is the top 4 bits, `mask >> 6`, and the minutes are the bottom 6, `mask & 63` (63 is `111111` in binary).
+hint: Keep the mask when the hour is below 12, the minutes are below 60 and `bin(mask).count("1") == turned_on`. The masks go up in time order, so the list comes out sorted.
+right: 1,024 masks, each checked in a few steps. That's a fixed amount of work for this watch, but it would double with every light a watch added.
+wrong: For each mask in `range(1 << 10)`: `hours = mask >> 6` and `minutes = mask & 63`. If `hours < 12`, `minutes < 60` and `bin(mask).count("1") == turned_on`, append `f"{hours}:{minutes:02d}"`.
+
+=== task: code easy
+title: Sum of All Subset XOR Totals
+leetcode: 1863 | Sum of All Subset XOR Totals | sum-of-all-subset-xor-totals
+patterns: subsets
+prompt: The XOR total of a list is all its numbers combined with `^`, or 0 if it's empty: the XOR total of `[2, 5, 6]` is `2 ^ 5 ^ 6`, which is 1. Write `subset_xor_sum(nums)` that returns the sum of the XOR totals of every subset of nums. Subsets with the same numbers count separately if they use different positions.
+
+**Example 1:** `subset_xor_sum([1, 3])` returns `6`. The subsets `[]`, `[1]`, `[3]` and `[1, 3]` have XOR totals 0, 1, 3 and `1 ^ 3`, which is 2: 0 + 1 + 3 + 2 = 6.
+
+**Example 2:** `subset_xor_sum([5, 1, 6])` returns `28`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 12, and 1 ≤ `nums[i]` ≤ 20. List the XOR total of every subset with the doubling method.
+starter:
+```python
+def subset_xor_sum(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def subset_xor_sum(nums):
+    totals = [0]
+    for x in nums:
+        totals = totals + [t ^ x for t in totals]
+    return sum(totals)
+```
+tests:
+- subset_xor_sum([1, 3])
+- subset_xor_sum([5, 1, 6])
+- subset_xor_sum([7])
+- subset_xor_sum([2, 2])
+- subset_xor_sum([3, 4, 5, 6, 7, 8])
+- subset_xor_sum(list(range(1, 13)))
+fail[2]: The 8 subsets have XOR totals 0, 5, 1, 4, 6, 3, 7 and 2, which add up to 28.
+fail[3]: The subsets are `[]` and `[7]`: 0 + 7 = 7.
+fail[4]: `[]`, the first 2, the second 2, and both: 0 + 2 + 2 + 0 = 4, because `2 ^ 2` is 0.
+fail[5]: 6 numbers make 64 subsets, and their XOR totals add up to 480.
+fail[6]: 12 numbers make 4,096 subsets. Keep only each subset's XOR total, not the subset itself: the totals add up to 30,720.
+edges:
+- one number :: len(nums) == 1 :: subset_xor_sum([4])
+- repeated numbers :: len(set(nums)) < len(nums) :: subset_xor_sum([3, 3])
+- all different :: len(nums) > 1 and len(set(nums)) == len(nums) :: subset_xor_sum([1, 2, 4])
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: n is the length of `nums`.
+why_time: The list of totals doubles with each number, and the last round alone makes 2ⁿ⁻¹ new ones: about 2ⁿ steps in all.
+why_space: The list holds 2ⁿ totals at the end.
+hint: Start with `totals = [0]`, the XOR total of the empty subset.
+hint: For each number x, every subset so far gets a copy with x added, and its total becomes `t ^ x`: `totals = totals + [t ^ x for t in totals]`.
+hint: Return `sum(totals)`.
+right: 4,096 totals for 12 numbers, each made with one `^`. There's also a shortcut: a bit that's 1 in any of the numbers is 1 in exactly half of the subsets' totals.
+wrong: `totals = [0]`; for each x in nums: `totals = totals + [t ^ x for t in totals]`. Return `sum(totals)`.
+
+=== task: code easy
+title: All Binary Strings
+patterns: choices
+prompt: Write `binary_strings(n)` that returns every string of n characters that are each `"0"` or `"1"`, in increasing order as binary numbers: all 0s first, and all 1s last.
+
+**Example 1:** `binary_strings(2)` returns `["00", "01", "10", "11"]`.
+
+**Example 2:** `binary_strings(1)` returns `["0", "1"]`.
+
+**Constraints:** 0 ≤ n ≤ 12. Build the strings one position at a time: each position has 2 choices.
+starter:
+```python
+def binary_strings(n):
+    # your code here
+    return []
+```
+solution:
+```python
+def binary_strings(n):
+    strings = [""]
+    for _ in range(n):
+        longer = []
+        for s in strings:
+            longer.append(s + "0")
+            longer.append(s + "1")
+        strings = longer
+    return strings
+```
+tests:
+- binary_strings(2)
+- binary_strings(1)
+- binary_strings(0)
+- binary_strings(3)
+- binary_strings(6)[20:23]
+- len(binary_strings(10))
+fail[2]: One position with 2 choices: `["0", "1"]`.
+fail[3]: With n = 0 there's one string with no characters, the empty string: `[""]`.
+fail[4]: 8 strings, from `"000"` up to `"111"`. Add `"0"` to each string before `"1"` to keep them in order.
+fail[5]: The strings of 6 characters at positions 20, 21 and 22 are those numbers in binary: `010100`, `010101` and `010110`.
+fail[6]: 10 positions with 2 choices each: 2¹⁰ = 1,024 strings.
+edges:
+- n is 0 :: n == 0 :: binary_strings(0)
+- n is 1 :: n == 1 :: binary_strings(1)
+- n is 2 or more :: n >= 2 :: binary_strings(4)
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the length of each string.
+why_time: 2ⁿ strings of n characters, and making each one copies the shorter string before it.
+why_space: The answer holds 2ⁿ strings of n characters.
+hint: Start with `strings = [""]`. For each of the n positions, replace every string s with two longer ones: `s + "0"` and `s + "1"`.
+hint: Make a new list `longer` in each round, then `strings = longer`. Putting `s + "0"` before `s + "1"` keeps the list in increasing order.
+right: The list doubles n times: 2ⁿ strings with n characters each. That's O(n × 2ⁿ), the size of the answer itself.
+wrong: `strings = [""]`; n times: `longer = []`, then for each s, append `s + "0"` and `s + "1"`; then `strings = longer`. Return `strings`.
+
+=== task: code easy
+title: Make the Target Sum
+patterns: branch
+prompt: Write `can_make(nums, target)` that returns `True` if some of the positive numbers in nums, each used at most once, add up to exactly target, and `False` if not. Taking no numbers adds up to 0.
+
+**Example 1:** `can_make([3, 34, 4, 12, 5, 2], 9)` returns `True`: 4 + 5 = 9.
+
+**Example 2:** `can_make([3, 34, 4, 12, 5, 2], 30)` returns `False`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 20, 1 ≤ `nums[i]` ≤ 100, and 0 ≤ target ≤ 2000. Take it or leave it: decide about each number in turn, with a recursive call for each choice.
+starter:
+```python
+def can_make(nums, target):
+    # your code here
+    return False
+```
+solution:
+```python
+def take_or_leave(nums, i, target):
+    if target == 0:
+        return True
+    if i == len(nums) or target < 0:
+        return False
+    if take_or_leave(nums, i + 1, target - nums[i]):
+        return True
+    return take_or_leave(nums, i + 1, target)
+
+
+def can_make(nums, target):
+    return take_or_leave(nums, 0, target)
+```
+tests:
+- can_make([3, 34, 4, 12, 5, 2], 9)
+- can_make([3, 34, 4, 12, 5, 2], 30)
+- can_make([5], 0)
+- can_make([5], 5)
+- can_make([2, 4, 6], 5)
+- can_make([2] * 14, 15)
+fail[2]: Without 34, all the numbers add up to 26, and 34 alone is too big: no subset makes 30.
+fail[3]: Taking no numbers adds up to 0, so a target of 0 is always possible: `True`.
+fail[4]: Take the 5: `True`.
+fail[5]: 2, 4 and 6 are even, so every sum of them is even, and 5 isn't: `False`.
+fail[6]: Every sum of 2s is even, so 15 can't be made: `False`.
+edges:
+- target is 0 :: target == 0 :: can_make([4, 7], 0)
+- target bigger than everything added up :: target > sum(nums) :: can_make([4, 7], 20)
+- target equals one of the numbers :: 0 < target <= sum(nums) and target in nums :: can_make([4, 7], 7)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(n)
+complexity_note: n is the length of `nums`.
+why_time: Each call decides about one number, with up to two calls for the next: up to 2ⁿ ways to reach the end of the list.
+why_space: The recursion has at most n + 1 calls waiting at once.
+hint: Write `take_or_leave(nums, i, target)`, which decides about `nums[i]` and every number after it. Start it with `i = 0`.
+hint: If target is 0, the numbers taken already add up: return `True`. If i is `len(nums)`, or target is below 0, return `False`.
+hint: Otherwise try taking `nums[i]`, with `target - nums[i]`, and leaving it, with target, both moving on to `i + 1`. Return `True` if either works.
+right: Up to 2ⁿ branches, but a branch stops as soon as its target is reached or goes below 0, and the first `True` ends the search.
+wrong: `take_or_leave(nums, i, target)`: `True` if target is 0; `False` if i is `len(nums)` or target < 0; otherwise `True` if `take_or_leave(nums, i + 1, target - nums[i])` or `take_or_leave(nums, i + 1, target)` is.
+
+=== task: code easy
+title: Tower of Hanoi
+patterns: branch
+prompt: n discs of different sizes sit on peg 1, the largest at the bottom. Move them all to peg 3, one disc at a time, never putting a disc on a smaller one; peg 2 can hold discs along the way. Write `hanoi(n)` that returns the moves, each a list `[from, to]`, in the fewest moves possible. To move n discs: move the top n − 1 out of the way onto the spare peg, move the largest disc, then move the n − 1 discs back on top of it.
+
+**Example 1:** `hanoi(1)` returns `[[1, 3]]`.
+
+**Example 2:** `hanoi(2)` returns `[[1, 2], [1, 3], [2, 3]]`: the small disc steps aside to peg 2, the large one moves to peg 3, and the small one goes on top of it.
+
+**Constraints:** 0 ≤ n ≤ 12. The function calls itself twice, for n − 1 discs each time.
+starter:
+```python
+def hanoi(n):
+    # your code here
+    return []
+```
+solution:
+```python
+def move(n, source, target, spare, moves):
     if n == 0:
-        return [""]
-    shorter = all_binary(n - 1)
-    result = []
-    for s in shorter:
-        result.append("0" + s)
-    for s in shorter:
-        result.append("1" + s)
-    return result
+        return
+    move(n - 1, source, spare, target, moves)
+    moves.append([source, target])
+    move(n - 1, spare, target, source, moves)
+
+
+def hanoi(n):
+    moves = []
+    move(n, 1, 3, 2, moves)
+    return moves
 ```
 tests:
-- all_binary(1)
-- all_binary(2)
-- all_binary(0)
-- all_binary(3)
-- len(all_binary(10))
-fail[1]: With one character, the strings are "0" and "1".
-fail[2]: First every string starting with "0", then every string starting with "1": "00", "01", "10", "11".
-fail[5]: 10 characters, 2 choices each: 2¹⁰ = 1,024 strings.
-error[RecursionError]: Call `all_binary(n - 1)`, so n gets smaller until it reaches the base case, 0.
-hint: `shorter = all_binary(n - 1)`.
-hint: Add `"0" + s` for every `s` in `shorter`, then `"1" + s` for every `s`.
-hint: The list doubles with each extra character.
-right: Each extra character doubles the list: 2ⁿ strings of n characters, so no method can be faster than O(2ⁿ); writing out every character makes it about n × 2ⁿ. 30 characters would mean over a billion strings.
-wrong: Get `shorter = all_binary(n - 1)`, then build the result from `"0" + s` for each `s`, followed by `"1" + s` for each `s`.
+- hanoi(1)
+- hanoi(2)
+- hanoi(0)
+- hanoi(3)
+- hanoi(4)[7]
+- len(hanoi(10))
+fail[2]: The small disc steps aside to peg 2, the large disc moves to peg 3, then the small disc goes on top: `[[1, 2], [1, 3], [2, 3]]`.
+fail[3]: With no discs there's nothing to move: `[]`.
+fail[4]: Move 2 discs from peg 1 to peg 2 (using peg 3), the largest from peg 1 to peg 3, then the 2 discs from peg 2 to peg 3 (using peg 1): 3 + 1 + 3 = 7 moves.
+fail[5]: The 8th move is the largest of the 4 discs going from peg 1 to peg 3, after the 7 moves that clear the other 3 out of its way.
+fail[6]: Each disc doubles the moves and adds one: 1, 3, 7, 15 and up to 2¹⁰ − 1 = 1,023 for 10 discs.
+edges:
+- no discs :: n == 0 :: hanoi(0)
+- one disc :: n == 1 :: hanoi(1)
+- several discs :: n >= 2 :: hanoi(3)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: n is the number of discs.
+why_time: `hanoi(n)` does the work for n − 1 discs twice, plus one move: 2ⁿ − 1 moves in all.
+why_space: The list of 2ⁿ − 1 moves. The recursion itself only has n calls waiting at once.
+hint: Write `move(n, source, target, spare, moves)`, which appends the moves for n discs to the list `moves`.
+hint: With n = 0 there's nothing to do. Otherwise: `move(n - 1, source, spare, target, moves)`, then append `[source, target]`, then `move(n - 1, spare, target, source, moves)`.
+hint: `hanoi(n)` makes `moves = []`, calls `move(n, 1, 3, 2, moves)` and returns `moves`.
+right: Two calls for n − 1 discs, plus one move: the moves double with each disc, to 2ⁿ − 1. A legend says monks are moving 64 golden discs; at a move a second, that's about 585 billion years.
+wrong: `move(n, source, target, spare, moves)`: if n > 0, `move(n - 1, source, spare, target, moves)`, then `moves.append([source, target])`, then `move(n - 1, spare, target, source, moves)`.
 
-=== task: code hard
-title: Climbing stairs
-prompt: You climb a staircase of n steps, taking 1 or 2 steps at a time. The number of ways is `ways(n) = ways(n - 1) + ways(n - 2)` (your last move was either 1 step or 2), with `ways(0) = 1` and `ways(1) = 1`. Plain recursion would be exponential. Write `ways(n)` in O(n) by **memoization**: keep a dictionary `memo` of answers, return a stored answer if there is one, and store each new answer before returning it.
+=== task: code easy
+title: Count Subsets With a Sum
+patterns: subsets
+prompt: Write `count_subsets(nums, target)` that returns how many subsets of nums add up to target. Subsets count separately when they use different positions, even if their numbers are the same, and the empty subset adds up to 0.
 
-For example, `ways(3)` returns 3: 1 + 1 + 1, 1 + 2 and 2 + 1.
+**Example 1:** `count_subsets([1, 2, 3, 4], 5)` returns `2`: 1 + 4 and 2 + 3.
+
+**Example 2:** `count_subsets([2, 2, 2], 4)` returns `3`: positions 0 and 1, 0 and 2, or 1 and 2.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 15, −100 ≤ `nums[i]` ≤ 100, and −1500 ≤ target ≤ 1500. The numbers can be 0 or negative. List the sum of every subset with the doubling method.
 starter:
 ```python
-memo = {}
-
-def ways(n):
-    if n < 2:
-        return 1
+def count_subsets(nums, target):
     # your code here
     return 0
 ```
 solution:
 ```python
-memo = {}
-
-def ways(n):
-    if n < 2:
-        return 1
-    if n in memo:
-        return memo[n]
-    memo[n] = ways(n - 1) + ways(n - 2)
-    return memo[n]
+def count_subsets(nums, target):
+    sums = [0]
+    for x in nums:
+        sums = sums + [s + x for s in sums]
+    count = 0
+    for s in sums:
+        if s == target:
+            count += 1
+    return count
 ```
 tests:
-- ways(1)
-- ways(2)
-- ways(3)
-- ways(5)
-- ways(10)
-- ways(0)
-speed: setup=m = n | call=ways(m) | target=O(n) | sizes=50,100,200,400
-slow:
-```python
-memo = {}
+- count_subsets([1, 2, 3, 4], 5)
+- count_subsets([2, 2, 2], 4)
+- count_subsets([5], 0)
+- count_subsets([0, 0], 0)
+- count_subsets([-1, 1, 2], 1)
+- count_subsets([i - 6 for i in range(13)], 0)
+fail[2]: Any two of the three 2s make 4, and there are 3 ways to pick two positions.
+fail[3]: The empty subset adds up to 0, and `[5]` doesn't: 1.
+fail[4]: `[]`, the first 0, the second 0, and both: all 4 subsets add up to 0.
+fail[5]: `[1]` and `[-1, 2]` add up to 1. With negative numbers, a total that goes past the target can still come back.
+fail[6]: The numbers go from −6 to 6, and 472 of their 8,192 subsets add up to 0.
+edges:
+- target is 0 :: target == 0 :: count_subsets([3, -3], 0)
+- a 0 in nums :: target != 0 and 0 in nums :: count_subsets([0, 4], 4)
+- negative numbers :: target != 0 and 0 not in nums and min(nums) < 0 :: count_subsets([-2, 5, 3], 3)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: n is the length of `nums`.
+why_time: The list of sums doubles with each number, to 2ⁿ, and counting goes through it once.
+why_space: 2ⁿ sums in the list.
+hint: Start with `sums = [0]`, the sum of the empty subset.
+hint: For each x in nums, every subset so far gets a copy with x added: `sums = sums + [s + x for s in sums]`.
+hint: Count how many sums equal target.
+right: 2ⁿ sums, one for each subset, made with one addition each. Keeping a count for each sum in a dictionary saves space when many subsets share a sum, but in the worst case every sum is different.
+wrong: `sums = [0]`; for each x: `sums = sums + [s + x for s in sums]`. Return how many s in sums have `s == target`.
 
-def ways(n):
-    if n < 2:
-        return 1
-    return ways(n - 1) + ways(n - 2)
-```
-fail[3]: For 3 steps: 1 + 1 + 1, 1 + 2 and 2 + 1. That's ways(2) + ways(1) = 2 + 1 = 3.
-fail[5]: ways(10) = 89. The answers follow the Fibonacci pattern: 1, 1, 2, 3, 5, 8, 13, ...
-hint: Before working anything out, check `if n in memo: return memo[n]`.
-hint: Work out `memo[n] = ways(n - 1) + ways(n - 2)`.
-hint: Then `return memo[n]`.
-right: Each n is worked out once and then looked up: about 2n calls, O(n). The plain recursion would make about 1.6 times more calls for every extra step, which is hopeless by n = 100.
-wrong: `if n in memo: return memo[n]`, then `memo[n] = ways(n - 1) + ways(n - 2)` and `return memo[n]`.
+=== task: code easy
+title: Best Team on a Budget
+patterns: masks
+prompt: Player i costs `costs[i]` and scores `scores[i]` points. Write `best_team(costs, scores, budget)` that returns the highest total score of a team whose total cost is at most budget. A team can have any number of players, even none.
 
-=== task: code hard
-title: Pack the bag
-prompt: Each item is a tuple `(weight, value)`. Write a recursive function `best_value(items, capacity)` that returns the biggest total value you can carry without going over `capacity` in weight. Try every subset with take it or leave it: with no items left, the value is 0. Otherwise, **leave** the first item (`best_value(rest, capacity)`), and, if it fits, also try **taking** it (its value plus `best_value(rest, capacity - weight)`). Return the bigger of the two.
+**Example 1:** `best_team([4, 3, 2], [10, 8, 5], 5)` returns `13`: players 1 and 2 cost 3 + 2 = 5 and score 8 + 5 = 13. Player 0 alone scores only 10.
 
-For example, `best_value([(2, 3), (3, 4), (4, 5), (5, 6)], 5)` returns 7: the items weighing 2 and 3.
+**Example 2:** `best_team([5, 6], [3, 4], 4)` returns `0`: nobody fits the budget, so the team is empty.
+
+**Constraints:** 1 ≤ n ≤ 12, where n is `len(costs)` and `len(scores)`; 1 ≤ `costs[i]`, `scores[i]` ≤ 100; and 0 ≤ budget ≤ 1000. Go through every team as a mask.
 starter:
 ```python
-def best_value(items, capacity):
-    if len(items) == 0:
-        return 0
-    weight, value = items[0]
-    rest = items[1:]
+def best_team(costs, scores, budget):
     # your code here
     return 0
 ```
 solution:
 ```python
-def best_value(items, capacity):
-    if len(items) == 0:
-        return 0
-    weight, value = items[0]
-    rest = items[1:]
-    best = best_value(rest, capacity)
-    if weight <= capacity:
-        take = value + best_value(rest, capacity - weight)
-        if take > best:
-            best = take
+def best_team(costs, scores, budget):
+    n = len(costs)
+    best = 0
+    for mask in range(1 << n):
+        cost = 0
+        score = 0
+        for i in range(n):
+            if mask >> i & 1:
+                cost += costs[i]
+                score += scores[i]
+        if cost <= budget and score > best:
+            best = score
     return best
 ```
 tests:
-- best_value([(2, 3), (3, 4), (4, 5), (5, 6)], 5)
-- best_value([], 10)
-- best_value([(6, 10)], 5)
-- best_value([(1, 1), (1, 1), (1, 1)], 2)
-- best_value([(5, 10), (4, 40), (6, 30), (3, 50)], 10)
-fail[1]: Weights 2 + 3 = 5 fit exactly, for a value of 3 + 4 = 7. Make sure you try both taking and leaving each item.
-fail[3]: The only item weighs 6, more than the capacity of 5, so nothing can be taken: 0.
-fail[4]: Any two of the three items fit (weight 2), for a value of 2.
-fail[5]: The items weighing 4 and 3 fit together (weight 7) and are worth 40 + 50 = 90, more than any other choice.
-error[RecursionError]: Pass the shorter list, `rest`, in both recursive calls.
-hint: `best = best_value(rest, capacity)` is the value if you leave the first item.
-hint: If `weight <= capacity`, work out `take = value + best_value(rest, capacity - weight)`.
-hint: Return whichever is bigger.
-right: Every item is either taken or left, so the calls branch two ways per item: O(2ⁿ). Unit 4's dynamic programming lessons solve this much faster when the weights are small whole numbers.
-wrong: `best = best_value(rest, capacity)`; if the item fits, `take = value + best_value(rest, capacity - weight)`, and keep the bigger of `best` and `take`. Return it.
+- best_team([4, 3, 2], [10, 8, 5], 5)
+- best_team([5, 6], [3, 4], 4)
+- best_team([1], [7], 1)
+- best_team([3, 3, 3], [2, 2, 2], 10)
+- best_team([1, 1], [1, 1], 0)
+- best_team([i % 5 + 1 for i in range(10)], [i * 7 % 11 + 1 for i in range(10)], 12)
+fail[2]: Each player costs more than 4, so the best team is nobody: 0.
+fail[3]: The one player costs 1, which fits: 7.
+fail[4]: All three cost 9 together, which fits a budget of 10: 2 + 2 + 2 = 6.
+fail[5]: With a budget of 0, only the empty team fits: 0.
+fail[6]: 10 players make 1,024 teams. The best one that costs at most 12 scores 38.
+edges:
+- budget is 0 :: budget == 0 :: best_team([2, 3], [5, 6], 0)
+- everyone fits :: budget >= sum(costs) :: best_team([2, 3], [5, 6], 9)
+- some players fit, but not all :: 0 < budget < sum(costs) :: best_team([2, 3], [5, 6], 3)
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(1)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the number of players.
+why_time: 2ⁿ masks, and each one adds up the costs and scores of up to n players.
+why_space: A few totals.
+hint: `for mask in range(1 << n):` goes through every team. Player i is in the team when `mask >> i & 1` is 1.
+hint: For each mask, add up the costs and the scores of its players.
+hint: Keep the best score among the masks whose cost is at most budget.
+right: 2ⁿ teams with n checks each: 49,152 steps for 12 players. A table over the budgets, from 0 up to budget, can do it in O(n × budget) when budgets are small.
+wrong: For each mask in `range(1 << n)`: add up `costs[i]` and `scores[i]` for each i with `mask >> i & 1`. If the cost is at most budget, keep the score if it's the best so far.
 
-=== task: code hard
-title: Tribonacci with a loop
-prompt: The **tribonacci** numbers start 0, 0, 1, and each one after that is the sum of the **three** before it: 0, 0, 1, 1, 2, 4, 7, 13, 24, ... Write `trib(n)` that returns the n-th one (counting from 0) in O(n), with a loop that keeps the last three numbers in `a`, `b` and `c`. Plain recursion with three calls would be exponential.
+=== task: code easy
+title: Count the Fibonacci Calls
+patterns: branch + memo
+prompt: The plain recursive `fib(n)` returns at once when n is 0 or 1, and otherwise calls `fib(n - 1)` and `fib(n - 2)`. Write `fib_calls(n)` that returns how many calls `fib(n)` makes in all, itself included, without making them. The count for n is 1, plus the count for n − 1, plus the count for n − 2.
 
-For example, `trib(7)` returns 13.
+**Example 1:** `fib_calls(5)` returns `15`.
+
+**Example 2:** `fib_calls(2)` returns `3`: `fib(2)`, `fib(1)` and `fib(0)`.
+
+**Constraints:** 0 ≤ n ≤ 90. Aim for O(n) time: remember the counts.
 starter:
 ```python
-def trib(n):
-    a = 0
-    b = 0
-    c = 1
-    # your code here
-    return a
-```
-solution:
-```python
-def trib(n):
-    a = 0
-    b = 0
-    c = 1
-    for i in range(n):
-        a, b, c = b, c, a + b + c
-    return a
-```
-tests:
-- trib(0)
-- trib(2)
-- trib(3)
-- trib(7)
-- trib(10)
-speed: setup=m = n | call=trib(m) | target=O(n)
-slow:
-```python
-def trib(n):
-    if n < 2:
-        return 0
-    if n == 2:
-        return 1
-    return trib(n - 1) + trib(n - 2) + trib(n - 3)
-```
-fail[2]: trib(2) is 1: the third number of 0, 0, 1. After 2 turns, `a` must hold it.
-fail[4]: 0, 0, 1, 1, 2, 4, 7, 13: trib(7) = 13. Move all three numbers along at once.
-error[NameError]: Keep the last three numbers in the starter's `a`, `b` and `c`.
-hint: Loop n times.
-hint: Each turn moves the three numbers along: `a, b, c = b, c, a + b + c`.
-hint: Return `a` after the loop.
-right: n turns of O(1) work: O(n). Plain recursion with three calls per level grows even faster than Fibonacci's: about 1.84 times per step of n.
-wrong: `for i in range(n): a, b, c = b, c, a + b + c`, then `return a`.
-
-=== task: code hard
-title: Paths through a grid
-prompt: In a grid, you start at the top-left corner and may only move **right** or **down**. `paths(r, c)` is the number of different routes to the cell `r` rows down and `c` columns across: `paths(r, c) = paths(r - 1, c) + paths(r, c - 1)`, and any cell on the top row or left column (`r == 0` or `c == 0`) has exactly 1 route. Plain recursion is exponential. Write `paths(r, c)` with **memoization**, storing answers in the dictionary `memo` with the tuple `(r, c)` as the key, so it takes about r × c steps.
-
-For example, `paths(2, 2)` returns 6.
-starter:
-```python
-memo = {}
-
-def paths(r, c):
-    if r == 0 or c == 0:
-        return 1
+def fib_calls(n):
     # your code here
     return 0
 ```
 solution:
 ```python
-memo = {}
-
-def paths(r, c):
-    if r == 0 or c == 0:
-        return 1
-    if (r, c) in memo:
-        return memo[(r, c)]
-    memo[(r, c)] = paths(r - 1, c) + paths(r, c - 1)
-    return memo[(r, c)]
-```
-tests:
-- paths(1, 1)
-- paths(2, 2)
-- paths(2, 3)
-- paths(0, 5)
-- paths(3, 3)
-- paths(4, 4)
-speed: setup=m = n | call=paths(m, m) | target=O(n²) | sizes=25,50,100,200
-slow:
-```python
-memo = {}
-
-def paths(r, c):
-    if r == 0 or c == 0:
-        return 1
-    return paths(r - 1, c) + paths(r, c - 1)
-```
-fail[1]: From the corner to the cell one down and one across: right then down, or down then right. 2 routes.
-fail[2]: paths(2, 2) = paths(1, 2) + paths(2, 1) = 3 + 3 = 6.
-fail[4]: Every cell on the top row has exactly one route: straight along.
-hint: Check `if (r, c) in memo: return memo[(r, c)]` before working anything out.
-hint: Store `memo[(r, c)] = paths(r - 1, c) + paths(r, c - 1)`.
-hint: Then return `memo[(r, c)]`.
-right: Each cell is worked out once and then looked up: about r × c calls, O(n²) for an n × n grid. Plain recursion recounts the same routes again and again: paths(20, 20) alone would make over a hundred billion calls.
-wrong: Look up `(r, c)` in `memo` first. Otherwise work out `paths(r - 1, c) + paths(r, c - 1)`, store it under `(r, c)`, and return it.
-
-=== task: predict hard
-title: Subsets that add up to 5
-code:
-```python
-items = [1, 4, 2, 3]
-subsets = [[]]
-for item in items:
-    subsets = subsets + [s + [item] for s in subsets]
-for s in subsets:
-    if sum(s) == 5:
-        print(s)
-```
-wrong[[2, 3]\n[1, 4]]: The subsets come out in the order they were built, and [1, 4] is built before any subset with 3, so it's printed first.
-wrong[[1, 4]]: 2 + 3 = 5 too.
-wrong[[1, 4]\n[2, 3]\n[4, 1]]: Each subset appears once. [4, 1] would be the same subset as [1, 4], and the method never makes it.
-hint: There are 2⁴ = 16 subsets. Which ones add up to 5?
-hint: The subsets with 3 are added last, after every subset of 1, 4 and 2.
-right: Of the 16 subsets, only [1, 4] and [2, 3] add up to 5, and [1, 4] is built first. Checking every subset is O(2ⁿ): fine for 4 items, hopeless for 60.
-wrong: The subsets built from 1, 4 and 2 come first, and [1, 4] is among them. [2, 3] comes in the last batch, with the 3s.
-
-=== task: predict hard
-title: Calls, end to end
-code:
-```python
-log = []
-
-def count_ways(nums, target):
-    log.append(len(nums))
-    if len(nums) == 0:
-        return 1 if target == 0 else 0
-    return count_ways(nums[1:], target - nums[0]) + count_ways(nums[1:], target)
-
-print(count_ways([1, 2, 3], 3), len(log))
-```
-wrong[2 8]: 8 is the number of calls that reach the empty list, one per subset. The calls on the way there count too: 1 + 2 + 4 + 8.
-wrong[1 15]: Two subsets add up to 3: [3] on its own, and [1, 2].
-wrong[2 6]: Every call on a non-empty list makes two calls, so the levels hold 1, 2, 4 and 8 calls.
-hint: Level by level, the lists have 3, 2, 1 and 0 items. How many calls are on each level?
-hint: Which subsets of [1, 2, 3] add up to 3?
-right: Two subsets add up to 3 ([3] and [1, 2]), and the calls form levels of 1, 2, 4 and 8: 15 calls, about 2ⁿ⁺¹. One more item would double them.
-wrong: The answer is 2 ([3] and [1, 2]). Every call on a non-empty list makes two more, so there are 1 + 2 + 4 + 8 = 15 calls.
-
-=== task: cells hard
-title: One second for 20 items
-prompt: An O(2ⁿ) program takes exactly 1 second for 20 items. How many seconds does it take for each of these sizes?
-labels: 21 items | 22 items | 23 items | 26 items
-answer: 2 | 4 | 8 | 64
-wrong[1.05 | 1.1 | 1.15 | 1.3]: That's as if time grew in proportion to n. In O(2ⁿ) code each extra item **doubles** the time.
-wrong[2 | 3 | 4 | 7]: That adds a second per item. Each item multiplies the time by 2.
-hint: Each extra item doubles the time.
-hint: 26 items is 6 more than 20: 2⁶.
-right: 2, 4, 8 and 64 seconds. Every extra item doubles the time, so 30 items would take 1,024 seconds and 40 items about 12 days.
-wrong: 21 → 2 s, 22 → 4 s, 23 → 8 s, 26 → 2⁶ = 64 s.
-
-=== task: mcq hard
-title: Why plain Fibonacci is slow
-prompt: Why does the plain recursive `fib(n)`, `return fib(n - 1) + fib(n - 2)`, make so many calls?
-* It works out the same smaller values again and again, because no call remembers what another call found :: Right. fib(n - 2) is worked out by fib(n) and again inside fib(n - 1), and the repeats multiply all the way down.
-- Recursion in Python is always exponential :: Recursion with one call per level, like factorial, makes only n calls.
-- The Fibonacci numbers themselves get very big :: The numbers grow, but the calls are the problem: a loop finds big Fibonacci numbers in n steps.
-- Each call has to wait for the calls it makes :: Every recursive call waits; that alone doesn't make many calls. The two calls on overlapping problems do.
-hint: Count how many times `fib(2)` is worked out inside `fib(6)`.
-hint: It's 5 times.
-right: The calls overlap: the same values are recomputed many times. Remembering each answer in a dictionary removes the repeats and makes it O(n).
-wrong: Two calls on overlapping problems recompute the same values over and over. With a memo, each value is worked out once.
-
-=== task: multi hard
-title: Making Fibonacci fast
-prompt: Choose **every** change that makes working out `fib(n)` O(n).
-* A loop that keeps the last two numbers: `a, b = b, a + b` :: Right. n turns of O(1) work.
-* Store each answer in a dictionary, and look it up before working it out :: Right. Memoization: each value is computed once.
-* Build a list of the numbers from 0 up to n, each one the sum of the two before it :: Right. One pass of n steps.
-- Return `fib(n - 1) + fib(n - 1)` instead :: That's still two calls per level, and it's also the wrong answer.
-- Check `n < 3` instead of `n < 2` in the base case :: That saves a few calls at the bottom, but every call above still branches: still exponential.
-- Call `fib(n - 2)` first, then `fib(n - 1)` :: The order doesn't matter. Both calls still recompute everything.
-hint: The fix must stop the same values being worked out more than once.
-hint: Three of them are O(n).
-right: A loop, a memo dictionary and a list filled from the bottom up each compute every value once. Changing the order, the base case or the calls keeps the repeated work.
-wrong: Only approaches that compute each value once are O(n): the loop, memoization, and building a list from 0 to n.
-
-=== task: parsons hard
-title: Fibonacci with a memo
-prompt: Arrange the lines so that `fib` remembers its answers in `memo`, and the program prints:
-
-```output
-55 12586269025
-```
-
-Not every line is needed.
-lines:
-```python
-memo = {}
-
-def fib(n):
+def count(n, memo):
     if n < 2:
-        return n
-    if n in memo:
-        return memo[n]
-    memo[n] = fib(n - 1) + fib(n - 2)
+        return 1
+    if n not in memo:
+        memo[n] = 1 + count(n - 1, memo) + count(n - 2, memo)
     return memo[n]
 
-print(fib(10), fib(50))
+
+def fib_calls(n):
+    return count(n, {})
 ```
-distractors:
+tests:
+- fib_calls(5)
+- fib_calls(2)
+- fib_calls(0)
+- fib_calls(1)
+- fib_calls(10)
+- fib_calls(20)
+fail[2]: `fib(2)` calls `fib(1)` and `fib(0)`, which return at once: 3 calls.
+fail[3]: `fib(0)` returns at once: 1 call, itself.
+fail[4]: `fib(1)` returns at once too: 1 call.
+fail[5]: 1 + `fib_calls(9)` + `fib_calls(8)` = 1 + 109 + 67 = 177.
+fail[6]: `fib(20)` makes 21,891 calls. Work out each count once, and look it up after that.
+speed: setup=m = n | call=fib_calls(m) | target=O(n) | sizes=10,20,40,80
+slow:
 ```python
-    memo = {}
-    if memo[n]:
+def fib_calls(n):
+    if n < 2:
+        return 1
+    return 1 + fib_calls(n - 1) + fib_calls(n - 2)
 ```
-hint: `memo` is created once, outside the function, so it keeps its answers between calls.
-hint: Check `n in memo` before working anything out, then store the answer before returning it.
-hint: The base case comes first.
-right: Each value is computed once and stored, so `fib(50)` takes about 100 calls instead of about 40 billion. A `memo = {}` inside the function would start an empty memo on every call, and `memo[n]` would fail with KeyError for a new n.
-wrong: `memo = {}` at the top, then the function: base case, `if n in memo: return memo[n]`, `memo[n] = fib(n - 1) + fib(n - 2)`, `return memo[n]`.
+fail[speed]: Counting with `1 + fib_calls(n - 1) + fib_calls(n - 2)` and nothing remembered is as slow as `fib` itself: about 1.6ⁿ calls. Keep each count in a dictionary, so that it's worked out once.
+edges:
+- n is 0 :: n == 0 :: fib_calls(0)
+- n is 1 :: n == 1 :: fib_calls(1)
+- a large n :: n >= 40 :: fib_calls(90)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the argument.
+why_time: Each count from 2 to n is worked out once, with two additions.
+why_space: The dictionary of up to n counts, and up to n calls waiting.
+hint: `count(n)` is 1 when n < 2. Otherwise it's `1 + count(n - 1) + count(n - 2)`.
+hint: Pass a dictionary along, and store each count in it the first time you work it out.
+right: n counts, each worked out once. `fib(90)` would make about 9 × 10¹⁸ calls, but counting them takes under 200 additions.
+wrong: `count(n, memo)`: return 1 if n < 2. If n isn't in memo, `memo[n] = 1 + count(n - 1, memo) + count(n - 2, memo)`. Return `memo[n]`, and `fib_calls(n)` returns `count(n, {})`.
+
+=== task: code medium
+title: Gray Code
+leetcode: 89 | Gray Code | gray-code
+patterns: masks
+prompt: A Gray code of n bits lists all 2ⁿ numbers from 0 to 2ⁿ − 1, starting with 0, so that each number differs from the one before it in exactly one bit, and the last differs from the first in one bit too. Write `gray_code(n)` that returns the **reflected** Gray code: start with `[0]`, and for each bit from the lowest up, add the list so far in reverse order, with that bit set in each number.
+
+**Example 1:** `gray_code(2)` returns `[0, 1, 3, 2]`: `00`, `01`, `11` and `10` in binary.
+
+**Example 2:** `gray_code(1)` returns `[0, 1]`.
+
+**Constraints:** 1 ≤ n ≤ 16.
+starter:
+```python
+def gray_code(n):
+    # your code here
+    return [0]
+```
+solution:
+```python
+def gray_code(n):
+    codes = [0]
+    for bit in range(n):
+        high = 1 << bit
+        for i in range(len(codes) - 1, -1, -1):
+            codes.append(codes[i] | high)
+    return codes
+```
+tests:
+- gray_code(2)
+- gray_code(1)
+- gray_code(3)
+- gray_code(4)[8:]
+- gray_code(10)[-1]
+- gray_code(10)[600:604]
+fail[2]: One bit: `[0, 1]`.
+fail[3]: After `[0, 1, 3, 2]`, add it in reverse with bit 2 set, which adds 4: 2 + 4, 3 + 4, 1 + 4 and 0 + 4. That gives `[0, 1, 3, 2, 6, 7, 5, 4]`.
+fail[4]: The second half of the 4-bit code is the first half reversed, each with 8 added: 12, 13, 15, 14, 10, 11, 9 and 8.
+fail[5]: The last number mirrors the first, 0, with the top bit set: `1 << 9`, which is 512.
+fail[6]: Numbers 600 to 603 of the 10-bit code are 884, 885, 887 and 886. Build all 1,024 by reflecting and setting a bit, once for each of the 10 bits.
+edges:
+- one bit :: n == 1 :: gray_code(1)
+- two bits :: n == 2 :: gray_code(2)
+- three bits or more :: n >= 3 :: gray_code(5)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: n is the number of bits.
+why_time: The list doubles for each bit, and each new number takes one `|`: 2ⁿ numbers in all.
+why_space: The answer has 2ⁿ numbers.
+hint: Start with `codes = [0]`. For each bit from 0 to n − 1, `high = 1 << bit` is the number with only that bit set.
+hint: Go through codes backwards, `for i in range(len(codes) - 1, -1, -1):`, and append `codes[i] | high` for each. The range is worked out once, before the list grows.
+hint: The reversal is what makes it work: where the halves meet, the last old number and the first new one are the same apart from the new bit.
+right: Reflecting keeps every step one bit apart: inside each half the steps are the old ones, and where the halves meet only the new bit changes. Another way to write the same code: number i of it is `i ^ (i >> 1)`.
+wrong: `codes = [0]`; for each bit in `range(n)`: `high = 1 << bit`, then for i from `len(codes) - 1` down to 0, append `codes[i] | high`. Return `codes`.
+
+=== task: code medium
+title: Maximum Length of a Concatenated String with Unique Characters
+leetcode: 1239 | Maximum Length of a Concatenated String with Unique Characters | maximum-length-of-a-concatenated-string-with-unique-characters
+patterns: subsets
+prompt: Write `max_length(arr)` that returns the length of the longest string you can make by joining some of the words in arr, in their order, where no letter appears twice.
+
+**Example 1:** `max_length(["un", "iq", "ue"])` returns `4`: `"uniq"` or `"ique"`.
+
+**Example 2:** `max_length(["cha", "r", "act", "ers"])` returns `6`: `"chaers"` or `"acters"`.
+
+**Example 3:** `max_length(["abcdefghijklmnopqrstuvwxyz"])` returns `26`.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 16, 1 ≤ `len(arr[i])` ≤ 26, and the words are lowercase letters.
+starter:
+```python
+def max_length(arr):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_length(arr):
+    options = [""]
+    for word in arr:
+        if len(set(word)) < len(word):
+            continue
+        new = []
+        for opt in options:
+            if len(set(opt + word)) == len(opt) + len(word):
+                new.append(opt + word)
+        options = options + new
+    best = 0
+    for opt in options:
+        best = max(best, len(opt))
+    return best
+```
+tests:
+- max_length(["un", "iq", "ue"])
+- max_length(["cha", "r", "act", "ers"])
+- max_length(["abcdefghijklmnopqrstuvwxyz"])
+- max_length(["aa", "bb"])
+- max_length(["ab", "ba", "cd", "dc", "ef"])
+- max_length(["ab", "cd", "ef", "gh", "ij", "kl", "mn", "op", "qr", "st"])
+fail[2]: `"cha" + "ers"` and `"act" + "ers"` both have 6 different letters, and adding `"r"` to either repeats a letter.
+fail[3]: One word with every letter once: 26.
+fail[4]: Each word repeats its own letter, so neither can be used, and only the empty string is left: 0.
+fail[5]: `"ab"` and `"ba"` share letters, and so do `"cd"` and `"dc"`, so take one of each pair, and `"ef"`: 6.
+fail[6]: All 10 words have different letters, so all of them fit: 20. That's 1,024 combinations to keep, so drop the ones with repeats as you go.
+edges:
+- a word with a repeated letter :: any(len(set(w)) < len(w) for w in arr) :: max_length(["aa", "b"])
+- one word :: len(arr) == 1 and len(set(arr[0])) == len(arr[0]) :: max_length(["abc"])
+- words that share letters :: len(arr) > 1 and all(len(set(w)) == len(w) for w in arr) and len(set("".join(arr))) < len("".join(arr)) :: max_length(["ab", "bc"])
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: n is the length of `arr`. A string with no repeated letters has at most 26 of them, so checking one is O(1).
+why_time: The list of options at most doubles with each word: up to 2ⁿ options, each checked in O(1).
+why_space: Up to 2ⁿ options in the list.
+hint: Keep a list `options` of strings with no repeated letters, starting with `[""]`.
+hint: For each word (skip it if it repeats a letter itself), try adding it to every option. `len(set(opt + word)) == len(opt) + len(word)` means there are no repeats.
+hint: Add the new options to the list, and return the longest length at the end.
+right: Every subset of the words is tried at most once, and an option with a repeat is dropped as soon as it appears, so it never grows further.
+wrong: `options = [""]`; for each word with no repeats, collect `opt + word` for each opt with `len(set(opt + word)) == len(opt) + len(word)`, and add them to options. Return the longest length.
+
+=== task: code medium
+title: Count Number of Maximum Bitwise-OR Subsets
+leetcode: 2044 | Count Number of Maximum Bitwise-OR Subsets | count-number-of-maximum-bitwise-or-subsets
+patterns: masks
+prompt: The bitwise OR of a list is all its numbers combined with `|`. Write `count_max_or_subsets(nums)` that finds the largest OR that a non-empty subset of nums can have, and returns how many non-empty subsets have it. Subsets count separately when they use different positions.
+
+**Example 1:** `count_max_or_subsets([3, 1])` returns `2`: `[3]` and `[3, 1]` both have an OR of 3.
+
+**Example 2:** `count_max_or_subsets([2, 2, 2])` returns `7`: every non-empty subset has an OR of 2, and there are 2³ − 1 = 7 of them.
+
+**Example 3:** `count_max_or_subsets([3, 2, 1, 5])` returns `6`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 16, and 1 ≤ `nums[i]` ≤ 10⁵.
+starter:
+```python
+def count_max_or_subsets(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_max_or_subsets(nums):
+    n = len(nums)
+    best = 0
+    count = 0
+    for mask in range(1, 1 << n):
+        value = 0
+        for i in range(n):
+            if mask >> i & 1:
+                value = value | nums[i]
+        if value > best:
+            best = value
+            count = 1
+        elif value == best:
+            count += 1
+    return count
+```
+tests:
+- count_max_or_subsets([3, 1])
+- count_max_or_subsets([2, 2, 2])
+- count_max_or_subsets([3, 2, 1, 5])
+- count_max_or_subsets([7])
+- count_max_or_subsets([1, 2, 4])
+- count_max_or_subsets([i + 1 for i in range(10)])
+fail[2]: All 7 non-empty subsets have an OR of 2.
+fail[3]: The largest OR is 7, `111`. It needs 5 for the 4 bit, and 3 or 2 (or both) for the 2 bit, with 1 in or out: 3 × 2 = 6 subsets.
+fail[4]: One number, one non-empty subset: 1.
+fail[5]: Only all three together make `1 | 2 | 4`, which is 7: 1 subset.
+fail[6]: The numbers 1 to 10 OR together to 15, `1111`, and 805 of the 1,023 non-empty subsets reach it.
+edges:
+- one number :: len(nums) == 1 :: count_max_or_subsets([6])
+- every number the same :: len(nums) > 1 and len(set(nums)) == 1 :: count_max_or_subsets([5, 5])
+- different numbers :: len(set(nums)) > 1 :: count_max_or_subsets([1, 2])
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(1)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the length of `nums`.
+why_time: 2ⁿ − 1 masks, each combining up to n numbers.
+why_space: The best OR so far, and a count.
+hint: Go through the masks from 1 to `(1 << n) - 1`: mask 0 is the empty subset, which doesn't count.
+hint: For each mask, OR together `nums[i]` for each i with `mask >> i & 1`.
+hint: Keep the best OR and how many masks have it: a bigger OR starts the count again at 1.
+right: 2ⁿ − 1 subsets with n checks each: about a million steps for 16 numbers. The largest OR is always the OR of every number, and the doubling method finds each subset's OR with one `|`, in O(2ⁿ).
+wrong: For each mask in `range(1, 1 << n)`: OR the chosen numbers into `value`. If `value > best`, set `best = value` and `count = 1`; if it's equal, add 1 to count.
+
+=== task: code medium
+title: Closest Dessert Cost
+leetcode: 1774 | Closest Dessert Cost | closest-dessert-cost
+patterns: choices
+prompt: A dessert has exactly one base, from base_costs, and any toppings from topping_costs: each topping can be left off, added once or added twice. Write `closest_cost(base_costs, topping_costs, target)` that returns the total cost closest to target. If two totals are equally close, return the lower one.
+
+**Example 1:** `closest_cost([1, 7], [3, 4], 10)` returns `10`: base 7 and one topping of 3.
+
+**Example 2:** `closest_cost([2, 3], [4, 5, 100], 18)` returns `17`: base 3, one topping of 4 and two of 5. No dessert costs 18.
+
+**Example 3:** `closest_cost([3, 10], [2, 5], 9)` returns `8`: 8 and 10 are both 1 away, and 8 is lower.
+
+**Constraints:** n is `len(base_costs)` and m is `len(topping_costs)`: 1 ≤ n, m ≤ 10. 1 ≤ every cost ≤ 10⁴, and 1 ≤ target ≤ 10⁴. Each topping has 3 choices.
+starter:
+```python
+def closest_cost(base_costs, topping_costs, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+def closest_cost(base_costs, topping_costs, target):
+    extras = [0]
+    for t in topping_costs:
+        once = [e + t for e in extras]
+        twice = [e + 2 * t for e in extras]
+        extras = extras + once + twice
+    best = None
+    for b in base_costs:
+        for e in extras:
+            total = b + e
+            gap = abs(total - target)
+            if best is None or gap < abs(best - target):
+                best = total
+            elif gap == abs(best - target) and total < best:
+                best = total
+    return best
+```
+tests:
+- closest_cost([1, 7], [3, 4], 10)
+- closest_cost([2, 3], [4, 5, 100], 18)
+- closest_cost([3, 10], [2, 5], 9)
+- closest_cost([10], [1], 1)
+- closest_cost([4], [2], 7)
+- closest_cost([i * 37 % 100 + 1 for i in range(5)], [i * 13 % 50 + 1 for i in range(6)], 150)
+fail[2]: 3 + 4 + 5 + 5 = 17 is 1 away from 18, and no dessert costs 18 itself.
+fail[3]: 3 + 5 = 8 and 10 alone are both 1 away from 9. On a tie, return the lower: 8.
+fail[4]: Every dessert has a base, and the only base costs 10, more than the target: 10.
+fail[5]: 4 + 2 = 6 and 4 + 2 + 2 = 8 are both 1 away from 7: return the lower, 6.
+fail[6]: 6 toppings with 3 choices each make 3⁶ = 729 topping totals, for each of the 5 bases. One dessert costs exactly 150.
+edges:
+- target below every base :: target < min(base_costs) :: closest_cost([5, 9], [2], 3)
+- a dessert costs exactly target :: target >= min(base_costs) and closest_cost(base_costs, topping_costs, target) == target :: closest_cost([1, 7], [3, 4], 10)
+- no dessert costs exactly target :: target >= min(base_costs) and closest_cost(base_costs, topping_costs, target) != target :: closest_cost([3, 10], [2, 5], 9)
+edge_count: 2
+complexity: time=O(n × 3ᵐ) | space=O(3ᵐ)
+complexity_options: O(n × 3ᵐ); O(3ᵐ); O(n × 2ᵐ); O(n × m)
+complexity_note: n is the number of bases and m the number of toppings.
+why_time: The list of topping totals triples with each topping, to 3ᵐ, and each of the n bases is tried with every one.
+why_space: 3ᵐ topping totals in the list.
+hint: List every topping total, starting with `[0]`. For each topping t, every total e so far gives three: e, `e + t` and `e + 2 * t`.
+hint: Then try every base b with every topping total e: `b + e` is a dessert.
+hint: Keep the best: closer to target wins, and on a tie, the lower total.
+right: 3ᵐ topping totals, 59,049 for 10 toppings, each tried with every base. Each topping triples the list where a yes-or-no choice would double it.
+wrong: `extras = [0]`; for each t: `extras = extras + [e + t for e in extras] + [e + 2 * t for e in extras]`. Then for each base b and each e, compare `abs(b + e - target)` with the best so far, taking the lower total on a tie.
+
+=== task: code medium
+title: Generate Binary Strings Without Adjacent Zeros
+leetcode: 3211 | Generate Binary Strings Without Adjacent Zeros | generate-binary-strings-without-adjacent-zeros
+patterns: choices + branch
+prompt: A string of 0s and 1s is valid if every two neighbouring characters include at least one 1: no two 0s are next to each other. Write `valid_strings(n)` that returns every valid string of length n, in increasing order as binary numbers.
+
+**Example 1:** `valid_strings(3)` returns `["010", "011", "101", "110", "111"]`.
+
+**Example 2:** `valid_strings(1)` returns `["0", "1"]`.
+
+**Constraints:** 1 ≤ n ≤ 18. Build each string one character at a time, adding a 0 only where it's allowed.
+starter:
+```python
+def valid_strings(n):
+    # your code here
+    return []
+```
+solution:
+```python
+def build(n, current, result):
+    if len(current) == n:
+        result.append(current)
+        return
+    if current == "" or current[-1] == "1":
+        build(n, current + "0", result)
+    build(n, current + "1", result)
+
+
+def valid_strings(n):
+    result = []
+    build(n, "", result)
+    return result
+```
+tests:
+- valid_strings(3)
+- valid_strings(1)
+- valid_strings(2)
+- valid_strings(4)
+- len(valid_strings(12))
+- valid_strings(12)[:3]
+fail[2]: A single character has no neighbours, so both are valid: `["0", "1"]`.
+fail[3]: Of `"00"`, `"01"`, `"10"` and `"11"`, only `"00"` has two 0s together.
+fail[4]: 8 strings of 4 characters have no two 0s together. Try `"0"` before `"1"` at each position to keep them in order.
+fail[5]: The counts grow like the Fibonacci numbers: 2, 3, 5, 8 and up to 377 strings for n = 12.
+fail[6]: The smallest valid strings of 12 characters start by switching between 0 and 1: `"010101010101"`, then `"010101010110"` and `"010101010111"`.
+edges:
+- one character :: n == 1 :: valid_strings(1)
+- two characters :: n == 2 :: valid_strings(2)
+- three or more characters :: n >= 3 :: valid_strings(4)
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the length of the strings. There are about 1.6ⁿ of them, like the Fibonacci numbers: count that as at most 2ⁿ, as with `fib`.
+why_time: Up to 2ⁿ strings, each built one character at a time: n steps each.
+why_space: The answer holds up to 2ⁿ strings of n characters.
+hint: Write `build(n, current, result)`. When `current` has n characters, append it to result and return.
+hint: Adding `"1"` is always allowed. Adding `"0"` is allowed when current is empty or ends with `"1"`.
+hint: Try `"0"` first, then `"1"`, so that the strings come out in increasing order.
+right: Only valid strings are ever built: a branch with two 0s together is never started. That's 377 strings for n = 12, instead of 4,096 to build and check.
+wrong: `build(n, current, result)`: if `len(current) == n`, append it and return. If current is `""` or ends with `"1"`, call `build(n, current + "0", result)`. Then call `build(n, current + "1", result)`.
+
+=== task: code medium
+title: Matchsticks to Square
+leetcode: 473 | Matchsticks to Square | matchsticks-to-square
+patterns: choices + branch
+prompt: Write `makesquare(matchsticks)` that returns `True` if you can use every matchstick exactly once, without breaking any, to make the four sides of a square, and `False` if not.
+
+**Example 1:** `makesquare([1, 1, 2, 2, 2])` returns `True`: the sides are 2, 2, 2 and 1 + 1.
+
+**Example 2:** `makesquare([3, 3, 3, 3, 4])` returns `False`.
+
+**Constraints:** 1 ≤ `len(matchsticks)` ≤ 15, and 1 ≤ `matchsticks[i]` ≤ 10⁸. Each stick has 4 choices: the side it goes on.
+starter:
+```python
+def makesquare(matchsticks):
+    # your code here
+    return False
+```
+solution:
+```python
+def place(sticks, i, sides, side):
+    if i == len(sticks):
+        return True
+    for s in range(4):
+        if sides[s] + sticks[i] <= side:
+            sides[s] += sticks[i]
+            if place(sticks, i + 1, sides, side):
+                return True
+            sides[s] -= sticks[i]
+        if sides[s] == 0:
+            break
+    return False
+
+
+def makesquare(matchsticks):
+    total = sum(matchsticks)
+    if total % 4 != 0:
+        return False
+    sticks = sorted(matchsticks, reverse=True)
+    return place(sticks, 0, [0, 0, 0, 0], total // 4)
+```
+tests:
+- makesquare([1, 1, 2, 2, 2])
+- makesquare([3, 3, 3, 3, 4])
+- makesquare([1, 1, 1, 1])
+- makesquare([5])
+- makesquare([2, 2, 2, 2, 2, 2])
+- makesquare([5, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3])
+fail[2]: The sticks add up to 16, so each side must be 4. The 4 makes one side, but nothing left can make a 3 up to 4.
+fail[3]: Four sticks of 1, one on each side: `True`.
+fail[4]: One stick of 5 can't make four sides, and 5 isn't a multiple of 4: `False`.
+fail[5]: The sticks add up to 12, so each side must be 3, and no group of 2s makes 3: `False`.
+fail[6]: Each side must be 12: 5 + 4 + 3, four times. Sort the sticks longest first, and stop a branch as soon as a side would be too long.
+edges:
+- the total isn't a multiple of 4 :: sum(matchsticks) % 4 != 0 :: makesquare([1, 1, 1])
+- a stick longer than a side :: sum(matchsticks) % 4 == 0 and max(matchsticks) > sum(matchsticks) // 4 :: makesquare([5, 1, 1, 1])
+- every stick fits on a side :: sum(matchsticks) % 4 == 0 and max(matchsticks) <= sum(matchsticks) // 4 :: makesquare([2, 2, 1, 1, 1, 1])
+edge_count: 2
+complexity: time=O(4ⁿ) | space=O(n)
+complexity_options: O(4ⁿ)
+complexity_note: n is the number of sticks.
+why_time: Each stick tries up to 4 sides, so the worst case has 4ⁿ branches; stopping early cuts most of them.
+why_space: The 4 side lengths, a sorted copy of the sticks, and up to n calls waiting.
+hint: If the total isn't a multiple of 4, return `False`. Otherwise each side must be `total // 4`.
+hint: Write `place(sticks, i, sides, side)`, which puts stick i on each side in turn where it fits, and calls itself for stick i + 1. When every stick is placed, return `True`.
+hint: Sort the sticks longest first, so that a stick that fits nowhere shows up early. If a side is still 0 after stick i was tried there and taken off again, stop: the other empty sides would only repeat the same tries.
+right: Long sticks first, and stopping when a side would overflow, cut the 4ⁿ branches down to a few here. The empty-side rule matters too: without it, every arrangement is tried 24 times, once for each order of the four sides.
+wrong: Return `False` if the total isn't a multiple of 4. Sort the sticks longest first. `place(sticks, i, sides, side)`: `True` when i is `len(sticks)`; otherwise for each side s where the stick fits, add it, return `True` if the next call does, and take it off again; stop if `sides[s]` is 0.
+
+=== task: code medium
+title: The Number of Beautiful Subsets
+leetcode: 2597 | The Number of Beautiful Subsets | the-number-of-beautiful-subsets
+patterns: branch
+prompt: A subset of nums is beautiful if no two of its numbers differ by exactly k. Write `beautiful_subsets(nums, k)` that returns how many non-empty beautiful subsets nums has. Subsets count separately when they use different positions.
+
+**Example 1:** `beautiful_subsets([2, 4, 6], 2)` returns `4`: `[2]`, `[4]`, `[6]` and `[2, 6]`.
+
+**Example 2:** `beautiful_subsets([1], 1)` returns `1`: `[1]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 18, and 1 ≤ `nums[i]`, k ≤ 1000. Take it or leave it, checking each number against the ones already taken.
+starter:
+```python
+def beautiful_subsets(nums, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count(nums, i, k, taken):
+    if i == len(nums):
+        return 1
+    total = count(nums, i + 1, k, taken)
+    x = nums[i]
+    if taken.get(x - k, 0) == 0 and taken.get(x + k, 0) == 0:
+        taken[x] = taken.get(x, 0) + 1
+        total += count(nums, i + 1, k, taken)
+        taken[x] -= 1
+    return total
+
+
+def beautiful_subsets(nums, k):
+    return count(nums, 0, k, {}) - 1
+```
+tests:
+- beautiful_subsets([2, 4, 6], 2)
+- beautiful_subsets([1], 1)
+- beautiful_subsets([5, 5], 3)
+- beautiful_subsets([1, 2, 3], 1)
+- beautiful_subsets([10, 4, 5, 7, 2, 1], 3)
+- beautiful_subsets([i % 7 + 1 for i in range(10)], 2)
+fail[2]: One number, one non-empty subset: 1.
+fail[3]: The two 5s differ by 0, not 3, so `[5]`, the other `[5]` and `[5, 5]` are all beautiful: 3.
+fail[4]: Neighbours differ by 1, so only `[1]`, `[2]`, `[3]` and `[1, 3]` work: 4.
+fail[5]: 23 of the 63 non-empty subsets have no two numbers 3 apart.
+fail[6]: The numbers are 1 to 7, then 1 to 3 again, and 161 subsets have no two numbers 2 apart. Count how many times each number is taken, so that x − k and x + k can be checked at once.
+edges:
+- one number :: len(nums) == 1 :: beautiful_subsets([7], 2)
+- repeated numbers :: len(set(nums)) < len(nums) :: beautiful_subsets([3, 3], 1)
+- no two numbers differ by k :: len(set(nums)) == len(nums) > 1 and all(abs(a - b) != k for a in nums for b in nums) :: beautiful_subsets([1, 2], 5)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(n)
+complexity_note: n is the length of `nums`. Checking a number against the taken ones is an O(1) dictionary lookup.
+why_time: Up to two calls for each number: at most 2ⁿ subsets, each built once.
+why_space: A dictionary of the taken numbers, and up to n calls waiting.
+hint: Write `count(nums, i, k, taken)`, which counts the beautiful subsets you can finish from position i. At the end of the list, return 1: the subset built so far.
+hint: Leaving `nums[i]` out always works. Taking it works only if neither `x - k` nor `x + k` is taken, where x is `nums[i]`.
+hint: Keep `taken` as a dictionary of counts: add 1 to `taken[x]` before the call and take it away after. Subtract 1 at the end, for the empty subset.
+right: Every beautiful subset is built once, and a branch stops the moment it would take a number k away from one it has. A subset can hold the same number twice, so the counts need a dictionary, not a set.
+wrong: `count(nums, i, k, taken)`: return 1 at the end of the list. Otherwise `total = count(nums, i + 1, k, taken)`; if `taken.get(x - k, 0)` and `taken.get(x + k, 0)` are both 0, add 1 to `taken[x]`, add `count(nums, i + 1, k, taken)` to total, and take 1 off again. Return `count(nums, 0, k, {}) - 1`.
+
+=== task: code medium
+title: Target Sum
+leetcode: 494 | Target Sum | target-sum
+patterns: branch + memo
+prompt: Put a `+` or a `-` in front of every number in nums, and add them all up. Write `find_target_sum_ways(nums, target)` that returns how many of the 2ⁿ ways to choose the signs give target.
+
+**Example 1:** `find_target_sum_ways([1, 1, 1, 1, 1], 3)` returns `5`: four `+` and one `-`, which can be in front of any of the 5 numbers.
+
+**Example 2:** `find_target_sum_ways([1], 1)` returns `1`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 20, 0 ≤ `nums[i]` ≤ 1000, the numbers add up to at most 1000, and −1000 ≤ target ≤ 1000. Remember the answer for each position and running total, so that each is worked out once.
+starter:
+```python
+def find_target_sum_ways(nums, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+def ways(nums, i, total, target, memo):
+    if i == len(nums):
+        if total == target:
+            return 1
+        return 0
+    key = (i, total)
+    if key not in memo:
+        plus = ways(nums, i + 1, total + nums[i], target, memo)
+        minus = ways(nums, i + 1, total - nums[i], target, memo)
+        memo[key] = plus + minus
+    return memo[key]
+
+
+def find_target_sum_ways(nums, target):
+    return ways(nums, 0, 0, target, {})
+```
+tests:
+- find_target_sum_ways([1, 1, 1, 1, 1], 3)
+- find_target_sum_ways([1], 1)
+- find_target_sum_ways([1, 2], 5)
+- find_target_sum_ways([0, 0, 1], 1)
+- find_target_sum_ways([2, 3, 5], 0)
+- find_target_sum_ways([i % 4 for i in range(14)], 3)
+fail[2]: +1 is the only way to make 1.
+fail[3]: The most you can make is 1 + 2 = 3, so 5 is out of reach: 0.
+fail[4]: The 1 needs a `+`, and each 0 can have either sign: 2 × 2 = 4 ways.
+fail[5]: 2 + 3 − 5 and −2 − 3 + 5 both make 0.
+fail[6]: 14 numbers have 16,384 sign choices, and 1,728 of them make 3. Each 0 doubles the count, because its sign changes nothing.
+speed: setup=nums = [1] * n | call=find_target_sum_ways(nums, n % 2) | target=O(n²) | sizes=5,10,15,20
+slow:
+```python
+def ways(nums, i, total, target):
+    if i == len(nums):
+        if total == target:
+            return 1
+        return 0
+    plus = ways(nums, i + 1, total + nums[i], target)
+    minus = ways(nums, i + 1, total - nums[i], target)
+    return plus + minus
+
+
+def find_target_sum_ways(nums, target):
+    return ways(nums, 0, 0, target)
+```
+fail[speed]: Trying both signs for every number, with nothing remembered, makes 2ⁿ⁺¹ − 1 calls. Many sign choices reach the same total at the same position: remember the answer for each `(i, total)` in a dictionary. With n 1s there are about n² of them.
+edges:
+- target out of reach :: abs(target) > sum(nums) :: find_target_sum_ways([1, 2], 5)
+- a 0 in nums :: abs(target) <= sum(nums) and 0 in nums :: find_target_sum_ways([0, 1], 1)
+- one number :: len(nums) == 1 and abs(target) <= sum(nums) and 0 not in nums :: find_target_sum_ways([3], -3)
+edge_count: 2
+complexity: time=O(n × S) | space=O(n × S)
+complexity_options: O(n × S); O(S); O(n + S)
+complexity_note: n is the length of `nums`, and S is what they add up to. Every running total is between −S and S.
+why_time: At most n × (2S + 1) different `(i, total)` pairs, each worked out once.
+why_space: The memo has an entry for each pair worked out, and the recursion has up to n calls waiting.
+hint: Write `ways(nums, i, total, target, memo)`: how many ways the signs from position i onwards can turn total into target. At the end of the list, it's 1 if total equals target, and 0 if not.
+hint: Otherwise it's the ways from i + 1 with `total + nums[i]`, plus the ways from i + 1 with `total - nums[i]`.
+hint: Two calls for each number make 2ⁿ calls at the bottom. Store each answer under `(i, total)` in the memo, and look it up first.
+right: Many sign choices reach the same total at the same position, and the memo works each one out once: at most n × (2S + 1) of them. For 20 numbers adding up to 1000 that's about 40,000, where 2²⁰ is over a million.
+wrong: `ways(nums, i, total, target, memo)`: at the end, 1 if `total == target`, else 0. If `(i, total)` isn't in memo, store the ways from i + 1 with `total + nums[i]` plus the ways from i + 1 with `total - nums[i]`. Return `memo[(i, total)]`.
+
+=== task: code medium
+title: Count Ways To Build Good Strings
+leetcode: 2466 | Count Ways To Build Good Strings | count-ways-to-build-good-strings
+patterns: memo
+prompt: You build a string from empty. Each step adds a block to the end: either `"0"` written zero times, or `"1"` written one times, where zero and one are numbers you're given. Write `count_good_strings(low, high, zero, one)` that returns how many different strings with a length from low to high you can build. The count can be huge, so return its remainder after dividing by 1,000,000,007 (10⁹ + 7).
+
+**Example 1:** `count_good_strings(3, 3, 1, 1)` returns `8`: with blocks of length 1, every string of three 0s and 1s.
+
+**Example 2:** `count_good_strings(2, 3, 1, 2)` returns `5`: `"00"`, `"11"`, `"000"`, `"110"` and `"011"`.
+
+**Constraints:** 1 ≤ low ≤ high ≤ 10⁵, and 1 ≤ zero, one ≤ low. Aim for O(high) time.
+starter:
+```python
+def count_good_strings(low, high, zero, one):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_good_strings(low, high, zero, one):
+    mod = 1000000007
+    ways = [0] * (high + 1)
+    ways[0] = 1
+    total = 0
+    for length in range(1, high + 1):
+        if length >= zero:
+            ways[length] += ways[length - zero]
+        if length >= one:
+            ways[length] += ways[length - one]
+        ways[length] %= mod
+        if length >= low:
+            total = (total + ways[length]) % mod
+    return total
+```
+tests:
+- count_good_strings(3, 3, 1, 1)
+- count_good_strings(2, 3, 1, 2)
+- count_good_strings(1, 1, 1, 1)
+- count_good_strings(4, 4, 2, 2)
+- count_good_strings(5, 9, 3, 5)
+- count_good_strings(15000, 20000, 1, 2)
+fail[2]: The blocks are `"0"` and `"11"`. Length 2: `"00"` or `"11"`. Length 3: `"000"`, `"011"` or `"110"`. That's 5.
+fail[3]: Length 1 with blocks of length 1: `"0"` and `"1"`.
+fail[4]: The blocks are `"00"` and `"11"`, and length 4 takes two of them: 4 strings.
+fail[5]: The blocks are `"000"` and `"11111"`. Lengths 5, 6, 8 and 9 can be built, in 1, 1, 2 and 1 ways: 5.
+fail[6]: Lengths up to 20,000 make far too many strings to build, and a recursion that deep stops with a RecursionError. Fill a list `ways` with a loop from 1 up, and take `% 1000000007` as you go.
+edges:
+- zero and one are equal :: zero == one :: count_good_strings(2, 4, 2, 2)
+- low equals high :: low == high and zero != one :: count_good_strings(3, 3, 1, 2)
+- a range of lengths :: low < high and zero != one :: count_good_strings(1, 5, 1, 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is high.
+why_time: One turn for each length from 1 to high, with up to two additions each.
+why_space: The list `ways` has high + 1 entries.
+hint: The last block of a string of length L is zero `"0"`s or one `"1"`s. So `ways[L]` is `ways[L - zero] + ways[L - one]`, leaving out a part when L − zero or L − one is below 0, with `ways[0] = 1` for the empty string.
+hint: high can be 100,000, too deep for a recursion: fill in `ways` with a loop from 1 up to high.
+hint: Add up `ways[L]` for L from low to high. Take `% 1000000007` after every addition, to keep the numbers small.
+right: One pass over the lengths: O(high). The blocks of 0s and 1s can't be confused with each other, so each string comes from exactly one sequence of blocks, and counting the sequences counts the strings.
+wrong: `ways = [0] * (high + 1)` and `ways[0] = 1`. For L from 1 to high: add `ways[L - zero]` if L ≥ zero and `ways[L - one]` if L ≥ one, then `% 1000000007`. Add `ways[L]` to the total when L ≥ low.
+
+=== task: code medium
+title: Minimum Number of Work Sessions to Finish the Tasks
+leetcode: 1986 | Minimum Number of Work Sessions to Finish the Tasks | minimum-number-of-work-sessions-to-finish-the-tasks
+patterns: masks + memo
+prompt: Task i takes `tasks[i]` hours. A work session lasts at most session_time hours, and a task has to be finished in the session it starts in. Write `min_sessions(tasks, session_time)` that returns the fewest sessions that finish every task. The tasks can be done in any order.
+
+**Example 1:** `min_sessions([1, 2, 3], 3)` returns `2`: 1 + 2 in one session, and 3 in the other.
+
+**Example 2:** `min_sessions([3, 1, 3, 1, 1], 8)` returns `2`: 3 + 1 + 3 + 1 in one, and 1 in the other.
+
+**Example 3:** `min_sessions([1, 2, 3, 4, 5], 15)` returns `1`.
+
+**Constraints:** 1 ≤ n ≤ 14, where n is `len(tasks)`; 1 ≤ `tasks[i]` ≤ 10; and `max(tasks)` ≤ session_time ≤ 15. Keep one answer for each set of tasks done so far.
+starter:
+```python
+def min_sessions(tasks, session_time):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_sessions(tasks, session_time):
+    n = len(tasks)
+    best = [None] * (1 << n)
+    best[0] = (1, 0)
+    for mask in range(1 << n):
+        if best[mask] is None:
+            continue
+        sessions, used = best[mask]
+        for i in range(n):
+            if mask >> i & 1:
+                continue
+            if used + tasks[i] <= session_time:
+                option = (sessions, used + tasks[i])
+            else:
+                option = (sessions + 1, tasks[i])
+            nxt = mask | (1 << i)
+            if best[nxt] is None or option < best[nxt]:
+                best[nxt] = option
+    return best[(1 << n) - 1][0]
+```
+tests:
+- min_sessions([1, 2, 3], 3)
+- min_sessions([3, 1, 3, 1, 1], 8)
+- min_sessions([1, 2, 3, 4, 5], 15)
+- min_sessions([5], 5)
+- min_sessions([4, 4, 4], 5)
+- min_sessions([i % 7 + 2 for i in range(10)], 11)
+fail[2]: 3 + 1 + 3 + 1 = 8 fills one session, and the last 1 needs a second.
+fail[3]: Everything adds up to 15, which fits in one session.
+fail[4]: One task that fits: 1 session.
+fail[5]: Two 4s add up to 8, over 5, so each task needs its own session: 3.
+fail[6]: The tasks add up to 44, so 4 sessions of 11 is the least that could work, and they can be split that way. For each set of tasks done, keep the fewest sessions and, with those, the fewest hours used in the last one.
+edges:
+- one task :: len(tasks) == 1 :: min_sessions([4], 6)
+- everything fits in one session :: len(tasks) > 1 and sum(tasks) <= session_time :: min_sessions([2, 3], 6)
+- more than one session needed :: len(tasks) > 1 and sum(tasks) > session_time :: min_sessions([4, 4, 3], 7)
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the number of tasks.
+why_time: 2ⁿ masks, and from each one, up to n tasks to try adding.
+why_space: The table has one entry for each of the 2ⁿ masks.
+hint: Let `best[mask]` be the best way to have done the tasks in mask: a pair `(sessions, hours used in the last session)`. Fewer sessions is better, and with the same sessions, fewer hours used. Python compares tuples in that order.
+hint: Start from `best[0] = (1, 0)`. From each mask, try each task i that isn't in it: if it fits in the last session, `(sessions, used + tasks[i])`; if not, start a new one, `(sessions + 1, tasks[i])`.
+hint: Keep the smaller pair at `mask | (1 << i)`. Masks only grow, so going through them in increasing order finds each one's best before it's used. The answer is `best[(1 << n) - 1][0]`.
+right: 2ⁿ masks with n tasks each: about 230,000 steps for 14 tasks, instead of trying every order of them. Keeping only the smallest pair is safe: a pair with fewer sessions can always start a fresh session, and that's never worse than the other pair.
+wrong: `best = [None] * (1 << n)` and `best[0] = (1, 0)`. For each mask with a pair `(s, used)`, and each task i not in mask: `(s, used + tasks[i])` if it fits, else `(s + 1, tasks[i])`; keep the smaller at `mask | (1 << i)`.
+
+=== task: code hard
+title: Expression Add Operators
+leetcode: 282 | Expression Add Operators | expression-add-operators
+patterns: choices + branch
+prompt: num is a string of digits. Between each two neighbouring digits you can put `+`, `-`, `*` or nothing, which joins them into a longer number. Write `add_operators(num, target)` that returns every expression that works out to target, sorted. A number with two or more digits can't start with 0, and `*` is worked out before `+` and `-`.
+
+**Example 1:** `add_operators("123", 6)` returns `["1*2*3", "1+2+3"]`.
+
+**Example 2:** `add_operators("232", 8)` returns `["2*3+2", "2+3*2"]`.
+
+**Example 3:** `add_operators("105", 5)` returns `["1*0+5", "10-5"]`. `"1*05"` isn't allowed, because 05 starts with 0.
+
+**Constraints:** 1 ≤ `len(num)` ≤ 10, num has only digits, and −2³¹ ≤ target ≤ 2³¹ − 1. `eval` isn't available here: work out each expression's value while you build it.
+starter:
+```python
+def add_operators(num, target):
+    # your code here
+    return []
+```
+solution:
+```python
+def build(num, target, i, expr, value, last, result):
+    if i == len(num):
+        if value == target:
+            result.append(expr)
+        return
+    for j in range(i + 1, len(num) + 1):
+        piece = num[i:j]
+        if len(piece) > 1 and piece[0] == "0":
+            break
+        x = int(piece)
+        if i == 0:
+            build(num, target, j, piece, x, x, result)
+        else:
+            build(num, target, j, expr + "+" + piece, value + x, x, result)
+            build(num, target, j, expr + "-" + piece, value - x, -x, result)
+            product = last * x
+            new_value = value - last + product
+            build(num, target, j, expr + "*" + piece, new_value, product, result)
+
+
+def add_operators(num, target):
+    result = []
+    build(num, target, 0, "", 0, 0, result)
+    return sorted(result)
+```
+tests:
+- add_operators("123", 6)
+- add_operators("232", 8)
+- add_operators("105", 5)
+- add_operators("00", 0)
+- add_operators("7", 7)
+- add_operators("1234567", 100)
+fail[2]: `2*3+2` and `2+3*2` both make 8, because the `*` is worked out first.
+fail[3]: `"1*0+5"` and `"10-5"` make 5. `"1*05"` isn't allowed: a number with two or more digits can't start with 0.
+fail[4]: `"0*0"`, `"0+0"` and `"0-0"` make 0, but `"00"` isn't a number you can use.
+fail[5]: One digit and no operators: the expression is the digit itself, `["7"]`.
+fail[6]: 4 expressions make 100, including `"123*4-56*7"`. Keep the value so far and the last number added, so that a `*` can take the last number back off and add its product instead.
+edges:
+- one digit :: len(num) == 1 :: add_operators("7", 7)
+- a 0 in num :: len(num) > 1 and "0" in num :: add_operators("105", 5)
+- a negative target :: len(num) > 1 and "0" not in num and target < 0 :: add_operators("12", -1)
+edge_count: 2
+complexity: time=O(n × 4ⁿ) | space=O(n²)
+complexity_options: O(n × 4ⁿ); O(4ⁿ)
+complexity_note: n is the length of num. Count the space apart from the answer list.
+why_time: There are 4 choices between each two digits, so up to 4ⁿ⁻¹ expressions, each built as a string of up to 2n characters.
+why_space: Up to n calls waiting, each holding an expression of up to 2n characters.
+hint: Write `build(num, target, i, expr, value, last, result)`: expr is the expression for the digits before position i, value is what it works out to, and last is the last number added, with its sign, after any `*`.
+hint: The next number is `num[i:j]` for each j after i. Stop when it has two or more digits and starts with `"0"`. At position 0 it starts the expression; after that it follows a `+`, `-` or `*`.
+hint: `+` gives `value + x` with last x, and `-` gives `value - x` with last −x. `*` belongs to the last number: `value - last + last * x`, with last `last * x`. When i reaches the end and value equals target, append expr. Return `sorted(result)`.
+right: Each of the up to 4ⁿ⁻¹ expressions is built once, and its value is worked out on the way. The last number is what lets `*` go first without brackets: 2 + 3 × 4 starts as 2 + 3 = 5 with last 3, then becomes 5 − 3 + 3 × 4 = 14.
+wrong: For each next number x, `num[i:j]` with no leading 0: at i = 0, start with value x and last x. Otherwise make three calls: `+` with `(value + x, x)`, `-` with `(value - x, -x)`, and `*` with `(value - last + last * x, last * x)`. At the end, keep expr if value equals target.
+
+=== task: code hard
+title: Maximum Number of Achievable Transfer Requests
+leetcode: 1601 | Maximum Number of Achievable Transfer Requests | maximum-number-of-achievable-transfer-requests
+patterns: subsets
+prompt: There are n buildings, numbered 0 to n − 1, and every one is full. Each request `[a, b]` asks to move one person from building a to building b. A group of requests can be granted together only if every building ends up with as many people as it started with: as many people leave it as arrive. Write `maximum_requests(n, requests)` that returns the largest number of requests that can be granted together.
+
+**Example 1:** `maximum_requests(5, [[0, 1], [1, 0], [0, 1], [1, 2], [2, 0], [3, 4]])` returns `5`: every request except `[3, 4]`.
+
+**Example 2:** `maximum_requests(3, [[0, 0], [1, 2], [2, 1]])` returns `3`: `[0, 0]` stays in building 0, and the other two swap.
+
+**Example 3:** `maximum_requests(4, [[0, 3], [3, 1], [1, 2], [2, 0]])` returns `4`: a loop through all four buildings.
+
+**Constraints:** 1 ≤ n ≤ 20, 1 ≤ `len(requests)` ≤ 16, and 0 ≤ a, b < n.
+starter:
+```python
+def maximum_requests(n, requests):
+    # your code here
+    return 0
+```
+solution:
+```python
+def maximum_requests(n, requests):
+    states = [([0] * n, 0)]
+    for a, b in requests:
+        more = []
+        for change, count in states:
+            moved = change[:]
+            moved[a] -= 1
+            moved[b] += 1
+            more.append((moved, count + 1))
+        states = states + more
+    best = 0
+    for change, count in states:
+        if count > best and all(c == 0 for c in change):
+            best = count
+    return best
+```
+tests:
+- maximum_requests(5, [[0, 1], [1, 0], [0, 1], [1, 2], [2, 0], [3, 4]])
+- maximum_requests(3, [[0, 0], [1, 2], [2, 1]])
+- maximum_requests(4, [[0, 3], [3, 1], [1, 2], [2, 0]])
+- maximum_requests(2, [[0, 1]])
+- maximum_requests(1, [[0, 0], [0, 0]])
+- maximum_requests(4, [[i % 4, (i * 3 + 1) % 4] for i in range(9)])
+fail[2]: `[0, 0]` changes nothing, and `[1, 2]` and `[2, 1]` balance each other: all 3.
+fail[3]: 0 → 3 → 1 → 2 → 0 is a loop, so all 4 requests balance.
+fail[4]: Moving one person from 0 to 1 leaves building 0 short and building 1 over, so no request can be granted: 0.
+fail[5]: Two requests to stay in building 0 change nothing: both, 2.
+fail[6]: Three requests go from 0 to 1, but only two come back, so one of them can't be granted: 8 of the 9.
+edges:
+- a request to stay in the same building :: any(a == b for a, b in requests) :: maximum_requests(2, [[0, 0], [0, 1]])
+- one request between two buildings :: len(requests) == 1 and requests[0][0] != requests[0][1] :: maximum_requests(2, [[0, 1]])
+- a loop through several buildings :: len(requests) > 1 and all(a != b for a, b in requests) :: maximum_requests(3, [[0, 1], [1, 2], [2, 0]])
+edge_count: 2
+complexity: time=O(n × 2ʳ) | space=O(n × 2ʳ)
+complexity_options: O(n × 2ʳ); O(2ʳ); O(r × 2ʳ); O(n × r)
+complexity_note: n is the number of buildings and r the number of requests.
+why_time: 2ʳ groups of requests, each with a list of n changes to copy and check.
+why_space: 2ʳ lists of n changes.
+hint: Use the doubling method on the requests. For each group, keep the change in every building, a list of n numbers, and how many requests it has: start with `[([0] * n, 0)]`.
+hint: For a request `[a, b]`, each group so far gets a copy with it added: copy the change list, subtract 1 at a and add 1 at b, and add 1 to the count.
+hint: At the end, the answer is the biggest count whose changes are all 0.
+right: Every group of requests is tried once: 2ʳ of them, at most 65,536 for 16 requests. Only a building's total change matters, so the order of the requests in a group doesn't.
+wrong: `states = [([0] * n, 0)]`. For each `[a, b]`: for each `(change, count)`, copy change, subtract 1 at a and add 1 at b, and collect it with `count + 1`; then add the collected states to the list. Return the largest count whose changes are all 0.
+
+=== task: code hard
+title: Maximum Good People Based on Statements
+leetcode: 2151 | Maximum Good People Based on Statements | maximum-good-people-based-on-statements
+patterns: masks
+prompt: There are n people. Good people always tell the truth; bad people may tell the truth or lie. `statements[i][j]` is what person i says about person j: 0 means "j is bad", 1 means "j is good", and 2 means i says nothing about j. Nobody talks about themselves, so `statements[i][i]` is 2. Write `maximum_good(statements)` that returns the largest number of people who can be good without contradicting the statements.
+
+**Example 1:** `maximum_good([[2, 1, 2], [1, 2, 2], [2, 0, 2]])` returns `2`: people 0 and 1 say each other are good, and person 2, who calls person 1 bad, must then be bad.
+
+**Example 2:** `maximum_good([[2, 0], [0, 2]])` returns `1`: each calls the other bad, so they can't both be good.
+
+**Constraints:** 2 ≤ n ≤ 15, and every statement is 0, 1 or 2. Try every choice of who's good as a mask, and check what the good people say.
+starter:
+```python
+def maximum_good(statements):
+    # your code here
+    return 0
+```
+solution:
+```python
+def maximum_good(statements):
+    n = len(statements)
+    best = 0
+    for mask in range(1 << n):
+        ok = True
+        for i in range(n):
+            if mask >> i & 1:
+                for j in range(n):
+                    said = statements[i][j]
+                    if said != 2 and said != (mask >> j & 1):
+                        ok = False
+        if ok:
+            best = max(best, bin(mask).count("1"))
+    return best
+```
+tests:
+- maximum_good([[2, 1, 2], [1, 2, 2], [2, 0, 2]])
+- maximum_good([[2, 0], [0, 2]])
+- maximum_good([[2, 1], [1, 2]])
+- maximum_good([[2, 2, 2], [2, 2, 2], [2, 2, 2]])
+- maximum_good([[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+- maximum_good([[2 if i == j else i * j % 3 for j in range(7)] for i in range(7)])
+fail[2]: If both were good, both would be telling the truth, and each says the other is bad. One good person works: 1.
+fail[3]: Each says the other is good: both can be good, 2.
+fail[4]: Nobody says anything, so everyone can be good: 3.
+fail[5]: Everyone calls everyone else bad, so any two good people would contradict each other: 1.
+fail[6]: 7 people make 128 choices of who's good. Check every statement made by a good person: at most 4 can be good together.
+edges:
+- two people :: len(statements) == 2 :: maximum_good([[2, 1], [1, 2]])
+- nobody says anything :: len(statements) > 2 and all(s == 2 for row in statements for s in row) :: maximum_good([[2, 2, 2], [2, 2, 2], [2, 2, 2]])
+- someone calls someone bad :: len(statements) > 2 and any(s == 0 for row in statements for s in row) :: maximum_good([[2, 0, 2], [2, 2, 2], [2, 2, 2]])
+edge_count: 2
+complexity: time=O(n² × 2ⁿ) | space=O(1)
+complexity_options: O(n² × 2ⁿ); O(n × 2ⁿ)
+complexity_note: n is the number of people.
+why_time: 2ⁿ masks, and each one checks up to n² statements.
+why_space: A few numbers.
+hint: Each mask is a guess at who's good: person i is good when `mask >> i & 1` is 1.
+hint: A guess works if every good person's statements are true: for each good i and each j, `statements[i][j]` must be 2 or equal to `mask >> j & 1`.
+hint: Return the most 1 bits among the guesses that work: `bin(mask).count("1")`.
+right: Bad people's statements can be anything, so only the good people's need checking: 2ⁿ guesses with n² checks each. Stopping a guess at its first false statement saves time, but not in the worst case.
+wrong: For each mask in `range(1 << n)`: it works unless some i with `mask >> i & 1` has a j where `statements[i][j]` is neither 2 nor `mask >> j & 1`. Keep the largest `bin(mask).count("1")` among the masks that work.
+
+=== task: code hard
+title: Find Minimum Time to Finish All Jobs
+leetcode: 1723 | Find Minimum Time to Finish All Jobs | find-minimum-time-to-finish-all-jobs
+patterns: choices + branch
+prompt: `jobs[i]` is how long job i takes, and there are k workers. Every job goes to exactly one worker, and a worker's time is the total of their jobs. Write `minimum_time_required(jobs, k)` that returns the smallest possible time for the busiest worker.
+
+**Example 1:** `minimum_time_required([3, 2, 3], 3)` returns `3`: one job each.
+
+**Example 2:** `minimum_time_required([1, 2, 4, 7, 8], 2)` returns `11`: 1 + 2 + 8 and 4 + 7.
+
+**Constraints:** 1 ≤ k ≤ `len(jobs)` ≤ 12, and 1 ≤ `jobs[i]` ≤ 10⁷. Each job has k choices: the worker it goes to.
+starter:
+```python
+def minimum_time_required(jobs, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def assign(jobs, i, loads, best):
+    if i == len(jobs):
+        return min(best, max(loads))
+    for w in range(len(loads)):
+        if loads[w] + jobs[i] < best:
+            loads[w] += jobs[i]
+            best = assign(jobs, i + 1, loads, best)
+            loads[w] -= jobs[i]
+        if loads[w] == 0:
+            break
+    return best
+
+
+def minimum_time_required(jobs, k):
+    ordered = sorted(jobs, reverse=True)
+    return assign(ordered, 0, [0] * k, sum(jobs) + 1)
+```
+tests:
+- minimum_time_required([3, 2, 3], 3)
+- minimum_time_required([1, 2, 4, 7, 8], 2)
+- minimum_time_required([5], 1)
+- minimum_time_required([4, 2, 5], 1)
+- minimum_time_required([6, 6, 6, 6], 2)
+- minimum_time_required([i * 7 % 13 + 1 for i in range(10)], 3)
+fail[2]: 1 + 2 + 8 = 11 and 4 + 7 = 11: the busiest worker has 11, and no split does better.
+fail[3]: One job, one worker: 5.
+fail[4]: One worker does everything: 4 + 2 + 5 = 11.
+fail[5]: Two jobs each: 12.
+fail[6]: The 10 jobs add up to 65, so the busiest of 3 workers has at least 22, and a split into 22, 22 and 21 exists. Put the longest jobs first, and give up on a branch as soon as a worker would reach the best time found so far.
+edges:
+- one worker :: k == 1 :: minimum_time_required([4, 2, 5], 1)
+- one job for each worker :: k == len(jobs) and k > 1 :: minimum_time_required([4, 2, 5], 3)
+- more jobs than workers :: 1 < k < len(jobs) :: minimum_time_required([4, 2, 5], 2)
+edge_count: 2
+complexity: time=O(kⁿ) | space=O(n + k)
+complexity_options: O(kⁿ); O(n + k); O(k × 2ⁿ)
+complexity_note: n is the number of jobs and k the number of workers.
+why_time: Each job tries up to k workers, so the worst case has kⁿ branches; the checks cut most of them.
+why_space: The k workers' times, a sorted copy of the jobs, and up to n calls waiting.
+hint: Write `assign(jobs, i, loads, best)`, which tries giving job i to each worker in turn and returns the best time it finds, or best if nothing beats it. When every job is given out, the time is `max(loads)`.
+hint: Skip a worker if their load plus the job would reach best: that branch can't do better. Start with best as `sum(jobs) + 1`.
+hint: Sort the jobs longest first. If a worker still has load 0 after trying the job there, stop: the other idle workers would repeat the same tries.
+right: Long jobs first finds a good answer early, so the "can't beat best" check cuts branches from then on, and the idle-worker rule stops the same split being tried once for each order of the workers.
+wrong: `assign(jobs, i, loads, best)`: at the end, return `min(best, max(loads))`. Otherwise for each worker w with `loads[w] + jobs[i] < best`, add the job, set `best = assign(jobs, i + 1, loads, best)` and take the job off; stop if `loads[w]` is 0. Call it with the jobs sorted longest first.
+
+=== task: code hard
+title: Stickers to Spell Word
+leetcode: 691 | Stickers to Spell Word | stickers-to-spell-word
+patterns: branch + memo
+prompt: Each sticker is a word, and you have as many copies of every sticker as you like. You can cut single letters out of stickers and rearrange them. Write `min_stickers(stickers, target)` that returns the fewest stickers whose letters can spell target, or −1 if no number of stickers can.
+
+**Example 1:** `min_stickers(["with", "example", "science"], "thehat")` returns `3`: two `"with"` and one `"example"`.
+
+**Example 2:** `min_stickers(["notice", "possible"], "basicbasic")` returns `-1`.
+
+**Constraints:** 1 ≤ `len(stickers)` ≤ 50, 1 ≤ `len(stickers[i])` ≤ 10, and 1 ≤ `len(target)` ≤ 15, all lowercase letters. Remember the answer for each set of letters still needed.
+starter:
+```python
+def min_stickers(stickers, target):
+    # your code here
+    return -1
+```
+solution:
+```python
+def solve(remaining, counts, memo):
+    if remaining == "":
+        return 0
+    if remaining in memo:
+        return memo[remaining]
+    best = -1
+    for c in counts:
+        if c.get(remaining[0], 0) == 0:
+            continue
+        left = dict(c)
+        rest = []
+        for ch in remaining:
+            if left.get(ch, 0) > 0:
+                left[ch] -= 1
+            else:
+                rest.append(ch)
+        sub = solve("".join(rest), counts, memo)
+        if sub != -1 and (best == -1 or sub + 1 < best):
+            best = sub + 1
+    memo[remaining] = best
+    return best
+
+
+def min_stickers(stickers, target):
+    counts = []
+    for s in stickers:
+        c = {}
+        for ch in s:
+            c[ch] = c.get(ch, 0) + 1
+        counts.append(c)
+    return solve("".join(sorted(target)), counts, {})
+```
+tests:
+- min_stickers(["with", "example", "science"], "thehat")
+- min_stickers(["notice", "possible"], "basicbasic")
+- min_stickers(["a"], "aaa")
+- min_stickers(["ab", "bc"], "abc")
+- min_stickers(["xyz"], "a")
+- min_stickers(["these", "examples", "are", "not", "good", "so", "try", "again"], "goodexamplesare")
+fail[2]: Neither sticker has an `"a"`, so `"basicbasic"` can't be spelled: −1.
+fail[3]: Each `"a"` sticker gives one `"a"`: 3 stickers.
+fail[4]: `"ab"` and `"bc"` together have every letter: 2.
+fail[5]: The sticker has no `"a"`: −1.
+fail[6]: No two stickers have 15 letters between them, so 3 is the fewest: `"good"`, `"examples"` and `"are"`.
+edges:
+- a letter no sticker has :: any(all(ch not in s for s in stickers) for ch in target) :: min_stickers(["abc"], "abd")
+- one sticker is enough :: min_stickers(stickers, target) == 1 :: min_stickers(["hello"], "hole")
+- several stickers needed :: min_stickers(stickers, target) > 1 :: min_stickers(["ab", "cd"], "abcd")
+edge_count: 2
+complexity: time=O(s × n × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(s × n × 2ⁿ); O(n × 2ⁿ); O(s × 2ⁿ); O(sⁿ)
+complexity_note: n is the length of target and s the number of stickers. The letters still needed are always some of target's letters, so there are at most 2ⁿ different sets of them.
+why_time: At most 2ⁿ different sets of needed letters, each trying up to s stickers in O(n).
+why_space: The memo has up to 2ⁿ entries, each a string of up to n letters.
+hint: Write `solve(remaining, counts, memo)`: the fewest stickers for the letters in remaining, a string kept sorted so that the same letters always give the same key. With nothing remaining, it's 0.
+hint: The first letter of remaining has to come from some sticker, so only try the stickers that have it. Take as many needed letters as the sticker has, and add 1 to `solve` of the letters left over.
+hint: Count each sticker's letters once, at the start, with a dictionary. Store each answer in memo under remaining, and return −1 when nothing works.
+right: The memo keys are sets of letters still needed, at most 2ⁿ of them. Trying only the stickers with the first needed letter avoids trying the same stickers in every order.
+wrong: Count each sticker's letters. `solve(remaining, counts, memo)`: 0 for `""`. Otherwise, for each sticker with `remaining[0]`, take its letters out of remaining and try `solve` of the rest + 1, keeping the smallest that isn't −1. Memo by remaining, and start with `"".join(sorted(target))`.
+
+=== task: code hard
+title: Minimum Number of Days to Eat N Oranges
+leetcode: 1553 | Minimum Number of Days to Eat N Oranges | minimum-number-of-days-to-eat-n-oranges
+patterns: branch + memo
+prompt: There are n oranges. Each day you do one of these: eat one orange; if the number left can be divided by 2, eat half of them; or, if it can be divided by 3, eat two thirds of them. Write `min_days(n)` that returns the fewest days to eat all n oranges.
+
+**Example 1:** `min_days(10)` returns `4`: eat 1 (9 left), eat 6 (3 left), eat 2 (1 left), then eat the last one.
+
+**Example 2:** `min_days(6)` returns `3`: eat 3 (3 left), eat 2 (1 left), then eat the last one.
+
+**Constraints:** 1 ≤ n ≤ 2 × 10⁹. Branch on halving and on taking two thirds, and remember the answers.
+starter:
+```python
+def min_days(n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def days(n, memo):
+    if n <= 1:
+        return n
+    if n not in memo:
+        by_two = n % 2 + 1 + days(n // 2, memo)
+        by_three = n % 3 + 1 + days(n // 3, memo)
+        memo[n] = min(by_two, by_three)
+    return memo[n]
+
+
+def min_days(n):
+    return days(n, {})
+```
+tests:
+- min_days(10)
+- min_days(6)
+- min_days(1)
+- min_days(2)
+- min_days(56)
+- min_days(2000000000)
+fail[2]: Halve 6 to 3, take two thirds of 3 to leave 1, then eat it: 3 days.
+fail[3]: One orange, one day.
+fail[4]: Halve 2 to 1, then eat it: 2 days. Eating one a day takes 2 as well.
+fail[5]: 56 → 28 → 27 → 9 → 3 → 1 → 0: halve, eat one, take two thirds three times, then eat the last. That's 6 days.
+fail[6]: Eating one at a time means 2 billion days, or 2 billion calls. Eat single oranges only to reach a number you can halve or cut to a third: `n % 2 + 1 + days(n // 2)` or `n % 3 + 1 + days(n // 3)`. That's 32 days.
+edges:
+- one orange :: n == 1 :: min_days(1)
+- n divisible by 6 :: n % 6 == 0 :: min_days(12)
+- n divisible by neither 2 nor 3 :: n > 1 and n % 2 != 0 and n % 3 != 0 :: min_days(25)
+edge_count: 2
+complexity: time=O(log² n) | space=O(log² n)
+complexity_options: O(log² n); O(√n)
+complexity_note: n is the number of oranges.
+why_time: Every number the recursion reaches is n divided by some 2s and 3s, rounded down. n can be halved only about log₂ n times, so there are at most about log² n different numbers, each worked out once.
+why_space: The memo has an entry for each different number, and the recursion has up to about log₂ n calls waiting.
+hint: Eating one at a time only helps until the number can be halved or cut to a third: to halve, eat `n % 2` single oranges first; to cut to a third, eat `n % 3` first.
+hint: So `days(n)` is the smaller of `n % 2 + 1 + days(n // 2)` and `n % 3 + 1 + days(n // 3)`, with `days(0)` = 0 and `days(1)` = 1.
+hint: The same numbers come up along different paths: remember each answer in a dictionary.
+right: Each call halves n or cuts it to a third, so only numbers like n // 2, n // 3, n // 4 and n // 6 come up: 2 billion oranges need 257 different numbers, not 2 billion steps.
+wrong: `days(n, memo)`: return n if n ≤ 1. Otherwise store `min(n % 2 + 1 + days(n // 2, memo), n % 3 + 1 + days(n // 3, memo))` in `memo[n]` and return it.
+
+=== task: code hard
+title: Word Break II
+leetcode: 140 | Word Break II | word-break-ii
+patterns: branch + memo
+prompt: Write `word_break(s, word_dict)` that returns every way to split s into words from word_dict, as sentences with a space between the words, sorted. A word can be used more than once.
+
+**Example 1:** `word_break("catsanddog", ["cat", "cats", "and", "sand", "dog"])` returns `["cat sand dog", "cats and dog"]`.
+
+**Example 2:** `word_break("pineapplepenapple", ["apple", "pen", "applepen", "pine", "pineapple"])` returns `["pine apple pen apple", "pine applepen apple", "pineapple pen apple"]`.
+
+**Example 3:** `word_break("catsandog", ["cats", "dog", "sand", "and", "cat"])` returns `[]`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 20, 1 ≤ `len(word_dict)` ≤ 1000, 1 ≤ `len(word_dict[i])` ≤ 10, the words are all different, and everything is lowercase letters.
+starter:
+```python
+def word_break(s, word_dict):
+    # your code here
+    return []
+```
+solution:
+```python
+def sentences(s, start, words, memo):
+    if start == len(s):
+        return [""]
+    if start in memo:
+        return memo[start]
+    result = []
+    for end in range(start + 1, len(s) + 1):
+        word = s[start:end]
+        if word in words:
+            for rest in sentences(s, end, words, memo):
+                if rest == "":
+                    result.append(word)
+                else:
+                    result.append(word + " " + rest)
+    memo[start] = result
+    return result
+
+
+def word_break(s, word_dict):
+    return sorted(sentences(s, 0, set(word_dict), {}))
+```
+tests:
+- word_break("catsanddog", ["cat", "cats", "and", "sand", "dog"])
+- word_break("pineapplepenapple", ["apple", "pen", "applepen", "pine", "pineapple"])
+- word_break("catsandog", ["cats", "dog", "sand", "and", "cat"])
+- word_break("a", ["a"])
+- word_break("aaaa", ["a", "aa"])
+- len(word_break("aaaaaaaaaaaaaa", ["a", "aa", "aaa"]))
+fail[2]: `"apple"` is used twice, and `"applepen"` and `"pineapple"` give more ways: 3 sentences.
+fail[3]: `"cats"` + `"and"` leaves `"og"`, and `"cat"` + `"sand"` leaves `"og"` too: no sentence works, `[]`.
+fail[4]: The whole string is one word: `["a"]`.
+fail[5]: 4 a's split into pieces of 1 or 2 letters: 5 ways, sorted as strings.
+fail[6]: 14 a's split into pieces of 1, 2 or 3: 3,136 sentences. The sentences for an ending are the same whichever way you got there, so work them out once for each start position.
+edges:
+- no split works :: word_break(s, word_dict) == [] :: word_break("catsandog", ["cat", "cats", "and", "sand", "dog"])
+- s is a word itself :: s in word_dict :: word_break("apple", ["apple", "app"])
+- several splits :: s not in word_dict and len(word_break(s, word_dict)) > 1 :: word_break("catsanddog", ["cat", "cats", "and", "sand", "dog"])
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(n × 2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the length of s. There can be up to 2ⁿ⁻¹ sentences, one for each choice of where to put spaces, as with `"aaaa"` and words of every length.
+why_time: The answer can have up to 2ⁿ⁻¹ sentences of up to 2n characters, and each is built once, from the sentences of a shorter ending.
+why_space: The memo keeps the sentences for every start position: up to about 2ⁿ of them, with up to 2n characters each.
+hint: Write `sentences(s, start, words, memo)`: every sentence for `s[start:]`. At the end of s, it's `[""]`: one way, with no words.
+hint: For each end after start, if `s[start:end]` is a word, put it in front of every sentence for `s[end:]`, with a space between, but no space after the last word.
+hint: Many splits reach the same start position: keep each start's list in memo. Use a set of the words for O(1) checks, and sort the answer at the end.
+right: Each start position's sentences are built once and shared by every split that reaches it. When there are few sentences, that's far less work than trying all 2ⁿ⁻¹ ways to place spaces.
+wrong: `sentences(s, start, words, memo)`: `[""]` at the end. For each end with `s[start:end]` in words, and each rest in `sentences(s, end, words, memo)`, add word if rest is `""`, else `word + " " + rest`. Memo by start, and sort the answer.
+
+=== task: code hard
+title: Minimum XOR Sum of Two Arrays
+leetcode: 1879 | Minimum XOR Sum of Two Arrays | minimum-xor-sum-of-two-arrays
+patterns: masks + memo
+prompt: The XOR sum of two lists of the same length is the sum of `nums1[i] ^ nums2[i]` over every position i. Write `minimum_xor_sum(nums1, nums2)` that returns the smallest XOR sum you can get by rearranging nums2.
+
+**Example 1:** `minimum_xor_sum([1, 2], [2, 3])` returns `2`: rearranged to `[3, 2]`, it's `(1 ^ 3) + (2 ^ 2)`, which is 2 + 0.
+
+**Example 2:** `minimum_xor_sum([1, 0, 3], [5, 3, 4])` returns `8`: rearranged to `[5, 4, 3]`, it's 4 + 4 + 0.
+
+**Constraints:** 1 ≤ n ≤ 14, where n is the length of both lists, and 0 ≤ every number ≤ 10⁷. Keep the best answer for each set of nums2's numbers already used.
+starter:
+```python
+def minimum_xor_sum(nums1, nums2):
+    # your code here
+    return 0
+```
+solution:
+```python
+def minimum_xor_sum(nums1, nums2):
+    n = len(nums1)
+    best = [None] * (1 << n)
+    best[0] = 0
+    for mask in range(1 << n):
+        if best[mask] is None:
+            continue
+        i = bin(mask).count("1")
+        if i == n:
+            continue
+        for j in range(n):
+            if not mask >> j & 1:
+                nxt = mask | (1 << j)
+                value = best[mask] + (nums1[i] ^ nums2[j])
+                if best[nxt] is None or value < best[nxt]:
+                    best[nxt] = value
+    return best[(1 << n) - 1]
+```
+tests:
+- minimum_xor_sum([1, 2], [2, 3])
+- minimum_xor_sum([1, 0, 3], [5, 3, 4])
+- minimum_xor_sum([5], [9])
+- minimum_xor_sum([0, 0], [0, 0])
+- minimum_xor_sum([1, 2, 3], [3, 2, 1])
+- minimum_xor_sum([i * 37 % 100 for i in range(8)], [i * 53 % 100 for i in range(8)])
+fail[2]: Pair 1 with 5, 0 with 4 and 3 with 3: 4 + 4 + 0 = 8.
+fail[3]: One pair: `5 ^ 9` turns `0101` and `1001` into `1100`, which is 12.
+fail[4]: Every pair is `0 ^ 0`: 0.
+fail[5]: Rearrange nums2 to `[1, 2, 3]`: every pair is the same number twice, and `x ^ x` is 0.
+fail[6]: 8 numbers each make 256 masks, and the best pairing has an XOR sum of 80.
+edges:
+- one number each :: len(nums1) == 1 :: minimum_xor_sum([6], [3])
+- the same numbers in both :: len(nums1) > 1 and sorted(nums1) == sorted(nums2) :: minimum_xor_sum([4, 9], [9, 4])
+- different numbers :: len(nums1) > 1 and sorted(nums1) != sorted(nums2) :: minimum_xor_sum([1, 2], [2, 3])
+edge_count: 2
+complexity: time=O(n × 2ⁿ) | space=O(2ⁿ)
+complexity_options: O(n × 2ⁿ)
+complexity_note: n is the length of each list.
+why_time: 2ⁿ masks, each counting its bits and trying up to n unused numbers.
+why_space: The table has one entry for each mask.
+hint: Let `best[mask]` be the smallest XOR sum when the numbers of nums2 in mask are paired with the first numbers of nums1, as many as mask has bits: `i = bin(mask).count("1")`.
+hint: From each mask, pair `nums1[i]` with each `nums2[j]` not in mask: `best[mask] + (nums1[i] ^ nums2[j])` is a candidate for `mask | (1 << j)`. Python works out `+` before `^`, so the brackets matter.
+hint: Start with `best[0] = 0`, go through the masks in increasing order, and return `best[(1 << n) - 1]`.
+right: Which numbers of nums2 are used matters, but not the order they were used in, so 2ⁿ masks are enough: about 230,000 steps for n = 14, instead of trying every order of the 14 numbers.
+wrong: `best = [None] * (1 << n)` and `best[0] = 0`. For each mask with an entry, `i = bin(mask).count("1")`; for each j not in mask, set `best[mask | (1 << j)]` to `best[mask] + (nums1[i] ^ nums2[j])` if that's smaller.
+
+=== task: code hard
+title: Maximize Score After N Operations
+leetcode: 1799 | Maximize Score After N Operations | maximize-score-after-n-operations
+patterns: masks + memo
+prompt: nums has 2n numbers. In operation i, counting from 1, you choose two numbers that are left, x and y, score `i * gcd(x, y)`, and remove them. Write `max_score(nums)` that returns the highest total score after n operations. `math.gcd(x, y)` gives the greatest common divisor, after `import math`.
+
+**Example 1:** `max_score([1, 2])` returns `1`: `1 * gcd(1, 2)`.
+
+**Example 2:** `max_score([3, 4, 6, 8])` returns `11`: `1 * gcd(3, 6) + 2 * gcd(4, 8)`, which is 3 + 8.
+
+**Example 3:** `max_score([1, 2, 3, 4, 5, 6])` returns `14`: `1 * gcd(1, 5) + 2 * gcd(2, 4) + 3 * gcd(3, 6)`, which is 1 + 4 + 9.
+
+**Constraints:** 1 ≤ n ≤ 7, `len(nums)` is 2n, and 1 ≤ `nums[i]` ≤ 10⁶. Keep the best score for each set of numbers removed.
+starter:
+```python
+import math
+
+
+def max_score(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+import math
+
+
+def max_score(nums):
+    m = len(nums)
+    best = [-1] * (1 << m)
+    best[0] = 0
+    for mask in range(1 << m):
+        if best[mask] < 0:
+            continue
+        op = bin(mask).count("1") // 2 + 1
+        for i in range(m):
+            if mask >> i & 1:
+                continue
+            for j in range(i + 1, m):
+                if mask >> j & 1:
+                    continue
+                nxt = mask | (1 << i) | (1 << j)
+                value = best[mask] + op * math.gcd(nums[i], nums[j])
+                if value > best[nxt]:
+                    best[nxt] = value
+    return best[(1 << m) - 1]
+```
+tests:
+- max_score([1, 2])
+- max_score([3, 4, 6, 8])
+- max_score([1, 2, 3, 4, 5, 6])
+- max_score([5, 5])
+- max_score([3, 3, 3, 3])
+- max_score([i * 12 % 35 + 2 for i in range(8)])
+fail[2]: Pair 3 with 6 first, for 3, and 4 with 8 second, for 2 × 4: 11.
+fail[3]: The pairs with gcds 1, 2 and 3 score most in that order: 1 × 1 + 2 × 2 + 3 × 3 = 14.
+fail[4]: One operation: `1 * gcd(5, 5)`, which is 5.
+fail[5]: Both pairs have a gcd of 3: 1 × 3 + 2 × 3 = 9.
+fail[6]: 8 numbers make 256 masks, and the best total is 30.
+edges:
+- two numbers :: len(nums) == 2 :: max_score([4, 6])
+- every number the same :: len(nums) > 2 and len(set(nums)) == 1 :: max_score([3, 3, 3, 3])
+- different numbers :: len(nums) > 2 and len(set(nums)) > 1 :: max_score([3, 4, 6, 8])
+edge_count: 2
+complexity: time=O(m² × 2ᵐ) | space=O(2ᵐ)
+complexity_options: O(m² × 2ᵐ); O(m × 2ᵐ); O(2ᵐ)
+complexity_note: m is `len(nums)`, which is 2n. Count each `gcd` as O(1).
+why_time: 2ᵐ masks, each trying every pair of numbers not removed yet: up to m² pairs.
+why_space: The table has one entry for each mask.
+hint: Let `best[mask]` be the highest score after removing the numbers in mask. Start with `best[0] = 0`, and every other entry −1 until it's reached.
+hint: The next operation's number is `bin(mask).count("1") // 2 + 1`: the pairs already removed, plus one.
+hint: For each pair i < j not in mask, `best[mask] + op * math.gcd(nums[i], nums[j])` is a candidate for `mask | (1 << i) | (1 << j)`. The answer is `best[(1 << m) - 1]`.
+right: What can still be scored depends only on which numbers are left, and the operation number follows from how many are gone, so one best score for each mask is enough: 2¹⁴ masks for 14 numbers.
+wrong: `best = [-1] * (1 << m)` and `best[0] = 0`. For each reached mask, `op = bin(mask).count("1") // 2 + 1`; for each pair i < j not in mask, set `best[mask | (1 << i) | (1 << j)]` to `best[mask] + op * math.gcd(nums[i], nums[j])` if that's bigger.
+
+=== task: code hard
+title: Number of Ways to Wear Different Hats to Each Other
+leetcode: 1434 | Number of Ways to Wear Different Hats to Each Other | number-of-ways-to-wear-different-hats-to-each-other
+patterns: masks + memo
+prompt: There are 40 kinds of hat, numbered 1 to 40, and n people. `hats[i]` lists the hats person i likes. Write `number_ways(hats)` that returns how many ways everyone can wear a hat they like, with no two people in the same hat. The count can be huge, so return its remainder after dividing by 1,000,000,007.
+
+**Example 1:** `number_ways([[3, 4], [4, 5], [5]])` returns `1`: person 2 needs hat 5, so person 1 takes 4, and person 0 takes 3.
+
+**Example 2:** `number_ways([[3, 5, 1], [3, 5]])` returns `4`: (3, 5), (5, 3), (1, 3) and (1, 5).
+
+**Example 3:** `number_ways([[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]])` returns `24`.
+
+**Constraints:** 1 ≤ n ≤ 10, every list has 1 to 40 different hats, and every hat is from 1 to 40. There are at most 10 people but 40 hats, so make the masks sets of people.
+starter:
+```python
+def number_ways(hats):
+    # your code here
+    return 0
+```
+solution:
+```python
+def number_ways(hats):
+    mod = 1000000007
+    n = len(hats)
+    people_of = []
+    for h in range(41):
+        people_of.append([])
+    for p in range(n):
+        for h in hats[p]:
+            people_of[h].append(p)
+    ways = [0] * (1 << n)
+    ways[0] = 1
+    for h in range(1, 41):
+        new = ways[:]
+        for mask in range(1 << n):
+            if ways[mask] == 0:
+                continue
+            for p in people_of[h]:
+                if not mask >> p & 1:
+                    nxt = mask | (1 << p)
+                    new[nxt] = (new[nxt] + ways[mask]) % mod
+        ways = new
+    return ways[(1 << n) - 1]
+```
+tests:
+- number_ways([[3, 4], [4, 5], [5]])
+- number_ways([[3, 5, 1], [3, 5]])
+- number_ways([[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]])
+- number_ways([[1]])
+- number_ways([[1], [1]])
+- number_ways([list(range(1, 41))] * 6)
+fail[2]: Person 1 takes 3 or 5, and person 0 either of the two other hats they like: 2 + 2 = 4.
+fail[3]: 4 people share 4 hats: 4 × 3 × 2 × 1 = 24 ways.
+fail[4]: One person, one hat: 1.
+fail[5]: Two people both need hat 1: 0.
+fail[6]: 6 people, each liking all 40 hats: 40 × 39 × 38 × 37 × 36 × 35 ways, which is 763,633,586 after `% 1000000007`.
+edges:
+- one person :: len(hats) == 1 :: number_ways([[2, 7]])
+- fewer hats than people :: len(hats) > 1 and len(set(h for row in hats for h in row)) < len(hats) :: number_ways([[1], [1]])
+- enough hats for everyone :: len(hats) > 1 and len(set(h for row in hats for h in row)) >= len(hats) :: number_ways([[3, 5, 1], [3, 5]])
+edge_count: 2
+complexity: time=O(h × n × 2ⁿ) | space=O(2ⁿ)
+complexity_options: O(h × n × 2ⁿ); O(h × 2ⁿ); O(n × h)
+complexity_note: n is the number of people, and h is the number of kinds of hat: 40.
+why_time: For each of the h hats, every mask of people tries giving the hat to each of up to n people who like it.
+why_space: Two lists with one entry for each of the 2ⁿ masks.
+hint: Go through the hats one at a time. `ways[mask]` counts the ways to give out the hats seen so far to exactly the people in mask. Start with `ways[0] = 1`.
+hint: First list, for every hat, the people who like it. For each hat, copy ways (nobody takes this hat), then for each mask and each person p who likes the hat and isn't in mask, add `ways[mask]` to the copy's count at `mask | (1 << p)`.
+hint: Take `% 1000000007` with every addition. The answer is the count for the mask with everybody: `(1 << n) - 1`.
+right: Going hat by hat keeps the masks small: 2¹⁰ sets of people. Masks over the hats would need 2⁴⁰, about a trillion.
+wrong: `ways = [0] * (1 << n)` and `ways[0] = 1`. For each hat from 1 to 40: `new = ways[:]`; for each mask and each p in `people_of[hat]` not in mask, add `ways[mask]` to `new[mask | (1 << p)]`, mod 1000000007; then `ways = new`.
