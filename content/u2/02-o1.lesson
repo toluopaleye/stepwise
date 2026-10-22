@@ -1,7 +1,7 @@
 === lesson
 id: bigo-o1
 title: O(1): constant time
-summary: Some work takes the same number of steps however big the input is, like reading the first item of a list or looking up a key in a dictionary. That's O(1), constant time, the best growth there is. You'll learn which operations are O(1), and how to spot code that only looks like it is.
+summary: Some work takes the same number of steps however big the input is, like reading the first item of a list or looking up a key in a dictionary. That's O(1), constant time, the best growth there is. You'll learn which operations are O(1), how to spot code that only looks like it is, and how to replace slow work with formulas, lookups and running values.
 
 === learn
 ### The same steps for any n
@@ -46,7 +46,7 @@ print(sum_to(1_000_000))
 55
 500000500000
 ```
-1 + 2 + ... + n equals n × (n + 1) / 2, so this function adds up a million numbers with three operations instead of a million additions. Replacing a loop with a formula like this turns O(n) work into O(1).
+1 + 2 + 3, all the way up to n, equals n × (n + 1) / 2, so this function adds up a million numbers with three operations instead of a million additions. Replacing a loop with a formula like this turns O(n) work into O(1).
 
 ### len() doesn't count
 `len(nums)` looks like it has to count the items, but it doesn't: a list, a string or a dictionary always keeps its own length, and `len()` reads it. So `len()` is O(1), even for a list of a million items.
@@ -129,13 +129,267 @@ Code is O(1) when nothing in it grows with n:
 
 A loop with a fixed count, like `for i in range(100)`, doesn't break the rule: it's 100 steps for every n.
 
+### Solving problems in constant time
+The tasks in this lesson are LeetCode problems. Most of them have a slow answer that comes to mind first: a loop that repeats the same work, a loop that runs a billion times, or a hidden loop inside a loop. The fast answer replaces that work with O(1) steps. Six patterns cover them, and a clue in the question tells you which:
+
+| Pattern | Clue in the question | The O(1) idea |
+| --- | --- | --- |
+| Arithmetic, comparisons and variables | the answer follows from a few numbers: a total, a count, the largest of three | a formula instead of a loop, or instead of playing a game move by move |
+| Reading an item by its index | a place you can work out: a row and a column, a spot on a loop, the middle | jump straight there with an index, without walking |
+| Dictionaries and sets: O(1) lookups | "is it there?", "how many of these?", "where is it?" | a set or a dictionary answers without a search |
+| Adding and removing at the end | a stack, digits built from the right, items removed in any order | work at the end of a list, never at the front |
+| O(1) can still be a lot of steps | something of fixed size: 24 hours, 5 cards, 4 turns, 10 digits | a loop over a fixed range is O(1), however many turns it takes |
+| Hidden loops | `sum`, `max`, `count`, `in` on a list or a slice inside a loop | keep a running value up to date instead of working it out again |
+
+Some problems ask you to **design a class**: an object that gets a series of calls, like `insert`, `remove` and `count`. Every call must be quick, however many calls came before it. The way to do that is to do a little work on every call to keep the answers ready, in variables, a list or a dictionary, so that no call has to go through everything again.
+
+As in the Classes lesson, those tasks test your class with `run(commands, inputs)`, which is already in the starter. It creates the object for the first command, then calls the methods one by one and collects what each returns.
+
+### Combining patterns
+Harder tasks need two patterns together:
+
+- **A fixed table and a formula** (fixed + formula). A table that never changes size, like the lengths of the 12 months, gives a formula the numbers it needs. Reading it, or even adding up all 12 entries, is O(1).
+- **An index worked out with arithmetic** (index + formula). `//` and `%` turn a count into a position: item `k` of a grid with `c` columns is in row `k // c` and column `k % c`, and `k` steps around a loop of length `L` end at place `k % L`.
+- **Swap with the last, then pop** (lookup + ends). Deleting from the middle of a list shifts every item after it: O(n). If the order doesn't matter, move the last item into the gap and `pop()` the end instead. A dictionary that remembers where each item is finds the gap without a search.
+- **A running total instead of sum()** (hidden + formula). `sum(nums[:i])` inside a loop is a hidden loop inside a loop: O(n²). Keep a running total as you go, and work out the rest with arithmetic: the items after position `i` add up to `total - left - nums[i]`.
+- **Counts kept up to date** (hidden + lookup). A dictionary of counts changes by 1 at each step, so "how many of x are there?" is a lookup, with no counting.
+- **Lazy updates at the end** (ends + index). A change to many items doesn't have to be made to each of them straight away. Write it down once, at the index where it stops, and pass it along as items come off the end.
+- **Counts turned into a formula** (lookup + formula). Count each kind of thing in a dictionary, then a formula over the counts gives the answer: the number of pairs, of orders, of choices.
+- **A running table of fixed size** (hidden + fixed). A table with one entry for each of the 10 digits, or each of the 51 possible values, updated as you move along. Each move costs a fixed number of steps, so a pass over n items stays O(n).
+
+A fixed table and a formula: which month is day 32 of the year in?
+```python
+DAYS = [31, 28, 31, 30, 31, 30,
+        31, 31, 30, 31, 30, 31]
+
+def month_of(day):
+    month = 1
+    for length in DAYS:
+        if day <= length:
+            return month
+        day -= length
+        month += 1
+
+print(month_of(31), month_of(32), month_of(365))
+```
+```output
+1 2 12
+```
+The loop goes round at most 12 times, whatever the day is, so `month_of` is O(1). The table is part of the code, not of the input, so its size never grows.
+
+An index worked out with arithmetic: the k-th number of a grid, counting row by row from 0.
+```python
+def cell(grid, k):
+    cols = len(grid[0])
+    return grid[k // cols][k % cols]
+
+grid = [[1, 2, 3],
+        [4, 5, 6]]
+print(cell(grid, 0), cell(grid, 4))
+```
+```output
+1 5
+```
+With 3 columns, number 4 is in row 4 // 3 = 1 and column 4 % 3 = 1, which holds 5. Counting along the rows to get there would take k steps.
+
+Swap with the last, then pop: remove `"b"` from a list whose order doesn't matter.
+```python
+items = ["a", "b", "c", "d"]
+where = {"a": 0, "b": 1, "c": 2, "d": 3}
+
+def remove(x):
+    i = where[x]
+    last = items[-1]
+    items[i] = last
+    where[last] = i
+    items.pop()
+    del where[x]
+
+remove("b")
+print(items)
+print(where)
+```
+```output
+['a', 'd', 'c']
+{'a': 0, 'c': 2, 'd': 1}
+```
+`"d"` moves into the gap at index 1, the dictionary records its new place, and the end of the list is popped. Every line is O(1). If `x` is the last item itself, it's copied onto itself, then popped and deleted, which is still right.
+
+A running total instead of sum(): the average of the numbers so far, at every position.
+```python
+def averages_so_far(nums):
+    result = []
+    total = 0
+    for i in range(len(nums)):
+        total += nums[i]
+        result.append(total / (i + 1))
+    return result
+
+print(averages_so_far([4, 8, 6, 2]))
+```
+```output
+[4.0, 6.0, 6.0, 5.0]
+```
+Working out `sum(nums[:i + 1])` at every position would walk the list again each time: O(n²). The running total gets each new sum with one addition, so the whole function is O(n).
+
+Counts kept up to date: how many different values are there right now?
+```python
+class Tally:
+    def __init__(self):
+        self.counts = {}
+        self.kinds = 0
+
+    def add(self, x):
+        if self.counts.get(x, 0) == 0:
+            self.kinds += 1
+        self.counts[x] = self.counts.get(x, 0) + 1
+
+    def remove(self, x):
+        self.counts[x] -= 1
+        if self.counts[x] == 0:
+            self.kinds -= 1
+
+t = Tally()
+for x in [3, 5, 3]:
+    t.add(x)
+t.remove(5)
+print(t.counts, t.kinds)
+```
+```output
+{3: 2, 5: 0} 1
+```
+`kinds` changes only when a count goes from 0 to 1 or from 1 to 0, so it's always right, and reading it is O(1). Working it out from scratch, by counting the values with a count above 0, would take a pass over all of them on every question.
+
+Lazy updates at the end: a stack where `add_all(val)` adds `val` to every number in it.
+```python
+class Stack:
+    def __init__(self):
+        self.items = []
+        self.extra = []
+
+    def push(self, x):
+        self.items.append(x)
+        self.extra.append(0)
+
+    def add_all(self, val):
+        if len(self.extra) > 0:
+            self.extra[-1] += val
+
+    def pop(self):
+        add = self.extra.pop()
+        if len(self.extra) > 0:
+            self.extra[-1] += add
+        return self.items.pop() + add
+
+s = Stack()
+s.push(1)
+s.push(2)
+s.add_all(10)
+s.push(3)
+print(s.pop(), s.pop(), s.pop())
+```
+```output
+3 12 11
+```
+`add_all` writes the change once, next to the top number, so the 3 pushed afterwards doesn't get it. Each `pop` hands the change down to the number below, so it reaches every number it belongs to, one at a time, as they come off the end. Every method is O(1); adding 10 to each number with a loop would be O(n).
+
+Counts turned into a formula: how many pairs of positions hold equal numbers?
+```python
+def equal_pairs(nums):
+    counts = {}
+    for x in nums:
+        counts[x] = counts.get(x, 0) + 1
+    pairs = 0
+    for c in counts.values():
+        pairs += c * (c - 1) // 2
+    return pairs
+
+print(equal_pairs([1, 2, 1, 1, 2]))
+```
+```output
+4
+```
+Three 1s make 3 × 2 // 2 = 3 pairs, and two 2s make 1 more. Checking every pair of positions with a loop inside a loop also gives 4, but in O(n²) steps instead of O(n).
+
+A running table of fixed size: for every two digits x and d, how many times does x come before d?
+```python
+def digit_pairs(s):
+    seen = [0] * 10
+    pairs = [[0] * 10 for _ in range(10)]
+    for c in s:
+        d = int(c)
+        for x in range(10):
+            pairs[x][d] += seen[x]
+        seen[d] += 1
+    return pairs
+
+p = digit_pairs("1213")
+print(p[1][3], p[2][1], p[1][1])
+```
+```output
+2 1 1
+```
+`seen[x]` counts the x digits so far. When a new digit d arrives, each of them makes one more pair "x before d", so the update is a loop over the 10 digits: a fixed 10 steps per character. That's O(n) in all, and the two tables take the same space however long `s` is.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| the smallest input | one item, a 1 × 1 grid, n = 1 | a neighbour that doesn't exist, or a formula that divides by 0 |
+| something that isn't there | removing a value that was never added, popping an empty stack | a `KeyError`, or `pop()` on an empty list |
+| repeats | the same value added twice, every item equal | a set that forgets the copies, or counts that drift |
+| a full turn | `k` steps around a loop, with `k` a multiple of its length | `%` gives 0, back at the start, but maybe facing a new way |
+| a carry or a border | 999 + 1, a value at the very edge | a missing extra digit, or an index one too far |
+| the biggest input | a billion steps, 100,000 items | a loop where a formula was needed |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Count only what grows with the input:
+
+1. Arithmetic, comparisons, reading or writing by index, `len()`, `append`, `pop()`, and dictionary and set operations are O(1) each, on average for dictionaries and sets.
+2. A loop over a fixed range, like the 24 hours of a day or the 10 digits, is O(1). A loop whose length depends on the input isn't.
+3. Hidden loops count as loops: `sum`, `max`, `min`, `count`, `index`, `in` on a list, slices, `insert(0, x)` and `pop(0)` are O(n).
+4. An answer with n items takes at least n steps to build, so a function that returns a list of n numbers can't be O(1).
+5. For a class, give the time of **one call** to a method, as each task says. O(1) per call means a fixed amount of work, however many calls came before.
+
+**Space** is the **extra** memory the code keeps as the input grows:
+
+| The code keeps | Space |
+| --- | --- |
+| a few numbers | O(1) |
+| a table of fixed size: the 12 months, 10 × 10 pairs of digits | O(1) |
+| a list, set or dictionary that grows with the input, including one it returns | O(n) |
+| an object that remembers each of the n values it was given | O(n) |
+
 === keypoints
 - O(1), constant time, means the number of steps stays the same for any n. Doubling n changes nothing.
 - O(1) operations: indexing `nums[i]` (read or write), arithmetic and comparisons, `len()`, `append` and `pop()` at the end, and dictionary and set lookups.
 - `insert(0, x)` and `pop(0)` shift every other item, so they are O(n).
 - A fixed amount of work, even 100 or 1,000 steps, is still O(1). For large n, O(1) always beats O(n).
 - A formula can replace a loop: `n * (n + 1) // 2` adds up 1 to n in O(1).
-- Hidden loops are O(n): `sum`, `max`, `x in a_list`, `count`, `index`, slicing and copying.
+- Hidden loops are O(n): `sum`, `max`, `x in a_list`, `count`, `index`, slicing and copying. Inside a loop, keep a running value instead.
+- Combinations: a fixed table and a formula; an index worked out with `//` and `%`; swap with the last, then pop; a running total instead of `sum()`; counts kept up to date; lazy updates at the end; counts turned into a formula; and a running table of fixed size.
+- A class method is O(1) per call when the object keeps its answers ready and updates them a little on every call.
+- Space is the extra memory: a few variables or a fixed-size table are O(1), and a list, set or dictionary that grows with the input is O(n).
+
+=== patterns
+- formula | Arithmetic, comparisons and variables
+- index | Reading an item by its index
+- lookup | Dictionaries and sets: O(1) lookups
+- ends | Adding and removing at the end
+- fixed | O(1) can still be a lot of steps
+- hidden | Hidden loops
+combos:
+- fixed + formula | A fixed table and a formula
+- index + formula | An index worked out with arithmetic
+- lookup + ends | Swap with the last, then pop
+- hidden + formula | A running total instead of sum()
+- hidden + lookup | Counts kept up to date
+- ends + index | Lazy updates at the end
+- lookup + formula | Counts turned into a formula
+- hidden + fixed | A running table of fixed size
 
 === example: Questions about a list in O(1)
 intro: Every line in the function takes a fixed number of steps, so it answers as fast for a million items as for five.
@@ -175,7 +429,7 @@ def sum_formula(n):
 for n in [10, 1000]:
     print(sum_loop(n), sum_formula(n))
 ```
-1-7: The loop adds 1, 2, 3, ... n, one step for each number: O(n).
+1-7: The loop adds 1, 2, 3 and onwards up to n, one step for each number: O(n).
 9-10: The formula works out the same total in one go: O(1). We count it as 1 step.
 12-13: Both give 55 for n = 10 and 500500 for n = 1000, but the loop took 10 and then 1000 steps, while the formula took 1 each time.
 
@@ -210,831 +464,2479 @@ view: chart fns=20,n labels=O(1)_(20_steps),O(n) n=1..60 step=3
 intro: An O(1) function that always takes 20 steps, against an O(n) function that takes n steps. For small n the O(n) one is quicker, but only until n reaches 20.
 1: At n = {n}: the O(1) function takes {O(1)_(20_steps)} steps and the O(n) one takes {O(n)}.
 
-=== task: predict easy
-title: One step, any size
-code:
+=== task: code easy
+title: Maximum Containers on a Ship
+leetcode: 3492 | Maximum Containers on a Ship | maximum-containers-on-a-ship
+patterns: formula
+prompt: A ship's deck is a grid of `n` by `n` cells, and each cell can hold one container. Every container weighs exactly `w`, and the ship can carry at most `max_weight` in total. Write `max_containers(n, w, max_weight)` that returns the largest number of containers that can be loaded.
+
+**Example 1:** `max_containers(2, 3, 15)` returns `4`: the deck has 4 cells, and 4 containers weigh 12, which is under 15.
+
+**Example 2:** `max_containers(3, 5, 20)` returns `4`: the deck has 9 cells, but 5 containers would weigh 25, more than 20.
+
+**Constraints:** 1 ≤ `n` ≤ 1000, 1 ≤ `w` ≤ 1000, and 1 ≤ `max_weight` ≤ 10⁹. Aim for O(1) time: no loop.
+starter:
 ```python
-def peek(items):
-    steps = 0
-    first = items[0]
-    steps += 1
-    return first, steps
-
-print(peek([7]), peek(list(range(500))))
+def max_containers(n, w, max_weight):
+    # your code here
+    return 0
 ```
-wrong[(7, 1) (0, 500)]: Reading `items[0]` goes straight to the first item. The function counts 1 step however long the list is.
-wrong[(7, 1) (499, 1)]: `items[0]` is the **first** item of `list(range(500))`, which is 0.
-wrong[(7, 0) (0, 0)]: The counter goes up once, after reading the first item.
-hint: Does reading `items[0]` depend on the length of the list?
-hint: The counter is increased exactly once in every call.
-right: Each call reads one item and counts 1 step: `(7, 1)` and `(0, 1)`. The list of 500 costs no more than the list of 1. That's O(1).
-wrong: `peek` always does the same thing: read position 0, count one step. So it returns the first item with 1 step, for both lists.
-
-=== task: mcq easy
-title: Which one is O(1)?
-prompt: `nums` is a list of n numbers. Which expression takes the same number of steps for any n?
-* `nums[-1]` :: Right. Reading by index goes straight to the item, so it's O(1).
-- `sum(nums)` :: `sum` has to add every item, so it takes about n steps: O(n).
-- `max(nums)` :: `max` has to look at every item to be sure it found the biggest: O(n).
-- `5 in nums` :: `in` on a list checks the items one by one: O(n).
-hint: Which of these has to look at every item?
-hint: One of them goes straight to a position.
-right: Indexing is O(1): the last item is found without looking at any other. `sum`, `max` and `in` on a list are hidden loops over all n items.
-wrong: `nums[-1]` jumps straight to the last position. The other three walk through the whole list, so they take about n steps.
-
-=== task: fill easy
-title: The last item, straight away
-prompt: Fill in the blank so that the program reads the last item directly, in O(1):
-
-```output
-90
-```
-code:
+solution:
 ```python
-nums = [10, 20, 30, 40, 50, 60, 70, 80, 90]
-print(nums[??])
+def max_containers(n, w, max_weight):
+    return min(n * n, max_weight // w)
 ```
-answer: -1
-wrong[9]: The list has 9 items, at positions 0 to 8, so index 9 is past the end: IndexError.
-wrong[0]: Index 0 is the first item, 10.
-hint: Negative indexes count from the end.
-hint: The last item is at index -1.
-right: `nums[-1]` goes straight to the last position: no loop, one step, however long the list is.
-wrong: Use the index -1, which always means the last item: `nums[-1]`.
+tests:
+- max_containers(2, 3, 15)
+- max_containers(3, 5, 20)
+- max_containers(1, 1, 1)
+- max_containers(1000, 1000, 10 ** 9)
+- max_containers(5, 7, 6)
+- max_containers(10, 1, 1000000000)
+fail[2]: The deck has 9 cells, but the weight allows only 20 // 5 = 4 containers.
+fail[3]: One cell and a weight limit of exactly 1: one container fits.
+fail[4]: The deck has 1,000,000 cells, and 10⁹ // 1000 allows 1,000,000 containers too.
+fail[5]: Each container weighs 7, more than the limit of 6, so none can be loaded.
+fail[6]: The weight would allow a billion containers, but the deck has only 10 × 10 = 100 cells.
+edges:
+- the deck is the limit :: n * n < max_weight // w :: max_containers(2, 1, 100)
+- the weight is the limit :: max_weight // w < n * n and max_weight >= w :: max_containers(3, 5, 20)
+- not even one container :: w > max_weight :: max_containers(4, 9, 8)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Here the inputs are three numbers.
+why_time: One multiplication, one `//` and one `min`, however big the numbers are.
+why_space: No extra memory, apart from a couple of numbers.
+hint: Two things limit the count: the deck has `n * n` cells, and the weight allows `max_weight // w` containers.
+hint: The answer is whichever limit is smaller.
+hint: `return min(n * n, max_weight // w)`
+right: Each limit is one arithmetic step, and `min` picks the tighter one. Loading containers one at a time until a limit is reached would take up to a million steps.
+wrong: The deck holds `n * n` containers and the weight allows `max_weight // w`. Return `min(n * n, max_weight // w)`.
 
 === task: code easy
-title: The last item or None
-prompt: Write a function `last_item(nums)` that returns the last item of the list, or None if the list is empty. It must be O(1): the same steps for any length.
+title: Count Days Spent Together
+leetcode: 2409 | Count Days Spent Together | count-days-spent-together
+patterns: fixed + formula
+prompt: Alice and Bob each visit Rome once in the same year, which isn't a leap year. Each visit is given by the day of arrival and the day of leaving, both written as strings `"MM-DD"`, and both days count as days in Rome. Write `count_days_together(arrive_alice, leave_alice, arrive_bob, leave_bob)` that returns how many days they are both in Rome.
 
-For example, `last_item([3, 7, 9])` returns 9.
+The months have these numbers of days, already in the starter: `[31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]`.
+
+**Example 1:** `count_days_together("08-15", "08-18", "08-16", "08-19")` returns `3`: they are both there on August 16, 17 and 18.
+
+**Example 2:** `count_days_together("10-01", "10-31", "11-01", "12-31")` returns `0`: Alice leaves before Bob arrives.
+
+**Constraints:** every date is a real date of a year that isn't a leap year, written `"MM-DD"`, and each person leaves on or after the day they arrive. Aim for O(1) time.
 starter:
 ```python
-def last_item(nums):
-    # your code here
-    return None
-```
-solution:
-```python
-def last_item(nums):
-    if len(nums) == 0:
-        return None
-    return nums[-1]
-```
-tests:
-- last_item([3, 7, 9])
-- last_item([])
-- last_item(["only"])
-- last_item(list(range(1000)))
-speed: setup=nums = list(range(n)) | call=last_item(nums) | target=O(1)
-slow:
-```python
-def last_item(nums):
-    last = None
-    for x in nums:
-        last = x
-    return last
-```
-fail[1]: The last item of `[3, 7, 9]` is 9. Read it directly with `nums[-1]`.
-fail[2]: An empty list has no last item, so return None. Check `len(nums) == 0` first.
-error[IndexError]: An empty list has no `nums[-1]`. Return None when the list is empty.
-error[NameError]: Use the parameter `nums` inside the function.
-hint: `len(nums)` is O(1), so you can check for an empty list first.
-hint: `nums[-1]` is the last item, read in one step.
-hint: `if len(nums) == 0: return None`, then `return nums[-1]`.
-right: Checking the length and reading index -1 are both O(1), so the function takes the same steps for 3 items or 3 million. Looping to the end would also find the last item, but in O(n).
-wrong: Check for the empty list with `len(nums) == 0`, then return `nums[-1]`. Don't loop over the list.
+DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-=== task: predict easy
-title: A formula answers at once
-code:
-```python
-def sum_to(n):
-    return n * (n + 1) // 2
-
-print(sum_to(4), sum_to(100))
-```
-wrong[10 100]: The formula adds up 1 + 2 + ... + n. For 100 that's 5050.
-wrong[20 10100]: `//` divides by 2: 4 × 5 = 20, and 20 // 2 is 10.
-wrong[4 100]: The function returns the **sum** of 1 to n, not n itself.
-hint: Work out 4 × 5 // 2 and 100 × 101 // 2.
-hint: The formula gives 1 + 2 + ... + n.
-right: 4 × 5 // 2 = 10, which is 1 + 2 + 3 + 4. 100 × 101 // 2 = 5050. The formula takes the same three operations for any n: O(1).
-wrong: sum_to(4) = 4 × 5 // 2 = 10 and sum_to(100) = 100 × 101 // 2 = 5050.
-
-=== task: multi easy
-title: Which are O(1)?
-prompt: `nums` is a list and `d` a dictionary. Choose **every** operation that is O(1).
-* `nums.append(4)` :: Right. Adding at the end doesn't move any other item.
-* `len(nums)` :: Right. The list keeps its own length, so `len` only reads it.
-* `d["key"]` :: Right. A dictionary finds a key from its hash, without checking the other keys.
-* `nums[3] = 7` :: Right. Changing an item by its index goes straight to that position.
-- `sum(nums)` :: `sum` adds up all n items: O(n).
-- `7 in nums` :: `in` on a list checks the items one by one: O(n).
-hint: Which ones have to look at every item?
-hint: Four of the six are O(1).
-right: `append`, `len`, a dictionary lookup and assigning by index all take a fixed number of steps. `sum` and `in` on a list walk through all n items.
-wrong: Hidden loops make `sum(nums)` and `7 in nums` O(n). The other four go straight to what they need: O(1).
-
-=== task: parsons easy
-title: First, last and size
-prompt: Arrange the lines so that the function answers in O(1) and the program prints:
-
-```output
-(2, 8, 4)
-```
-
-Not every line is needed.
-lines:
-```python
-def summary(nums):
-    first = nums[0]
-    last = nums[-1]
-    size = len(nums)
-    return first, last, size
-
-print(summary([2, 4, 6, 8]))
-```
-distractors:
-```python
-    last = max(nums)
-    size = sum(1 for x in nums)
-```
-hint: Read the first and last items by index.
-hint: `len` reads the stored length; counting with `sum` would walk the whole list.
-right: Two index reads and `len` are all O(1), so `summary` takes the same steps for any list. `max` and `sum(1 for ...)` would walk the whole list: O(n).
-wrong: Use `nums[0]`, `nums[-1]` and `len(nums)`, then return the three values. The spare lines would loop over every item.
-
-=== task: cells easy
-title: Small n, big n
-prompt: Function `f` always takes 4 steps, and function `g` takes n steps. How many steps does each take? Write the numbers without commas.
-labels: f for n = 2 | g for n = 2 | f for n = 1,000 | g for n = 1,000
-answer: 4 | 2 | 4 | 1000
-wrong[4 | 2 | 2000 | 1000]: `f` is O(1): it takes 4 steps whatever n is.
-wrong[2 | 2 | 4 | 1000]: `f` always takes 4 steps, even when n is 2.
-hint: An O(1) function takes the same steps for every n.
-hint: g takes exactly n steps.
-right: `f` takes 4 steps for any n, and `g` takes n. For n = 2, `g` is quicker (2 against 4), but for n = 1,000, `f` wins easily (4 against 1,000).
-wrong: f: 4 and 4. g: 2 and 1,000.
-
-=== task: predict easy
-title: A fixed loop
-code:
-```python
-def setup(n):
-    steps = 0
-    for i in range(100):
-        steps += 1
-    return steps
-
-print(setup(1), setup(1000))
-```
-wrong[1 1000]: The loop is `range(100)`, not `range(n)`, so it always runs 100 times.
-wrong[100 100000]: n isn't used anywhere in the function, so it can't change the count.
-wrong[0 0]: The counter goes up once for each of the 100 runs of the loop.
-hint: Does the loop use n?
-hint: How many times does `range(100)` run?
-right: The loop runs 100 times for any n, so both calls count 100 steps. A fixed loop is still O(1).
-wrong: `range(100)` always gives 100 runs, whatever n is: 100 and 100.
-
-=== task: mcq easy
-title: Doubling O(1) code
-prompt: O(1) code takes 50 steps when n is 1,000. How many steps does it take when n is 2,000?
-* 50 :: Right. O(1) code takes the same number of steps for any n.
-- 100 :: That's what O(n) code would do: double.
-- 200 :: Four times as many would be O(n²) code.
-- 1 :: O(1) doesn't mean one step: this code always takes 50.
-hint: What does "constant" mean?
-hint: The steps of O(1) code don't depend on n at all.
-right: O(1) means the step count doesn't grow: 50 steps for any n.
-wrong: Constant time means a fixed number of steps. This code always takes 50, for n = 1,000 or 2,000.
-
-=== task: code medium
-title: The middle item
-prompt: Write a function `middle(nums)` that returns the item at position `len(nums) // 2`. The list is never empty. It must be O(1).
-
-For example, `middle([1, 2, 3, 4, 5])` returns 3, and `middle([1, 2, 3, 4])` returns 3 as well.
-starter:
-```python
-def middle(nums):
-    # your code here
-    return nums[0]
-```
-solution:
-```python
-def middle(nums):
-    return nums[len(nums) // 2]
-```
-tests:
-- middle([1, 2, 3, 4, 5])
-- middle([1, 2, 3, 4])
-- middle(["only"])
-- middle([10, 20])
-speed: setup=nums = list(range(n)) | call=middle(nums) | target=O(1)
-slow:
-```python
-def middle(nums):
-    i = 0
-    for x in nums:
-        if i == len(nums) // 2:
-            return x
-        i += 1
-```
-fail[1]: The middle position of 5 items is 5 // 2 = 2, which holds 3.
-fail[2]: For 4 items, the position is 4 // 2 = 2, which also holds 3.
-fail[4]: For 2 items, the position is 1, which holds 20.
-error[IndexError]: The position must be `len(nums) // 2`, which is always inside the list.
-hint: `len(nums)` is O(1).
-hint: Work out the position with `//`, then read it by index.
-hint: `return nums[len(nums) // 2]`
-right: `len`, `//` and one index read: three fixed steps for any list. Walking along the list to reach the middle would take about n / 2 steps instead.
-wrong: Return `nums[len(nums) // 2]`: work out the position, then jump straight to it.
-
-=== task: code medium
-title: Count the multiples
-prompt: Write a function `count_multiples(n, k)` that returns how many of the numbers 1, 2, ..., n can be divided exactly by k. Work it out with a formula, in O(1), without a loop.
-
-For example, `count_multiples(10, 3)` returns 3: the numbers 3, 6 and 9.
-starter:
-```python
-def count_multiples(n, k):
+def count_days_together(arrive_alice, leave_alice, arrive_bob, leave_bob):
     # your code here
     return 0
 ```
 solution:
 ```python
-def count_multiples(n, k):
-    return n // k
+DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+def day_of_year(date):
+    month = int(date[:2])
+    day = int(date[3:])
+    return sum(DAYS[:month - 1]) + day
+
+def count_days_together(arrive_alice, leave_alice, arrive_bob, leave_bob):
+    start = max(day_of_year(arrive_alice), day_of_year(arrive_bob))
+    end = min(day_of_year(leave_alice), day_of_year(leave_bob))
+    return max(0, end - start + 1)
 ```
 tests:
-- count_multiples(10, 3)
-- count_multiples(100, 10)
-- count_multiples(5, 7)
-- count_multiples(0, 4)
-speed: setup=pass | call=count_multiples(n, 3) | target=O(1)
+- count_days_together("08-15", "08-18", "08-16", "08-19")
+- count_days_together("10-01", "10-31", "11-01", "12-31")
+- count_days_together("01-01", "12-31", "01-01", "12-31")
+- count_days_together("02-28", "03-01", "03-01", "03-01")
+- count_days_together("05-05", "05-05", "05-01", "05-10")
+- count_days_together("01-15", "04-15", "03-01", "06-30")
+fail[2]: Alice leaves on October 31 and Bob arrives on November 1, so they are never there together: 0, not a negative number.
+fail[3]: Both stay the whole year: all 365 days.
+fail[4]: February has 28 days, so March 1 comes right after February 28. They share only March 1.
+fail[5]: Alice's single day, May 5, falls inside Bob's visit: 1 day.
+fail[6]: They are together from March 1 to April 15: 31 days of March and 15 of April.
+edges:
+- no days together :: max(day_of_year(arrive_alice), day_of_year(arrive_bob)) > min(day_of_year(leave_alice), day_of_year(leave_bob)) :: count_days_together("01-01", "01-02", "03-01", "03-02")
+- a visit across the end of a month :: (arrive_alice[:2] != leave_alice[:2] or arrive_bob[:2] != leave_bob[:2]) and max(day_of_year(arrive_alice), day_of_year(arrive_bob)) <= min(day_of_year(leave_alice), day_of_year(leave_bob)) :: count_days_together("02-27", "03-02", "02-28", "03-01")
+- only one day together :: arrive_alice[:2] == leave_alice[:2] and arrive_bob[:2] == leave_bob[:2] and max(day_of_year(arrive_alice), day_of_year(arrive_bob)) == min(day_of_year(leave_alice), day_of_year(leave_bob)) :: count_days_together("06-10", "06-12", "06-12", "06-20")
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: The dates always have the same length, and a year always has 12 months.
+why_time: Turning a date into a day of the year adds up at most 11 month lengths, a fixed number of steps. The rest is `max`, `min` and a subtraction.
+why_space: The table of 12 months has a fixed size, and the rest is a few numbers.
+hint: Turn each date into its day of the year, from 1 to 365: the days of all the months before it, plus the day of the month. `sum(DAYS[:month - 1])` gives the days of the earlier months.
+hint: `int(date[:2])` is the month and `int(date[3:])` is the day.
+hint: They are together from the later arrival, `max(...)`, to the earlier leaving, `min(...)`. That's `end - start + 1` days, or 0 if `end` comes before `start`.
+right: A fixed table of 12 months turns each date into a number in O(1), and the overlap of two stretches of days is then a formula. Walking through the year day by day would also work, but with up to 365 steps instead of a handful.
+wrong: Write a helper `day_of_year(date)` that returns `sum(DAYS[:int(date[:2]) - 1]) + int(date[3:])`. Then `start` is the later arrival, `end` the earlier leaving, and the answer is `max(0, end - start + 1)`.
+
+=== task: code easy
+title: Reshape the Matrix
+leetcode: 566 | Reshape the Matrix | reshape-the-matrix
+patterns: index + formula
+prompt: `mat` is a grid of numbers with `m` rows and `n` columns. Write `matrix_reshape(mat, r, c)` that returns a new grid with `r` rows and `c` columns, holding the same numbers in the same order when you read them row by row. If the numbers can't fill an `r` by `c` grid exactly, return `mat` itself.
+
+**Example 1:** `matrix_reshape([[1, 2], [3, 4]], 1, 4)` returns `[[1, 2, 3, 4]]`.
+
+**Example 2:** `matrix_reshape([[1, 2], [3, 4]], 2, 4)` returns `[[1, 2], [3, 4]]`: 4 numbers can't fill 8 places.
+
+**Constraints:** 1 ≤ `m`, `n` ≤ 100, and 1 ≤ `r`, `c` ≤ 300. Aim for O(m × n) time, and don't build a flat list of all the numbers first: work out where each number comes from with `//` and `%`.
+starter:
+```python
+def matrix_reshape(mat, r, c):
+    # your code here
+    return mat
+```
+solution:
+```python
+def matrix_reshape(mat, r, c):
+    rows = len(mat)
+    cols = len(mat[0])
+    if rows * cols != r * c:
+        return mat
+    result = [[0] * c for _ in range(r)]
+    for k in range(rows * cols):
+        result[k // c][k % c] = mat[k // cols][k % cols]
+    return result
+```
+tests:
+- matrix_reshape([[1, 2], [3, 4]], 1, 4)
+- matrix_reshape([[1, 2], [3, 4]], 2, 4)
+- matrix_reshape([[1, 2, 3, 4]], 2, 2)
+- matrix_reshape([[5]], 1, 1)
+- matrix_reshape([[1, 2, 3], [4, 5, 6]], 3, 2)
+- matrix_reshape([[i * 10 + j for j in range(10)] for i in range(10)], 4, 25)[3]
+fail[2]: 2 × 2 = 4 numbers can't fill a 2 by 4 grid of 8 places, so return `mat` as it is.
+fail[3]: One row of 4 numbers becomes two rows of 2: `[1, 2]`, then `[3, 4]`.
+fail[4]: A 1 by 1 grid stays the same.
+fail[5]: Read row by row, the numbers are 1 to 6. Two to a row, they make 3 rows.
+fail[6]: The numbers 0 to 99, 25 to a row: the last row holds 75 to 99.
+edges:
+- the shape can't change :: len(mat) * len(mat[0]) != r * c :: matrix_reshape([[1, 2, 3]], 2, 2)
+- a single row or column out :: len(mat) * len(mat[0]) == r * c and (r == 1 or c == 1) and r * c > 1 :: matrix_reshape([[1, 2], [3, 4]], 4, 1)
+- the same shape back :: len(mat) == r and len(mat[0]) == c and r > 1 and c > 1 :: matrix_reshape([[1, 2], [3, 4]], 2, 2)
+edge_count: 2
+complexity: time=O(m × n) | space=O(m × n)
+complexity_options: O(m × n); O(m + n); O((m × n)²)
+complexity_note: m and n are the numbers of rows and columns of `mat`. Count the grid you return as extra space.
+why_time: One loop over the m × n numbers, and each one is copied with a few `//`, `%` and index steps: O(1) per number.
+why_space: The new grid holds all m × n numbers. Nothing else grows.
+hint: Number the places 0, 1, 2 and onwards, row by row. In a grid with `cols` columns, place `k` is in row `k // cols` and column `k % cols`.
+hint: If `len(mat) * len(mat[0]) != r * c`, return `mat`. Otherwise make an `r` by `c` grid of zeros: `[[0] * c for _ in range(r)]`.
+hint: For each `k` from 0 to `r * c - 1`, copy `mat[k // cols][k % cols]` into `result[k // c][k % c]`, where `cols = len(mat[0])`.
+right: The k-th number has an exact place in both grids, and `//` and `%` find each place in O(1), so every number is copied once, with no flat list in between.
+wrong: Return `mat` when the sizes differ. Otherwise, for `k` in `range(r * c)`: `result[k // c][k % c] = mat[k // cols][k % cols]`.
+
+=== task: code easy
+title: Existence of a Substring in a String and Its Reverse
+leetcode: 3083 | Existence of a Substring in a String and Its Reverse | existence-of-a-substring-in-a-string-and-its-reverse
+patterns: lookup
+prompt: Write `is_substring_present(s)` that returns `True` if some substring of `s` with length 2 also appears in the reverse of `s`, and `False` otherwise.
+
+**Example 1:** `is_substring_present("leetcode")` returns `True`: `"ee"` appears in the reverse, `"edocteel"`.
+
+**Example 2:** `is_substring_present("abcba")` returns `True`: the reverse is `"abcba"` again, so every pair of letters appears in it.
+
+**Example 3:** `is_substring_present("abcd")` returns `False`: the reverse `"dcba"` has none of `"ab"`, `"bc"` and `"cd"`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100, and `s` has lowercase letters only. Aim for O(n) time: keep the pairs in a set.
+starter:
+```python
+def is_substring_present(s):
+    # your code here
+    return False
+```
+solution:
+```python
+def is_substring_present(s):
+    pairs = set()
+    for i in range(len(s) - 1):
+        pairs.add(s[i:i + 2])
+    for i in range(len(s) - 1):
+        if s[i + 1] + s[i] in pairs:
+            return True
+    return False
+```
+tests:
+- is_substring_present("leetcode")
+- is_substring_present("abcba")
+- is_substring_present("abcd")
+- is_substring_present("a")
+- is_substring_present("aa")
+- is_substring_present("ab" * 50)
+fail[2]: The reverse of `"abcba"` is `"abcba"` itself, so any pair works.
+fail[3]: The pairs are `"ab"`, `"bc"` and `"cd"`, and the reverse has `"dc"`, `"cb"` and `"ba"`: none match.
+fail[4]: One letter has no substring of length 2 at all.
+fail[5]: `"aa"` reversed is `"aa"`.
+fail[6]: The string has `"ab"`, and also `"ba"`, which means `"ab"` appears in the reverse.
+edges:
+- one letter :: len(s) == 1 :: is_substring_present("z")
+- a double letter :: any(s[i] == s[i + 1] for i in range(len(s) - 1)) :: is_substring_present("abbc")
+- no pair comes back :: len(s) > 1 and not is_substring_present(s) :: is_substring_present("xyz")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: Two passes over the n - 1 pairs. Each pair is a slice of fixed length 2, and each `add` or `in` on the set is O(1).
+why_space: The set holds up to n - 1 pairs.
+hint: The pair `s[i:i + 2]` appears in the reverse of `s` exactly when its own reverse, `s[i + 1] + s[i]`, appears in `s`.
+hint: Put every pair of `s` into a set first.
+hint: Then check each pair's reverse with `in` on the set.
+right: Turning the question into "is the reversed pair also a pair of `s`?" and keeping the pairs in a set makes each check O(1). Searching the reversed string for each pair would put a hidden loop inside the loop.
+wrong: Add `s[i:i + 2]` to a set for each `i`, then return `True` if any `s[i + 1] + s[i]` is in the set.
+
+=== task: code easy
+title: Plus One
+leetcode: 66 | Plus One | plus-one
+patterns: ends
+prompt: A large whole number is stored as a list of its digits, from the most significant to the least: 123 is `[1, 2, 3]`. There are no leading zeros, except in the number 0 itself. Write `plus_one(digits)` that returns the digits of the number plus 1, as a new list.
+
+**Example 1:** `plus_one([1, 2, 3])` returns `[1, 2, 4]`.
+
+**Example 2:** `plus_one([9])` returns `[1, 0]`.
+
+**Example 3:** `plus_one([4, 3, 2, 1])` returns `[4, 3, 2, 2]`.
+
+**Constraints:** 1 ≤ `len(digits)` ≤ 100, and each digit is from 0 to 9. Aim for O(n) time.
+starter:
+```python
+def plus_one(digits):
+    # your code here
+    return digits
+```
+solution:
+```python
+def plus_one(digits):
+    result = []
+    carry = 1
+    for i in range(len(digits) - 1, -1, -1):
+        total = digits[i] + carry
+        result.append(total % 10)
+        carry = total // 10
+    if carry > 0:
+        result.append(carry)
+    result.reverse()
+    return result
+```
+tests:
+- plus_one([1, 2, 3])
+- plus_one([4, 3, 2, 1])
+- plus_one([9])
+- plus_one([0])
+- plus_one([1, 9, 9])
+- len(plus_one([9] * 100))
+fail[2]: Only the last digit changes: 1 becomes 2.
+fail[3]: 9 + 1 = 10: the last digit becomes 0, and a new digit 1 appears at the front.
+fail[4]: 0 + 1 = 1.
+fail[5]: Both 9s become 0, and the carry turns the 1 into a 2.
+fail[6]: A hundred 9s plus 1 is a 1 followed by a hundred 0s: 101 digits.
+speed: setup=digits = [9] * n | call=plus_one(digits) | target=O(n)
 slow:
 ```python
-def count_multiples(n, k):
-    count = 0
-    for x in range(1, n + 1):
-        if x % k == 0:
-            count += 1
-    return count
+def plus_one(digits):
+    result = []
+    carry = 1
+    for i in range(len(digits) - 1, -1, -1):
+        total = digits[i] + carry
+        result.insert(0, total % 10)
+        carry = total // 10
+    if carry > 0:
+        result.insert(0, carry)
+    return result
 ```
-fail[1]: The multiples of 3 up to 10 are 3, 6 and 9: that's 10 // 3 = 3.
-fail[3]: No number from 1 to 5 is a multiple of 7, and 5 // 7 is 0.
-error[ZeroDivisionError]: Divide n by k, in that order: `n // k`.
-hint: Every k-th number is a multiple of k.
-hint: How many whole times does k fit into n?
-hint: `return n // k`
-right: Every k-th number is a multiple, so there are n // k of them. One division takes the same time for any n, while checking each number would take n steps.
-wrong: The count is how many whole times k fits into n: `return n // k`.
+fail[speed]: `insert(0, x)` moves every digit already in the list one place along, so building n digits at the front takes about n² / 2 steps. Append them at the end instead, then reverse the list once.
+edges:
+- all nines :: set(digits) == {9} :: plus_one([9, 9])
+- the number zero :: digits == [0] :: plus_one([0])
+- a carry that stops in the middle :: digits[-1] == 9 and set(digits) != {9} :: plus_one([1, 2, 9])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass from the last digit to the first, with O(1) work per digit, then one `reverse`, which is O(n).
+why_space: The new list of n or n + 1 digits.
+hint: Add 1 the way you would on paper: start from the last digit, with a carry of 1.
+hint: At each digit, `total = digit + carry`: the new digit is `total % 10` and the new carry is `total // 10`.
+hint: Append the new digits to a list, from the last one to the first, and the carry if one is left at the end. Then `reverse()` the list.
+right: Appending is O(1), so the digits are built backwards in O(n) and turned round once at the end. `insert(0, x)` for each digit would shift the whole list every time.
+wrong: Walk from the last digit with `carry = 1`, append `total % 10` and keep `total // 10` as the carry. Append the carry if it's left over, then reverse the list and return it.
 
-=== task: predict medium
-title: Searching a list
-code:
+=== task: code easy
+title: Number of Valid Clock Times
+leetcode: 2437 | Number of Valid Clock Times | number-of-valid-clock-times
+patterns: fixed
+prompt: `time` is a 24-hour time written `"hh:mm"`, from `"00:00"` to `"23:59"`, but some of its digits have been replaced by `?`. Write `count_time(time)` that returns how many real times you can make by replacing every `?` with a digit from 0 to 9.
+
+**Example 1:** `count_time("?5:00")` returns `2`: `"05:00"` and `"15:00"`. `"25:00"` isn't a time.
+
+**Example 2:** `count_time("0?:0?")` returns `100`.
+
+**Example 3:** `count_time("??:??")` returns `1440`.
+
+**Constraints:** `time` has 5 characters, with `":"` in the middle, and it can be made into a real time. Aim for O(1) time.
+starter:
 ```python
-def find_steps(items, target):
-    steps = 0
-    for x in items:
-        steps += 1
-        if x == target:
-            return steps
-    return steps
-
-nums = list(range(1000))
-lookup = set(nums)
-print(find_steps(nums, 999), find_steps(nums, 3), 999 in lookup)
+def count_time(time):
+    # your code here
+    return 0
 ```
-wrong[1 1 True]: A list is searched from the start, one item at a time. 999 is the last of 1,000 items, so it takes 1,000 steps.
-wrong[1000 3 True]: 3 is at position 3, so it's the 4th item checked: 4 steps.
-wrong[1000 4 999]: `in` gives True or False, not the item.
-hint: How many items does the loop check before it reaches 999?
-hint: The items are 0, 1, 2, 3...: where is 3?
-right: Searching the list for 999 checks all 1,000 items, and for 3 it checks 4. A set finds 999 straight away from its hash, which is why `in` on a set is O(1) while `in` on a list is O(n).
-wrong: The loop counts every item it checks: 1,000 for 999 (the last), 4 for 3 (0, 1, 2, 3). Then `999 in lookup` is True.
-
-=== task: fill medium
-title: An average in O(1)
-prompt: Fill in the blanks so that `average` takes O(1) steps, using the totals kept by `add`. The program prints:
-
-```output
-6.0
-```
-code:
+solution:
 ```python
-class Scores:
-    def __init__(self):
-        self.total = 0
-        self.count = 0
-
-    def add(self, s):
-        self.total += s
-        self.count += 1
-
-    def average(self):
-        return self.?? / self.??
-
-sc = Scores()
-for s in [4, 9, 5]:
-    sc.add(s)
-print(sc.average())
+def count_time(time):
+    hours = 0
+    for h in range(24):
+        hh = f"{h:02d}"
+        if (time[0] == "?" or time[0] == hh[0]) and (time[1] == "?" or time[1] == hh[1]):
+            hours += 1
+    minutes = 0
+    for m in range(60):
+        mm = f"{m:02d}"
+        if (time[3] == "?" or time[3] == mm[0]) and (time[4] == "?" or time[4] == mm[1]):
+            minutes += 1
+    return hours * minutes
 ```
-answer: total | count
-wrong[count | total]: That divides the count by the total: 3 / 18, which is about 0.17. The average is the total divided by the count.
-wrong[total | total]: Dividing the total by itself always gives 1.0.
-hint: An average is the sum of the scores divided by how many there are.
-hint: `add` keeps both of those up to date as the scores come in.
-right: `add` keeps a running total and count, so `average` only needs one division: 18 / 3 = 6.0. Keeping a value up to date as you go is a common way to make a question O(1).
-wrong: Divide the running total by the running count: `self.total / self.count`.
+tests:
+- count_time("?5:00")
+- count_time("0?:0?")
+- count_time("??:??")
+- count_time("23:59")
+- count_time("2?:?0")
+- count_time("?4:5?")
+fail[2]: The hour can be 00 to 09 and the minutes 00 to 09: 10 × 10 = 100.
+fail[3]: Every time of the day works: 24 hours × 60 minutes = 1440.
+fail[4]: There's no `?` at all, and 23:59 is a real time: exactly 1.
+fail[5]: The hours 20 to 23 make 4 choices, and the minutes ending in 0 make 6: 4 × 6 = 24.
+fail[6]: The hours ending in 4 are 04 and 14 (24 isn't an hour): 2 choices. The minutes 50 to 59 make 10. That's 20.
+edges:
+- no question marks :: "?" not in time :: count_time("12:34")
+- every digit a question mark :: time == "??:??" :: count_time("??:??")
+- the hour's first digit unknown and the second above 3 :: time[0] == "?" and time[1] != "?" and int(time[1]) > 3 :: count_time("?7:00")
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+why_time: The loops go over the 24 hours and the 60 minutes, whatever the input is: 84 checks at most.
+why_space: Two counters.
+hint: The hours and the minutes don't depend on each other, so count the possible hours, count the possible minutes, and multiply.
+hint: Try every hour from 0 to 23. `f"{h:02d}"` writes it with two digits. It fits if each of its digits equals the matching character of `time`, or that character is `?`.
+hint: Do the same for the 60 minutes, with `time[3]` and `time[4]`.
+right: There are only 24 hours and 60 minutes to try, so the loops are a fixed 84 turns: O(1). Working out the rules by hand (a `?` in the first place gives 2 or 3 choices, depending on the second) is O(1) too, but easier to get wrong.
+wrong: Count the hours `h` in `range(24)` whose two digits `f"{h:02d}"` match `time[0]` and `time[1]` (or `?`), count the matching minutes in `range(60)` the same way, and return the product.
 
-=== task: cells medium
-title: Positions in O(1)
-prompt: `nums` is `[10, 20, 30, 40, 50, 60, 70, 80, 90]`. What do these expressions give?
-labels: nums[0] | nums[-1] | nums[len(nums) // 2] | len(nums)
-answer: 10 | 90 | 50 | 9
-wrong[10 | 90 | 40 | 9]: There are 9 items, so the middle position is 9 // 2 = 4, which holds 50 (positions count from 0).
-wrong[10 | 90 | 50 | 8]: `len` counts the items: there are 9.
-hint: Positions start at 0.
-hint: The list has 9 items, so `len(nums) // 2` is 4.
-right: Position 0 holds 10, -1 the last item 90, and position 4 is the middle: 50. Every one of these is a single O(1) step.
-wrong: nums[0] = 10, nums[-1] = 90, len(nums) = 9, and 9 // 2 = 4, where 50 is.
+=== task: code easy
+title: Find the Middle Index in Array
+leetcode: 1991 | Find the Middle Index in Array | find-the-middle-index-in-array
+patterns: hidden + formula
+prompt: A **middle index** of `nums` is a position `i` where the numbers to its left add up to the same as the numbers to its right. When there are no numbers on one side, that side adds up to 0. Write `find_middle_index(nums)` that returns the leftmost middle index, or -1 if there is none.
 
-=== task: order medium
-title: From fewest steps to most
-prompt: `nums` is a list of 1,000 numbers. Put these in order from the **fewest** steps to the **most**.
-items:
-- `nums[0]`
-- `for i in range(10): total += i`
-- `sum(nums)`
-- `for x in nums:` with `for y in nums: count += 1` inside it
-hint: Which of them depend on the length of the list?
-hint: About 1, 10, 1,000 and 1,000,000 steps.
-right: Reading one item is 1 step, a fixed loop is 10, `sum` visits all 1,000 items, and the nested loops make 1,000 × 1,000 = 1,000,000 steps.
-wrong: `nums[0]` → 1. `range(10)` → 10. `sum(nums)` → 1,000 (a hidden loop). Nested loops → 1,000,000.
+**Example 1:** `find_middle_index([2, 3, -1, 8, 4])` returns `3`: 2 + 3 + (-1) = 4 on the left, and 4 on the right.
 
-=== task: multi medium
-title: Which functions are O(1)?
-prompt: Choose **every** function that takes O(1) steps.
-* `def f(nums): return nums[0] + nums[-1]` :: Right. Two index reads and one addition, for any length.
-- `def f(nums): return sum(nums)` :: `sum` adds every item: O(n).
-* `def f(n): return n * n` :: Right. The result grows, but working it out is one multiplication.
-- `def f(nums): return nums.count(0)` :: `count` checks every item: O(n).
-* `def f(d, k): return d.get(k, 0)` :: Right. A dictionary lookup is O(1) on average.
-- `def f(nums): return nums[:]` :: A full slice copies every item into a new list: O(n).
-hint: Look for hidden loops: `sum`, `count`, slices.
-hint: Three of the six are O(1).
-right: Index reads, arithmetic and dictionary lookups take a fixed number of steps. `sum`, `count` and copying with a slice all go through every item.
-wrong: The O(1) ones are the two index reads, `n * n` and `d.get`. `sum(nums)`, `nums.count(0)` and `nums[:]` each take about n steps.
+**Example 2:** `find_middle_index([1, -1, 4])` returns `2`: 1 + (-1) = 0 on the left, and nothing on the right.
 
-=== task: predict medium
-title: Same steps, any n
-code:
+**Example 3:** `find_middle_index([2, 5])` returns `-1`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, and each number is from -1000 to 1000. Aim for O(n) time: don't call `sum` inside the loop.
+starter:
 ```python
-def work(nums):
-    steps = 0
-    a = nums[0]
-    steps += 1
-    b = nums[len(nums) // 2]
-    steps += 1
-    return steps
-
-print(work(list(range(10))), work(list(range(10000))))
+def find_middle_index(nums):
+    # your code here
+    return -1
 ```
-wrong[2 2000]: Both lines read one item by index, whatever the length: 2 steps every time.
-wrong[10 10000]: The function never loops over the list. It reads two positions directly.
-wrong[1 1]: The counter goes up twice, once after each index read.
-hint: How many times does the counter go up?
-hint: Does any line depend on how long the list is?
-right: Two index reads, counted as 2 steps, for 10 items and for 10,000 items alike: the function is O(1).
-wrong: There's no loop: two reads by index, 2 steps, for both lists.
+solution:
+```python
+def find_middle_index(nums):
+    total = sum(nums)
+    left = 0
+    for i in range(len(nums)):
+        if left == total - left - nums[i]:
+            return i
+        left += nums[i]
+    return -1
+```
+tests:
+- find_middle_index([2, 3, -1, 8, 4])
+- find_middle_index([1, -1, 4])
+- find_middle_index([2, 5])
+- find_middle_index([1])
+- find_middle_index([0, 0, 0])
+- find_middle_index([1] * 50 + [0] + [1] * 50)
+fail[2]: At position 2, the left side adds up to 1 + (-1) = 0, and the right side is empty, which also counts as 0.
+fail[3]: At position 0 the sides are 0 and 5, and at position 1 they are 2 and 0: no match.
+fail[4]: With one number, both sides are empty: 0 and 0, so position 0 is a middle index.
+fail[5]: Every position works here, but the leftmost one is 0.
+fail[6]: 50 ones on each side of the 0 at position 50.
+speed: setup=nums = [1] * n | call=find_middle_index(nums) | target=O(n)
+slow:
+```python
+def find_middle_index(nums):
+    for i in range(len(nums)):
+        if sum(nums[:i]) == sum(nums[i + 1:]):
+            return i
+    return -1
+```
+fail[speed]: `sum(nums[:i])` and `sum(nums[i + 1:])` walk the list again at every position: a hidden loop inside a loop, O(n²). Work out the total once, before the loop, and keep a running sum of the left side.
+edges:
+- one number :: len(nums) == 1 :: find_middle_index([7])
+- the answer at an end :: len(nums) > 1 and find_middle_index(nums) in (0, len(nums) - 1) :: find_middle_index([5, 3, -3])
+- no middle index :: find_middle_index(nums) == -1 :: find_middle_index([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: `sum` runs once, before the loop: O(n). The loop then does O(1) work at each position, and O(n) + O(n) is O(n).
+why_space: Two numbers: the total and the running sum of the left side.
+hint: Working out `sum(nums[:i])` and `sum(nums[i + 1:])` at every position is a hidden loop inside a loop: O(n²).
+hint: Work out `total = sum(nums)` once, and keep `left`, the sum of the numbers before position `i`, as you go.
+hint: The right side is then `total - left - nums[i]`. Compare the two sides, and add `nums[i]` to `left` before moving on.
+right: One `sum` before the loop and a running `left` give both sides at every position with a subtraction, so each check is O(1) and the whole function is O(n).
+wrong: `total = sum(nums)` and `left = 0`. For each `i`: if `left == total - left - nums[i]`, return `i`; then `left += nums[i]`. Return -1 after the loop.
 
-=== task: mcq medium
-title: Fixed but big
-prompt: Function A always takes 1,000 steps. Function B takes n steps. Which is quicker for n = 50, and which for n = 5,000?
-* B for n = 50, A for n = 5,000 :: Right. 50 < 1,000, but 5,000 > 1,000. Once n passes 1,000, the O(1) function wins, and it keeps winning however big n gets.
-- A for both :: For n = 50, B takes only 50 steps, fewer than A's 1,000.
-- B for both :: For n = 5,000, B takes 5,000 steps: more than A's fixed 1,000.
-- They're always equal :: They're only equal when n is exactly 1,000.
-hint: Compare 1,000 with 50, then with 5,000.
-hint: The O(1) function never changes; the O(n) one keeps growing.
-right: For small inputs the fixed cost of A can be bigger, but B's cost grows with n. Beyond n = 1,000, the constant-time function is always faster.
-wrong: n = 50: A 1,000 steps, B 50, so B. n = 5,000: A 1,000, B 5,000, so A.
+=== task: code easy
+title: Minimum Value to Get Positive Step by Step Sum
+leetcode: 1413 | Minimum Value to Get Positive Step by Step Sum | minimum-value-to-get-positive-step-by-step-sum
+patterns: hidden
+prompt: You choose a positive whole number, the start value, and then add the numbers of `nums` to it one at a time, from left to right. Write `min_start_value(nums)` that returns the smallest start value for which the running total never drops below 1.
+
+**Example 1:** `min_start_value([-3, 2, -3, 4, 2])` returns `5`: from 5, the running totals are 2, 4, 1, 5 and 7. From 4, the third total would be 0.
+
+**Example 2:** `min_start_value([1, 2])` returns `1`: the start value must be positive, and 1 is enough.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, and each number is from -100 to 100. Aim for O(n) time.
+starter:
+```python
+def min_start_value(nums):
+    # your code here
+    return 1
+```
+solution:
+```python
+def min_start_value(nums):
+    running = 0
+    lowest = 0
+    for x in nums:
+        running += x
+        lowest = min(lowest, running)
+    return 1 - lowest
+```
+tests:
+- min_start_value([-3, 2, -3, 4, 2])
+- min_start_value([1, 2])
+- min_start_value([1, -2, -3])
+- min_start_value([5])
+- min_start_value([-5])
+- min_start_value([-1] * 100)
+fail[2]: The totals only go up, so the smallest positive start value, 1, works.
+fail[3]: The running sums of the numbers are 1, -1 and -4. To keep -4 + start at 1 or more, the start must be 5.
+fail[4]: One positive number: start at 1.
+fail[5]: The start plus -5 must be at least 1, so the start is 6.
+fail[6]: The running sum goes down to -100, so the start must be 101.
+speed: setup=nums = [-1] * n | call=min_start_value(nums) | target=O(n)
+slow:
+```python
+def min_start_value(nums):
+    lowest = 0
+    for i in range(len(nums)):
+        lowest = min(lowest, sum(nums[:i + 1]))
+    return 1 - lowest
+```
+fail[speed]: `sum(nums[:i + 1])` at every position walks the list again each time: O(n²). Keep the running sum in a variable and add one number at a time.
+edges:
+- all numbers positive :: min(nums) > 0 :: min_start_value([3, 1])
+- a running sum that dips and recovers :: min(nums) < 0 and sum(nums) > 0 :: min_start_value([-2, 5])
+- one negative number :: len(nums) == 1 and nums[0] < 0 :: min_start_value([-4])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, adding each number to the running sum and comparing the sum with the lowest so far: O(1) per number.
+why_space: The running sum and the lowest sum.
+hint: Find the lowest point of the running sum of `nums`, starting from 0. The start value has to lift that point up to 1.
+hint: Keep `running` and `lowest`, both starting at 0, as you go: `running += x`, then `lowest = min(lowest, running)`.
+hint: The answer is `1 - lowest`. Since `lowest` starts at 0, the answer is never less than 1.
+right: The start value only has to beat the lowest running sum, and a running sum finds it in one pass. Trying start values one by one, or adding up each prefix with `sum`, would repeat work.
+wrong: Keep `running` and `lowest`, both from 0. Add each number to `running`, update `lowest`, and return `1 - lowest`.
+
+=== task: code easy
+title: Determine Whether Matrix Can Be Obtained By Rotation
+leetcode: 1886 | Determine Whether Matrix Can Be Obtained By Rotation | determine-whether-matrix-can-be-obtained-by-rotation
+patterns: index
+prompt: `mat` and `target` are square grids of 0s and 1s, both `n` by `n`. Write `find_rotation(mat, target)` that returns `True` if turning `mat` a quarter turn clockwise some number of times (0, 1, 2 or 3) can make it equal to `target`, and `False` otherwise.
+
+**Example 1:** `find_rotation([[0, 1], [1, 0]], [[1, 0], [0, 1]])` returns `True`: one quarter turn does it.
+
+**Example 2:** `find_rotation([[0, 1], [1, 1]], [[1, 0], [0, 1]])` returns `False`: `mat` has three 1s and `target` only two.
+
+**Constraints:** 1 ≤ `n` ≤ 10, and every cell holds 0 or 1. Aim for O(n²) time: each turn has to touch every cell once.
+starter:
+```python
+def find_rotation(mat, target):
+    # your code here
+    return False
+```
+solution:
+```python
+def find_rotation(mat, target):
+    n = len(mat)
+    for _ in range(4):
+        if mat == target:
+            return True
+        mat = [[mat[n - 1 - j][i] for j in range(n)] for i in range(n)]
+    return False
+```
+tests:
+- find_rotation([[0, 1], [1, 0]], [[1, 0], [0, 1]])
+- find_rotation([[0, 1], [1, 1]], [[1, 0], [0, 1]])
+- find_rotation([[0, 0, 0], [0, 1, 0], [1, 1, 1]], [[1, 1, 1], [0, 1, 0], [0, 0, 0]])
+- find_rotation([[1]], [[1]])
+- find_rotation([[1]], [[0]])
+- find_rotation([[1, 0, 0], [0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0], [0, 0, 1]])
+fail[2]: `mat` has three 1s and `target` has two. Turning never changes how many 1s there are.
+fail[3]: Two quarter turns, half a turn in all, turn `mat` upside down and back to front, which gives `target`.
+fail[4]: Turning 0 times counts: the grids are already equal.
+fail[5]: A 1 by 1 grid looks the same after every turn, and 1 isn't 0.
+fail[6]: The 1 in the top left corner reaches the bottom right corner after two turns.
+edges:
+- equal already :: mat == target :: find_rotation([[1, 0], [0, 1]], [[1, 0], [0, 1]])
+- a 1 by 1 grid that differs :: len(mat) == 1 and mat != target :: find_rotation([[0]], [[1]])
+- only three turns work :: len(mat) > 1 and mat != target and find_rotation(mat, target) and [[mat[len(mat) - 1 - j][i] for j in range(len(mat))] for i in range(len(mat))] != target and [row[::-1] for row in mat[::-1]] != target :: find_rotation([[1, 1], [0, 0]], [[1, 0], [1, 0]])
+edge_count: 2
+complexity: time=O(n²) | space=O(n²)
+complexity_note: n is the number of rows (and of columns).
+why_time: There are at most 4 turns, a fixed number, and each turn and each comparison goes through the n × n cells once: 4 × O(n²) is O(n²).
+why_space: Each turn builds a new n × n grid.
+hint: Turning 4 times brings the grid back to where it started, so there are only 4 grids to compare with `target`.
+hint: After one clockwise turn, the cell in row `i`, column `j` holds what was in row `n - 1 - j`, column `i` of the old grid.
+hint: Loop 4 times: if `mat == target`, return `True`; otherwise replace `mat` with its turned copy, `[[mat[n - 1 - j][i] for j in range(n)] for i in range(n)]`.
+right: Each cell's new position is worked out with arithmetic, so a turn reads each cell once, by index, and there are only 4 turns to try.
+wrong: Repeat 4 times: return `True` if `mat == target`, then set `mat = [[mat[n - 1 - j][i] for j in range(n)] for i in range(n)]`. Return `False` after the loop.
+
+=== task: code easy
+title: Best Poker Hand
+leetcode: 2347 | Best Poker Hand | best-poker-hand
+patterns: lookup
+prompt: You hold 5 cards: card `i` has the rank `ranks[i]` and the suit `suits[i]`. Write `best_hand(ranks, suits)` that returns the best of these hands that you hold, from best to worst:
+
+1. `"Flush"`: all five cards have the same suit.
+2. `"Three of a Kind"`: three cards have the same rank.
+3. `"Pair"`: two cards have the same rank.
+4. `"High Card"`: none of the above.
+
+**Example 1:** `best_hand([13, 2, 3, 1, 9], ["a", "a", "a", "a", "a"])` returns `"Flush"`.
+
+**Example 2:** `best_hand([4, 4, 2, 4, 4], ["d", "a", "a", "b", "c"])` returns `"Three of a Kind"`: four 4s include three.
+
+**Example 3:** `best_hand([10, 10, 2, 12, 9], ["a", "b", "c", "a", "d"])` returns `"Pair"`.
+
+**Constraints:** there are exactly 5 cards, the ranks are from 1 to 13, the suits are `"a"` to `"d"`, and no two cards have the same rank and suit. Aim for O(1) time.
+starter:
+```python
+def best_hand(ranks, suits):
+    # your code here
+    return "High Card"
+```
+solution:
+```python
+def best_hand(ranks, suits):
+    if len(set(suits)) == 1:
+        return "Flush"
+    most = max([ranks.count(r) for r in ranks])
+    if most >= 3:
+        return "Three of a Kind"
+    if most == 2:
+        return "Pair"
+    return "High Card"
+```
+tests:
+- best_hand([13, 2, 3, 1, 9], ["a", "a", "a", "a", "a"])
+- best_hand([4, 4, 2, 4, 4], ["d", "a", "a", "b", "c"])
+- best_hand([10, 10, 2, 12, 9], ["a", "b", "c", "a", "d"])
+- best_hand([1, 2, 3, 4, 5], ["a", "b", "a", "b", "a"])
+- best_hand([3, 3, 3, 3, 5], ["a", "b", "c", "d", "a"])
+- best_hand([2, 2, 5, 5, 9], ["a", "b", "a", "b", "c"])
+fail[2]: Four cards of rank 4 include three of a kind. There's no "Four of a Kind" in this list of hands.
+fail[3]: Two 10s make a pair, and the suits are mixed.
+fail[4]: All the ranks are different and the suits are mixed: a high card.
+fail[5]: Four 3s count as three of a kind.
+fail[6]: Two pairs still count as a pair.
+edges:
+- four of a kind :: max([ranks.count(r) for r in ranks]) == 4 :: best_hand([7, 7, 7, 7, 2], ["a", "b", "c", "d", "a"])
+- two pairs :: len(set(suits)) > 1 and sorted([ranks.count(r) for r in set(ranks)]) == [1, 2, 2] :: best_hand([3, 3, 8, 8, 5], ["a", "b", "a", "b", "c"])
+- a flush :: len(set(suits)) == 1 :: best_hand([1, 5, 9, 11, 13], ["b", "b", "b", "b", "b"])
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: There are always exactly 5 cards.
+why_time: `set` and the counts each look at 5 cards, a fixed number, so everything is O(1).
+why_space: A set of at most 5 suits and a list of 5 counts.
+hint: A flush means there's only one suit: `len(set(suits)) == 1`.
+hint: Otherwise, find the largest number of cards that share a rank: `max([ranks.count(r) for r in ranks])`.
+hint: 3 or more gives `"Three of a Kind"`, 2 gives `"Pair"`, and 1 gives `"High Card"`.
+right: The set answers "all one suit?" at once, and counting ranks among 5 cards takes a fixed number of steps, so the whole check is O(1). Check the hands from best to worst and return the first that fits.
+wrong: Return `"Flush"` if `len(set(suits)) == 1`. Otherwise let `most = max([ranks.count(r) for r in ranks])`: 3 or more is `"Three of a Kind"`, 2 is `"Pair"`, and anything else `"High Card"`.
 
 === task: code medium
-title: Swap the ends
-prompt: Write a function `swap_ends(nums)` that swaps the first and last items of the list **in place** (it changes the list and returns nothing). Lists with fewer than 2 items stay as they are. It must be O(1).
+title: Find Three Consecutive Integers That Sum to a Given Number
+leetcode: 2177 | Find Three Consecutive Integers That Sum to a Given Number | find-three-consecutive-integers-that-sum-to-a-given-number
+patterns: formula
+prompt: Write `sum_of_three(num)` that returns three consecutive whole numbers that add up to `num`, as a list in increasing order, or an empty list if there are none.
 
-The checks use the list `data` from the starter, one after another.
+**Example 1:** `sum_of_three(33)` returns `[10, 11, 12]`.
+
+**Example 2:** `sum_of_three(4)` returns `[]`: no three consecutive numbers add up to 4.
+
+**Constraints:** 0 ≤ `num` ≤ 10¹⁵. Aim for O(1) time: `num` is far too big to try the numbers one by one.
 starter:
 ```python
-def swap_ends(nums):
+def sum_of_three(num):
     # your code here
-    pass
-
-data = [1, 2, 3, 4]
+    return []
 ```
 solution:
 ```python
-def swap_ends(nums):
-    if len(nums) < 2:
-        return
-    nums[0], nums[-1] = nums[-1], nums[0]
-
-data = [1, 2, 3, 4]
+def sum_of_three(num):
+    if num % 3 != 0:
+        return []
+    x = num // 3
+    return [x - 1, x, x + 1]
 ```
 tests:
-- swap_ends(data)
-- data
-- swap_ends(data)
-- data
-- swap_ends([])
-speed: setup=nums = list(range(n)) | call=swap_ends(nums) | target=O(1)
-slow:
-```python
-def swap_ends(nums):
-    if len(nums) < 2:
-        return
-    nums[:] = [nums[-1]] + nums[1:-1] + [nums[0]]
+- sum_of_three(33)
+- sum_of_three(4)
+- sum_of_three(0)
+- sum_of_three(3)
+- sum_of_three(10 ** 15)
+- sum_of_three(999999999999999)
+fail[2]: (x - 1) + x + (x + 1) is always 3 × x, a multiple of 3, and 4 isn't one.
+fail[3]: -1 + 0 + 1 = 0: the numbers can be negative.
+fail[4]: 0 + 1 + 2 = 3.
+fail[5]: 10 ** 15 isn't a multiple of 3 (its digits add up to 1), so there's no answer.
+fail[6]: 999,999,999,999,999 is 3 × 333,333,333,333,333, and that's the middle number.
+error[TimeoutError]: Trying the numbers one at a time can take 10 ** 15 steps. Use a formula: the three numbers add up to 3 times the middle one.
+edges:
+- no answer :: num % 3 != 0 :: sum_of_three(7)
+- zero :: num == 0 :: sum_of_three(0)
+- a huge number :: num >= 10 ** 9 and num % 3 == 0 :: sum_of_three(3 * 10 ** 12)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Here the input is the number `num`.
+why_time: One `%`, one `//` and a list of three numbers, however big `num` is.
+why_space: A list of three numbers.
+hint: Call the middle number `x`. The three numbers are `x - 1`, `x` and `x + 1`, and they add up to `3 * x`.
+hint: So there's an answer only when `num % 3 == 0`.
+hint: Then `x = num // 3`, and the answer is `[x - 1, x, x + 1]`.
+right: Three consecutive numbers always add up to three times the middle one, so one division finds it, even for a number with 15 digits. A loop would need up to 10 ** 15 turns.
+wrong: If `num % 3 != 0`, return `[]`. Otherwise set `x = num // 3` and return `[x - 1, x, x + 1]`.
 
-data = [1, 2, 3, 4]
-```
-fail[2]: After one swap, `data` should be `[4, 2, 3, 1]`: only the first and last items change places.
-fail[4]: Swapping twice puts everything back: `[1, 2, 3, 4]`.
-error[IndexError]: An empty list has no first or last item. Return early when `len(nums) < 2`.
-hint: Tuple swapping works on list items too: `a, b = b, a`.
-hint: The positions are 0 and -1.
-hint: `nums[0], nums[-1] = nums[-1], nums[0]`
-right: Two index reads and two index writes, whatever the length: O(1). Building a new list from slices would give the same result, but copying n items takes O(n).
-wrong: Return early for short lists, then swap with `nums[0], nums[-1] = nums[-1], nums[0]`.
+=== task: code medium
+title: Maximum Score From Removing Stones
+leetcode: 1753 | Maximum Score From Removing Stones | maximum-score-from-removing-stones
+patterns: formula
+prompt: You play a game with three piles of stones, of sizes `a`, `b` and `c`. In each move, you take one stone from each of two different piles that aren't empty, and score 1 point. The game ends when fewer than two piles have stones left. Write `maximum_score(a, b, c)` that returns the highest score you can get.
 
-=== task: code hard
-title: Running statistics
-prompt: Write a class `RunningStats` that receives numbers one at a time and answers questions about them in O(1):
+**Example 1:** `maximum_score(2, 4, 6)` returns `6`: for example, take from the first and third piles twice, then from the second and third four times.
 
-- `add(x)` takes in a number.
-- `mean()` returns the average of all the numbers so far (None if there are none).
-- `biggest()` returns the largest number so far (None if there are none).
+**Example 2:** `maximum_score(4, 4, 6)` returns `7`.
 
-Don't keep the numbers in a list: keep a running total, a count and the biggest so far, and update them in `add`. The checks use the object `rs` from the starter, one after another.
+**Example 3:** `maximum_score(1, 8, 8)` returns `8`.
+
+**Constraints:** 1 ≤ `a`, `b`, `c` ≤ 10⁵. Aim for O(1) time: work the score out instead of playing the game.
 starter:
 ```python
-class RunningStats:
-    def __init__(self):
-        self.total = 0
-        self.count = 0
-        self.top = None
-
-    # add the methods add, mean and biggest here
-
-rs = RunningStats()
+def maximum_score(a, b, c):
+    # your code here
+    return 0
 ```
 solution:
 ```python
-class RunningStats:
-    def __init__(self):
-        self.total = 0
-        self.count = 0
-        self.top = None
-
-    def add(self, x):
-        self.total += x
-        self.count += 1
-        if self.top is None or x > self.top:
-            self.top = x
-
-    def mean(self):
-        if self.count == 0:
-            return None
-        return self.total / self.count
-
-    def biggest(self):
-        return self.top
-
-rs = RunningStats()
+def maximum_score(a, b, c):
+    total = a + b + c
+    return min(total // 2, total - max(a, b, c))
 ```
 tests:
-- rs.mean()
-- rs.biggest()
-- rs.add(4)
-- rs.add(10)
-- rs.add(1)
-- rs.mean()
-- rs.biggest()
-- rs.count
-speed: setup=s = RunningStats(); [s.add(i) for i in range(n)] | call=s.mean() | target=O(1)
+- maximum_score(2, 4, 6)
+- maximum_score(4, 4, 6)
+- maximum_score(1, 8, 8)
+- maximum_score(1, 1, 1)
+- maximum_score(1, 1, 10)
+- maximum_score(1000, 1000, 1000)
+fail[2]: 14 stones make at most 7 moves of two stones each, and no pile is big enough to stop that.
+fail[3]: 17 stones allow at most 17 // 2 = 8 moves, and 8 is reachable.
+fail[4]: One move uses two of the stones, and the third is left alone.
+fail[5]: Every move needs a stone from a pile other than the big one, and the two small piles have only 2 stones between them.
+fail[6]: 3000 stones, so 1500 moves.
+speed: setup=pass | call=maximum_score(n, n, n) | target=O(1)
 slow:
 ```python
-class RunningStats:
+def maximum_score(a, b, c):
+    piles = [a, b, c]
+    score = 0
+    while True:
+        piles.sort()
+        if piles[1] == 0:
+            return score
+        piles[1] -= 1
+        piles[2] -= 1
+        score += 1
+```
+fail[speed]: Playing the game takes one turn per point, and the score can be 150,000. Work it out in one go: the score is limited by the total number of stones and by the two smaller piles.
+edges:
+- one pile bigger than the other two together :: max(a, b, c) > a + b + c - max(a, b, c) :: maximum_score(1, 2, 9)
+- an odd total and no huge pile :: max(a, b, c) <= a + b + c - max(a, b, c) and (a + b + c) % 2 == 1 :: maximum_score(3, 3, 3)
+- an even total and no huge pile :: max(a, b, c) <= a + b + c - max(a, b, c) and (a + b + c) % 2 == 0 :: maximum_score(2, 2, 4)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Here the inputs are the three pile sizes.
+why_time: An addition, a `max`, a `//` and a `min`: the same steps for any sizes.
+why_space: A couple of numbers.
+hint: Each move removes 2 stones, so there can't be more than `(a + b + c) // 2` moves.
+hint: Each move also needs a stone that isn't from the biggest pile, so there can't be more than `a + b + c - max(a, b, c)` moves.
+hint: The answer is the smaller of those two limits. (Always taking from the two biggest piles reaches it.)
+right: Both limits are formulas, and playing well always reaches the smaller one, so `min` gives the score in O(1). Playing move by move takes as many turns as the score.
+wrong: `total = a + b + c`, then return `min(total // 2, total - max(a, b, c))`.
+
+=== task: code medium
+title: Walking Robot Simulation II
+leetcode: 2069 | Walking Robot Simulation II | walking-robot-simulation-ii
+patterns: index + formula
+prompt: A robot lives on a grid that is `width` cells wide and `height` cells tall. The bottom left cell is `[0, 0]` and the top right one is `[width - 1, height - 1]`. The robot starts at `[0, 0]`, facing East. Write a class `Robot`:
+
+- `Robot(width, height)` sets up the grid and the robot.
+- `step(num)` moves the robot forward `num` times, one cell at a time. When the next cell in front of it is outside the grid, the robot first turns a quarter turn to its left (anticlockwise), then tries the move again. It returns nothing.
+- `get_pos()` returns the robot's cell, `[x, y]`.
+- `get_dir()` returns the way it faces: `"North"`, `"East"`, `"South"` or `"West"`.
+
+**Example:** on a grid 6 wide and 3 tall, two calls of `step(2)` take the robot to `[4, 0]`, still facing East. Then `step(2)` reaches `[5, 0]`, turns North and moves up to `[5, 1]`; `step(1)` goes on to `[5, 2]`; and `step(4)` turns West at the top and moves to `[1, 2]`. So `run(["Robot", "step", "step", "get_pos", "get_dir", "step", "step", "step", "get_pos", "get_dir"], [[6, 3], [2], [2], [], [], [2], [1], [4], [], []])` returns `[None, None, None, [4, 0], "East", None, None, None, [1, 2], "West"]`.
+
+**Constraints:** 2 ≤ `width`, `height` ≤ 100, 1 ≤ `num` ≤ 10⁵, and there are at most 10⁴ calls. Aim for O(1) time per call: don't move the robot one cell at a time.
+starter:
+```python
+class Robot:
+    def __init__(self, width, height):
+        pass
+
+    def step(self, num):
+        pass
+
+    def get_pos(self):
+        return [0, 0]
+
+    def get_dir(self):
+        return "East"
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Robot":
+            robot = Robot(args[0], args[1])
+            results.append(None)
+        elif command == "step":
+            results.append(robot.step(args[0]))
+        elif command == "get_pos":
+            results.append(robot.get_pos())
+        elif command == "get_dir":
+            results.append(robot.get_dir())
+    return results
+```
+solution:
+```python
+class Robot:
+    def __init__(self, width, height):
+        self.w = width
+        self.h = height
+        self.perimeter = 2 * (width - 1) + 2 * (height - 1)
+        self.pos = 0
+        self.moved = False
+
+    def step(self, num):
+        self.moved = True
+        self.pos = (self.pos + num) % self.perimeter
+
+    def get_pos(self):
+        p = self.pos
+        if p < self.w:
+            return [p, 0]
+        p -= self.w - 1
+        if p < self.h:
+            return [self.w - 1, p]
+        p -= self.h - 1
+        if p < self.w:
+            return [self.w - 1 - p, self.h - 1]
+        p -= self.w - 1
+        return [0, self.h - 1 - p]
+
+    def get_dir(self):
+        p = self.pos
+        if p == 0:
+            if self.moved:
+                return "South"
+            return "East"
+        if p < self.w:
+            return "East"
+        if p < self.w + self.h - 1:
+            return "North"
+        if p < 2 * self.w + self.h - 2:
+            return "West"
+        return "South"
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Robot":
+            robot = Robot(args[0], args[1])
+            results.append(None)
+        elif command == "step":
+            results.append(robot.step(args[0]))
+        elif command == "get_pos":
+            results.append(robot.get_pos())
+        elif command == "get_dir":
+            results.append(robot.get_dir())
+    return results
+```
+tests:
+- run(["Robot", "step", "step", "get_pos", "get_dir", "step", "step", "step", "get_pos", "get_dir"], [[6, 3], [2], [2], [], [], [2], [1], [4], [], []])
+- run(["Robot", "get_pos", "get_dir"], [[2, 2], [], []])
+- run(["Robot", "step", "get_pos", "get_dir"], [[2, 2], [4], [], []])
+- run(["Robot", "step", "get_pos", "get_dir"], [[3, 4], [2], [], []])
+- run(["Robot", "step", "get_pos", "get_dir"], [[3, 4], [3], [], []])
+- run(["Robot", "step", "get_pos", "get_dir", "step", "get_pos", "get_dir"], [[100, 50], [5000], [], [], [97], [], []])
+fail[2]: Before any step, the robot is at `[0, 0]`, facing East.
+fail[3]: On a 2 by 2 grid, 4 steps take the robot once round the border, back to `[0, 0]`. It arrives there moving down, so it faces South, not East.
+fail[4]: Two steps East on a grid 3 wide reach the corner `[2, 0]`. The robot only turns when it tries to go further.
+fail[5]: The third step can't go East, so the robot turns North and moves up to `[2, 1]`.
+fail[6]: The border is 2 × 99 + 2 × 49 = 296 cells round, and 5000 % 296 = 264 puts the robot on the left side, going down, at `[0, 32]`. 97 more steps make 361, and 361 % 296 = 65: on the bottom side at `[65, 0]`, facing East.
+speed: setup=r = Robot(50, 50) | call=r.step(n) | target=O(1)
+slow:
+```python
+class Robot:
+    def __init__(self, width, height):
+        self.w = width
+        self.h = height
+        self.x = 0
+        self.y = 0
+        self.d = 0
+
+    def step(self, num):
+        moves = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+        for _ in range(num):
+            while True:
+                nx = self.x + moves[self.d][0]
+                ny = self.y + moves[self.d][1]
+                if 0 <= nx < self.w and 0 <= ny < self.h:
+                    self.x = nx
+                    self.y = ny
+                    break
+                self.d = (self.d + 1) % 4
+
+    def get_pos(self):
+        return [self.x, self.y]
+
+    def get_dir(self):
+        return ["East", "North", "West", "South"][self.d]
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Robot":
+            robot = Robot(args[0], args[1])
+            results.append(None)
+        elif command == "step":
+            results.append(robot.step(args[0]))
+        elif command == "get_pos":
+            results.append(robot.get_pos())
+        elif command == "get_dir":
+            results.append(robot.get_dir())
+    return results
+```
+fail[speed]: Moving one cell at a time takes `num` steps per call, and there can be 10,000 calls of 100,000 steps. The robot only ever walks round the border, so its place is `num` cells further along a loop: use `%` with the length of the border.
+edges:
+- back at the start after full laps :: "step" in commands and sum([a[0] for c, a in zip(commands, inputs) if c == "step"]) % (2 * (inputs[0][0] + inputs[0][1]) - 4) == 0 :: run(["Robot", "step", "get_dir"], [[3, 3], [8], []])
+- no steps at all :: "step" not in commands :: run(["Robot", "get_pos"], [[4, 5], []])
+- stopping on a corner that isn't the start :: "step" in commands and sum([a[0] for c, a in zip(commands, inputs) if c == "step"]) % (2 * (inputs[0][0] + inputs[0][1]) - 4) in (inputs[0][0] - 1, inputs[0][0] + inputs[0][1] - 2, 2 * inputs[0][0] + inputs[0][1] - 3) :: run(["Robot", "step", "get_pos"], [[3, 3], [2], []])
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Give the time of one call to any method.
+why_time: `step` does one addition and one `%`, and `get_pos` and `get_dir` a few comparisons and subtractions, however big `num` is.
+why_space: A few numbers on the object.
+hint: Once it moves, the robot only ever walks round the border of the grid, anticlockwise. The border is a loop of `2 * (width - 1) + 2 * (height - 1)` cells.
+hint: So keep one number, `pos`: how far along that loop the robot is from `[0, 0]`. `step(num)` adds `num` and takes `% perimeter`.
+hint: `get_pos` turns `pos` into a cell, side by side: the bottom side first (`pos < width` gives `[pos, 0]`); otherwise subtract `width - 1` and try the right side, then the top and the left. `get_dir` tells the sides apart the same way.
+hint: One special case: at `pos == 0`, the robot faces East before it has ever moved, but South after a lap, since it came down the left side.
+right: Turning the walk into a place on a loop means `%` skips every full lap at once, and the cell and the direction come from a few comparisons: O(1) per call, however long the walk.
+wrong: Store `pos` and `perimeter = 2 * (width - 1) + 2 * (height - 1)`. `step` sets `pos = (pos + num) % perimeter` and records that the robot has moved. `get_pos` and `get_dir` work out the side from `pos`; at `pos == 0` the direction is South once the robot has moved, and East before.
+
+=== task: code medium
+title: Insert Delete GetRandom O(1)
+leetcode: 380 | Insert Delete GetRandom O(1) | insert-delete-getrandom-o1
+patterns: lookup + ends
+prompt: Write a class `RandomizedSet` that holds a set of numbers:
+
+- `insert(val)` adds `val` if it isn't there yet and returns `True`. If it's already there, it returns `False`.
+- `remove(val)` removes `val` if it's there and returns `True`. Otherwise it returns `False`.
+- `get_random()` returns one of the numbers, each with the same chance. It's only called when there's at least one number.
+
+Every method must take O(1) time on average. `random.choice(items)` picks one item of a list, each with the same chance, in O(1). (Write `import random` at the top, as in the `while` loops lesson.)
+
+**Example:** `run(["RandomizedSet", "insert", "remove", "insert", "get_random", "remove", "insert", "get_random"], [[], [1], [2], [2], [], [1], [2], []])` returns `[None, True, False, True, 1 or 2, True, False, 2]`: 2 can't be removed before it's added, the first `get_random` picks 1 or 2 at random, and once 1 is gone only 2 is left.
+
+**Constraints:** the numbers are from -2³¹ to 2³¹ - 1, and there are at most 2 × 10⁵ calls. Aim for O(1) time per call, on average.
+starter:
+```python
+import random
+
+class RandomizedSet:
+    def __init__(self):
+        pass
+
+    def insert(self, val):
+        return False
+
+    def remove(self, val):
+        return False
+
+    def get_random(self):
+        return None
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedSet":
+            s = RandomizedSet()
+            results.append(None)
+        elif command == "insert":
+            results.append(s.insert(args[0]))
+        elif command == "remove":
+            results.append(s.remove(args[0]))
+        elif command == "get_random":
+            results.append(s.get_random())
+    return results
+```
+solution:
+```python
+import random
+
+class RandomizedSet:
     def __init__(self):
         self.items = []
-        self.count = 0
+        self.where = {}
 
-    def add(self, x):
-        self.items.append(x)
-        self.count += 1
+    def insert(self, val):
+        if val in self.where:
+            return False
+        self.where[val] = len(self.items)
+        self.items.append(val)
+        return True
 
-    def mean(self):
-        if not self.items:
-            return None
-        return sum(self.items) / len(self.items)
+    def remove(self, val):
+        if val not in self.where:
+            return False
+        i = self.where[val]
+        last = self.items[-1]
+        self.items[i] = last
+        self.where[last] = i
+        self.items.pop()
+        del self.where[val]
+        return True
 
-    def biggest(self):
-        return max(self.items) if self.items else None
+    def get_random(self):
+        return random.choice(self.items)
 
-rs = RunningStats()
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedSet":
+            s = RandomizedSet()
+            results.append(None)
+        elif command == "insert":
+            results.append(s.insert(args[0]))
+        elif command == "remove":
+            results.append(s.remove(args[0]))
+        elif command == "get_random":
+            results.append(s.get_random())
+    return results
 ```
-fail[1]: Before any numbers arrive, there's no average: return None when the count is 0.
-fail[2]: Before any numbers arrive, there's no biggest one: None.
-fail[6]: 4 + 10 + 1 = 15, divided by 3 numbers: 5.0.
-fail[7]: The biggest of 4, 10 and 1 is 10. In `add`, update `self.top` when `x` is bigger (or when `self.top` is still None).
-error[TypeError]: Comparing a number with None fails. Check `self.top is None` before comparing.
-error[ZeroDivisionError]: With no numbers yet, return None instead of dividing by 0.
-hint: `add` does all the work: it updates the total, the count and the biggest.
-hint: The first number is always the biggest so far, so check `self.top is None or x > self.top`.
-hint: `mean` returns `self.total / self.count`, or None when the count is 0.
-right: Each `add` does a fixed amount of work, and the questions read the kept values, so every method is O(1). Keeping all the numbers and calling `sum` or `max` would make each question O(n).
-wrong: In `add`: `self.total += x`, `self.count += 1`, and update `self.top`. `mean` returns None for no numbers, otherwise `self.total / self.count`. `biggest` returns `self.top`.
+tests:
+- run(["RandomizedSet", "insert", "remove", "insert", "remove", "insert", "insert"], [[], [1], [2], [2], [1], [1], [2]])
+- run(["RandomizedSet", "insert", "get_random"], [[], [7], []])
+- run(["RandomizedSet", "remove"], [[], [5]])
+- run(["RandomizedSet", "insert", "insert", "remove", "get_random"], [[], [3], [4], [3], []])
+- run(["RandomizedSet", "insert", "remove", "insert", "get_random"], [[], [9], [9], [9], []])
+- run(["RandomizedSet"] + ["insert"] * 1000 + ["remove"] * 999 + ["get_random"], [[]] + [[i] for i in range(1000)] + [[i] for i in range(999)] + [[]])[-1]
+fail[2]: With only 7 in the set, `get_random` must return 7.
+fail[3]: Removing a number that was never added returns `False`.
+fail[4]: Once 3 is removed, only 4 is left, so `get_random` returns 4. If you moved the last number into 3's place, check that you also updated its stored position.
+fail[5]: A number can come back after it was removed: `insert(9)` returns `True` again.
+fail[6]: After 0 to 998 are removed, only 999 is left. If `get_random` returns anything else, a removed number is still in your list.
+speed: setup=s = RandomizedSet(); [s.insert(i) for i in range(n)] | call=s.remove(n // 2) | target=O(1)
+slow:
+```python
+import random
 
-=== task: code hard
-title: Range sums with prefix totals
-prompt: A **prefix total** list `p` for `nums` holds the running sums: `p[k]` is the sum of the first k items, so `p[0]` is 0. Write two functions:
+class RandomizedSet:
+    def __init__(self):
+        self.items = []
 
-- `build_prefix(nums)` returns that list, with `len(nums) + 1` entries. It may take O(n).
-- `range_sum(p, i, j)` returns `sum(nums[i:j])` using only `p`, in O(1).
+    def insert(self, val):
+        if val in self.items:
+            return False
+        self.items.append(val)
+        return True
 
-For example, for `nums = [3, 1, 4, 1, 5]`, `p` is `[0, 3, 4, 8, 9, 14]`, and `range_sum(p, 1, 3)` is 1 + 4 = 5.
+    def remove(self, val):
+        if val not in self.items:
+            return False
+        self.items.remove(val)
+        return True
+
+    def get_random(self):
+        return random.choice(self.items)
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedSet":
+            s = RandomizedSet()
+            results.append(None)
+        elif command == "insert":
+            results.append(s.insert(args[0]))
+        elif command == "remove":
+            results.append(s.remove(args[0]))
+        elif command == "get_random":
+            results.append(s.get_random())
+    return results
+```
+fail[speed]: `in` and `remove` on a list walk through the items: O(n) per call. Keep a dictionary from each number to its position in the list, and fill the gap of a removed number with the last one.
+edges:
+- the same number inserted twice :: len([a[0] for c, a in zip(commands, inputs) if c == "insert"]) > len(set([a[0] for c, a in zip(commands, inputs) if c == "insert"])) :: run(["RandomizedSet", "insert", "insert"], [[], [5], [5]])
+- removing a number that was never inserted :: any(c == "remove" and a[0] not in [b[0] for d, b in zip(commands, inputs) if d == "insert"] for c, a in zip(commands, inputs)) :: run(["RandomizedSet", "remove"], [[], [5]])
+- removing the number at the end of the list :: any(commands[i] == "remove" and commands[i - 1] == "insert" and inputs[i][0] == inputs[i - 1][0] for i in range(2, len(commands))) :: run(["RandomizedSet", "insert", "insert", "remove"], [[], [1], [2], [2]])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one call to any method, on average. n is the number of numbers in the set.
+why_time: Each method does a fixed number of dictionary operations, index reads and writes, `append` and `pop()` at the end: all O(1) on average.
+why_space: The list and the dictionary each hold one entry per number.
+hint: `get_random` needs a list, since `random.choice(items)` picks from a list in O(1). A set can't do that.
+hint: But `remove` and `in` on a list are O(n). Keep a dictionary `where` from each number to its index in the list too, so you can find a number without searching.
+hint: To remove `val`: copy the last item of the list into `val`'s index, update the last item's entry in `where`, then `pop()` the end of the list and delete `val` from `where`.
+right: The list gives O(1) random picks, the dictionary gives O(1) lookups of positions, and filling the gap with the last item means every removal happens at the end of the list, where `pop()` is O(1).
+wrong: Keep `items` (a list) and `where` (a dictionary). `insert` appends and records the index. `remove` copies `items[-1]` into `items[where[val]]`, updates `where` for that item, pops the end and deletes `val` from `where`. `get_random` returns `random.choice(self.items)`.
+
+=== task: code medium
+title: Find Consecutive Integers from a Data Stream
+leetcode: 2526 | Find Consecutive Integers from a Data Stream | find-consecutive-integers-from-a-data-stream
+patterns: hidden
+prompt: Numbers arrive one at a time. Write a class `DataStream`:
+
+- `DataStream(value, k)` sets the number to look for, `value`, and how many in a row are needed, `k`.
+- `consec(num)` takes in the next number and returns `True` if the last `k` numbers that arrived, including `num`, are all equal to `value`. While fewer than `k` numbers have arrived, it returns `False`.
+
+**Example:** `run(["DataStream", "consec", "consec", "consec", "consec"], [[4, 3], [4], [4], [4], [3]])` returns `[None, False, False, True, False]`: the third 4 makes three in a row, and the 3 breaks the run.
+
+**Constraints:** 1 ≤ `value`, `num` ≤ 10⁹, 1 ≤ `k` ≤ 10⁵, and there are at most 10⁵ calls to `consec`. Aim for O(1) time per call.
 starter:
 ```python
-def build_prefix(nums):
-    p = [0]
-    # your code here
-    return p
+class DataStream:
+    def __init__(self, value, k):
+        pass
 
-def range_sum(p, i, j):
+    def consec(self, num):
+        return False
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "DataStream":
+            stream = DataStream(args[0], args[1])
+            results.append(None)
+        elif command == "consec":
+            results.append(stream.consec(args[0]))
+    return results
+```
+solution:
+```python
+class DataStream:
+    def __init__(self, value, k):
+        self.value = value
+        self.k = k
+        self.streak = 0
+
+    def consec(self, num):
+        if num == self.value:
+            self.streak += 1
+        else:
+            self.streak = 0
+        return self.streak >= self.k
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "DataStream":
+            stream = DataStream(args[0], args[1])
+            results.append(None)
+        elif command == "consec":
+            results.append(stream.consec(args[0]))
+    return results
+```
+tests:
+- run(["DataStream", "consec", "consec", "consec", "consec"], [[4, 3], [4], [4], [4], [3]])
+- run(["DataStream", "consec"], [[1, 1], [1]])
+- run(["DataStream", "consec", "consec"], [[5, 1], [2], [5]])
+- run(["DataStream", "consec", "consec", "consec", "consec"], [[2, 2], [2], [3], [2], [2]])
+- run(["DataStream", "consec", "consec", "consec"], [[7, 3], [7], [7], [7]])
+- sum(run(["DataStream"] + ["consec"] * 500, [[1, 100]] + [[1]] * 500)[1:])
+fail[2]: With `k` = 1, one matching number is enough.
+fail[3]: 2 isn't 5, but the next number is, and with `k` = 1 that's enough.
+fail[4]: The 3 breaks the run of 2s. After it, two 2s in a row give `True`.
+fail[5]: The third 7 completes a run of 3.
+fail[6]: The answers are `True` from the 100th number onwards: 401 of the 500.
+speed: setup=d = DataStream(1, n); [d.consec(1) for _ in range(n)] | call=d.consec(1) | target=O(1)
+slow:
+```python
+class DataStream:
+    def __init__(self, value, k):
+        self.value = value
+        self.k = k
+        self.seen = []
+
+    def consec(self, num):
+        self.seen.append(num)
+        if len(self.seen) < self.k:
+            return False
+        for x in self.seen[-self.k:]:
+            if x != self.value:
+                return False
+        return True
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "DataStream":
+            stream = DataStream(args[0], args[1])
+            results.append(None)
+        elif command == "consec":
+            results.append(stream.consec(args[0]))
+    return results
+```
+fail[speed]: Checking the last `k` numbers on every call is a hidden loop of `k` steps, and `k` can be 100,000. Keep a count of how many numbers in a row have been equal to `value` so far instead.
+edges:
+- k is 1 :: inputs[0][1] == 1 :: run(["DataStream", "consec"], [[3, 1], [3]])
+- fewer numbers than k :: inputs[0][1] > 1 and commands.count("consec") < inputs[0][1] :: run(["DataStream", "consec"], [[3, 2], [3]])
+- a run broken by another number :: inputs[0][1] > 1 and commands.count("consec") >= inputs[0][1] and any(c == "consec" and a[0] != inputs[0][0] for c, a in zip(commands, inputs)) :: run(["DataStream", "consec", "consec", "consec"], [[3, 2], [3], [1], [3]])
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Give the time of one call to `consec`.
+why_time: One comparison and one change to a counter per call, whatever `k` is.
+why_space: Three numbers: `value`, `k` and the length of the current run.
+hint: The last `k` numbers are all equal to `value` exactly when the current run of numbers equal to `value` is at least `k` long.
+hint: Keep `self.streak`: add 1 when `num == value`, and set it back to 0 otherwise.
+hint: Return `self.streak >= self.k`.
+right: One running count replaces looking back over the last `k` numbers, so each call is O(1), and no numbers need to be kept.
+wrong: In `consec`, set `self.streak` to `self.streak + 1` if `num == self.value`, and to 0 otherwise. Return `self.streak >= self.k`.
+
+=== task: code medium
+title: Finding Pairs With a Certain Sum
+leetcode: 1865 | Finding Pairs With a Certain Sum | finding-pairs-with-a-certain-sum
+patterns: hidden + lookup
+prompt: Write a class `FindSumPairs` for two lists of numbers:
+
+- `FindSumPairs(nums1, nums2)` stores the two lists.
+- `add(index, val)` adds `val` to `nums2[index]`. It returns nothing.
+- `count(tot)` returns how many pairs of positions `(i, j)` have `nums1[i] + nums2[j] == tot`.
+
+**Example:** with `nums1 = [1, 1, 2, 2, 2, 3]` and `nums2 = [1, 4, 5, 2, 5, 4]`, `count(7)` returns `8`. After `add(3, 2)`, `nums2` is `[1, 4, 5, 4, 5, 4]`, so `count(8)` returns `2` and `count(4)` returns `1`. After `add(0, 1)` and `add(1, 1)`, `count(7)` returns `11`.
+
+**Constraints:** `nums1` has at most 1000 numbers and `nums2` at most 10⁵. There are at most 1000 calls to each method. Aim for O(1) time per `add`, and O(n) per `count`, where n is the length of `nums1`.
+starter:
+```python
+class FindSumPairs:
+    def __init__(self, nums1, nums2):
+        pass
+
+    def add(self, index, val):
+        pass
+
+    def count(self, tot):
+        return 0
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "FindSumPairs":
+            pairs = FindSumPairs(args[0], args[1])
+            results.append(None)
+        elif command == "add":
+            results.append(pairs.add(args[0], args[1]))
+        elif command == "count":
+            results.append(pairs.count(args[0]))
+    return results
+```
+solution:
+```python
+class FindSumPairs:
+    def __init__(self, nums1, nums2):
+        self.nums1 = nums1
+        self.nums2 = nums2
+        self.counts = {}
+        for x in nums2:
+            self.counts[x] = self.counts.get(x, 0) + 1
+
+    def add(self, index, val):
+        old = self.nums2[index]
+        self.counts[old] -= 1
+        self.nums2[index] = old + val
+        self.counts[old + val] = self.counts.get(old + val, 0) + 1
+
+    def count(self, tot):
+        total = 0
+        for x in self.nums1:
+            total += self.counts.get(tot - x, 0)
+        return total
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "FindSumPairs":
+            pairs = FindSumPairs(args[0], args[1])
+            results.append(None)
+        elif command == "add":
+            results.append(pairs.add(args[0], args[1]))
+        elif command == "count":
+            results.append(pairs.count(args[0]))
+    return results
+```
+tests:
+- run(["FindSumPairs", "count", "add", "count", "count", "add", "add", "count"], [[[1, 1, 2, 2, 2, 3], [1, 4, 5, 2, 5, 4]], [7], [3, 2], [8], [4], [0, 1], [1, 1], [7]])
+- run(["FindSumPairs", "count"], [[[1], [1]], [2]])
+- run(["FindSumPairs", "count"], [[[1], [1]], [3]])
+- run(["FindSumPairs", "add", "count", "count"], [[[2], [1, 1]], [0, 1], [3], [4]])
+- run(["FindSumPairs", "add", "add", "count"], [[[1, 2], [3]], [0, 2], [0, 2], [8]])
+- sum(run(["FindSumPairs"] + ["count"] * 20, [[[1] * 30, list(range(100))]] + [[t] for t in range(20)])[1:])
+fail[2]: 1 + 1 = 2: one pair.
+fail[3]: The only pair adds up to 2, not 3.
+fail[4]: After `add(0, 1)`, `nums2` is `[2, 1]`: 2 + 1 = 3 and 2 + 2 = 4, one pair each.
+fail[5]: Two adds turn 3 into 7, and 1 + 7 = 8. Each `add` must change the count of the old value and of the new one.
+fail[6]: `nums1` holds 30 copies of 1, and each total `t` from 1 to 19 is matched by the one number `t - 1` in `nums2`: 30 pairs each, so 19 × 30 = 570.
+speed: setup=p = FindSumPairs([1] * 10, list(range(n))) | call=p.count(5) | target=O(1)
+slow:
+```python
+class FindSumPairs:
+    def __init__(self, nums1, nums2):
+        self.nums1 = nums1
+        self.nums2 = nums2
+
+    def add(self, index, val):
+        self.nums2[index] += val
+
+    def count(self, tot):
+        total = 0
+        for x in self.nums1:
+            for y in self.nums2:
+                if x + y == tot:
+                    total += 1
+        return total
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "FindSumPairs":
+            pairs = FindSumPairs(args[0], args[1])
+            results.append(None)
+        elif command == "add":
+            results.append(pairs.add(args[0], args[1]))
+        elif command == "count":
+            results.append(pairs.count(args[0]))
+    return results
+```
+fail[speed]: Trying every pair takes `len(nums1) × len(nums2)` steps per `count`, up to 100 million. Keep a dictionary of how many times each value appears in `nums2`, update it in `add`, and look up `tot - x` for each `x` in `nums1`.
+edges:
+- repeated numbers in nums2 :: len(set(inputs[0][1])) < len(inputs[0][1]) :: run(["FindSumPairs", "count"], [[[1], [3, 3]], [4]])
+- an add before a count :: len(set(inputs[0][1])) == len(inputs[0][1]) and "add" in commands :: run(["FindSumPairs", "add", "count"], [[[1], [2, 5]], [0, 3], [6]])
+- one number in each list :: len(inputs[0][0]) == 1 and len(inputs[0][1]) == 1 and "add" not in commands :: run(["FindSumPairs", "count"], [[[4], [4]], [8]])
+edge_count: 2
+complexity: time=O(n) | space=O(m)
+complexity_options: O(m); O(n × m); O(n + m)
+complexity_note: n is the length of `nums1` and m the length of `nums2`. Give the time of one call to `count` (`add` is O(1)), and the extra memory the object keeps.
+why_time: `count` does one dictionary lookup for each of the n numbers in `nums1`: O(n). `add` changes two counts: O(1).
+why_space: The dictionary has one entry for each different value in `nums2`: up to m entries.
+hint: `nums1` is short and `nums2` is long. For each `x` in `nums1`, you need how many numbers in `nums2` equal `tot - x`.
+hint: Keep a dictionary `counts` of how many times each value appears in `nums2`. Then `count` adds up `counts.get(tot - x, 0)` for each `x` in `nums1`.
+hint: In `add`, the old value of `nums2[index]` loses one from its count and the new value gains one. Update `nums2[index]` too, so that the next `add` knows the old value.
+right: `add` keeps the counts up to date with two O(1) changes, so `count` never has to look through `nums2`: it makes one lookup for each number of the short list.
+wrong: Build `counts` from `nums2` in `__init__`. In `add`, take 1 off `counts[old]`, set `nums2[index] = old + val` and add 1 to `counts[old + val]`. In `count`, return the sum of `counts.get(tot - x, 0)` for each `x` in `nums1`.
+
+=== task: code medium
+title: Design a Stack With Increment Operation
+leetcode: 1381 | Design a Stack With Increment Operation | design-a-stack-with-increment-operation
+patterns: ends + index
+prompt: Write a class `CustomStack`:
+
+- `CustomStack(max_size)` makes an empty stack that can hold at most `max_size` numbers.
+- `push(x)` puts `x` on top of the stack, unless the stack is full, in which case it does nothing.
+- `pop()` removes the top number and returns it, or returns -1 if the stack is empty.
+- `increment(k, val)` adds `val` to each of the bottom `k` numbers of the stack, or to all of them if there are fewer than `k`.
+
+`push` and `increment` return nothing.
+
+**Example:** in `CustomStack(3)`, push 1 and 2, then `pop()` returns 2. Push 2, 3 and 4: the 4 doesn't fit. `increment(5, 100)` makes the stack 101, 102, 103 (from the bottom), and `increment(2, 100)` makes it 201, 202, 103. Then `pop()` returns 103, 202 and 201, and a fourth `pop()` returns -1.
+
+**Constraints:** 1 ≤ `max_size`, `x`, `k` ≤ 1000, 0 ≤ `val` ≤ 100, and there are at most 1000 calls to each method. Aim for O(1) time per call, `increment` included.
+starter:
+```python
+class CustomStack:
+    def __init__(self, max_size):
+        pass
+
+    def push(self, x):
+        pass
+
+    def pop(self):
+        return -1
+
+    def increment(self, k, val):
+        pass
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CustomStack":
+            stack = CustomStack(args[0])
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "increment":
+            results.append(stack.increment(args[0], args[1]))
+    return results
+```
+solution:
+```python
+class CustomStack:
+    def __init__(self, max_size):
+        self.max_size = max_size
+        self.items = []
+        self.extra = []
+
+    def push(self, x):
+        if len(self.items) < self.max_size:
+            self.items.append(x)
+            self.extra.append(0)
+
+    def pop(self):
+        if len(self.items) == 0:
+            return -1
+        add = self.extra.pop()
+        if len(self.extra) > 0:
+            self.extra[-1] += add
+        return self.items.pop() + add
+
+    def increment(self, k, val):
+        i = min(k, len(self.items)) - 1
+        if i >= 0:
+            self.extra[i] += val
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CustomStack":
+            stack = CustomStack(args[0])
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "increment":
+            results.append(stack.increment(args[0], args[1]))
+    return results
+```
+tests:
+- run(["CustomStack", "push", "push", "pop", "push", "push", "push", "increment", "increment", "pop", "pop", "pop", "pop"], [[3], [1], [2], [], [2], [3], [4], [5, 100], [2, 100], [], [], [], []])
+- run(["CustomStack", "pop"], [[2], []])
+- run(["CustomStack", "push", "push", "pop"], [[1], [5], [6], []])
+- run(["CustomStack", "push", "push", "increment", "pop", "pop"], [[2], [1], [2], [1, 10], [], []])
+- run(["CustomStack", "increment", "push", "pop"], [[3], [2, 5], [1], []])
+- sum(run(["CustomStack"] + ["push"] * 500 + ["increment"] * 500 + ["pop"] * 500, [[500]] + [[0]] * 500 + [[500, 1]] * 500 + [[]] * 500)[-500:])
+fail[2]: An empty stack pops -1.
+fail[3]: The stack holds only 1 number, so pushing 6 does nothing, and `pop` returns 5.
+fail[4]: Only the bottom number gets the 10. The top pops as 2, and the 1 below it pops as 11.
+fail[5]: An increment on an empty stack changes nothing, not even the numbers pushed later.
+fail[6]: All 500 numbers get 1 added 500 times, so each one pops as 500.
+speed: setup=st = CustomStack(n); [st.push(i) for i in range(n)] | call=st.increment(n, 1) | target=O(1)
+slow:
+```python
+class CustomStack:
+    def __init__(self, max_size):
+        self.max_size = max_size
+        self.items = []
+
+    def push(self, x):
+        if len(self.items) < self.max_size:
+            self.items.append(x)
+
+    def pop(self):
+        if len(self.items) == 0:
+            return -1
+        return self.items.pop()
+
+    def increment(self, k, val):
+        for i in range(min(k, len(self.items))):
+            self.items[i] += val
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CustomStack":
+            stack = CustomStack(args[0])
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "increment":
+            results.append(stack.increment(args[0], args[1]))
+    return results
+```
+fail[speed]: Adding `val` to the bottom `k` numbers one by one takes `k` steps. Write the increment once, at index `k - 1`, and pass it down to the next number when that one is popped.
+edges:
+- pushing onto a full stack :: commands.count("push") > inputs[0][0] :: run(["CustomStack", "push", "push", "pop"], [[1], [3], [4], []])
+- k bigger than the stack :: commands.count("push") <= inputs[0][0] and any(c == "increment" and a[0] > commands[:i].count("push") for i, (c, a) in enumerate(zip(commands, inputs))) :: run(["CustomStack", "push", "increment", "pop"], [[2], [1], [5, 3], []])
+- popping an empty stack :: commands.count("pop") > commands.count("push") and commands.count("push") <= inputs[0][0] and not any(c == "increment" and a[0] > commands[:i].count("push") for i, (c, a) in enumerate(zip(commands, inputs))) :: run(["CustomStack", "pop"], [[2], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one call to any method. n is `max_size`.
+why_time: `push` and `pop` work at the end of two lists, and `increment` changes one entry, found by its index: all O(1).
+why_space: The stack and its list of increments still to hand out each hold up to `max_size` numbers.
+hint: Keep a second list, `extra`, as long as the stack: `extra[i]` is an increment still owed to the number at index `i` and to every number below it.
+hint: `increment(k, val)` adds `val` to `extra[i]`, with `i = min(k, len(self.items)) - 1`, if the stack isn't empty. That's the highest number the increment reaches.
+hint: `pop()` takes the top's `extra` with it: the result is `items.pop() + add`, where `add = extra.pop()`. Then `add` is added to the new top's `extra`, since it was owed to the numbers below too.
+right: Each increment is written down once, where it stops, and travels down the stack one place per `pop`. Every call is O(1), and each number still gets every increment it's owed.
+wrong: Keep `items` and `extra`. `push` appends to both (0 to `extra`). `increment` adds `val` at index `min(k, len(items)) - 1`. `pop` returns -1 if the stack is empty; otherwise `add = extra.pop()`, add it to `extra[-1]` if there is one, and return `items.pop() + add`.
+
+=== task: code medium
+title: Design an ATM Machine
+leetcode: 2241 | Design an ATM Machine | design-an-atm-machine
+patterns: fixed
+prompt: An ATM holds banknotes of 5 values: 20, 50, 100, 200 and 500 dollars. It starts empty. Write a class `ATM`:
+
+- `deposit(banknotes_count)` adds banknotes: `banknotes_count` is a list of how many of each value, from 20 up to 500. It returns nothing.
+- `withdraw(amount)` hands out `amount` dollars and returns how many banknotes of each value it used, as a list of 5 counts in the same order. It always takes as many of the largest banknotes as it can first, then as many of the next largest, down to the 20s. If that doesn't reach `amount` exactly, it hands out nothing and returns `[-1]`, even if another mix of banknotes would have worked.
+
+**Example:** after `deposit([0, 0, 1, 2, 1])`, `withdraw(600)` returns `[0, 0, 1, 0, 1]`: a 500 and a 100. After `deposit([0, 1, 0, 1, 1])`, the ATM holds a 50, three 200s and a 500, and `withdraw(600)` returns `[-1]`: it takes the 500 first and can't make the last 100. Then `withdraw(550)` returns `[0, 1, 0, 0, 1]`.
+
+**Constraints:** each count in `banknotes_count` is at most 10⁹, 1 ≤ `amount` ≤ 10⁹, and there are at most 5000 calls. Aim for O(1) time per call.
+starter:
+```python
+class ATM:
+    def __init__(self):
+        pass
+
+    def deposit(self, banknotes_count):
+        pass
+
+    def withdraw(self, amount):
+        return [-1]
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ATM":
+            atm = ATM()
+            results.append(None)
+        elif command == "deposit":
+            results.append(atm.deposit(args[0]))
+        elif command == "withdraw":
+            results.append(atm.withdraw(args[0]))
+    return results
+```
+solution:
+```python
+class ATM:
+    def __init__(self):
+        self.values = [20, 50, 100, 200, 500]
+        self.counts = [0, 0, 0, 0, 0]
+
+    def deposit(self, banknotes_count):
+        for i in range(5):
+            self.counts[i] += banknotes_count[i]
+
+    def withdraw(self, amount):
+        used = [0, 0, 0, 0, 0]
+        for i in range(4, -1, -1):
+            used[i] = min(self.counts[i], amount // self.values[i])
+            amount -= used[i] * self.values[i]
+        if amount != 0:
+            return [-1]
+        for i in range(5):
+            self.counts[i] -= used[i]
+        return used
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ATM":
+            atm = ATM()
+            results.append(None)
+        elif command == "deposit":
+            results.append(atm.deposit(args[0]))
+        elif command == "withdraw":
+            results.append(atm.withdraw(args[0]))
+    return results
+```
+tests:
+- run(["ATM", "deposit", "withdraw", "deposit", "withdraw", "withdraw"], [[], [[0, 0, 1, 2, 1]], [600], [[0, 1, 0, 1, 1]], [600], [550]])
+- run(["ATM", "withdraw"], [[], [20]])
+- run(["ATM", "deposit", "withdraw"], [[], [[5, 0, 0, 0, 0]], [100]])
+- run(["ATM", "deposit", "withdraw"], [[], [[1, 0, 0, 0, 0]], [30]])
+- run(["ATM", "deposit", "withdraw", "withdraw"], [[], [[0, 0, 0, 0, 2]], [500], [500]])
+- run(["ATM", "deposit", "withdraw"], [[], [[0, 0, 0, 3, 1]], [600]])
+fail[2]: The ATM starts empty, so nothing can be withdrawn.
+fail[3]: Only 20s are there, and five of them make 100.
+fail[4]: 30 can't be made from 20s.
+fail[5]: Each withdrawal of 500 uses one 500 note, and the second one finds the other note still there.
+fail[6]: The ATM takes the 500 first, then can't make the last 100 from 200s, so it returns `[-1]`, even though three 200s would have worked.
+edges:
+- an empty ATM :: "deposit" not in commands :: run(["ATM", "withdraw"], [[], [40]])
+- a withdrawal that fails :: "deposit" in commands and [-1] in run(commands, inputs) :: run(["ATM", "deposit", "withdraw"], [[], [[1, 0, 0, 0, 0]], [50]])
+- two withdrawals that both work :: "deposit" in commands and [-1] not in run(commands, inputs) and commands.count("withdraw") >= 2 :: run(["ATM", "deposit", "withdraw", "withdraw"], [[], [[2, 0, 0, 0, 0]], [20], [20]])
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Give the time of one call to any method.
+why_time: There are always 5 banknote values, so each method loops a fixed 5 times.
+why_space: Two lists of 5 counts.
+hint: Keep the count of each banknote in a list of 5, next to a list of the 5 values.
+hint: In `withdraw`, go from the largest value to the smallest: take `min(count, amount // value)` notes of each, and subtract what they're worth from `amount`.
+hint: Only if `amount` reaches 0 do you take the notes out of the ATM. Plan the withdrawal in a separate list first, so that a failed one changes nothing.
+right: With only 5 kinds of note, every loop has a fixed length, so each call is O(1) however many notes the ATM holds. Counting notes with `//`, instead of handing them out one at a time, matters too: there can be a billion of them.
+wrong: Store `values = [20, 50, 100, 200, 500]` and `counts`. `deposit` adds to the counts. `withdraw` fills `used[i] = min(counts[i], amount // values[i])` from `i = 4` down to 0, subtracting as it goes. If `amount != 0`, return `[-1]`; otherwise take `used` off `counts` and return it.
+
+=== task: code medium
+title: Number of Adjacent Elements With the Same Color
+leetcode: 2672 | Number of Adjacent Elements With the Same Color | number-of-adjacent-elements-with-the-same-color
+patterns: hidden
+prompt: A row of `n` cells starts uncolored, which we write as 0. Each query `[index, color]` paints cell `index` with `color`, a number from 1 upwards, replacing any color it had. After each query, count the pairs of neighbouring cells that have the same color, not counting uncolored cells. Write `color_the_array(n, queries)` that returns the list of those counts, one for each query.
+
+**Example:** `color_the_array(4, [[0, 2], [1, 2], [3, 1], [1, 1], [2, 1]])` returns `[0, 1, 1, 0, 2]`. After the second query the row is 2, 2, 0, 0, with one matching pair. After the last one it's 2, 1, 1, 1, with two.
+
+**Constraints:** 1 ≤ `n` ≤ 10⁵, there are 1 to 10⁵ queries, and 1 ≤ `color` ≤ 10⁵. Aim for O(n + q) time, where q is the number of queries: each query should only look at the painted cell's two neighbours.
+starter:
+```python
+def color_the_array(n, queries):
+    # your code here
+    return []
+```
+solution:
+```python
+def color_the_array(n, queries):
+    colors = [0] * n
+    same = 0
+    answer = []
+    for index, color in queries:
+        old = colors[index]
+        for j in [index - 1, index + 1]:
+            if 0 <= j < n and colors[j] != 0:
+                if colors[j] == old:
+                    same -= 1
+                if colors[j] == color:
+                    same += 1
+        colors[index] = color
+        answer.append(same)
+    return answer
+```
+tests:
+- color_the_array(4, [[0, 2], [1, 2], [3, 1], [1, 1], [2, 1]])
+- color_the_array(1, [[0, 100000]])
+- color_the_array(2, [[0, 1], [1, 1], [1, 1]])
+- color_the_array(3, [[0, 5], [2, 5], [1, 5], [1, 6]])
+- color_the_array(2, [[0, 3], [0, 3]])
+- sum(color_the_array(300, [[i, 1] for i in range(300)]))
+fail[2]: A single cell has no neighbours, so the count stays 0.
+fail[3]: Two cells painted 1 make one pair. Painting cell 1 with 1 again changes nothing.
+fail[4]: Painting the middle cell 5 matches both neighbours: 2 pairs. Painting it 6 breaks both.
+fail[5]: Painting the same cell twice never makes a pair with itself.
+fail[6]: Painting the cells 1 from left to right makes 0, then 1, 2 and onwards up to 299 pairs, which add up to 44,850.
+speed: setup=qs = [[i, 1] for i in range(n)] | call=color_the_array(n, qs) | target=O(n)
+slow:
+```python
+def color_the_array(n, queries):
+    colors = [0] * n
+    answer = []
+    for index, color in queries:
+        colors[index] = color
+        same = 0
+        for i in range(n - 1):
+            if colors[i] != 0 and colors[i] == colors[i + 1]:
+                same += 1
+        answer.append(same)
+    return answer
+```
+fail[speed]: Counting every pair again after each query puts a loop of n steps inside the loop over the queries: O(n × q). Only the painted cell's two neighbours can change the count, so keep the count and update it.
+edges:
+- one cell :: n == 1 :: color_the_array(1, [[0, 4]])
+- painting the same cell again :: n > 1 and len(set([q[0] for q in queries])) < len(queries) :: color_the_array(2, [[0, 1], [1, 1], [0, 1]])
+- a cell that matches two neighbours :: n > 2 and len(set([q[0] for q in queries])) == len(queries) and any(q[0] - 1 in [p[0] for p in queries[:i]] and q[0] + 1 in [p[0] for p in queries[:i]] for i, q in enumerate(queries)) :: color_the_array(3, [[0, 7], [2, 7], [1, 7]])
+edge_count: 2
+complexity: time=O(n + q) | space=O(n + q)
+complexity_options: O(n + q); O(n × q); O(q)
+complexity_note: n is the number of cells and q the number of queries.
+why_time: Making the row of n cells is O(n), and each query then looks at 2 neighbours: O(1) per query, O(q) in all.
+why_space: The row of n colors, plus the list of q answers.
+hint: A query changes only one cell, so only the pairs that cell is part of can change: with its left neighbour and with its right one.
+hint: Keep `same`, the current count. Before painting, take 1 off for each neighbour that matches the old color (and isn't 0). After painting, add 1 for each neighbour that matches the new color.
+hint: Check that each neighbour exists: `0 <= j < n`.
+right: The count is kept up to date with at most 4 changes per query, instead of counting all the pairs again: O(1) per query.
+wrong: Keep `colors = [0] * n` and `same = 0`. For each query, for each neighbour `j` that exists and isn't 0: subtract 1 if `colors[j]` equals the old color, and add 1 if it equals the new one. Then set `colors[index] = color` and append `same`.
+
+=== task: code medium
+title: Find the Minimum Possible Sum of a Beautiful Array
+leetcode: 2834 | Find the Minimum Possible Sum of a Beautiful Array | find-the-minimum-possible-sum-of-a-beautiful-array
+patterns: formula
+prompt: A list is **beautiful** if it holds `n` different positive whole numbers and no two of them add up to `target`. Write `minimum_possible_sum(n, target)` that returns the smallest possible sum of a beautiful list, modulo `10 ** 9 + 7`.
+
+**Example 1:** `minimum_possible_sum(2, 3)` returns `4`: `[1, 3]`. The list `[1, 2]` isn't beautiful, since 1 + 2 = 3.
+
+**Example 2:** `minimum_possible_sum(3, 3)` returns `8`: `[1, 3, 4]`.
+
+**Constraints:** 1 ≤ `n` ≤ 10⁹, and 1 ≤ `target` ≤ 10⁹. Aim for O(1) time.
+starter:
+```python
+def minimum_possible_sum(n, target):
     # your code here
     return 0
 ```
 solution:
 ```python
-def build_prefix(nums):
-    p = [0]
-    for x in nums:
-        p.append(p[-1] + x)
-    return p
-
-def range_sum(p, i, j):
-    return p[j] - p[i]
+def minimum_possible_sum(n, target):
+    mod = 10 ** 9 + 7
+    small = min(n, target // 2)
+    rest = n - small
+    total = small * (small + 1) // 2
+    total += rest * target + rest * (rest - 1) // 2
+    return total % mod
 ```
 tests:
-- build_prefix([3, 1, 4, 1, 5])
-- range_sum(build_prefix([3, 1, 4, 1, 5]), 1, 3)
-- range_sum(build_prefix([3, 1, 4, 1, 5]), 0, 5)
-- range_sum(build_prefix([3, 1, 4, 1, 5]), 2, 2)
-- build_prefix([])
-speed: setup=p = build_prefix(list(range(n))) | call=range_sum(p, 0, n) | target=O(1)
+- minimum_possible_sum(2, 3)
+- minimum_possible_sum(3, 3)
+- minimum_possible_sum(1, 1)
+- minimum_possible_sum(5, 2)
+- minimum_possible_sum(16, 6)
+- minimum_possible_sum(1000, 1000)
+fail[2]: 1 and 2 add up to 3, so after 1 the next numbers are 3 and 4: 1 + 3 + 4 = 8.
+fail[3]: One number: the smallest, 1.
+fail[4]: With `target` 2, only 1 + 1 would add up to it, and the numbers are all different, so 1 to 5 work: 15.
+fail[5]: Of each pair that adds up to 6, take the smaller: 1 and 2, and 3 too, since it can't be used twice. The other 13 numbers run from 6 to 18.
+fail[6]: 1 to 500 add up to 125,250, and the other 500 numbers, 1000 to 1499, add up to 624,750: 750,000.
+speed: setup=pass | call=minimum_possible_sum(n, n) | target=O(1)
 slow:
 ```python
-def build_prefix(nums):
-    p = [0]
-    for x in nums:
-        p.append(p[-1] + x)
-    return p
-
-def range_sum(p, i, j):
+def minimum_possible_sum(n, target):
+    chosen = set()
     total = 0
-    for k in range(i, j):
-        total += p[k + 1] - p[k]
+    x = 1
+    while len(chosen) < n:
+        if target - x not in chosen:
+            chosen.add(x)
+            total += x
+        x += 1
+    return total % (10 ** 9 + 7)
+```
+fail[speed]: Choosing the numbers one by one takes at least n steps, and n can be a billion. Count them instead: the smallest numbers up to `target // 2`, then a run from `target` upwards, and add up each run with a formula.
+edges:
+- no more numbers than target // 2 :: n <= target // 2 :: minimum_possible_sum(3, 10)
+- target 1 or 2 :: target <= 2 and n > target // 2 :: minimum_possible_sum(4, 2)
+- a second run from target :: target > 2 and n > target // 2 :: minimum_possible_sum(4, 5)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Here the inputs are the numbers `n` and `target`.
+why_time: A `min`, a few multiplications and a `%`, whatever the sizes of `n` and `target`.
+why_space: A few numbers.
+hint: Numbers that add up to `target` come in pairs: 1 and `target - 1`, 2 and `target - 2`, 3 and `target - 3`. From each pair the smaller one is the better choice, so take 1, 2 and onwards up to `target // 2`, or fewer if `n` is small.
+hint: Every number from `target` upwards is safe, since its partner would have to be 0 or less. Take the rest of the `n` numbers from there: `target`, `target + 1` and onwards.
+hint: With `small = min(n, target // 2)` and `rest = n - small`, the sum is `small * (small + 1) // 2` plus `rest * target + rest * (rest - 1) // 2`.
+right: The best choice is two runs of consecutive numbers, and each run adds up with a formula, so even a billion numbers take O(1) steps.
+wrong: `small = min(n, target // 2)` and `rest = n - small`. Return `(small * (small + 1) // 2 + rest * target + rest * (rest - 1) // 2) % (10 ** 9 + 7)`.
+
+=== task: code hard
+title: Insert Delete GetRandom O(1) - Duplicates allowed
+leetcode: 381 | Insert Delete GetRandom O(1) - Duplicates allowed | insert-delete-getrandom-o1-duplicates-allowed
+patterns: lookup + ends
+prompt: Write a class `RandomizedCollection` that holds numbers, where the same number can be there more than once:
+
+- `insert(val)` adds `val`, even if it's already there. It returns `True` if `val` wasn't there before, and `False` if it was.
+- `remove(val)` removes one copy of `val` and returns `True`, or returns `False` if there's none.
+- `get_random()` returns one of the numbers at random. Each copy has the same chance, so a number with 2 copies is twice as likely as a number with 1. It's only called when there's at least one number.
+
+Every method must take O(1) time on average. `random.choice(items)` picks one item of a list in O(1), each with the same chance. (Write `import random` at the top.)
+
+**Example:** `run(["RandomizedCollection", "insert", "insert", "insert", "get_random", "remove", "get_random"], [[], [1], [1], [2], [], [1], []])` returns `[None, True, False, True, 1 or 2, True, 1 or 2]`. The first `get_random` returns 1 with a chance of 2 in 3, since two of the three numbers are 1s. After one 1 is removed, 1 and 2 are equally likely.
+
+**Constraints:** the numbers are from -2³¹ to 2³¹ - 1, and there are at most 2 × 10⁵ calls. Aim for O(1) time per call, on average.
+starter:
+```python
+import random
+
+class RandomizedCollection:
+    def __init__(self):
+        pass
+
+    def insert(self, val):
+        return False
+
+    def remove(self, val):
+        return False
+
+    def get_random(self):
+        return None
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedCollection":
+            bag = RandomizedCollection()
+            results.append(None)
+        elif command == "insert":
+            results.append(bag.insert(args[0]))
+        elif command == "remove":
+            results.append(bag.remove(args[0]))
+        elif command == "get_random":
+            results.append(bag.get_random())
+    return results
+```
+solution:
+```python
+import random
+
+class RandomizedCollection:
+    def __init__(self):
+        self.items = []
+        self.where = {}
+
+    def insert(self, val):
+        fresh = val not in self.where or len(self.where[val]) == 0
+        if val not in self.where:
+            self.where[val] = set()
+        self.where[val].add(len(self.items))
+        self.items.append(val)
+        return fresh
+
+    def remove(self, val):
+        if val not in self.where or len(self.where[val]) == 0:
+            return False
+        i = self.where[val].pop()
+        last = self.items[-1]
+        last_index = len(self.items) - 1
+        self.items[i] = last
+        self.where[last].add(i)
+        self.where[last].discard(last_index)
+        self.items.pop()
+        return True
+
+    def get_random(self):
+        return random.choice(self.items)
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedCollection":
+            bag = RandomizedCollection()
+            results.append(None)
+        elif command == "insert":
+            results.append(bag.insert(args[0]))
+        elif command == "remove":
+            results.append(bag.remove(args[0]))
+        elif command == "get_random":
+            results.append(bag.get_random())
+    return results
+```
+tests:
+- run(["RandomizedCollection", "insert", "insert", "insert", "remove", "get_random"], [[], [1], [1], [2], [2], []])
+- run(["RandomizedCollection", "remove"], [[], [3]])
+- run(["RandomizedCollection", "insert", "remove", "insert"], [[], [4], [4], [4]])
+- run(["RandomizedCollection", "insert", "insert", "remove", "remove", "remove"], [[], [5], [5], [5], [5], [5]])
+- run(["RandomizedCollection", "insert", "insert", "insert", "remove", "remove", "get_random"], [[], [1], [2], [1], [2], [1], []])
+- run(["RandomizedCollection"] + ["insert"] * 1000 + ["remove"] * 999 + ["get_random"], [[]] + [[i % 10] for i in range(1000)] + [[i % 10] for i in range(999)] + [[]])[-1]
+fail[2]: There's no 3 to remove.
+fail[3]: Once its only copy is removed, 4 counts as new again: `True`.
+fail[4]: Two copies can be removed, and the third `remove` finds none left.
+fail[5]: Removing 2 moves the last 1 into its place. Removing a 1 must then leave exactly one 1, so `get_random` returns 1. If it returns 2, a stored position wasn't updated.
+fail[6]: 1000 numbers, 0 to 9 a hundred times each. Removing the first 999 again leaves a single 9.
+speed: setup=b = RandomizedCollection(); [b.insert(i % 10) for i in range(n)] | call=b.remove(5) | target=O(1)
+slow:
+```python
+import random
+
+class RandomizedCollection:
+    def __init__(self):
+        self.items = []
+
+    def insert(self, val):
+        fresh = val not in self.items
+        self.items.append(val)
+        return fresh
+
+    def remove(self, val):
+        if val not in self.items:
+            return False
+        self.items.remove(val)
+        return True
+
+    def get_random(self):
+        return random.choice(self.items)
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RandomizedCollection":
+            bag = RandomizedCollection()
+            results.append(None)
+        elif command == "insert":
+            results.append(bag.insert(args[0]))
+        elif command == "remove":
+            results.append(bag.remove(args[0]))
+        elif command == "get_random":
+            results.append(bag.get_random())
+    return results
+```
+fail[speed]: `remove` on a list shifts every item after the one it removes: O(n). Keep, for each number, the set of positions where it sits in the list, and fill the gap with the last item.
+edges:
+- removing a number that isn't there :: any(c == "remove" and a[0] not in [b[0] for d, b in zip(commands, inputs) if d == "insert"] for c, a in zip(commands, inputs)) :: run(["RandomizedCollection", "remove"], [[], [8]])
+- removing one of several copies :: any(c == "remove" and [b[0] for d, b in zip(commands[:i], inputs[:i]) if d == "insert"].count(a[0]) >= 2 for i, (c, a) in enumerate(zip(commands, inputs))) :: run(["RandomizedCollection", "insert", "insert", "remove"], [[], [6], [6], [6]])
+- inserting a number again after removing it :: any(c == "insert" and a[0] in [b[0] for d, b in zip(commands[:i], inputs[:i]) if d == "remove"] for i, (c, a) in enumerate(zip(commands, inputs))) :: run(["RandomizedCollection", "insert", "remove", "insert"], [[], [2], [2], [2]])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one call to any method, on average. n is the number of numbers held.
+why_time: Each method does a fixed number of list and set operations at known positions, all O(1) on average. `pop()` on a set takes out any one of its items in O(1).
+why_space: The list holds the n numbers, and the sets hold their n positions between them.
+hint: As in Insert Delete GetRandom O(1), keep the numbers in a list, so that `random.choice` gives each copy the same chance, and fill a removed number's gap with the last item.
+hint: With copies, one position per number isn't enough: map each number to a **set** of its positions in the list. `s.pop()` on a set removes and returns any one of its items, in O(1).
+hint: To remove `val`: take a position `i` from `where[val]`, copy `last = items[-1]` into `items[i]`, add `i` to `where[last]` and take `len(items) - 1` out of it with `discard`, then `pop()` the list. Do it in that order: it also works when `val` and `last` are the same number.
+right: The sets of positions are kept up to date with O(1) changes, so any copy can be found at once and replaced by the last item, and every removal happens at the end of the list.
+wrong: `insert` appends `val` and adds its index to `where[val]`, and returns whether that set was empty before. `remove` pops an index `i` from `where[val]`, copies the last item into `items[i]`, fixes `where[last]` (add `i`, discard the last index) and pops the list.
+
+=== task: code hard
+title: Count the Number of Arrays with K Matching Adjacent Elements
+leetcode: 3405 | Count the Number of Arrays with K Matching Adjacent Elements | count-the-number-of-arrays-with-k-matching-adjacent-elements
+patterns: formula
+prompt: A list of `n` numbers, each from 1 to `m`, is **good** if exactly `k` of its neighbouring pairs are equal: exactly `k` positions `i`, from 1 to `n - 1`, have `arr[i - 1] == arr[i]`. Write `count_good_arrays(n, m, k)` that returns how many good lists there are, modulo `10 ** 9 + 7`.
+
+**Example 1:** `count_good_arrays(3, 2, 1)` returns `4`: `[1, 1, 2]`, `[1, 2, 2]`, `[2, 1, 1]` and `[2, 2, 1]`.
+
+**Example 2:** `count_good_arrays(4, 2, 2)` returns `6`.
+
+**Example 3:** `count_good_arrays(5, 2, 0)` returns `2`: `[1, 2, 1, 2, 1]` and `[2, 1, 2, 1, 2]`.
+
+**Constraints:** 1 ≤ `n` ≤ 10⁵, 1 ≤ `m` ≤ 10⁵, and 0 ≤ `k` ≤ `n - 1`. Aim for O(n) time: count the lists with a formula, without listing them.
+starter:
+```python
+def count_good_arrays(n, m, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_good_arrays(n, m, k):
+    mod = 10 ** 9 + 7
+    top = 1
+    bottom = 1
+    for i in range(k):
+        top = top * (n - 1 - i) % mod
+        bottom = bottom * (i + 1) % mod
+    choose = top * pow(bottom, mod - 2, mod) % mod
+    return choose * m % mod * pow(m - 1, n - 1 - k, mod) % mod
+```
+tests:
+- count_good_arrays(3, 2, 1)
+- count_good_arrays(4, 2, 2)
+- count_good_arrays(5, 2, 0)
+- count_good_arrays(1, 1, 0)
+- count_good_arrays(3, 1, 1)
+- count_good_arrays(100000, 100000, 50000)
+fail[2]: The 2 equal pairs are 2 of the 3 neighbouring pairs: 3 ways to choose them. The first number has 2 choices, and the one unequal pair has 1 choice left: 3 × 2 × 1 = 6.
+fail[3]: With 2 values and no equal neighbours, the list must alternate, starting with 1 or with 2.
+fail[4]: A single number from 1 to 1, with no pairs at all: 1 list.
+fail[5]: With only the value 1, the list is `[1, 1, 1]`, which has 2 equal pairs, not 1.
+fail[6]: Choose the 50,000 equal pairs among 99,999, then the first number and every change: C(99999, 50000) × 100000 × 99999 ** 49999, modulo 10 ** 9 + 7.
+edges:
+- every pair equal :: k == n - 1 and n > 1 :: count_good_arrays(3, 4, 2)
+- no equal pairs :: k == 0 and n > 1 :: count_good_arrays(3, 3, 0)
+- only one value with an unequal pair needed :: m == 1 and k < n - 1 :: count_good_arrays(3, 1, 1)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: k is at most n - 1, so give the time in terms of n. Count `pow()` with three arguments as O(1).
+why_time: Choosing the k equal pairs, C(n - 1, k), takes a loop of k steps. The rest is two `pow` calls and a few multiplications.
+why_space: A few numbers.
+hint: Look at the `n - 1` neighbouring pairs and choose which `k` of them are equal: there are C(n - 1, k) ways, the number of ways to choose k things out of n - 1.
+hint: Then the first number has `m` choices, each equal pair has 1 (copy the number before), and each of the other `n - 1 - k` pairs has `m - 1` (anything but the number before). Multiply: C(n - 1, k) × m × (m - 1) ** (n - 1 - k).
+hint: C(n - 1, k) is the product of the k numbers `n - 1`, `n - 2` and downwards, divided by the product of 1 to k. Work modulo `10 ** 9 + 7` all the way: dividing by `b` is multiplying by `pow(b, mod - 2, mod)`, and `pow(m - 1, n - 1 - k, mod)` gives the power without building a huge number.
+right: Counting choices turns a search through m ** n lists into a formula: where the equal pairs go, times the choices for each number. `pow` with a third argument, and dividing with `pow(b, mod - 2, mod)`, keep every number small.
+wrong: `top` is the product of `n - 1 - i` for `i` in `range(k)`, and `bottom` the product of `i + 1`, both `% mod`. Return `top * pow(bottom, mod - 2, mod) % mod * m % mod * pow(m - 1, n - 1 - k, mod) % mod`.
+
+=== task: code hard
+title: Stone Game VIII
+leetcode: 1872 | Stone Game VIII | stone-game-viii
+patterns: hidden + formula
+prompt: Alice and Bob take turns, Alice first, with a row of `n` stones whose values are `stones`. While more than one stone is left, the player whose turn it is chooses a number `x > 1`, removes the leftmost `x` stones, adds their values to their score, and puts one new stone, worth the sum of the removed ones, at the left end of the row. The game ends when one stone is left. Alice plays to make (Alice's score - Bob's score) as big as possible, and Bob to make it as small as possible. Write `stone_game_viii(stones)` that returns that difference when both play their best.
+
+**Example 1:** `stone_game_viii([-1, 2, -3, 4, -5])` returns `5`: Alice takes the first 4 stones, worth 2, which leaves `[2, -5]`. Bob must take both, worth -3, and 2 - (-3) = 5.
+
+**Example 2:** `stone_game_viii([7, -6, 5, 10, 5, -2, -6])` returns `13`: Alice takes all the stones at once.
+
+**Example 3:** `stone_game_viii([-10, -12])` returns `-22`.
+
+**Constraints:** 2 ≤ `n` ≤ 10⁵, and each value is from -10⁴ to 10⁴. Aim for O(n) time.
+starter:
+```python
+def stone_game_viii(stones):
+    # your code here
+    return 0
+```
+solution:
+```python
+def stone_game_viii(stones):
+    prefix = []
+    total = 0
+    for x in stones:
+        total += x
+        prefix.append(total)
+    best = prefix[-1]
+    for i in range(len(stones) - 2, 0, -1):
+        best = max(best, prefix[i] - best)
+    return best
+```
+tests:
+- stone_game_viii([-1, 2, -3, 4, -5])
+- stone_game_viii([7, -6, 5, 10, 5, -2, -6])
+- stone_game_viii([-10, -12])
+- stone_game_viii([1, 1])
+- stone_game_viii([5, -5, 5])
+- stone_game_viii([(i * 7) % 11 - 5 for i in range(300)])
+fail[2]: Taking all 7 stones at once scores 13, and Bob gets nothing.
+fail[3]: Alice must take both stones: -22.
+fail[4]: Alice takes both stones: 2.
+fail[5]: Taking the first two stones scores 0 and lets Bob score 5. Taking all three scores 5 straight away.
+fail[6]: With these 300 stones, the best difference works out to 2.
+speed: setup=stones = [1] * n | call=stone_game_viii(stones) | target=O(n)
+slow:
+```python
+def stone_game_viii(stones):
+    best = sum(stones)
+    for i in range(len(stones) - 2, 0, -1):
+        best = max(best, sum(stones[:i + 1]) - best)
+    return best
+```
+fail[speed]: Adding up `stones[:i + 1]` again for every `i` puts a hidden loop inside a loop: O(n²). Work out the running totals once, in one pass.
+edges:
+- two stones :: len(stones) == 2 :: stone_game_viii([3, -4])
+- every stone negative :: len(stones) > 2 and max(stones) < 0 :: stone_game_viii([-1, -2, -3])
+- taking everything isn't best :: len(stones) > 2 and max(stones) >= 0 and stone_game_viii(stones) != sum(stones) :: stone_game_viii([-1, 2, -3, 4, -5])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass builds the running totals, and one pass from the right works out the best difference: O(n) + O(n).
+why_space: The list of n running totals. (Working them out from the right, without the list, would make it O(1).)
+hint: The new stone holds the sum of everything removed so far. So whoever takes the stones up to the original position `i` always scores the sum of the first `i + 1` stones, `prefix[i]`, however the earlier moves went. Each move picks a later position than the one before, and position `n - 1` ends the game.
+hint: Let `best` be the best difference the player to move can get when they may pick any position from `i` onwards. At the last position, `best = prefix[n - 1]`.
+hint: Going left, the player can stop at `i` (scoring `prefix[i]`, after which the other player gets `best` from `i + 1` onwards) or skip it: `best = max(best, prefix[i] - best)`. Alice's first move takes at least 2 stones, so stop at `i = 1`.
+right: The running totals turn every move into a single `prefix[i]`, read in O(1), and one pass from the right weighs stopping at each position against moving on. Adding up the stones again for each position would be O(n²).
+wrong: Build `prefix` with a running total. Set `best = prefix[-1]`, then for `i` from `n - 2` down to 1, `best = max(best, prefix[i] - best)`. Return `best`.
+
+=== task: code hard
+title: Count Anagrams
+leetcode: 2514 | Count Anagrams | count-anagrams
+patterns: lookup + formula
+prompt: `s` holds one or more words, separated by single spaces. Another string is an **anagram** of `s` if each of its words is a rearrangement of the letters of the word in the same place in `s`. Write `count_anagrams(s)` that returns how many different anagrams `s` has, `s` itself included, modulo `10 ** 9 + 7`.
+
+**Example 1:** `count_anagrams("too hot")` returns `18`: `"too"` has 3 different orders (`"too"`, `"oto"` and `"oot"`), and `"hot"` has 6.
+
+**Example 2:** `count_anagrams("aa")` returns `1`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, and `s` has lowercase letters and single spaces, with no space at either end. Aim for O(n) time.
+starter:
+```python
+def count_anagrams(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_anagrams(s):
+    mod = 10 ** 9 + 7
+    n = len(s)
+    fact = [1] * (n + 1)
+    for i in range(1, n + 1):
+        fact[i] = fact[i - 1] * i % mod
+    total = 1
+    for word in s.split():
+        counts = {}
+        for c in word:
+            counts[c] = counts.get(c, 0) + 1
+        ways = fact[len(word)]
+        for c in counts:
+            ways = ways * pow(fact[counts[c]], mod - 2, mod) % mod
+        total = total * ways % mod
     return total
 ```
-fail[1]: Each entry adds the next item to the one before: 0, 3, 3 + 1 = 4, 4 + 4 = 8, 8 + 1 = 9, 9 + 5 = 14.
-fail[2]: The sum of the first 3 items is p[3] = 8, and of the first 1 item is p[1] = 3. Items 1 and 2 add up to their difference: 8 - 3 = 5.
-fail[4]: An empty range adds up to 0: p[2] - p[2].
-error[IndexError]: `p` has one more entry than `nums`. Use `p[j] - p[i]`.
-hint: In `build_prefix`, append `p[-1] + x` for each item.
-hint: The first j items minus the first i items leaves items i to j - 1.
-hint: `return p[j] - p[i]`
-right: Building the totals once takes O(n). After that, any range sum is one subtraction, `p[j] - p[i]`, which is O(1) however long the range is.
-wrong: Build `p` with `p.append(p[-1] + x)` for each item. Then `range_sum` returns `p[j] - p[i]`.
+tests:
+- count_anagrams("too hot")
+- count_anagrams("aa")
+- count_anagrams("abc")
+- count_anagrams("a b c")
+- count_anagrams("ab ba")
+- count_anagrams(" ".join(["abcdefghij"] * 100))
+fail[2]: Both letters are the same, so there's only one order.
+fail[3]: 3 different letters: 3 × 2 × 1 = 6 orders.
+fail[4]: Each word has one letter, so nothing can move.
+fail[5]: Each word has 2 orders, and each word is rearranged on its own: 2 × 2 = 4.
+fail[6]: Each word has 10 different letters, so 10! = 3,628,800 orders. The answer is 3,628,800 ** 100, modulo 10 ** 9 + 7.
+edges:
+- one word :: " " not in s :: count_anagrams("abb")
+- a word whose letters are all the same :: " " in s and any(len(set(w)) == 1 for w in s.split()) :: count_anagrams("ab cc")
+- words without repeated letters :: " " in s and all(len(set(w)) == len(w) and len(w) > 1 for w in s.split()) :: count_anagrams("ab cd")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of `s`. Count `pow()` with three arguments as O(1).
+why_time: The factorials up to n take one pass, and each word's letters are counted in one pass over the word: O(n) in all. Each word has at most 26 different letters to divide out.
+why_space: The list of n + 1 factorials. Each word's dictionary holds at most 26 letters.
+hint: The words are rearranged separately, so the answer is the product of the numbers of orders of each word.
+hint: A word of length L with all different letters has L! orders. Repeated letters reduce that: divide by c! for each letter that appears c times. For `"too"`, that's 3! / 2! = 3.
+hint: Count each word's letters in a dictionary. Work out the factorials 0! to n! once, modulo `10 ** 9 + 7`, and divide by multiplying with `pow(f, mod - 2, mod)`.
+right: Counting the letters turns "how many orders?" into a formula, L! divided by the factorial of each count, and the factorials are worked out once for all the words.
+wrong: Build `fact` up to `len(s)`. For each word, count its letters, start from `fact[len(word)]` and multiply by `pow(fact[c], mod - 2, mod)` for each count `c`. Multiply the words' results together, all modulo `10 ** 9 + 7`.
 
 === task: code hard
-title: Days ahead
-prompt: The days of the week are `["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]`. Write a function `day_after(start, k)` that returns the day k days after `start`. It must be O(1) in k, so don't count the days one by one.
+title: Kth Smallest Instructions
+leetcode: 1643 | Kth Smallest Instructions | kth-smallest-instructions
+patterns: index + formula
+prompt: Bob stands in the top left cell, `(0, 0)`, of a grid and wants to reach `destination = [row, column]`. He can only move right, written `"H"`, or down, written `"V"`, so his instructions are a string of `column` H's and `row` V's in some order. In alphabetical order, the possible strings are numbered from 1: for `[2, 3]`, the first is `"HHHVV"` and the second `"HHVHV"`. Write `kth_smallest_path(destination, k)` that returns the `k`-th string.
 
-For example, `day_after("Mon", 3)` returns `'Thu'`, and `day_after("Sat", 2)` returns `'Mon'`.
+**Example 1:** `kth_smallest_path([2, 3], 1)` returns `"HHHVV"`.
+
+**Example 2:** `kth_smallest_path([2, 3], 2)` returns `"HHVHV"`.
+
+**Example 3:** `kth_smallest_path([2, 3], 3)` returns `"HHVVH"`.
+
+**Constraints:** 1 ≤ `row`, `column` ≤ 15, and `k` is at most the number of possible strings. Aim for O(n²) time, where n is `row + column`: there can be over 155 million strings, far too many to list.
 starter:
 ```python
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-def day_after(start, k):
+def kth_smallest_path(destination, k):
     # your code here
-    return start
+    return ""
 ```
 solution:
 ```python
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-def day_after(start, k):
-    i = DAYS.index(start)
-    return DAYS[(i + k) % 7]
+def kth_smallest_path(destination, k):
+    v = destination[0]
+    h = destination[1]
+    size = h + v
+    pascal = [[1] * (size + 1) for _ in range(size + 1)]
+    for a in range(1, size + 1):
+        for b in range(1, a):
+            pascal[a][b] = pascal[a - 1][b - 1] + pascal[a - 1][b]
+    path = ""
+    while h > 0 and v > 0:
+        starting_with_h = pascal[h - 1 + v][v]
+        if k <= starting_with_h:
+            path += "H"
+            h -= 1
+        else:
+            path += "V"
+            v -= 1
+            k -= starting_with_h
+    return path + "H" * h + "V" * v
 ```
 tests:
-- day_after("Mon", 3)
-- day_after("Sat", 2)
-- day_after("Sun", 0)
-- day_after("Wed", 700)
-- day_after("Tue", 10)
-speed: setup=pass | call=day_after("Mon", n) | target=O(1)
-slow:
-```python
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-def day_after(start, k):
-    i = DAYS.index(start)
-    for step in range(k):
-        i = (i + 1) % 7
-    return DAYS[i]
-```
-fail[2]: Sat is position 5. 5 + 2 = 7, and 7 % 7 = 0, which is Mon. Use `% 7` to wrap around.
-fail[4]: 700 days is exactly 100 weeks, so it's Wed again: Wed is position 2, and (2 + 700) % 7 = 2.
-fail[5]: Tue is position 1, and (1 + 10) % 7 = 4, which is Fri.
-error[IndexError]: Wrap the position around with `% 7`, so it always stays between 0 and 6.
-hint: `DAYS.index(start)` gives the position of the start day. The list always has 7 items, so this is O(1) in k.
-hint: Add k, then wrap around the week with `% 7`.
-hint: `return DAYS[(i + k) % 7]`
-right: `% 7` jumps straight to the right place in the week, however large k is: 700 days takes the same steps as 3. Counting day by day would take k steps.
-wrong: Find the start's position, add k, and wrap with `% 7`: `DAYS[(DAYS.index(start) + k) % 7]`.
+- kth_smallest_path([2, 3], 1)
+- kth_smallest_path([2, 3], 2)
+- kth_smallest_path([2, 3], 3)
+- kth_smallest_path([1, 1], 2)
+- kth_smallest_path([3, 1], 4)
+- kth_smallest_path([15, 15], 155117520)
+fail[2]: Only `"HHHVV"` starts with three H's, so the second string starts `"HHV"`: `"HHVHV"`.
+fail[3]: After `"HHHVV"` and `"HHVHV"` comes `"HHVVH"`.
+fail[4]: With one H and one V, the strings are `"HV"` and `"VH"`.
+fail[5]: There are 4 strings: `"HVVV"`, `"VHVV"`, `"VVHV"` and `"VVVH"`. The 4th is the last.
+fail[6]: `k` is the number of all the strings, C(30, 15) = 155,117,520, so the answer is the last one: all the V's first.
+error[TimeoutError]: There can be 155 million strings, too many to list or count one by one. Count them with a table instead.
+edges:
+- the first string :: k == 1 :: kth_smallest_path([2, 2], 1)
+- the last string :: k > 1 and kth_smallest_path(destination, k) == "V" * destination[0] + "H" * destination[1] :: kth_smallest_path([2, 2], 6)
+- a string in the middle :: k > 1 and kth_smallest_path(destination, k) != "V" * destination[0] + "H" * destination[1] :: kth_smallest_path([2, 2], 3)
+edge_count: 2
+complexity: time=O(n²) | space=O(n²)
+complexity_note: n is `row + column`, the length of the answer. n is at most 30, but give how the work grows with n.
+why_time: Filling the table of counts takes about n² / 2 additions. Choosing the n letters then takes O(1) each, plus building the string.
+why_space: The table has (n + 1) × (n + 1) entries.
+hint: Build the answer one letter at a time. With `h` H's and `v` V's still to place, the strings that start with `"H"` come first, and there are C(h - 1 + v, v) of them: the ways to arrange the rest.
+hint: If `k` is at most that count, the next letter is `"H"`. Otherwise it's `"V"`, and you skip all those strings: `k -= count`.
+hint: Read the counts from Pascal's triangle, a table where each entry is the sum of the two above it: `pascal[a][b] = pascal[a - 1][b - 1] + pascal[a - 1][b]`, with 1s at both ends of each row. Then C(a, b) is `pascal[a][b]`.
+right: Instead of listing millions of strings, each letter is chosen by comparing `k` with a count read straight from the table, at an index worked out from the letters still to place.
+wrong: Build `pascal` up to `row + column`. While `h` and `v` are both above 0: let `c = pascal[h - 1 + v][v]`. If `k <= c`, add `"H"` and take 1 off `h`; otherwise add `"V"`, take 1 off `v` and subtract `c` from `k`. Then add the letters that are left.
 
 === task: code hard
-title: Fix the ends
-prompt: This program should print the first and last items of a list, or None for an empty list:
+title: Count Palindromic Subsequences
+leetcode: 2484 | Count Palindromic Subsequences | count-palindromic-subsequences
+patterns: hidden + fixed
+prompt: `s` is a string of digits. Write `count_palindromes(s)` that returns how many of its subsequences of length 5 are palindromes, modulo `10 ** 9 + 7`. A **subsequence** keeps some of the characters, in their order, but not necessarily next to each other. Two subsequences count as different if they use different positions.
 
-```output
-(3, 8)
-None
-```
-It has two bugs. Fix them, and keep the function O(1).
+**Example 1:** `count_palindromes("103301")` returns `2`: `"10301"`, with either of the two 3s in the middle.
+
+**Example 2:** `count_palindromes("0000000")` returns `21`: any 5 of the 7 positions make `"00000"`.
+
+**Example 3:** `count_palindromes("9999900000")` returns `2`: `"99999"` and `"00000"`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁴, and `s` has digits only. Aim for O(n) time: tables of digit counts have fixed sizes.
 starter:
 ```python
-def first_last(nums):
-    if len(nums) = 0:
-        return None
-    return nums[0], nums[len(nums)]
-
-print(first_last([3, 5, 8]))
-print(first_last([]))
+def count_palindromes(s):
+    # your code here
+    return 0
 ```
 solution:
 ```python
-def first_last(nums):
-    if len(nums) == 0:
-        return None
-    return nums[0], nums[-1]
-
-print(first_last([3, 5, 8]))
-print(first_last([]))
+def count_palindromes(s):
+    mod = 10 ** 9 + 7
+    d = [int(c) for c in s]
+    n = len(d)
+    left_one = [0] * 10
+    left_two = [[0] * 10 for _ in range(10)]
+    right_one = [0] * 10
+    right_two = [[0] * 10 for _ in range(10)]
+    for i in range(n - 1, 0, -1):
+        for x in range(10):
+            right_two[d[i]][x] += right_one[x]
+        right_one[d[i]] += 1
+    total = 0
+    for j in range(1, n - 1):
+        for x in range(10):
+            left_two[x][d[j - 1]] += left_one[x]
+        left_one[d[j - 1]] += 1
+        right_one[d[j]] -= 1
+        for x in range(10):
+            right_two[d[j]][x] -= right_one[x]
+        for a in range(10):
+            for b in range(10):
+                total += left_two[a][b] * right_two[b][a]
+        total %= mod
+    return total
 ```
-tests: stdout
-error[SyntaxError]: A comparison needs `==`. A single `=` stores a value, which isn't allowed inside an `if`.
-error[IndexError]: The last position is `len(nums) - 1`, which you can also write as `-1`. `nums[len(nums)]` is one past the end.
-hint: How do you compare two values for equality?
-hint: The positions of a list of 3 items are 0, 1 and 2.
-right: `len(nums) == 0` compares, and `nums[-1]` reads the last item. Both are O(1), so the function stays constant time.
-wrong: Bug 1: `if len(nums) == 0:`. Bug 2: `nums[-1]` (or `nums[len(nums) - 1]`).
+tests:
+- count_palindromes("103301")
+- count_palindromes("0000000")
+- count_palindromes("9999900000")
+- count_palindromes("1234")
+- count_palindromes("12321")
+- count_palindromes("0123456789" * 30)
+fail[2]: All 7 digits are 0, so any 5 positions make `"00000"`: there are 21 ways to choose 5 of 7.
+fail[3]: Only `"99999"` and `"00000"`: a palindrome can't mix the 9s and the 0s, since every 9 comes before every 0.
+fail[4]: 4 digits are too few for a length of 5.
+fail[5]: The whole string, `"12321"`, is the only one.
+fail[6]: With these 300 digits, there are 195,123,600 palindromes.
+edges:
+- fewer than 5 digits :: len(s) < 5 :: count_palindromes("121")
+- every digit the same :: len(s) >= 5 and len(set(s)) == 1 :: count_palindromes("33333")
+- no palindrome at all :: len(s) >= 5 and len(set(s)) > 1 and count_palindromes(s) == 0 :: count_palindromes("12345")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of `s`. The tables have fixed sizes: 10 counts, or 10 × 10 counts of pairs.
+why_time: Every position updates the tables with loops over the 10 digits, and the middle step adds up 10 × 10 products: a fixed number of steps per position, about 120, so O(n).
+why_space: The list of n digits. The four tables have fixed sizes, so they are O(1).
+hint: A palindrome of length 5 looks like `a b x b a`. Pick the middle position, then a pair "a, then b" on its left and a pair "b, then a" on its right.
+hint: So for each middle position `j`, you need, for every pair of digits `(a, b)`, how many times "a, then b" appears before `j` and how many times "b, then a" appears after `j`. Multiply, and add over the 10 × 10 pairs.
+hint: Keep the pair counts in two 10 × 10 tables, `left_two` and `right_two`, and the single-digit counts in `left_one` and `right_one`. Fill the right tables first, from the end. Then move the middle one place at a time: the digit that joins the left side adds `left_one[x]` pairs `(x, digit)` to `left_two`, and the digit that leaves the right side takes its pairs `(digit, x)`, `right_one[x]` of them, out of `right_two`.
+right: The tables have fixed sizes, so moving the middle by one place costs a fixed number of steps, and the whole count is O(n), instead of trying every choice of 5 positions.
+wrong: Fill `right_one` and `right_two` from the end. For each middle `j` from 1 to `n - 2`: add digit `j - 1` to the left tables, take digit `j` out of the right tables, then add `left_two[a][b] * right_two[b][a]` for every `a` and `b`. Take `% (10 ** 9 + 7)` as you go.
 
-=== task: predict hard
-title: Where the target is
-code:
+=== task: code hard
+title: Manhattan Distances of All Arrangements of Pieces
+leetcode: 3426 | Manhattan Distances of All Arrangements of Pieces | manhattan-distances-of-all-arrangements-of-pieces
+patterns: formula
+prompt: A grid has `m` rows and `n` columns. You place `k` identical pieces on it, at most one per cell. For one placement, add up the **Manhattan distance** between every pair of pieces: the distance between the cells `(r1, c1)` and `(r2, c2)` is `abs(r1 - r2) + abs(c1 - c2)`. Write `distance_sum(m, n, k)` that returns the total of those sums over every possible placement, modulo `10 ** 9 + 7`.
+
+**Example 1:** `distance_sum(2, 2, 2)` returns `8`: there are 6 ways to place 2 pieces on 4 cells. The 4 placements side by side have distance 1, and the 2 on a diagonal have distance 2.
+
+**Example 2:** `distance_sum(1, 4, 3)` returns `20`.
+
+**Constraints:** 1 ≤ `m`, `n` ≤ 10⁵, 2 ≤ `m × n` ≤ 10⁵, and 2 ≤ `k` ≤ `m × n`. Aim for O(k) time.
+starter:
 ```python
-def count_checks(items, target):
-    checks = 0
-    for x in items:
-        checks += 1
-        if x == target:
-            break
-    return checks
-
-small = list(range(10))
-big = list(range(10000))
-print(count_checks(small, 9), count_checks(big, 9), count_checks(big, 9999))
+def distance_sum(m, n, k):
+    # your code here
+    return 0
 ```
-wrong[10 10000 10000]: The loop stops as soon as it finds the target. In `big`, 9 is the 10th item, so only 10 checks are made.
-wrong[1 1 1]: A list is searched one item at a time from the start, so finding 9 takes 10 checks.
-wrong[10 10 10]: 9999 is the very last of the 10,000 items, so every item is checked.
-hint: Where in each list is the target?
-hint: The search stops at the target, but it has to reach it first.
-right: 9 is the 10th item in both lists, so it takes 10 checks either way. 9999 is the last of 10,000, so it takes 10,000. Searching a list costs up to n steps: O(n).
-wrong: Count the items checked: small, 9 → 10. big, 9 → 10. big, 9999 → all 10,000.
-
-=== task: predict hard
-title: Counting days, or jumping
-code:
+solution:
 ```python
-def after_loop(start, k):
-    day = start
-    for i in range(k):
-        day = (day + 1) % 7
-    return day
-
-def after_formula(start, k):
-    return (start + k) % 7
-
-print(after_loop(5, 10), after_formula(5, 10))
-print(after_formula(0, 1000000))
+def distance_sum(m, n, k):
+    mod = 10 ** 9 + 7
+    pairs = m * n * (n * (m * m - 1) + m * (n * n - 1)) // 6
+    top = 1
+    bottom = 1
+    for i in range(k - 2):
+        top = top * (m * n - 2 - i) % mod
+        bottom = bottom * (i + 1) % mod
+    ways = top * pow(bottom, mod - 2, mod) % mod
+    return pairs % mod * ways % mod
 ```
-wrong[15 15\n1000000]: `% 7` keeps the day between 0 and 6: (5 + 10) % 7 is 1.
-wrong[1 1\n0]: 1,000,000 isn't a multiple of 7: 7 × 142,857 = 999,999, so the remainder is 1.
-wrong[15 1\n1]: The loop also wraps with `% 7` on every step, so it ends at 1 too.
-hint: Both functions find the day k days later in a week of 7 days.
-hint: What is 15 % 7? And 1,000,000 % 7?
-right: Both give 1 for 10 days after day 5. The loop takes 10 steps; the formula takes one. For a million days, the formula still answers in one step: 1,000,000 % 7 = 1.
-wrong: (5 + 10) % 7 = 1 for both. 1,000,000 = 7 × 142,857 + 1, so the last line prints 1.
-
-=== task: cells hard
-title: Keeping running values
-prompt: After this code runs, what do these expressions give?
-code:
+tests:
+- distance_sum(2, 2, 2)
+- distance_sum(1, 4, 3)
+- distance_sum(1, 2, 2)
+- distance_sum(3, 3, 9)
+- distance_sum(2, 3, 3)
+- distance_sum(10, 10, 50)
+fail[2]: The 6 pairs of cells in the row have distances adding up to 10, and each pair is part of 2 placements (the third piece goes on one of the 2 other cells): 2 × 10 = 20.
+fail[3]: Two cells side by side, both filled: one placement, with distance 1.
+fail[4]: All 9 cells are filled, so there's one placement, and its pairs add up to 72.
+fail[5]: The pairs of cells of a 2 by 3 grid have distances adding up to 25, and each pair is part of 4 placements: 100.
+fail[6]: The pairs of cells of a 10 by 10 grid add up to 33,000, and each pair is part of C(98, 48) placements.
+speed: setup=pass | call=distance_sum(1, n, 3) | target=O(1)
+slow:
 ```python
-total = 0
-count = 0
-biggest = None
-for x in [4, 9, 2, 9]:
-    total += x
-    count += 1
-    if biggest is None or x > biggest:
-        biggest = x
+def distance_sum(m, n, k):
+    mod = 10 ** 9 + 7
+    cells = []
+    for r in range(m):
+        for c in range(n):
+            cells.append([r, c])
+    pairs = 0
+    for i in range(len(cells)):
+        for j in range(i + 1, len(cells)):
+            a = cells[i]
+            b = cells[j]
+            pairs += abs(a[0] - b[0]) + abs(a[1] - b[1])
+    top = 1
+    bottom = 1
+    for i in range(k - 2):
+        top = top * (m * n - 2 - i) % mod
+        bottom = bottom * (i + 1) % mod
+    ways = top * pow(bottom, mod - 2, mod) % mod
+    return pairs % mod * ways % mod
 ```
-labels: total | count | total / count | biggest
-answer: 24 | 4 | 6.0 | 9
-wrong[24 | 4 | 6 | 9]: `/` always gives a float, so the average prints as 6.0.
-wrong[15 | 3 | 5.0 | 9]: The second 9 counts too: 4 + 9 + 2 + 9 = 24, from 4 numbers.
-wrong[24 | 4 | 6.0 | 2]: `biggest` only changes when a number is bigger than the one kept: 4, then 9, which nothing beats.
-hint: Add up all four numbers and count them.
-hint: `biggest` starts as None, so the first number always becomes the biggest.
-right: The total is 24 from 4 numbers, so the average is 6.0. `biggest` becomes 4, then 9, and stays 9. Kept like this, the average and the biggest can be read in O(1) at any moment.
-wrong: total = 4 + 9 + 2 + 9 = 24, count = 4, 24 / 4 = 6.0, and the biggest is 9.
+fail[speed]: Adding up the distance of every pair of cells takes about (m × n)² / 2 steps: 5 billion for 100,000 cells. The rows and the columns can be added up separately, with a formula for each.
+edges:
+- every cell filled :: k == m * n :: distance_sum(2, 2, 4)
+- a single row :: m == 1 and k < m * n :: distance_sum(1, 5, 2)
+- two pieces :: k == 2 and m > 1 and k < m * n :: distance_sum(3, 3, 2)
+edge_count: 2
+complexity: time=O(k) | space=O(1)
+complexity_options: O(k); O(m × n); O((m × n)²)
+complexity_note: Count `pow()` with three arguments as O(1).
+why_time: The total distance of all pairs of cells is one formula: O(1). Choosing the cells of the other `k - 2` pieces, C(m × n - 2, k - 2), takes a loop of `k - 2` steps.
+why_space: A few numbers.
+hint: Count by pairs of cells instead of by placements. Each pair of cells is part of C(m × n - 2, k - 2) placements: the ways to put the other `k - 2` pieces on the other cells. So the answer is (the total distance of all pairs of cells) × C(m × n - 2, k - 2).
+hint: The row part and the column part of the distance add up separately. Two rows `d` apart can be chosen in `m - d` ways, with `n × n` pairs of cells between them, so the rows give `n * n` times the sum of `d * (m - d)` for `d` from 1 to `m - 1`. The columns work the same way.
+hint: That sum has a formula: the sum of `d * (m - d)` for `d` from 1 to `m - 1` is `(m ** 3 - m) // 6`. So all the pairs of cells together give `n * n * (m ** 3 - m) // 6 + m * m * (n ** 3 - n) // 6`.
+hint: C(m × n - 2, k - 2) is a product of `k - 2` numbers divided by the product of 1 to `k - 2`. Work modulo `10 ** 9 + 7`, and divide with `pow(b, mod - 2, mod)`.
+right: Counting pairs of cells first and placements second turns a search over every placement into one formula times one count of choices.
+wrong: `pairs = n * n * (m ** 3 - m) // 6 + m * m * (n ** 3 - n) // 6`. Work out C(m × n - 2, k - 2) with a loop of `k - 2` steps and `pow(bottom, mod - 2, mod)`. Return `pairs % mod * ways % mod`.
 
-=== task: mcq hard
-title: Set or list?
-prompt: Why is `x in my_set` O(1) on average, while `x in my_list` is O(n)?
-* A set works out where `x` would be from its hash and looks there; a list has to compare `x` with its items one by one :: Right. The hash leads straight to the right place in the set, so the size doesn't matter. A list has no such shortcut.
-- Sets are always smaller than lists :: A set can be as big as a list. The difference is how it finds things.
-- Sets keep their items sorted :: A set has no order at all. It finds items with hashing, not by searching in order.
-- `in` stops early for sets but not for lists :: `in` on a list stops as soon as it finds the item, but in the worst case it checks all n items.
-hint: How does a set find an item without looking at the others?
-hint: Think of how a dictionary finds a key.
-right: Like dictionary keys, set items are stored by their hash. Checking `x in my_set` works out the hash of `x` and looks in that one place, so it doesn't depend on n.
-wrong: The set uses `x`'s hash to go straight to where it would be stored. The list can only check its items in order, which takes up to n steps.
+=== task: code hard
+title: Count the Number of Infection Sequences
+leetcode: 2954 | Count the Number of Infection Sequences | count-the-number-of-infection-sequences
+patterns: formula
+prompt: `n` children stand in a row, at positions 0 to `n - 1`. The children at the positions in `sick`, a list sorted from smallest to largest, have a cold. Every second, exactly one healthy child who stands next to a sick child catches it. Write `number_of_sequence(n, sick)` that returns how many different orders there are in which all the healthy children can catch the cold, modulo `10 ** 9 + 7`.
 
-=== task: multi hard
-title: Always O(1)?
-prompt: `nums` is a list of n items, `d` a dictionary and `s` a string of n characters. Choose **every** operation that is O(1).
-* `nums.append(x)` :: Right. Adding at the end doesn't move any other item.
-* `nums.pop()` :: Right. Taking the last item off doesn't move the others.
-- `nums.pop(0)` :: Taking the **first** item off shifts all the others one place left: O(n).
-- `nums.insert(0, x)` :: Putting an item at the front shifts every item one place right: O(n).
-* `d[k] = v` :: Right. Adding or changing a key is O(1) on average.
-* `len(s)` :: Right. A string keeps its own length too.
-- `s + "!"` :: This builds a brand-new string and copies all n characters into it: O(n).
-hint: Which operations have to move or copy many items?
-hint: Four of the seven are O(1).
-right: Working at the end of a list, setting a dictionary key and `len` all take fixed steps. Working at the front of a list moves every item, and joining strings copies every character.
-wrong: `pop(0)` and `insert(0, x)` shift the whole list, and `s + "!"` copies the whole string: O(n). `append`, `pop()`, `d[k] = v` and `len(s)` are O(1).
+**Example 1:** `number_of_sequence(5, [0, 4])` returns `4`: the healthy children 1, 2 and 3 can catch it in the orders `[1, 2, 3]`, `[1, 3, 2]`, `[3, 1, 2]` and `[3, 2, 1]`.
 
-=== task: parsons hard
-title: An O(1) average
-prompt: Arrange the lines so that `Average` keeps a running total and count, and `value` answers in O(1). The program prints:
+**Example 2:** `number_of_sequence(4, [1])` returns `3`: `[0, 2, 3]`, `[2, 0, 3]` and `[2, 3, 0]`.
 
-```output
-5.0
-```
-
-Not every line is needed.
-lines:
+**Constraints:** 2 ≤ `n` ≤ 10⁵, 1 ≤ `len(sick)` ≤ `n - 1`, and the positions in `sick` are different and sorted. Aim for O(n) time.
+starter:
 ```python
-class Average:
-    def __init__(self):
-        self.total = 0
-        self.count = 0
-
-    def add(self, x):
-        self.total += x
-        self.count += 1
-
-    def value(self):
-        return self.total / self.count
-
-a = Average()
-a.add(3)
-a.add(7)
-print(a.value())
+def number_of_sequence(n, sick):
+    # your code here
+    return 0
 ```
-distractors:
+solution:
 ```python
-        return sum(self.items) / len(self.items)
-        self.total = x
+def number_of_sequence(n, sick):
+    mod = 10 ** 9 + 7
+    fact = [1] * (n + 1)
+    for i in range(1, n + 1):
+        fact[i] = fact[i - 1] * i % mod
+    gaps = [sick[0]]
+    for i in range(1, len(sick)):
+        gaps.append(sick[i] - sick[i - 1] - 1)
+    gaps.append(n - 1 - sick[-1])
+    total = fact[n - len(sick)]
+    for g in gaps:
+        total = total * pow(fact[g], mod - 2, mod) % mod
+    for g in gaps[1:-1]:
+        if g > 0:
+            total = total * pow(2, g - 1, mod) % mod
+    return total
 ```
-hint: `__init__` starts both running values at 0.
-hint: `add` adds the number to the total and 1 to the count.
-hint: `value` divides the total by the count, with no loop.
-right: All the work happens in `add`, a fixed few steps per number. `value` only divides two stored numbers, so it's O(1) however many numbers were added.
-wrong: `__init__` sets `self.total = 0` and `self.count = 0`; `add` does `self.total += x` and `self.count += 1`; `value` returns `self.total / self.count`. There's no list of items to sum, and `self.total = x` would forget the earlier numbers.
+tests:
+- number_of_sequence(5, [0, 4])
+- number_of_sequence(4, [1])
+- number_of_sequence(2, [0])
+- number_of_sequence(3, [1])
+- number_of_sequence(10, [3, 7])
+- number_of_sequence(100000, [0, 50000, 99999])
+fail[2]: Child 0 is alone on the left and can catch the cold at any moment, while children 2 and 3 must go in that order. So child 0 comes first, second or third: 3 orders.
+fail[3]: Only child 1 is healthy: one order.
+fail[4]: Children 0 and 2 each catch it from child 1, in either order: 2.
+fail[5]: The gaps hold 3, 3 and 2 healthy children: 8! / (3! × 3! × 2!) = 560 ways to mix them, times 2 ** 2 = 4 orders inside the middle gap, which fills from both ends: 2240.
+fail[6]: Two long gaps in the middle, each with 49,999 children, so the formula needs factorials up to 99,997, and powers of 2.
+edges:
+- only one healthy child :: n - len(sick) == 1 :: number_of_sequence(3, [0, 1])
+- healthy children only at the ends :: n - len(sick) > 1 and all(sick[i + 1] - sick[i] == 1 for i in range(len(sick) - 1)) :: number_of_sequence(5, [2])
+- a gap between two sick children :: n - len(sick) > 1 and any(sick[i + 1] - sick[i] > 1 for i in range(len(sick) - 1)) :: number_of_sequence(5, [0, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: Count `pow()` with three arguments as O(1).
+why_time: The factorials take one pass up to n, and the gaps one pass over `sick`: O(n).
+why_space: The list of n + 1 factorials, and the list of gaps.
+hint: Look at the gaps of healthy children: before the first sick child, between two sick children, and after the last one. The order inside each gap and the way the gaps are mixed together can be counted separately.
+hint: Mixing: if the gaps hold `total` healthy children in all, there are `total!` divided by the factorial of each gap's size ways to interleave them.
+hint: Inside a gap at an end of the row, the cold can only travel one way: 1 order. Inside a gap of `g` children between two sick ones, each new case comes from the left end or the right end, except the last, which is both: 2 ** (g - 1) orders.
+hint: Work modulo `10 ** 9 + 7`, and divide by multiplying with `pow(x, mod - 2, mod)`.
+right: Splitting the row into gaps turns the orders into a formula: the ways to mix the gaps, times 2 ** (g - 1) for each gap in the middle. Factorials worked out once make each part O(1).
+wrong: Make the list of gaps: `sick[0]`, each `sick[i] - sick[i - 1] - 1`, and `n - 1 - sick[-1]`. Start from `fact[n - len(sick)]`, divide by `fact[g]` for every gap, and multiply by `pow(2, g - 1, mod)` for every gap in the middle with `g > 0`.
+
+=== task: code hard
+title: Find the Count of Monotonic Pairs I
+leetcode: 3250 | Find the Count of Monotonic Pairs I | find-the-count-of-monotonic-pairs-i
+patterns: hidden + fixed
+prompt: A pair of lists `(arr1, arr2)`, both as long as `nums`, is **monotonic** if:
+
+- `arr1` never goes down: `arr1[0] <= arr1[1] <= arr1[2]` and onwards,
+- `arr2` never goes up: `arr2[0] >= arr2[1] >= arr2[2]` and onwards,
+- every number in both lists is 0 or more, and `arr1[i] + arr2[i] == nums[i]` at every position `i`.
+
+Write `count_of_pairs(nums)` that returns how many monotonic pairs there are, modulo `10 ** 9 + 7`.
+
+**Example 1:** `count_of_pairs([2, 3, 2])` returns `4`: `([0, 1, 1], [2, 2, 1])`, `([0, 1, 2], [2, 2, 0])`, `([0, 2, 2], [2, 1, 0])` and `([1, 2, 2], [1, 1, 0])`.
+
+**Example 2:** `count_of_pairs([5, 5, 5, 5])` returns `126`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 2000, and 1 ≤ `nums[i]` ≤ 50. Aim for O(n) time: a table of 51 entries has a fixed size.
+starter:
+```python
+def count_of_pairs(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_of_pairs(nums):
+    mod = 10 ** 9 + 7
+    ways = [0] * 51
+    for v in range(nums[0] + 1):
+        ways[v] = 1
+    for i in range(1, len(nums)):
+        prefix = [0] * 51
+        running = 0
+        for v in range(51):
+            running = (running + ways[v]) % mod
+            prefix[v] = running
+        rise = max(0, nums[i] - nums[i - 1])
+        new = [0] * 51
+        for v in range(nums[i] + 1):
+            if v - rise >= 0:
+                new[v] = prefix[v - rise]
+        ways = new
+    return sum(ways) % mod
+```
+tests:
+- count_of_pairs([2, 3, 2])
+- count_of_pairs([5, 5, 5, 5])
+- count_of_pairs([1])
+- count_of_pairs([3, 1])
+- count_of_pairs([50])
+- count_of_pairs([50] * 500)
+fail[2]: With `nums` all 5, `arr1` can be any list of 4 numbers from 0 to 5 that never goes down, and there are 126 of them.
+fail[3]: One number, 1: `arr1` is `[0]` or `[1]`.
+fail[4]: `arr1[1]` is at most 1, and `arr1` can't go down: `[0, 0]`, `[0, 1]` and `[1, 1]` are the only choices.
+fail[5]: One number, 50: `arr1` is any of 0 to 50.
+fail[6]: 500 numbers, all 50: the table gives 766,855,110.
+edges:
+- one number :: len(nums) == 1 :: count_of_pairs([3])
+- nums going down somewhere :: len(nums) > 1 and any(nums[i] > nums[i + 1] for i in range(len(nums) - 1)) :: count_of_pairs([4, 1])
+- nums never going down :: len(nums) > 1 and all(nums[i] <= nums[i + 1] for i in range(len(nums) - 1)) :: count_of_pairs([1, 2, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of `nums`. The numbers are at most 50, so a table of 51 entries has a fixed size.
+why_time: Each position updates tables of 51 entries: a fixed number of steps, so O(n) in all.
+why_space: Three tables of 51 numbers, whatever n is.
+hint: Go through `nums` from left to right with a table `ways`, where `ways[v]` is the number of ways to choose the lists so far with `arr1` ending in `v`.
+hint: At position `i`, `arr1[i] = v` can follow `arr1[i - 1] = u` when `u <= v` (`arr1` doesn't go down) and `nums[i - 1] - u >= nums[i] - v` (`arr2` doesn't go up). Together, they mean `u <= v - rise`, where `rise = max(0, nums[i] - nums[i - 1])`.
+hint: So the new `ways[v]` is the sum of the old `ways[0]` to `ways[v - rise]`. Adding that up for every `v` is a hidden loop: keep running totals of the old table instead, so that each new entry is one read, `prefix[v - rise]`.
+right: The running totals turn each new entry into a single read by index, and the tables have a fixed 51 entries, so each position costs a fixed number of steps: O(n) in all.
+wrong: Start with `ways[v] = 1` for `v` from 0 to `nums[0]`. For each next position, build the running totals `prefix` of `ways`, set `rise = max(0, nums[i] - nums[i - 1])`, and let the new `ways[v]` be `prefix[v - rise]` for `v` up to `nums[i]` (0 when `v - rise < 0`). Return `sum(ways) % (10 ** 9 + 7)`.
+
+=== task: code hard
+title: Count Beautiful Substrings II
+leetcode: 2949 | Count Beautiful Substrings II | count-beautiful-substrings-ii
+patterns: hidden + lookup
+prompt: A substring of `s` (not empty) is **beautiful** if it has as many vowels as consonants, and (vowels × consonants) is divisible by `k`. The vowels are a, e, i, o and u. Write `beautiful_substrings(s, k)` that returns how many beautiful substrings `s` has. Substrings at different positions count separately.
+
+**Example 1:** `beautiful_substrings("baeyh", 2)` returns `2`: `"baey"` and `"aeyh"` each have 2 vowels and 2 consonants, and 2 × 2 = 4 is divisible by 2.
+
+**Example 2:** `beautiful_substrings("abba", 1)` returns `3`: `"ab"`, `"ba"` and `"abba"`.
+
+**Example 3:** `beautiful_substrings("bcdf", 1)` returns `0`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 5 × 10⁴, 1 ≤ `k` ≤ 1000, and `s` has lowercase letters only. Aim for O(n + k) time.
+starter:
+```python
+def beautiful_substrings(s, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def beautiful_substrings(s, k):
+    step = 1
+    while step * step % k != 0:
+        step += 1
+    seen = {(0, 0): 1}
+    vowels = 0
+    diff = 0
+    count = 0
+    for c in s:
+        if c in "aeiou":
+            vowels += 1
+            diff += 1
+        else:
+            diff -= 1
+        key = (diff, vowels % step)
+        count += seen.get(key, 0)
+        seen[key] = seen.get(key, 0) + 1
+    return count
+```
+tests:
+- beautiful_substrings("baeyh", 2)
+- beautiful_substrings("abba", 1)
+- beautiful_substrings("bcdf", 1)
+- beautiful_substrings("ae", 1)
+- beautiful_substrings("ab", 3)
+- beautiful_substrings("ab" * 150, 2)
+fail[2]: `"ab"`, `"ba"` and `"abba"` each have as many vowels as consonants, and with `k` = 1 every product counts.
+fail[3]: There are no vowels at all, so no substring is balanced.
+fail[4]: `"ae"` has 2 vowels and no consonants.
+fail[5]: `"ab"` has 1 vowel and 1 consonant, but 1 × 1 isn't divisible by 3.
+fail[6]: These 300 letters have 11,175 beautiful substrings.
+speed: setup=s = "ab" * (n // 2) | call=beautiful_substrings(s, 2) | target=O(n)
+slow:
+```python
+def beautiful_substrings(s, k):
+    count = 0
+    for i in range(len(s)):
+        vowels = 0
+        consonants = 0
+        for j in range(i, len(s)):
+            if s[j] in "aeiou":
+                vowels += 1
+            else:
+                consonants += 1
+            if vowels == consonants and vowels * consonants % k == 0:
+                count += 1
+    return count
+```
+fail[speed]: Checking every substring is a loop inside a loop: O(n²), over a billion steps for 50,000 letters. Count the pairs of matching prefixes instead, with a dictionary.
+edges:
+- k is 1 :: k == 1 :: beautiful_substrings("abab", 1)
+- no vowels :: k > 1 and not any(c in "aeiou" for c in s) :: beautiful_substrings("xyz", 2)
+- k divisible by a square, like 4 or 12 :: k > 1 and any(c in "aeiou" for c in s) and any(k % (d * d) == 0 for d in range(2, k + 1)) :: beautiful_substrings("abab", 4)
+edge_count: 2
+complexity: time=O(n + k) | space=O(n)
+complexity_options: O(n + k); O(n × k); O(k)
+complexity_note: n is the length of `s`.
+why_time: Finding `step` takes at most k tries, since `step = k` always works. Then one pass over `s` does O(1) dictionary work per letter.
+why_space: The dictionary holds at most one entry per prefix: O(n).
+hint: Look at prefixes. At each position, count the vowels so far, and `diff`, the vowels minus the consonants so far. A substring is balanced when `diff` is the same at its two ends.
+hint: A balanced substring with `v` vowels and `v` consonants needs `v * v % k == 0`. Find the smallest `step` with `step * step % k == 0`: then `v * v % k == 0` exactly when `v` is a multiple of `step`. So the two ends must also have the same vowel count modulo `step`.
+hint: Walk along `s` with a dictionary that counts the prefixes seen so far by `(diff, vowels % step)`, starting with `(0, 0)` for the empty prefix. Each new prefix makes one beautiful substring with every earlier prefix that has the same key.
+right: Turning substrings into pairs of prefixes with equal keys means one dictionary lookup per letter replaces a loop over all the starting points: O(n) instead of O(n²).
+wrong: Find `step`. Then keep `vowels`, `diff` and a dictionary `seen = {(0, 0): 1}`. For each letter, update `vowels` and `diff`, add `seen.get(key, 0)` to the count for `key = (diff, vowels % step)`, and add 1 to `seen[key]`.
