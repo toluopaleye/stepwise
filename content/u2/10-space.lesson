@@ -44,10 +44,12 @@ seen = set(nums)
 counts = {}
 for x in nums:
     counts[x] = counts.get(x, 0) + 1
-print(len(doubled), len(copy), len(seen), len(counts))
+print(len(doubled), len(copy))
+print(len(seen), len(counts))
 ```
 ```output
-4 4 4 4
+4 4
+4 4
 ```
 Each of these holds up to n items. Slices like `nums[:]` and `nums[1:]` are copies too, and so is `sorted(nums)`, which builds a new sorted list. Nested structures can be bigger still: an n × n grid, or a list of every pair of items, takes O(n²) space.
 
@@ -87,10 +89,12 @@ def halving_depth(n):
         return 1
     return 1 + halving_depth(n // 2)
 
-print(depth(10), depth(100), halving_depth(10), halving_depth(1000))
+print(depth(10), depth(100))
+print(halving_depth(10), halving_depth(1000))
 ```
 ```output
-11 101 4 10
+11 101
+4 10
 ```
 `depth(n)` waits on n + 1 calls at once: O(n) space, even though it builds no lists. A loop counting down would need O(1). Halving goes only log₂ n calls deep, so `halving_depth` uses O(log n) space. Python stops at about 1,000 waiting calls with `RecursionError`, so deep recursion can fail where a loop works. Animation 2 shows the stack growing.
 
@@ -111,19 +115,164 @@ Usually memory is cheaper than time, so the trade is worth it. But not always: s
 A Python list of a million numbers takes about 8 megabytes for its pointers alone, plus the numbers themselves. A list of 100 million can take several gigabytes, more than many computers can spare. And some data never fits at all: a program reading readings from a sensor all day, or every line of a huge log file, has to work through it one piece at a time, keeping only O(1) space, like a running total or the biggest value so far.
 
 ### Working out space complexity
-1. Ignore the input itself: count only what the code creates.
-2. A fixed number of variables is O(1).
+1. Ignore the input itself: count only what the code creates. The answer the code builds counts too: returning a new list of n items is O(n) space.
+2. A fixed number of variables is O(1). So is a collection whose size the problem fixes rather than the input, like counts for the 26 letters.
 3. A list, set, dictionary or string that grows with n is O(n). An n × n grid is O(n²).
-4. Count what exists **at the same time**: a variable that's replaced each turn doesn't add up.
-5. For recursion, add the deepest pile of waiting calls: n calls deep is O(n), halving is O(log n).
+4. Count what exists **at the same time**: a variable that's replaced each turn doesn't add up, and neither does a row of a table once it's been replaced by the next.
+5. For recursion, add the deepest pile of waiting calls: n calls deep is O(n), halving is O(log n). Each waiting call also keeps its own variables, and any lists it made.
+
+### Solving problems with space in mind
+Every task in this lesson asks for the time and the space complexity of your solution. Five patterns cover how memory comes into a problem:
+
+| Pattern | What you see | Space |
+| --- | --- | --- |
+| O(1) space: a few variables | running totals, positions, a candidate and its count | O(1) |
+| O(n) space: something as big as the input | a set, a dictionary, a copy, an answer list | the size of what grows |
+| In place or a copy? | "change the list itself", "don't use a second list" | O(1) extra |
+| Recursion uses stack space | a function that calls itself | the deepest pile of waiting calls |
+| Trading space for time | a slow method next to one that remembers more, or the other way round | memory spent to save time, or time spent to save memory |
+
+### Combining patterns
+Most problems mix two of them:
+
+- **Working in place** (inplace + const). A read position looks at every item and a write position marks where the next kept item goes, or two positions swap items: the list itself holds the answer, and the extra memory is a few variables.
+- **Spending memory to save time** (trade + grow). A set, a dictionary or a table that grows with n remembers what the code has seen, so it doesn't have to look again: O(n) memory buys a faster time.
+- **Keeping only what the next step needs** (trade + const). When each step only uses the last few results, a whole table of results can shrink to a few variables, or a table of rows to one row.
+- **Recursion with a memo** (stack + trade). A memo makes recursion fast, but the memory adds up: one entry per answer remembered, plus the calls waiting on the stack.
+
+Working in place: keep only the positive numbers, at the front of the list.
+```python
+def keep_positive(nums):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] > 0:
+            nums[write] = nums[read]
+            write += 1
+    return write
+
+nums = [3, -1, 4, -1, 5]
+k = keep_positive(nums)
+print(k, nums[:k])
+```
+```output
+3 [3, 4, 5]
+```
+`read` looks at every number, and `write` marks where the next kept one goes. `write` never passes `read`, so no number is overwritten before it has been read. The extra memory is two positions, O(1), where building a new list of the kept numbers would be O(n).
+
+Spending memory to save time: is there a pair of numbers k apart?
+```python
+def has_gap_slow(nums, k):
+    for i in range(len(nums)):
+        for j in range(len(nums)):
+            if nums[j] - nums[i] == k:
+                return True
+    return False
+
+def has_gap(nums, k):
+    seen = set(nums)
+    for x in nums:
+        if x + k in seen:
+            return True
+    return False
+
+print(has_gap_slow([1, 7, 3], 4))
+print(has_gap([1, 7, 3], 4))
+```
+```output
+True
+True
+```
+3 and 7 are 4 apart. The slow version compares every pair: O(n²) time with O(1) space. The set remembers every number, O(n) space, so each check is one step: O(n) time.
+
+Keeping only what the next step needs: the number of ways to climb n stairs, 1 or 2 at a time.
+```python
+def stairs_table(n):
+    ways = [1, 1]
+    for i in range(2, n + 1):
+        ways.append(ways[i - 1] + ways[i - 2])
+    return ways[n]
+
+def stairs(n):
+    a = 1
+    b = 1
+    for i in range(2, n + 1):
+        a, b = b, a + b
+    return b
+
+print(stairs_table(10), stairs(10))
+```
+```output
+89 89
+```
+The table keeps every count, n + 1 numbers: O(n) space. But each new count only needs the two before it, so two variables are enough: O(1) space, with the same O(n) time.
+
+Recursion with a memo: the number of paths from one corner of an r × c grid to the other, moving one step down or right at a time.
+```python
+def paths(r, c, memo):
+    if r == 0 or c == 0:
+        return 1
+    if (r, c) in memo:
+        return memo[(r, c)]
+    up = paths(r - 1, c, memo)
+    left = paths(r, c - 1, memo)
+    memo[(r, c)] = up + left
+    return memo[(r, c)]
+
+print(paths(3, 3, {}), paths(10, 10, {}))
+```
+```output
+20 184756
+```
+Two kinds of memory add up here. The memo keeps one answer for each (r, c) it has seen: up to r × c numbers, O(r × c). The calls waiting on the stack go at most r + c deep, since each one takes 1 off r or off c: O(r + c). The total is the bigger of the two, O(r × c).
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| the smallest input | one number, one letter | a write position or an index that starts past the end |
+| nothing to keep, or everything | all zeros, no duplicates | an in-place loop that overwrites a number before reading it |
+| repeated values | `[2, 2, 2]` | a set that loses copies you needed to count |
+| negative numbers | −5 | remainders and bits that behave differently below 0 |
+| the biggest input | 10⁵ numbers, a recursion hundreds of calls deep | a `RecursionError`, or memory that grows like n² |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Count the steps as before: loops inside loops multiply, parts one after another add, and the biggest term is the answer.
+
+**Space.** Count the memory that exists at the same time, besides the input, and keep the biggest part:
+
+| The code keeps | Space |
+| --- | --- |
+| a few numbers, or positions in the list it changes | O(1) |
+| counts for 26 letters, or for 1,024 masks | O(1): a fixed size |
+| a set, a dictionary or a copy of the input | O(n) |
+| an answer list of k items | O(k), even when k is bigger than n |
+| one row of a table with m columns | O(m) |
+| a table of m × n answers | O(m × n) |
+| a recursion d calls deep | O(d), on top of what each call keeps |
 
 === keypoints
-- Space complexity is how the **extra** memory grows with n (not counting the input), written in Big O.
-- A fixed number of variables is O(1) space. A new list, set or dictionary that grows with n is O(n). An n × n grid is O(n²).
+- Space complexity is how the **extra** memory grows with n (not counting the input), written in Big O. An answer the code builds and returns counts too.
+- A fixed number of variables is O(1) space, and so is a collection whose size the problem fixes, like counts for 26 letters. A new list, set or dictionary that grows with n is O(n). An n × n grid is O(n²).
 - Slices (`nums[:]`, `nums[1:]`), `sorted` and comprehensions all make new lists: O(n) space.
-- In-place code rearranges the list itself, like reversing by swapping from both ends: O(1) extra space.
-- Recursion keeps every waiting call on the stack: n calls deep is O(n) space, halving is O(log n).
-- Speed-ups often trade space for time: a `seen` set or a memo dictionary costs O(n) memory.
+- In-place code changes the list itself, with read and write positions or swaps: O(1) extra space.
+- Recursion keeps every waiting call on the stack: n calls deep is O(n) space, halving is O(log n). A memo adds one entry per answer it remembers.
+- Speed-ups often trade space for time: a `seen` set or a memo costs memory. When each step only needs the last few results, a table shrinks to a row or a few variables.
+- Combinations: working in place; spending memory to save time; keeping only what the next step needs; and recursion with a memo.
+
+=== patterns
+- const | O(1) space: a few variables
+- grow | O(n) space: something as big as the input
+- inplace | In place or a copy?
+- stack | Recursion uses stack space
+- trade | Trading space for time
+combos:
+- inplace + const | Working in place
+- trade + grow | Spending memory to save time
+- trade + const | Keeping only what the next step needs
+- stack + trade | Recursion with a memo
 
 === example: Three ways to reverse
 intro: The same reversed list, built three ways, with very different memory needs.
@@ -152,7 +301,7 @@ print(copy, built, nums)
 16: All three give the same order. All take O(n) time, but only the swaps need no second list.
 
 === example: How deep do the calls go?
-intro: Recursion that goes down by 1 against recursion that halves, measured by how many calls wait at once.
+intro: Recursion that goes down by 1 against recursion that halves, measured by how many calls are waiting at once.
 ```python
 def depth(n):
     if n == 0:
@@ -212,796 +361,1841 @@ print(total([4, 7, 1], 0))
 4: nums[{i}] is {nums[i]}. This call waits while total(nums, {i + 1}) works out the rest.
 6: Four calls pile up for three items: the stack grows to n + 1 calls, O(n) space.
 
-=== task: predict easy
-title: The same list, or a copy?
-code:
-```python
-a = [1, 2, 3]
-b = a
-c = a[:]
-a.append(4)
-print(len(b), len(c))
-```
-wrong[3 3]: `b = a` doesn't copy anything: `b` is another name for the same list, so it sees the new item.
-wrong[4 4]: `a[:]` is a slice, which makes a **copy**. The copy was made before the append, so it keeps 3 items.
-wrong[3 4]: It's the other way round: `b` is the same list as `a`, and `c` is a separate copy.
-hint: Which line makes a new list?
-hint: The slice `a[:]` copies; `b = a` doesn't.
-right: `b` is the same list as `a` (no extra memory), so it has 4 items. `c` is a copy (n extra items, O(n) space) made before the append, so it has 3.
-wrong: `b` names the same list as `a`: 4 items. `c = a[:]` copied the 3 items before the append: 3.
+=== task: code easy
+title: Remove Duplicates from Sorted Array
+leetcode: 26 | Remove Duplicates from Sorted Array | remove-duplicates-from-sorted-array
+patterns: inplace + const
+prompt: nums is sorted from smallest to biggest. Write `remove_duplicates(nums)` that changes nums in place so that its first k items are its different numbers, in order, each once, and returns k. What comes after the first k items doesn't matter. Use O(1) extra memory: no second list.
 
-=== task: mcq easy
-title: Space of a running total
-prompt: How much extra space does this function use, for a list of n numbers?
-code:
-```python
-def total(nums):
-    result = 0
-    for x in nums:
-        result += x
-    return result
-```
-* O(1) :: Right. `result` and `x` are two values, whatever n is. Each new `x` replaces the old one.
-- O(n) :: The loop runs n times, which is its time. It never keeps more than two values at once.
-- O(n²) :: Nothing here is nested or grows with n.
-- O(log n) :: There's no halving or recursion: only two variables.
-hint: Count the values the function keeps at the same time.
-hint: Does anything grow as the list gets longer?
-right: O(1) extra space: two variables, however long the list is. The time is O(n), but time and space are separate questions.
-wrong: Only `result` and `x` are kept, and `x` is replaced each turn: O(1) space.
+**Example 1:** `remove_duplicates([1, 1, 2])` returns `2`, and nums starts `[1, 2]`.
 
-=== task: fill easy
-title: Swap from both ends
-prompt: Fill in the blank so that each pair of items is swapped, reversing the list in place:
+**Example 2:** for `[0, 0, 1, 1, 1, 2, 2, 3, 3, 4]` it returns `5`, and nums starts `[0, 1, 2, 3, 4]`.
 
-```output
-[4, 3, 2, 1]
-```
-code:
+**Constraints:** 1 ≤ `len(nums)` ≤ 3 × 10⁴, −100 ≤ `nums[i]` ≤ 100, and nums is sorted. Keep k, how many numbers have been kept so far: a number is new if it differs from the last one kept, `nums[k - 1]`.
+starter:
 ```python
-nums = [1, 2, 3, 4]
-i = 0
-j = len(nums) - 1
-while i < j:
-    nums[i], nums[j] = nums[j], nums[??]
-    i += 1
-    j -= 1
-print(nums)
+def remove_duplicates(nums):
+    # your code here
+    return len(nums)
 ```
-answer: i
-wrong[j]: Both positions would get `nums[j]`, so the item at position i would be lost: `[4, 3, 3, 4]`.
-wrong[0]: Position j would always get the old first item, not the item at position i.
-hint: A swap puts each item in the other one's place.
-hint: Position j should get what was at position i.
-right: `nums[i], nums[j] = nums[j], nums[i]` swaps the two items at once. Two swaps reverse four items, with only `i` and `j` as extra memory: O(1) space.
-wrong: `nums[i]`. The right side is worked out first, so position i gets the old `nums[j]` and position j gets the old `nums[i]`.
+solution:
+```python
+def remove_duplicates(nums):
+    k = 1
+    for i in range(1, len(nums)):
+        if nums[i] != nums[k - 1]:
+            nums[k] = nums[i]
+            k += 1
+    return k
+```
+tests:
+- remove_duplicates([1, 1, 2])
+- (lambda a: a[:remove_duplicates(a)])([0, 0, 1, 1, 1, 2, 2, 3, 3, 4])
+- (lambda a: a[:remove_duplicates(a)])([5])
+- (lambda a: a[:remove_duplicates(a)])([-1, -1, -1])
+- (lambda a: a[:remove_duplicates(a)])([1, 2, 3])
+- remove_duplicates([v for v in range(-100, 101) for _ in range(149)])
+fail[2]: The first 5 items should become 0, 1, 2, 3 and 4.
+fail[3]: One number: k is 1, and nums is `[5]`.
+fail[4]: Three copies of −1 leave one: `[-1]`.
+fail[5]: Every number is different, so nothing moves: `[1, 2, 3]`.
+fail[6]: The 201 numbers from −100 to 100, 149 copies of each: k is 201.
+edges:
+- one number :: len(nums) == 1 :: remove_duplicates([3])
+- every number the same :: len(nums) > 1 and len(set(nums)) == 1 :: remove_duplicates([2, 2])
+- different numbers :: len(set(nums)) > 1 :: remove_duplicates([1, 1, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass over the n numbers.
+why_space: Two positions, k and i. The kept numbers go into nums itself.
+hint: Start with `k = 1`: the first number is always kept.
+hint: For each i from 1, if `nums[i] != nums[k - 1]`, it's a new number: copy it to `nums[k]` and add 1 to k.
+hint: Return k.
+right: The kept numbers are written over the front of the list as it's read. k never passes i, so nothing is overwritten before it's been read: two positions, O(1) extra space.
+wrong: `k = 1`. For i from 1 to n − 1, if `nums[i] != nums[k - 1]`, set `nums[k] = nums[i]` and add 1 to k. Return k.
 
 === task: code easy
-title: Count without a new list
-prompt: Write `count_above(nums, limit)` that counts the numbers bigger than `limit` using O(1) extra space: loop with `for x in nums` and keep a counter, without building a new list or using square brackets.
+title: Move Zeroes
+leetcode: 283 | Move Zeroes | move-zeroes
+patterns: inplace + const
+prompt: Write `move_zeroes(nums)` that moves every 0 in nums to the end, keeping the other numbers in their order. Change nums itself, in place, without a second list, and also return it so the tests can see it.
 
-For example, `count_above([3, 8, 12, 20], 10)` returns 2.
+**Example 1:** `move_zeroes([0, 1, 0, 3, 12])` returns `[1, 3, 12, 0, 0]`.
+
+**Example 2:** `move_zeroes([0])` returns `[0]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁴, and −2³¹ ≤ `nums[i]` ≤ 2³¹ − 1. Swap each number that isn't 0 forward, into the next free place at the front.
 starter:
 ```python
-def count_above(nums, limit):
-    count = 0
+def move_zeroes(nums):
     # your code here
-    return count
-```
-solution:
-```python
-def count_above(nums, limit):
-    count = 0
-    for x in nums:
-        if x > limit:
-            count += 1
-    return count
-```
-tests:
-- count_above([3, 8, 12, 20], 10)
-- count_above([], 5)
-- count_above([5, 5], 5)
-- count_above([-1, 0, 1], -1)
-fail[1]: 12 and 20 are bigger than 10.
-fail[3]: 5 isn't bigger than 5: use `>`, not `>=`.
-fail[4]: 0 and 1 are bigger than -1.
-forbid[[]: Count with a loop and a counter, without building a list (no square brackets needed).
-hint: Loop over the numbers.
-hint: Add 1 to `count` when `x > limit`.
-hint: Return `count`.
-right: One counter and one loop variable: O(1) extra space, O(n) time. `len([x for x in nums if x > limit])` gives the same answer but builds a list of up to n items first.
-wrong: `for x in nums: if x > limit: count += 1`, then return `count`.
-
-=== task: predict easy
-title: How deep?
-code:
-```python
-def depth(n):
-    if n == 0:
-        return 1
-    return 1 + depth(n - 1)
-
-print(depth(3), depth(10))
-```
-wrong[3 10]: The call for 0 counts too: depth(3) is a call for 3, 2, 1 and 0.
-wrong[1 1]: Each call adds 1 to the answer of the call it waits for.
-wrong[4 10]: depth(10) makes calls for 10, 9, ..., 0: that's 11 calls.
-hint: depth(0) = 1. depth(1) = 1 + depth(0).
-hint: depth(n) = n + 1.
-right: n + 1 calls are waiting at the deepest point: 4 and 11. Each waiting call keeps its own variables on the stack, so this recursion uses O(n) space.
-wrong: depth(3) = 1 + 1 + 1 + 1 = 4, and depth(10) = 11.
-
-=== task: multi easy
-title: O(1) extra space
-prompt: `nums` is a list of n numbers. Choose **every** piece of code that uses only O(1) extra space.
-* A loop that keeps the biggest number so far in `best` :: Right. One variable, whatever n is.
-* A loop that adds up the numbers in `total` :: Right. A running total is one value.
-* Reversing by swapping from both ends with `lo` and `hi` :: Right. Two position variables, and the list is changed in place.
-- `nums[::-1]` :: A reversed copy: n new items, O(n) space.
-- `set(nums)` :: A set of up to n items: O(n) space.
-- `sorted(nums)` :: A new sorted list of n items: O(n) space.
-hint: Does the code build something that grows with n?
-hint: Three of them don't.
-right: A best-so-far, a running total and in-place swaps keep a fixed number of variables. A reversed copy, a set and a sorted copy all hold n items.
-wrong: O(1) space means a fixed number of variables: the maximum, the total, the swaps. Copies, sets and `sorted` build O(n) new items.
-
-=== task: parsons easy
-title: Total the evens, no new list
-prompt: Arrange the lines so that the function adds up the even numbers with O(1) extra space, without building a list of them, and the program prints:
-
-```output
-14
-```
-
-Not every line is needed.
-lines:
-```python
-def even_total(nums):
-    total = 0
-    for x in nums:
-        if x % 2 == 0:
-            total += x
-    return total
-
-print(even_total([3, 4, 7, 10]))
-```
-distractors:
-```python
-    evens = [x for x in nums if x % 2 == 0]
-    return sum(evens)
-```
-hint: Keep a running total, starting at 0.
-hint: Add each even number as you meet it.
-right: 4 + 10 = 14, with only `total` and `x` as extra memory: O(1) space. Building `evens` first would work too, but it would hold up to n numbers.
-wrong: `total = 0`, then `for x in nums:` with `if x % 2 == 0: total += x`, and `return total` after the loop.
-
-=== task: cells easy
-title: How many new items?
-prompt: `nums` has 5 numbers. How many **new** list items does each line make?
-code:
-```python
-nums = [4, 9, 2, 7, 5]
-doubled = [x * 2 for x in nums]
-rest = nums[1:]
-total = sum(nums)
-grid = [[0 for c in nums] for r in nums]
-```
-labels: doubled | rest | total | grid
-answer: 5 | 4 | 0 | 25
-wrong[5 | 4 | 1 | 5]: `grid` has 5 rows of 5 zeros: 25 items. And `sum` makes a single number, not a list.
-wrong[5 | 5 | 0 | 25]: `nums[1:]` copies everything except the first item: 4 items.
-hint: A comprehension makes one item per item of `nums`.
-hint: The grid has one row for each item of `nums`, and each row has one 0 for each item.
-right: 5, 4, 0 (`sum` makes one number, not a list), and 25. The list and the slice are O(n) space; the n × n grid is O(n²).
-wrong: `doubled` has 5 items, `rest` 4, `sum` makes no list, and the 5 × 5 grid has 25 items.
-
-=== task: mcq easy
-title: A set of seen values
-prompt: A duplicate check adds every value it sees to a set. How much extra space does it use, in the worst case, for a list of n items?
-- O(1) :: The set grows: in the worst case (no duplicates), every value is added.
-* O(n) :: Right. With no duplicates, all n values end up in the set.
-- O(n²) :: The set holds each value once, not every pair.
-- O(log n) :: Nothing is halved: the set grows by one item per new value.
-hint: How big can the set get?
-hint: With no duplicates, every value is added.
-right: Up to n values in the set: O(n) space. That's the price of its O(n) time; nested loops would need O(1) space but O(n²) time.
-wrong: In the worst case every value goes into the set: n items, O(n) space.
-
-=== task: predict easy
-title: A new list or the same one?
-code:
-```python
-nums = [3, 1, 2]
-s = sorted(nums)
-print(nums, s, s is nums)
-```
-wrong[[1, 2, 3] [1, 2, 3] True]: `sorted` doesn't touch `nums`: it builds a **new** sorted list.
-wrong[[3, 1, 2] [1, 2, 3] True]: `s` is a new list, so it isn't the same object as `nums`: `s is nums` is False.
-wrong[[1, 2, 3] [1, 2, 3] False]: `sorted` leaves the original list as it was: `[3, 1, 2]`.
-hint: Does `sorted` change the list it's given?
-hint: `is` asks whether two names refer to the very same list.
-right: `sorted` builds a new list (O(n) extra space) and leaves `nums` alone, so they're two different lists. `nums.sort()` would rearrange `nums` itself.
-wrong: `nums` stays `[3, 1, 2]`, `s` is a new list `[1, 2, 3]`, and they're different objects: False.
-
-=== task: code medium
-title: Reverse in place
-prompt: Write `reverse_in_place(nums)` that reverses the list **itself**, with O(1) extra space, and returns nothing (like `nums.sort()`). Swap the items at `lo` and `hi`, then move both inwards, until they meet. The tests call your function on a list and then look at that same list, like `(lambda nums: [reverse_in_place(nums), nums][1])([1, 2, 3])`.
-starter:
-```python
-def reverse_in_place(nums):
-    lo = 0
-    hi = len(nums) - 1
-    # your code here
-```
-solution:
-```python
-def reverse_in_place(nums):
-    lo = 0
-    hi = len(nums) - 1
-    while lo < hi:
-        nums[lo], nums[hi] = nums[hi], nums[lo]
-        lo += 1
-        hi -= 1
-```
-tests:
-- (lambda nums: [reverse_in_place(nums), nums][1])([1, 2, 3, 4, 5])
-- (lambda nums: [reverse_in_place(nums), nums][1])([])
-- (lambda nums: [reverse_in_place(nums), nums][1])([7])
-- (lambda nums: [reverse_in_place(nums), nums][1])(["a", "b"])
-- (lambda nums: [reverse_in_place(nums), nums][1])([1, 2, 3, 4])
-speed: setup=nums = list(range(n)) | call=reverse_in_place(nums) | target=O(n)
-slow:
-```python
-def reverse_in_place(nums):
-    for i in range(len(nums)):
-        x = nums.pop()
-        nums.insert(i, x)
-```
-fail[1]: The list itself must change to `[5, 4, 3, 2, 1]`. Building a reversed copy and returning it leaves the original list as it was.
-fail[5]: With an even number of items, every item is swapped: (1, 4) and then (2, 3).
-forbid[[::]: Swap the items yourself instead of making a reversed copy with a slice.
-forbid[reversed(]: Swap the items yourself instead of using `reversed()`.
-forbid[.reverse(]: Swap the items yourself instead of using `.reverse()`.
-hint: Loop `while lo < hi:`.
-hint: Swap with `nums[lo], nums[hi] = nums[hi], nums[lo]`.
-hint: Then `lo += 1` and `hi -= 1`.
-right: n / 2 swaps (O(n) time) and two extra variables (O(1) space). The list is changed in place, so no second list is ever made.
-wrong: `while lo < hi:` swap `nums[lo]` and `nums[hi]`, then move `lo` up and `hi` down.
-
-=== task: code medium
-title: Remove the negatives, in place
-prompt: Write `keep_non_negative(nums)` that removes every negative number from the list **itself**, keeping the others in order, with O(1) extra space and O(n) time. Use a write position `w`: go through the items, copy each one you keep to `nums[w]` and add 1 to `w`. At the end, pop the leftover items off the end until the list has `w` items. Return nothing. The tests call your function on a list and then look at that list.
-starter:
-```python
-def keep_non_negative(nums):
-    w = 0
-    # your code here
-```
-solution:
-```python
-def keep_non_negative(nums):
-    w = 0
-    for x in nums:
-        if x >= 0:
-            nums[w] = x
-            w += 1
-    while len(nums) > w:
-        nums.pop()
-```
-tests:
-- (lambda nums: [keep_non_negative(nums), nums][1])([3, -1, 4, -5, 0])
-- (lambda nums: [keep_non_negative(nums), nums][1])([])
-- (lambda nums: [keep_non_negative(nums), nums][1])([-2, -3])
-- (lambda nums: [keep_non_negative(nums), nums][1])([1, 2])
-speed: setup=nums = [-1, 2] * n | call=keep_non_negative(nums) | target=O(n)
-slow:
-```python
-def keep_non_negative(nums):
-    i = 0
-    while i < len(nums):
-        if nums[i] < 0:
-            nums.pop(i)
-        else:
-            i += 1
-```
-fail[1]: 3, 4 and 0 are kept, in order: `[3, 4, 0]`. 0 isn't negative. The list itself must change.
-fail[3]: Every number is negative, so the list ends up empty.
-forbid[append(]: Write the kept items into the same list instead of building a new one.
-forbid[[:]]: Change the list item by item instead of replacing it with a copy.
-hint: `for x in nums:` and, when `x >= 0`, do `nums[w] = x` and `w += 1`.
-hint: The first `w` positions now hold the kept items, in order.
-hint: `while len(nums) > w: nums.pop()` removes the rest.
-right: Each item is read once and written at most once, and `pop()` from the end is O(1): O(n) time, O(1) space. Removing items from the middle with `pop(i)` shifts everything after them, which can make it O(n²).
-wrong: Copy each kept item to `nums[w]` and move `w` on; then pop from the end until `len(nums) == w`.
-
-=== task: predict medium
-title: Halving depth
-code:
-```python
-def halving_depth(n):
-    if n <= 1:
-        return 1
-    return 1 + halving_depth(n // 2)
-
-print(halving_depth(16), halving_depth(1000))
-```
-wrong[4 9]: The call for 1 counts too: 16 → 8 → 4 → 2 → 1 is 5 calls.
-wrong[16 1000]: Each call halves n, so the calls go only about log₂ n deep.
-wrong[5 9]: 1,000 → 500 → 250 → 125 → 62 → 31 → 15 → 7 → 3 → 1 is 10 calls.
-hint: Write out n for each call: 16, 8, 4, 2, 1.
-hint: For 1,000 there are 10 values down to 1.
-right: 5 and 10: about log₂ n + 1 calls deep, so halving recursion uses only O(log n) stack space.
-wrong: 16, 8, 4, 2, 1 is 5 calls, and 1,000 down to 1 is 10 calls.
-
-=== task: fill medium
-title: Two variables are enough
-prompt: Fill in the blank so that the loop keeps only the last two Fibonacci numbers (O(1) space), and the program prints the 10th one:
-
-```output
-55
-```
-code:
-```python
-a = 0
-b = 1
-for i in range(10):
-    a, b = b, ??
-print(a)
-```
-answer: a + b
-wrong[b]: `b` would never change after the first turn, so the numbers would stop growing: the program would print 1.
-wrong[a]: The pair would swap back and forth between 0 and 1 instead of adding up.
-hint: Each Fibonacci number is the sum of the two before it.
-hint: The new `b` is the old `a` plus the old `b`.
-right: `a, b = b, a + b` moves the pair one step along. Only two numbers are kept, so it's O(1) space, where a list of every Fibonacci number would be O(n).
-wrong: `a + b`. Both new values are worked out from the old ones, then stored together.
-
-=== task: cells medium
-title: Space for n = 10
-prompt: For a list of n = 10 different items, how many items does each thing hold?
-labels: a doubled list | a set of the items | an n × n grid | a counter
-answer: 10 | 10 | 100 | 1
-wrong[10 | 10 | 20 | 1]: An n × n grid has n rows of n items: 10 × 10.
-wrong[10 | 1 | 100 | 1]: A set holds every different item: with 10 different items, that's 10.
-hint: A grid of n rows and n columns holds n × n items.
-hint: A counter is one number.
-right: 10, 10, 100 and 1: O(n), O(n), O(n²) and O(1) space.
-wrong: A doubled list and a set of 10 different items hold 10 each, a 10 × 10 grid holds 100, and a counter is 1 value.
-
-=== task: order medium
-title: From least memory to most
-prompt: Put these in order, from the least extra memory to the most, for a large list of n items.
-items:
-- a running total
-- a recursive binary search, which goes about log₂ n calls deep
-- a sorted copy of the list
-- an n × n table of every pair
-hint: Write each one in Big O.
-hint: O(1) < O(log n) < O(n) < O(n²).
-right: O(1), then O(log n), then O(n), then O(n²). For a million items: 1 value, about 20 waiting calls, a million items, and a trillion items.
-wrong: A running total is O(1), binary search recursion O(log n), a sorted copy O(n), and a table of every pair O(n²).
-
-=== task: predict medium
-title: Changed, or copied?
-code:
-```python
-def add_one(nums):
-    nums.append(1)
-
-def add_one_copy(nums):
-    nums = nums + [1]
     return nums
-
-a = [5]
-add_one(a)
-b = add_one_copy(a)
-print(a, b)
 ```
-wrong[[5] [5, 1]]: `add_one` changes the list it's given, in place, so `a` becomes `[5, 1]`.
-wrong[[5, 1, 1] [5, 1, 1]]: `nums + [1]` builds a **new** list, so the second function leaves `a` alone.
-wrong[[5, 1] [5, 1]]: The second function adds another 1 to a copy of `[5, 1]`: `[5, 1, 1]`.
-hint: `append` changes the list itself. `+` makes a new list.
-hint: After `add_one(a)`, `a` is `[5, 1]`.
-right: `add_one` works in place (O(1) extra space). `add_one_copy` builds a new list of n + 1 items (O(n) space), and `a` doesn't change.
-wrong: `add_one(a)` makes `a` `[5, 1]`. `add_one_copy(a)` returns a new list `[5, 1, 1]` and leaves `a` as `[5, 1]`.
-
-=== task: mcq medium
-title: Space of a countdown
-prompt: How much space does this recursive function use for a whole number n?
-code:
+solution:
 ```python
-def count_down(n):
-    if n == 0:
-        return
-    print(n)
-    count_down(n - 1)
+def move_zeroes(nums):
+    write = 0
+    for read in range(len(nums)):
+        if nums[read] != 0:
+            nums[write], nums[read] = nums[read], nums[write]
+            write += 1
+    return nums
 ```
-- O(1), because it creates no lists :: Each call that's still waiting keeps its own `n` on the call stack.
-* O(n), because n + 1 calls wait on the stack at the deepest point :: Right. The calls for n, n − 1, ..., 0 all exist at the same time.
-- O(log n), because the calls get smaller :: They only get smaller by 1, not by half, so they go n deep.
-- O(n²), because each call prints :: Printing doesn't keep anything. The stack holds n + 1 calls.
-hint: How many calls are waiting when the base case is reached?
-hint: n, n − 1, ..., 1, 0.
-right: O(n) stack space. A `while n > 0:` loop doing the same printing would need O(1) space, and wouldn't hit Python's recursion limit for big n.
-wrong: The calls go n deep, and each waiting call keeps its own variables: O(n) space.
+tests:
+- move_zeroes([0, 1, 0, 3, 12])
+- move_zeroes([0])
+- move_zeroes([1, 2, 3])
+- move_zeroes([0, 0, -5])
+- (lambda a: [move_zeroes(a), a][1])([0, 7, 0, 8])
+- move_zeroes([i % 3 for i in range(10000)]).index(0)
+fail[2]: `[0]` stays `[0]`.
+fail[3]: There are no zeros, so nothing moves.
+fail[4]: The −5 moves to the front: `[-5, 0, 0]`.
+fail[5]: The list passed in has to be the one that changes: `[7, 8, 0, 0]`.
+fail[6]: 10,000 numbers, a third of them 0: after the move, the first 0 is at position 6,666.
+edges:
+- one number :: len(nums) == 1 :: move_zeroes([0])
+- no zeros :: len(nums) > 1 and 0 not in nums :: move_zeroes([4, 2])
+- some zeros :: len(nums) > 1 and 0 in nums :: move_zeroes([0, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass, with at most one swap per number.
+why_space: Two positions: the numbers are swapped within nums.
+hint: Keep `write`, where the next number that isn't 0 goes, starting at 0.
+hint: For each read position, if `nums[read]` isn't 0, swap it with `nums[write]` and add 1 to write.
+hint: The swaps push the zeros back without ever making a new list.
+right: Swapping within the list moves every 0 to the end with two positions of extra memory, O(1), where building the non-zero numbers into a new list would be O(n).
+wrong: `write = 0`. For each read, if `nums[read] != 0`, swap `nums[write]` and `nums[read]`, and add 1 to write. Return nums.
 
-=== task: multi medium
-title: Space for time
-prompt: Choose **every** speed-up that makes code faster by using **more** memory.
-* A `seen` set for a duplicate check: O(n²) time down to O(n) :: Right. The set costs O(n) space.
-* A memo dictionary for recursive Fibonacci: exponential time down to O(n) :: Right. The memo stores up to n answers.
-* A dictionary of first positions, to answer "where is x?" in O(1) :: Right. One entry per value: O(n) space.
-- Reversing by swapping from both ends instead of building a reversed copy :: That **saves** memory: O(1) space instead of O(n), with the same O(n) time.
-- Keeping a running total instead of a list of all the numbers :: That saves memory too: O(1) instead of O(n).
-hint: Which speed-ups store something that grows with n?
-hint: Three of them do.
-right: Sets, memo dictionaries and lookup dictionaries all spend O(n) memory to save time. In-place swaps and running totals save memory.
-wrong: The set, the memo and the dictionary of positions trade space for time. Swapping in place and a running total use less memory, not more.
+=== task: code easy
+title: Majority Element
+leetcode: 169 | Majority Element | majority-element
+patterns: trade + const
+prompt: More than half of nums is one number, the majority. Write `majority_element(nums)` that returns it, using O(1) extra memory: a dictionary of counts would be O(n).
 
-=== task: code medium
-title: The missing number
-prompt: `nums` holds every whole number from 1 to n except one, in any order, so it has n − 1 items. Write `missing(nums)` that returns the missing number with O(1) extra space: no set, no sorting. The numbers 1 to n add up to n(n + 1) / 2, so the missing one is that total minus `sum(nums)`.
+**Example 1:** `majority_element([3, 2, 3])` returns `3`.
 
-For example, `missing([1, 2, 4])` returns 3.
+**Example 2:** `majority_element([2, 2, 1, 1, 1, 2, 2])` returns `2`.
+
+**Constraints:** 1 ≤ n ≤ 5 × 10⁴ where n is `len(nums)`, −10⁹ ≤ `nums[i]` ≤ 10⁹, and a majority always exists. Keep a candidate and a count: a number equal to the candidate adds 1, any other takes 1 away, and when the count is 0 the next number becomes the candidate. The majority outnumbers all the other numbers put together, so it's the candidate at the end.
 starter:
 ```python
-def missing(nums):
-    n = len(nums) + 1
+def majority_element(nums):
+    # your code here
+    return nums[0]
+```
+solution:
+```python
+def majority_element(nums):
+    candidate = nums[0]
+    count = 0
+    for x in nums:
+        if count == 0:
+            candidate = x
+        if x == candidate:
+            count += 1
+        else:
+            count -= 1
+    return candidate
+```
+tests:
+- majority_element([3, 2, 3])
+- majority_element([2, 2, 1, 1, 1, 2, 2])
+- majority_element([7])
+- majority_element([5, -1, -1])
+- majority_element([9, 4, 4, 9, 4])
+- majority_element(list(range(10000, 20000)) + [7] * 10001)
+fail[2]: The four 2s outnumber the three 1s: 2.
+fail[3]: One number: 7.
+fail[4]: −1 is two of the three numbers: −1.
+fail[5]: 4 is three of the five numbers: 4.
+fail[6]: 10,000 different numbers, then 10,001 7s. A dictionary would hold 10,001 counts; the candidate and its count are two numbers. The answer is 7.
+edges:
+- one number :: len(nums) == 1 :: majority_element([4])
+- only the majority :: len(nums) > 1 and len(set(nums)) == 1 :: majority_element([2, 2])
+- other numbers too :: len(set(nums)) > 1 :: majority_element([1, 2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass over the n numbers.
+why_space: A candidate and a count, whatever the numbers are.
+hint: Start with `count = 0`. For each x, if count is 0, make x the candidate.
+hint: Then add 1 to count if x is the candidate, and take 1 off otherwise.
+hint: Each step that takes 1 off cancels at most one majority number against one other number, and there are more majority numbers than all the others: return the candidate.
+right: A dictionary of counts finds the majority in O(n) time too, but with O(n) memory. The cancelling candidate needs two numbers: the same time, O(1) space.
+wrong: `count = 0`. For each x: if count is 0, set the candidate to x; then add 1 if x is the candidate, and subtract 1 otherwise. Return the candidate.
+
+=== task: code easy
+title: Missing Number
+leetcode: 268 | Missing Number | missing-number
+patterns: const
+prompt: nums holds n different numbers from 0 to n, so exactly one number of that range is missing. Write `missing_number(nums)` that returns it, using O(1) extra memory.
+
+**Example 1:** `missing_number([3, 0, 1])` returns `2`.
+
+**Example 2:** `missing_number([0, 1])` returns `2`.
+
+**Constraints:** 1 ≤ n ≤ 10⁴ where n is `len(nums)`, the numbers are all different, and 0 ≤ `nums[i]` ≤ n. 0 to n add up to n × (n + 1) / 2: take away each number in nums, and what's left is the missing one.
+starter:
+```python
+def missing_number(nums):
     # your code here
     return 0
 ```
 solution:
 ```python
-def missing(nums):
-    n = len(nums) + 1
-    return n * (n + 1) // 2 - sum(nums)
-```
-tests:
-- missing([1, 2, 4])
-- missing([2])
-- missing([1])
-- missing([3, 1, 2, 5])
-- missing([])
-speed: setup=nums = list(range(1, n)) | call=missing(nums) | target=O(n)
-slow:
-```python
-def missing(nums):
-    n = len(nums) + 1
-    for k in range(1, n + 1):
-        if k not in nums:
-            return k
-```
-fail[1]: n is 4, and 1 + 2 + 3 + 4 = 10. The list adds up to 7, so 3 is missing.
-fail[4]: n is 5: 15 − 11 = 4.
-fail[5]: With no numbers at all, n is 1, and the missing number is 1.
-forbid[set(]: Use the sum instead of a set, so the extra space stays O(1).
-forbid[sort]: Use the sum instead of sorting.
-hint: n is one more than the length of the list.
-hint: 1 + 2 + ... + n = n(n + 1) / 2.
-hint: Subtract `sum(nums)` from that, using `//` so the answer is a whole number.
-right: One pass for `sum` (O(n) time) and a couple of numbers (O(1) space). A set of seen numbers would work in O(n) time but O(n) space, and checking `k not in nums` for every k would take O(n²) time.
-wrong: `return n * (n + 1) // 2 - sum(nums)`, with `n = len(nums) + 1`.
-
-=== task: code hard
-title: Rotate in place
-prompt: Write `rotate_in_place(nums, k)` that moves every item k places to the right, wrapping around, in place, with O(1) extra space and O(n) time. For example, rotating `[1, 2, 3, 4, 5]` by 2 makes `[4, 5, 1, 2, 3]`. The trick: reverse the whole list, then reverse the first k items, then reverse the rest. The starter gives you `reverse_part(nums, lo, hi)`, which reverses `nums[lo]` to `nums[hi]` in place. If k is bigger than the length, use `k % len(nums)`; an empty list stays empty. The tests call your function and then look at the list.
-starter:
-```python
-def reverse_part(nums, lo, hi):
-    while lo < hi:
-        nums[lo], nums[hi] = nums[hi], nums[lo]
-        lo += 1
-        hi -= 1
-
-def rotate_in_place(nums, k):
-    if len(nums) == 0:
-        return
-    # your code here
-```
-solution:
-```python
-def reverse_part(nums, lo, hi):
-    while lo < hi:
-        nums[lo], nums[hi] = nums[hi], nums[lo]
-        lo += 1
-        hi -= 1
-
-def rotate_in_place(nums, k):
-    if len(nums) == 0:
-        return
-    k = k % len(nums)
-    reverse_part(nums, 0, len(nums) - 1)
-    reverse_part(nums, 0, k - 1)
-    reverse_part(nums, k, len(nums) - 1)
-```
-tests:
-- (lambda nums: [rotate_in_place(nums, 2), nums][1])([1, 2, 3, 4, 5])
-- (lambda nums: [rotate_in_place(nums, 0), nums][1])([1, 2, 3])
-- (lambda nums: [rotate_in_place(nums, 3), nums][1])([1, 2, 3])
-- (lambda nums: [rotate_in_place(nums, 4), nums][1])([])
-- (lambda nums: [rotate_in_place(nums, 1), nums][1])([7, 8])
-- (lambda nums: [rotate_in_place(nums, 10), nums][1])([1, 2, 3, 4, 5, 6])
-speed: setup=nums = list(range(n)) | call=rotate_in_place(nums, n // 2) | target=O(n)
-slow:
-```python
-def reverse_part(nums, lo, hi):
-    while lo < hi:
-        nums[lo], nums[hi] = nums[hi], nums[lo]
-        lo += 1
-        hi -= 1
-
-def rotate_in_place(nums, k):
-    if len(nums) == 0:
-        return
-    for i in range(k % len(nums)):
-        nums.insert(0, nums.pop())
-```
-fail[1]: Reverse all: `[5, 4, 3, 2, 1]`. Reverse the first 2: `[4, 5, 3, 2, 1]`. Reverse the rest: `[4, 5, 1, 2, 3]`.
-fail[3]: Rotating 3 items by 3 brings everything back where it started. Use `k % len(nums)`.
-fail[6]: 10 % 6 = 4, so it's the same as rotating by 4: `[3, 4, 5, 6, 1, 2]`. Reduce k first with `k = k % len(nums)`.
-error[IndexError]: A position went past the end of the list. k can be bigger than the list, so reduce it first with `k = k % len(nums)`, and reverse up to `len(nums) - 1`, the last position.
-hint: First `k = k % len(nums)`.
-hint: `reverse_part(nums, 0, len(nums) - 1)`, then `reverse_part(nums, 0, k - 1)`.
-hint: Finally `reverse_part(nums, k, len(nums) - 1)`.
-right: Three reversals touch each item at most twice: O(n) time, and only a few position variables: O(1) space. Moving the last item to the front k times would shift the whole list each time: O(n × k).
-wrong: `k = k % len(nums)`, then reverse the whole list, then the first k items, then the rest.
-
-=== task: code hard
-title: Palindrome with two pointers
-prompt: A **palindrome** reads the same backwards, like "racecar". Write `is_palindrome(s)` using O(1) extra space: compare `s[lo]` and `s[hi]` from both ends, moving inwards, and return False at the first pair that differs. Don't build a reversed copy of the string.
-
-For example, `is_palindrome("abba")` returns True.
-starter:
-```python
-def is_palindrome(s):
-    lo = 0
-    hi = len(s) - 1
-    # your code here
-    return True
-```
-solution:
-```python
-def is_palindrome(s):
-    lo = 0
-    hi = len(s) - 1
-    while lo < hi:
-        if s[lo] != s[hi]:
-            return False
-        lo += 1
-        hi -= 1
-    return True
-```
-tests:
-- is_palindrome("racecar")
-- is_palindrome("abba")
-- is_palindrome("abc")
-- is_palindrome("")
-- is_palindrome("a")
-- is_palindrome("ab")
-- is_palindrome("abca")
-fail[3]: "a" and "c" differ, so "abc" isn't a palindrome.
-fail[6]: The two letters differ.
-fail[7]: "a" and "a" match, but then "b" and "c" don't. Keep comparing until the pointers meet.
-forbid[[::]: Compare from both ends instead of making a reversed copy.
-forbid[reversed(]: Compare from both ends instead of using `reversed()`.
-hint: Loop `while lo < hi:`.
-hint: If `s[lo] != s[hi]`, return False. Otherwise move `lo` up and `hi` down.
-hint: If the loop finishes, every pair matched: return True.
-right: At most n / 2 comparisons (O(n) time) and two variables (O(1) space). `s == s[::-1]` is also O(n) time, but it builds a reversed copy: O(n) space.
-wrong: `while lo < hi:` return False if `s[lo] != s[hi]`, otherwise step both pointers inwards. Return True after the loop.
-
-=== task: code hard
-title: Too deep for recursion
-prompt: The starter adds up 1 + 2 + ... + n with recursion. It works for small n, but every waiting call takes stack space, and for n = 5,000 Python stops with `RecursionError`. Rewrite `total_to(n)` so that it uses O(1) space: a loop with a running total (or the formula n(n + 1) / 2).
-
-For example, `total_to(100)` returns 5050.
-starter:
-```python
-def total_to(n):
-    if n == 0:
-        return 0
-    return n + total_to(n - 1)
-```
-solution:
-```python
-def total_to(n):
-    total = 0
-    for k in range(1, n + 1):
-        total += k
+def missing_number(nums):
+    n = len(nums)
+    total = n * (n + 1) // 2
+    for x in nums:
+        total -= x
     return total
 ```
 tests:
-- total_to(3)
-- total_to(0)
-- total_to(100)
-- total_to(5000)
-fail[4]: The recursive version needs 5,001 waiting calls, more than Python allows. A loop keeps only the running total.
-error[RecursionError]: Every waiting call takes stack space. Replace the recursion with a loop.
-hint: Start `total` at 0.
-hint: Add every k from 1 to n: `for k in range(1, n + 1)`.
-hint: Return `total`.
-right: The loop keeps two numbers, whatever n is: O(1) space, where the recursion needed n + 1 waiting calls, O(n). Both take O(n) time.
-wrong: `total = 0`, `for k in range(1, n + 1): total += k`, then `return total`.
+- missing_number([3, 0, 1])
+- missing_number([0, 1])
+- missing_number([9, 6, 4, 2, 3, 5, 7, 0, 1])
+- missing_number([1])
+- missing_number([0])
+- missing_number([i for i in range(10001) if i != 4321])
+fail[2]: 0 and 1 are there, so with n = 2 the missing number is 2.
+fail[3]: 0 to 9 add up to 45, and the numbers add up to 37: 8.
+fail[4]: 1 is there, so 0 is missing.
+fail[5]: 0 is there, so 1 is missing.
+fail[6]: 10,000 numbers from 0 to 10,000, without 4,321: a set of them would hold 10,000 numbers, but the running total is one number. The answer is 4,321.
+edges:
+- one number :: len(nums) == 1 :: missing_number([0])
+- n itself is missing :: len(nums) > 1 and max(nums) == len(nums) - 1 :: missing_number([1, 0])
+- a number below n is missing :: len(nums) > 1 and max(nums) == len(nums) :: missing_number([2, 0])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass to take away each number.
+why_space: One running total.
+hint: The numbers 0 to n add up to `n * (n + 1) // 2`, where n is `len(nums)`.
+hint: Take away every number in nums: what's left is the missing number.
+right: A set of the numbers would find the gap in O(n) time with O(n) memory. One running total does it with O(1).
+wrong: `total = n * (n + 1) // 2`. Subtract each x in nums, and return the total.
 
-=== task: code hard
-title: Remove duplicates from a sorted list, in place
-prompt: `nums` is sorted, so equal values sit together. Write `dedupe_sorted(nums)` that keeps one copy of each value, in order, changing the list **itself**, with O(1) extra space and O(n) time. Use a write position `w` (starting at 1): for each item from position 1 on, if it differs from `nums[w - 1]`, the last kept value, copy it to `nums[w]` and add 1 to `w`. Then pop the leftovers off the end. An empty list stays empty. The tests call your function and then look at the list.
+=== task: code easy
+title: Intersection of Two Arrays
+leetcode: 349 | Intersection of Two Arrays | intersection-of-two-arrays
+patterns: trade + grow
+prompt: Write `intersection(nums1, nums2)` that returns the numbers that are in both lists, each once, in the order they first appear in nums2.
+
+**Example 1:** `intersection([1, 2, 2, 1], [2, 2])` returns `[2]`.
+
+**Example 2:** `intersection([4, 9, 5], [9, 4, 9, 8, 4])` returns `[9, 4]`.
+
+**Constraints:** 1 ≤ n, m ≤ 1000, where n is `len(nums1)` and m is `len(nums2)`, and 0 ≤ every number ≤ 1000. Put nums1 in a set: each check is then one step, instead of a scan of nums1.
 starter:
 ```python
-def dedupe_sorted(nums):
-    if len(nums) == 0:
-        return
-    w = 1
+def intersection(nums1, nums2):
     # your code here
+    return []
 ```
 solution:
 ```python
-def dedupe_sorted(nums):
-    if len(nums) == 0:
-        return
-    w = 1
-    for i in range(1, len(nums)):
-        if nums[i] != nums[w - 1]:
-            nums[w] = nums[i]
-            w += 1
-    while len(nums) > w:
-        nums.pop()
+def intersection(nums1, nums2):
+    seen = set(nums1)
+    result = []
+    for x in nums2:
+        if x in seen:
+            result.append(x)
+            seen.remove(x)
+    return result
 ```
 tests:
-- (lambda nums: [dedupe_sorted(nums), nums][1])([1, 1, 2, 3, 3, 3])
-- (lambda nums: [dedupe_sorted(nums), nums][1])([])
-- (lambda nums: [dedupe_sorted(nums), nums][1])([5])
-- (lambda nums: [dedupe_sorted(nums), nums][1])([2, 2, 2])
-- (lambda nums: [dedupe_sorted(nums), nums][1])([1, 2, 3])
-speed: setup=nums = [i // 2 for i in range(n)] | call=dedupe_sorted(nums) | target=O(n)
-slow:
+- intersection([1, 2, 2, 1], [2, 2])
+- intersection([4, 9, 5], [9, 4, 9, 8, 4])
+- intersection([1], [2])
+- intersection([3, 3], [3])
+- intersection([1, 2, 3], [3, 2, 1, 2])
+- len(intersection([i * 3 % 1001 for i in range(500)], [i * 7 % 1001 for i in range(1000)]))
+fail[2]: 9 and 4 are in both. 9 comes first in nums2, and each appears once in the answer: `[9, 4]`.
+fail[3]: Nothing in common: `[]`.
+fail[4]: 3 once, even though nums1 has it twice: `[3]`.
+fail[5]: In nums2's order, without the second 2: `[3, 2, 1]`.
+fail[6]: 72 numbers are in both lists.
+edges:
+- one number each :: len(nums1) == 1 and len(nums2) == 1 :: intersection([5], [5])
+- nothing in common :: len(nums1) + len(nums2) > 2 and len(set(nums1) & set(nums2)) == 0 :: intersection([1, 2], [3])
+- something in common :: len(nums1) + len(nums2) > 2 and len(set(nums1) & set(nums2)) > 0 :: intersection([1, 2], [2, 2])
+edge_count: 2
+complexity: time=O(n + m) | space=O(n)
+complexity_options: O(n + m); O(n × m)
+complexity_note: n and m are the lengths of nums1 and nums2.
+why_time: Building the set is n steps, and the loop over nums2 makes m checks of one step each: O(n + m).
+why_space: The set of nums1's numbers, up to n, and the answer, which is never bigger.
+hint: Make `seen = set(nums1)`.
+hint: Go through nums2. When x is in seen, add it to the answer and remove it from seen, so it can't be added twice.
+right: Checking `x in nums1` on the list would scan up to n numbers each time: O(n × m) time with no extra memory. The set spends O(n) memory to make every check one step.
+wrong: `seen = set(nums1)`. For each x in nums2, if `x in seen`, append x to the answer and `seen.remove(x)`. Return the answer.
+
+=== task: code easy
+title: Decompress Run-Length Encoded List
+leetcode: 1313 | Decompress Run-Length Encoded List | decompress-run-length-encoded-list
+patterns: grow
+prompt: nums holds pairs `[freq, val]`: `nums[0]` and `nums[1]`, then `nums[2]` and `nums[3]`, and onwards. Each pair stands for val written freq times. Write `decompress_rle_list(nums)` that returns the whole list: the runs of all the pairs, one after another.
+
+**Example 1:** `decompress_rle_list([1, 2, 3, 4])` returns `[2, 4, 4, 4]`.
+
+**Example 2:** `decompress_rle_list([1, 1, 2, 3])` returns `[1, 3, 3]`.
+
+**Constraints:** 2 ≤ n ≤ 100 where n is `len(nums)`, n is even, and 1 ≤ every number ≤ 100.
+starter:
 ```python
-def dedupe_sorted(nums):
-    if len(nums) == 0:
-        return
-    i = 1
-    while i < len(nums):
-        if nums[i] == nums[i - 1]:
-            nums.pop(i)
+def decompress_rle_list(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def decompress_rle_list(nums):
+    result = []
+    for i in range(0, len(nums), 2):
+        freq = nums[i]
+        val = nums[i + 1]
+        for _ in range(freq):
+            result.append(val)
+    return result
+```
+tests:
+- decompress_rle_list([1, 2, 3, 4])
+- decompress_rle_list([1, 1, 2, 3])
+- decompress_rle_list([5, 7])
+- decompress_rle_list([1, 9, 1, 9])
+- decompress_rle_list([2, 1, 1, 2, 2, 1])
+- len(decompress_rle_list([100, 5] * 50))
+fail[2]: One 1, then two 3s: `[1, 3, 3]`.
+fail[3]: Five 7s.
+fail[4]: Two runs of one 9: `[9, 9]`.
+fail[5]: Two 1s, one 2 and two 1s: `[1, 1, 2, 1, 1]`.
+fail[6]: 50 pairs of 100 copies of 5: 100 numbers in, 5,000 out.
+edges:
+- one pair :: len(nums) == 2 :: decompress_rle_list([3, 1])
+- runs of one :: len(nums) > 2 and all(nums[i] == 1 for i in range(0, len(nums), 2)) :: decompress_rle_list([1, 5, 1, 6])
+- longer runs :: len(nums) > 2 and any(nums[i] > 1 for i in range(0, len(nums), 2)) :: decompress_rle_list([2, 5, 1, 6])
+edge_count: 2
+complexity: time=O(n + s) | space=O(s)
+complexity_options: O(n + s); O(s); O(n × s)
+complexity_note: n is the length of nums and s the length of the answer, the sum of the freqs. s can be far bigger than n.
+why_time: One step per pair, and one append per number of the answer: n / 2 + s.
+why_space: The answer itself: s numbers, which can be 50 times as many as n here.
+hint: Go through the pairs with `range(0, len(nums), 2)`: freq is `nums[i]` and val is `nums[i + 1]`.
+hint: Append val to the answer freq times.
+right: The memory follows the output, not the input: s numbers, up to 50 times as many as the input. So the space is O(s), not O(n).
+wrong: For i in `range(0, len(nums), 2)`, append `nums[i + 1]` to the answer `nums[i]` times. Return the answer.
+
+=== task: code easy
+title: Min Max Game
+leetcode: 2293 | Min Max Game | min-max-game
+patterns: stack
+prompt: nums has a length that's a power of 2. While it has more than one number, make a new list half as long: item i is the smaller of `nums[2 * i]` and `nums[2 * i + 1]` when i is even, and the bigger of them when i is odd. Write `min_max_game(nums)` that returns the last number left. Write it recursively: each call builds the next, half-size list and calls itself on it.
+
+**Example 1:** `min_max_game([1, 3, 5, 2, 4, 8, 2, 2])` returns `1`: the lists are `[1, 5, 4, 2]`, then `[1, 4]`, then `[1]`.
+
+**Example 2:** `min_max_game([3])` returns `3`.
+
+**Constraints:** 1 ≤ n ≤ 1024 where n is `len(nums)`, n is a power of 2, and 1 ≤ `nums[i]` ≤ 10⁹.
+starter:
+```python
+def min_max_game(nums):
+    # your code here
+    return nums[0]
+```
+solution:
+```python
+def min_max_game(nums):
+    if len(nums) == 1:
+        return nums[0]
+    new = []
+    for i in range(len(nums) // 2):
+        if i % 2 == 0:
+            new.append(min(nums[2 * i], nums[2 * i + 1]))
         else:
+            new.append(max(nums[2 * i], nums[2 * i + 1]))
+    return min_max_game(new)
+```
+tests:
+- min_max_game([1, 3, 5, 2, 4, 8, 2, 2])
+- min_max_game([3])
+- min_max_game([5, 9])
+- min_max_game([7, 2, 9, 4])
+- min_max_game([10, 1, 1, 10, 10, 1, 1, 10])
+- min_max_game([i * 7919 % 100003 + 1 for i in range(1, 1025)])
+fail[2]: One number: 3.
+fail[3]: One pair, and item 0 takes the smaller: 5.
+fail[4]: `[7, 2, 9, 4]` becomes `[2, 9]`, the smaller of 7 and 2 and the bigger of 9 and 4, then `[2]`.
+fail[5]: `[10, 1, 1, 10, 10, 1, 1, 10]` becomes `[1, 10, 1, 10]`, then `[1, 10]`, then `[1]`.
+fail[6]: 1,024 numbers take 10 rounds, and 7,920 is left.
+edges:
+- one number :: len(nums) == 1 :: min_max_game([8])
+- two numbers :: len(nums) == 2 :: min_max_game([8, 3])
+- four numbers or more :: len(nums) >= 4 :: min_max_game([1, 2, 3, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: The new lists have n / 2, n / 4, n / 8 and fewer numbers, which add up to less than n.
+why_space: Every waiting call keeps its own list until the last call returns: n / 2 + n / 4 + n / 8 and smaller, less than n in all, so O(n). The stack itself is only about log₂ n calls deep.
+hint: If nums has one number, return it.
+hint: Build `new`: for each i in `range(len(nums) // 2)`, append `min(nums[2 * i], nums[2 * i + 1])` if i is even, or the max if i is odd.
+hint: Return `min_max_game(new)`.
+right: The stack is only about log₂ n calls deep, but each waiting call holds a list: a half, a quarter, an eighth of n. Those add up to less than n, so the space is O(n). Writing each round over the front of nums itself, in a loop, would make it O(1).
+wrong: Return `nums[0]` if `len(nums) == 1`. Otherwise build new, with the min for even i and the max for odd i, and return `min_max_game(new)`.
+
+=== task: code easy
+title: Check If Two String Arrays are Equivalent
+leetcode: 1662 | Check If Two String Arrays are Equivalent | check-if-two-string-arrays-are-equivalent
+patterns: const
+prompt: Write `array_strings_are_equal(word1, word2)` that returns True if the words of word1 joined together make the same string as the words of word2 joined together, and False otherwise. Use O(1) extra memory: walk through both lists letter by letter instead of joining them into new strings.
+
+**Example 1:** `array_strings_are_equal(["ab", "c"], ["a", "bc"])` returns `True`: both make "abc".
+
+**Example 2:** `array_strings_are_equal(["a", "cb"], ["ab", "c"])` returns `False`.
+
+**Constraints:** 1 ≤ `len(word1)`, `len(word2)` ≤ 1000, each word has 1 to 1000 lowercase letters, and each list has at most 1000 letters in all. Keep a word position and a letter position for each list.
+starter:
+```python
+def array_strings_are_equal(word1, word2):
+    # your code here
+    return False
+```
+solution:
+```python
+def array_strings_are_equal(word1, word2):
+    w1 = 0
+    c1 = 0
+    w2 = 0
+    c2 = 0
+    while w1 < len(word1) and w2 < len(word2):
+        if word1[w1][c1] != word2[w2][c2]:
+            return False
+        c1 += 1
+        if c1 == len(word1[w1]):
+            w1 += 1
+            c1 = 0
+        c2 += 1
+        if c2 == len(word2[w2]):
+            w2 += 1
+            c2 = 0
+    return w1 == len(word1) and w2 == len(word2)
+```
+tests:
+- array_strings_are_equal(["ab", "c"], ["a", "bc"])
+- array_strings_are_equal(["a", "cb"], ["ab", "c"])
+- array_strings_are_equal(["abc", "d", "defg"], ["abcddefg"])
+- array_strings_are_equal(["a"], ["a", "a"])
+- array_strings_are_equal(["ab"], ["a"])
+- array_strings_are_equal(["a" * 10] * 100, ["a" * 25] * 40)
+fail[2]: "acb" and "abc" differ at the second letter: False.
+fail[3]: Both make "abcddefg": True.
+fail[4]: "a" against "aa": word1 runs out first, so False.
+fail[5]: "ab" against "a": word2 runs out first, so False.
+fail[6]: 100 words of 10 "a"s and 40 words of 25 "a"s: 1,000 "a"s each, True.
+edges:
+- one word each :: len(word1) == 1 and len(word2) == 1 :: array_strings_are_equal(["ab"], ["ab"])
+- different lengths in all :: len(word1) + len(word2) > 2 and sum([len(w) for w in word1]) != sum([len(w) for w in word2]) :: array_strings_are_equal(["a", "b"], ["a"])
+- the same length in all :: len(word1) + len(word2) > 2 and sum([len(w) for w in word1]) == sum([len(w) for w in word2]) :: array_strings_are_equal(["a", "b"], ["ba"])
+edge_count: 2
+complexity: time=O(L) | space=O(1)
+complexity_options: O(L); O(L²)
+complexity_note: L is the number of letters in word1 and word2 together.
+why_time: Each step compares one letter of each list and moves on: at most L steps.
+why_space: Four positions. `"".join(word1)` would build a new string of up to L letters.
+hint: Keep `w1` and `c1`, the word and the letter you're at in word1, and `w2` and `c2` for word2.
+hint: Compare `word1[w1][c1]` with `word2[w2][c2]`, and return False if they differ. Then move each letter position on; when one reaches the end of its word, go to the start of the next word.
+hint: When either list runs out, they're equal only if both ran out together.
+right: Joining the words is shorter to write, but it builds two new strings: O(L) memory. Walking with four positions compares the same letters with O(1) memory.
+wrong: Keep a word and a letter position for each list. While both have letters left, return False on a mismatch and step both on, moving to the next word at the end of one. Return whether both reached the end.
+
+=== task: code easy
+title: N-Repeated Element in Size 2N Array
+leetcode: 961 | N-Repeated Element in Size 2N Array | n-repeated-element-in-size-2n-array
+patterns: trade + const
+prompt: nums has 2n numbers: one number appears n times, and the other n numbers appear once each. Write `repeated_n_times(nums)` that returns the repeated number, using O(1) extra memory.
+
+**Example 1:** `repeated_n_times([1, 2, 3, 3])` returns `3`.
+
+**Example 2:** `repeated_n_times([2, 1, 2, 5, 3, 2])` returns `2`.
+
+**Constraints:** 2 ≤ n ≤ 5000, and 0 ≤ `nums[i]` ≤ 10⁴. Half the positions hold the repeated number, so two of its copies are always at most 3 positions apart: compare each number with the next 3.
+starter:
+```python
+def repeated_n_times(nums):
+    # your code here
+    return nums[0]
+```
+solution:
+```python
+def repeated_n_times(nums):
+    for i in range(len(nums)):
+        for d in range(1, 4):
+            if i + d < len(nums) and nums[i] == nums[i + d]:
+                return nums[i]
+    return nums[0]
+```
+tests:
+- repeated_n_times([1, 2, 3, 3])
+- repeated_n_times([2, 1, 2, 5, 3, 2])
+- repeated_n_times([5, 1, 5, 2, 5, 3, 5, 4])
+- repeated_n_times([9, 5, 6, 9])
+- repeated_n_times([4, 4, 1, 2])
+- repeated_n_times([i if i % 2 else 10000 for i in range(10000)])
+fail[2]: The 2s at positions 0 and 2 are two apart: 2.
+fail[3]: The 5s are two apart: 5.
+fail[4]: The two 9s are 3 apart, at the two ends: 9.
+fail[5]: The 4s are side by side: 4.
+fail[6]: 10,000 numbers, with 10,000 at every even position: the first number's checks find it. A set could have to hold up to 5,001 numbers.
+edges:
+- four numbers :: len(nums) == 4 :: repeated_n_times([7, 1, 2, 7])
+- two copies side by side :: len(nums) > 4 and any(nums[i] == nums[i + 1] for i in range(len(nums) - 1)) :: repeated_n_times([1, 3, 3, 3, 2, 4])
+- no copies side by side :: len(nums) > 4 and all(nums[i] != nums[i + 1] for i in range(len(nums) - 1)) :: repeated_n_times([3, 1, 3, 2, 3, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: The list has 2n numbers.
+why_time: At most 3 comparisons for each of the 2n positions: 6n, O(n).
+why_space: Two positions.
+hint: If every two neighbouring copies were 4 or more places apart, the n copies would need at least 4n − 3 positions, more than the 2n there are.
+hint: For each i, compare `nums[i]` with `nums[i + 1]`, `nums[i + 2]` and `nums[i + 3]`, where they exist.
+hint: Return the first number that matches one of them.
+right: A set finds the repeat in O(n) time with O(n) memory. Knowing two copies must be close lets three comparisons per number do it with O(1) memory.
+wrong: For each i and each d from 1 to 3 with `i + d < len(nums)`, return `nums[i]` if it equals `nums[i + d]`.
+
+=== task: code easy
+title: Squares of a Sorted Array
+leetcode: 977 | Squares of a Sorted Array | squares-of-a-sorted-array
+patterns: grow
+prompt: nums is sorted from smallest to biggest. Write `sorted_squares(nums)` that returns the squares of its numbers, sorted from smallest to biggest, in O(n) time.
+
+**Example 1:** `sorted_squares([-4, -1, 0, 3, 10])` returns `[0, 1, 9, 16, 100]`.
+
+**Example 2:** `sorted_squares([-7, -3, 2, 3, 11])` returns `[4, 9, 9, 49, 121]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁴ where n is `len(nums)`, −10⁴ ≤ `nums[i]` ≤ 10⁴, and nums is sorted. The biggest square comes from one of the two ends: fill the answer from the back, taking the end further from 0 each time.
+starter:
+```python
+def sorted_squares(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def sorted_squares(nums):
+    n = len(nums)
+    result = [0] * n
+    lo = 0
+    hi = n - 1
+    for pos in range(n - 1, -1, -1):
+        if abs(nums[lo]) > abs(nums[hi]):
+            result[pos] = nums[lo] * nums[lo]
+            lo += 1
+        else:
+            result[pos] = nums[hi] * nums[hi]
+            hi -= 1
+    return result
+```
+tests:
+- sorted_squares([-4, -1, 0, 3, 10])
+- sorted_squares([-7, -3, 2, 3, 11])
+- sorted_squares([5])
+- sorted_squares([-3, -2, -1])
+- sorted_squares([-2, 2])
+- sorted_squares(list(range(-5000, 5000)))[-3:]
+fail[2]: −7 and 11 are the ends, and 11 is further from 0: 121 goes last.
+fail[3]: One number: `[25]`.
+fail[4]: Every number is negative, so the squares come in reverse order: `[1, 4, 9]`.
+fail[5]: `[4, 4]`.
+fail[6]: −5,000 to 4,999: the biggest squares are 4,999², twice, and 5,000².
+edges:
+- one number :: len(nums) == 1 :: sorted_squares([-2])
+- every number on one side of 0 :: len(nums) > 1 and (nums[0] >= 0 or nums[-1] <= 0) :: sorted_squares([1, 2])
+- numbers on both sides of 0 :: len(nums) > 1 and nums[0] < 0 < nums[-1] :: sorted_squares([-1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One step for each position of the answer.
+why_space: The answer, a new list of n squares, plus two positions.
+hint: Make `result = [0] * n`, and keep lo at the start of nums and hi at the end.
+hint: For pos from n − 1 down to 0: whichever of `nums[lo]` and `nums[hi]` is further from 0 has the bigger square. Put that square at `result[pos]` and move that end inwards.
+right: The answer is a new list of n numbers, so the space is O(n): it can't be less. Filling it from both ends avoids the O(n log n) of sorting the squares.
+wrong: `result = [0] * n`, lo = 0 and hi = n − 1. For pos from n − 1 down: if `abs(nums[lo]) > abs(nums[hi])`, put `nums[lo] * nums[lo]` there and add 1 to lo; otherwise put `nums[hi] * nums[hi]` there and take 1 off hi.
+
+=== task: code medium
+title: Remove Duplicates from Sorted Array II
+leetcode: 80 | Remove Duplicates from Sorted Array II | remove-duplicates-from-sorted-array-ii
+patterns: inplace + const
+prompt: nums is sorted from smallest to biggest. Write `remove_duplicates(nums)` that changes nums in place so that its first k items keep each number at most twice, in order, and returns k. What comes after the first k items doesn't matter. Use O(1) extra memory.
+
+**Example 1:** `remove_duplicates([1, 1, 1, 2, 2, 3])` returns `5`, and nums starts `[1, 1, 2, 2, 3]`.
+
+**Example 2:** for `[0, 0, 1, 1, 1, 1, 2, 3, 3]` it returns `7`, and nums starts `[0, 0, 1, 1, 2, 3, 3]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 3 × 10⁴, −10⁴ ≤ `nums[i]` ≤ 10⁴, and nums is sorted. A number can be kept if fewer than 2 numbers have been kept so far, or if it differs from the number kept two places back, `nums[k - 2]`.
+starter:
+```python
+def remove_duplicates(nums):
+    # your code here
+    return len(nums)
+```
+solution:
+```python
+def remove_duplicates(nums):
+    k = 0
+    for i in range(len(nums)):
+        if k < 2 or nums[i] != nums[k - 2]:
+            nums[k] = nums[i]
+            k += 1
+    return k
+```
+tests:
+- remove_duplicates([1, 1, 1, 2, 2, 3])
+- (lambda a: a[:remove_duplicates(a)])([0, 0, 1, 1, 1, 1, 2, 3, 3])
+- (lambda a: a[:remove_duplicates(a)])([4])
+- (lambda a: a[:remove_duplicates(a)])([2, 2])
+- (lambda a: a[:remove_duplicates(a)])([1, 2, 3])
+- remove_duplicates([v for v in range(-5000, 5000) for _ in range(3)])
+fail[2]: The four 1s become two: `[0, 0, 1, 1, 2, 3, 3]`.
+fail[3]: One number: `[4]`.
+fail[4]: Two 2s are allowed: `[2, 2]`.
+fail[5]: Every number is different: `[1, 2, 3]`.
+fail[6]: 10,000 numbers, 3 copies of each: each keeps 2 copies, so k is 20,000.
+edges:
+- one number :: len(nums) == 1 :: remove_duplicates([6])
+- no number more than twice :: len(nums) > 1 and max([nums.count(x) for x in set(nums)]) <= 2 :: remove_duplicates([1, 1, 2])
+- a number three times or more :: len(nums) > 1 and max([nums.count(x) for x in set(nums)]) > 2 :: remove_duplicates([1, 1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass over the n numbers.
+why_space: k and the read position: the kept numbers are written into nums itself.
+hint: Keep `k = 0`, how many numbers have been kept.
+hint: Keep `nums[i]` if `k < 2` or `nums[i] != nums[k - 2]`: copy it to `nums[k]` and add 1 to k.
+hint: nums is sorted, so `nums[k - 2]` equal to `nums[i]` means two copies are kept already.
+right: Comparing with the number kept two places back is all the memory needed: O(1) extra, with the list itself holding the answer.
+wrong: `k = 0`. For each i, if `k < 2` or `nums[i] != nums[k - 2]`, set `nums[k] = nums[i]` and add 1 to k. Return k.
+
+=== task: code medium
+title: Previous Permutation With One Swap
+leetcode: 1053 | Previous Permutation With One Swap | previous-permutation-with-one-swap
+patterns: inplace
+prompt: Write `prev_perm_opt1(arr)` that swaps two numbers of arr so that it becomes the biggest list, in dictionary order, that is still smaller than arr. If no swap makes arr smaller, leave it as it is. Change arr in place, and also return it so the tests can see it.
+
+**Example 1:** `prev_perm_opt1([3, 2, 1])` returns `[3, 1, 2]`.
+
+**Example 2:** `prev_perm_opt1([1, 9, 4, 6, 7])` returns `[1, 7, 4, 6, 9]`: swapping 9 and 7.
+
+**Constraints:** 1 ≤ n ≤ 10⁴ where n is `len(arr)`, and 1 ≤ `arr[i]` ≤ 10⁴. The swap should be as far right as possible: find the last i with `arr[i] > arr[i + 1]`, then swap `arr[i]` with the biggest number to its right that's smaller than it, taking the leftmost copy if that number appears more than once.
+starter:
+```python
+def prev_perm_opt1(arr):
+    # your code here
+    return arr
+```
+solution:
+```python
+def prev_perm_opt1(arr):
+    n = len(arr)
+    i = n - 2
+    while i >= 0 and arr[i] <= arr[i + 1]:
+        i -= 1
+    if i < 0:
+        return arr
+    j = n - 1
+    while arr[j] >= arr[i]:
+        j -= 1
+    while arr[j - 1] == arr[j]:
+        j -= 1
+    arr[i], arr[j] = arr[j], arr[i]
+    return arr
+```
+tests:
+- prev_perm_opt1([3, 2, 1])
+- prev_perm_opt1([1, 1, 5])
+- prev_perm_opt1([1, 9, 4, 6, 7])
+- prev_perm_opt1([3, 1, 1, 3])
+- (lambda a: [prev_perm_opt1(a), a][1])([2, 1])
+- (lambda a: [a[0], a[1], a[-1]])(prev_perm_opt1([10000] + list(range(1, 10000))))
+fail[2]: `[1, 1, 5]` is in increasing order, the smallest it can be: no swap, `[1, 1, 5]`.
+fail[3]: The last drop is 9 then 4. The biggest number after it that's below 9 is 7: `[1, 7, 4, 6, 9]`.
+fail[4]: Swap the 3 with the first 1: `[1, 3, 1, 3]`. Swapping it with the second 1 would give `[1, 1, 3, 3]`, which is smaller.
+fail[5]: The list passed in has to be the one that changes: `[1, 2]`.
+fail[6]: 10,000 followed by 1 to 9,999: the only drop is at the start, and 9,999 is the biggest number below 10,000. The list starts 9,999, 1 and ends with 10,000.
+edges:
+- one number :: len(arr) == 1 :: prev_perm_opt1([4])
+- already the smallest order :: len(arr) > 1 and arr == sorted(arr) :: prev_perm_opt1([1, 2, 2])
+- a swap is possible :: len(arr) > 1 and arr != sorted(arr) :: prev_perm_opt1([2, 1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of arr.
+why_time: Two scans from the end, at most n steps each, and one swap.
+why_space: Two positions: the swap happens in arr itself.
+hint: Scan i from n − 2 down while `arr[i] <= arr[i + 1]`. If i falls below 0, arr is already the smallest it can be: return it.
+hint: Everything after i is in increasing order, so scan j from the end while `arr[j] >= arr[i]`: the first j that stops is the biggest number below `arr[i]`.
+hint: While `arr[j - 1] == arr[j]`, move j left, to the first copy. Then swap `arr[i]` and `arr[j]`.
+right: The two scans and the swap only need positions: O(1) extra space, with arr changed where it is.
+wrong: Find the last i with `arr[i] > arr[i + 1]`, and return arr if there's none. Find j from the end at the first `arr[j] < arr[i]`, move it left over equal copies, and swap. Return arr.
+
+=== task: code medium
+title: Find the Duplicate Number
+leetcode: 287 | Find the Duplicate Number | find-the-duplicate-number
+patterns: trade + const
+prompt: nums has n + 1 numbers, each from 1 to n, and exactly one number is repeated, maybe several times. Write `find_duplicate(nums)` that returns it without changing nums and with O(1) extra memory. Spend time instead: for a guess mid, count the numbers ≤ mid. If there are more than mid, the repeated number is ≤ mid.
+
+**Example 1:** `find_duplicate([1, 3, 4, 2, 2])` returns `2`.
+
+**Example 2:** `find_duplicate([3, 1, 3, 4, 2])` returns `3`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, `len(nums)` is n + 1, and 1 ≤ `nums[i]` ≤ n. Binary search the guesses from 1 to n.
+starter:
+```python
+def find_duplicate(nums):
+    # your code here
+    return 1
+```
+solution:
+```python
+def find_duplicate(nums):
+    lo = 1
+    hi = len(nums) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        count = 0
+        for x in nums:
+            if x <= mid:
+                count += 1
+        if count > mid:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+```
+tests:
+- find_duplicate([1, 3, 4, 2, 2])
+- find_duplicate([3, 1, 3, 4, 2])
+- find_duplicate([3, 3, 3, 3, 3])
+- find_duplicate([1, 1])
+- find_duplicate([2, 5, 9, 6, 9, 3, 8, 9, 7, 1])
+- find_duplicate(list(range(1, 3001)) + [1234])
+fail[2]: Four numbers are ≤ 3, one more than there's room for: 3.
+fail[3]: All five numbers are 3: 3.
+fail[4]: `[1, 1]`: 1.
+fail[5]: 9 appears three times: 9.
+fail[6]: 3,001 numbers: 1 to 3,000 and a second 1,234. About 12 guesses, each counting all 3,001 numbers.
+edges:
+- two numbers :: len(nums) == 2 :: find_duplicate([1, 1])
+- the repeat twice :: len(nums) > 2 and max([nums.count(x) for x in set(nums)]) == 2 :: find_duplicate([2, 1, 2])
+- the repeat three times or more :: len(nums) > 2 and max([nums.count(x) for x in set(nums)]) > 2 :: find_duplicate([2, 2, 2])
+edge_count: 2
+complexity: time=O(n log n) | space=O(1)
+complexity_note: n + 1 is the length of nums.
+why_time: The guesses halve the range 1 to n, so there are about log₂ n of them, and each one counts all n + 1 numbers: O(n log n).
+why_space: lo, hi, mid and a count.
+hint: Start with `lo = 1` and `hi = n`. While `lo < hi`, take `mid = (lo + hi) // 2` and count the numbers ≤ mid.
+hint: Without a repeat at or below mid, there could be at most mid of them. More than mid means the repeat is ≤ mid: `hi = mid`. Otherwise `lo = mid + 1`.
+hint: When lo meets hi, that's the repeated number.
+right: A set finds the repeat in O(n) time, with O(n) memory. Here the trade goes the other way: O(n log n) time, with O(1) memory and nums left as it is.
+wrong: `lo = 1` and `hi = n`. While `lo < hi`: count the x ≤ mid; if the count is above mid, `hi = mid`, otherwise `lo = mid + 1`. Return lo.
+
+=== task: code medium
+title: Single Number II
+leetcode: 137 | Single Number II | single-number-ii
+patterns: const
+prompt: Every number in nums appears three times, except one, which appears once. Write `single_number(nums)` that returns that one, using O(1) extra memory.
+
+**Example 1:** `single_number([2, 2, 3, 2])` returns `3`.
+
+**Example 2:** `single_number([0, 1, 0, 1, 0, 1, 99])` returns `99`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 3 × 10⁴, and −2³¹ ≤ `nums[i]` ≤ 2³¹ − 1. Look at one bit at a time: for each of the 32 bits, count the numbers that have it. The numbers that appear three times add a multiple of 3, so the count's remainder after dividing by 3 is the single number's bit.
+starter:
+```python
+def single_number(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def single_number(nums):
+    result = 0
+    for bit in range(32):
+        count = 0
+        for x in nums:
+            if (x >> bit) & 1:
+                count += 1
+        if count % 3 != 0:
+            result = result | (1 << bit)
+    if result >= 2 ** 31:
+        result -= 2 ** 32
+    return result
+```
+tests:
+- single_number([2, 2, 3, 2])
+- single_number([0, 1, 0, 1, 0, 1, 99])
+- single_number([5])
+- single_number([-2, -2, 1, 1, 4, 1, 4, 4, -8, -2])
+- single_number([-2147483648, 7, 7, 7])
+- single_number([i for i in range(1, 701) for _ in range(3)] + [123456789])
+fail[2]: 99 is the only number that appears once.
+fail[3]: One number: 5.
+fail[4]: −8 appears once, and −2, 1 and 4 three times each.
+fail[5]: −2,147,483,648 comes out with only bit 31 set, as 2³¹: subtract 2³² to get the negative number.
+fail[6]: 700 numbers three times each, and 123,456,789 once. A dictionary of counts would hold 701 entries; 32 bit counts are enough.
+edges:
+- one number :: len(nums) == 1 :: single_number([-3])
+- the single number is negative :: len(nums) > 1 and min([x for x in nums if nums.count(x) == 1]) < 0 :: single_number([-4, 2, 2, 2])
+- the single number is 0 or more :: len(nums) > 1 and min([x for x in nums if nums.count(x) == 1]) >= 0 :: single_number([4, -2, -2, -2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. The numbers fit in 32 bits.
+why_time: 32 passes over the n numbers, one per bit: 32n, O(n).
+why_space: A count and the result: the 32 bits are counted one at a time.
+hint: For each bit from 0 to 31, count the x in nums with `(x >> bit) & 1`.
+hint: If the count isn't a multiple of 3, the single number has that bit: `result = result | (1 << bit)`.
+hint: A negative number comes out with bit 31 set: if result is `2 ** 31` or more, subtract `2 ** 32`.
+right: A dictionary of counts works in O(n) time but O(n) memory. Counting each of the 32 bits in turn is still O(n) time, 32 passes, with O(1) memory.
+wrong: For each bit in `range(32)`, count the numbers that have it, and set it in result if the count isn't a multiple of 3. Subtract `2 ** 32` if result is `2 ** 31` or more.
+
+=== task: code medium
+title: Knight Dialer
+leetcode: 935 | Knight Dialer | knight-dialer
+patterns: trade + const
+prompt: A phone keypad has 1, 2 and 3 on the top row, 4, 5 and 6 below, then 7, 8 and 9, and 0 on its own under the 8. A chess knight moves two keys in one direction and one key at right angles, and may only land on a digit. Write `knight_dialer(n)` that returns how many different numbers of n digits the knight can dial: it starts on any digit, and each move adds the digit it lands on. Return it modulo 10⁹ + 7.
+
+**Example 1:** `knight_dialer(1)` returns `10`: any one digit.
+
+**Example 2:** `knight_dialer(2)` returns `20`, such as 16, 18, 40, 43 and 49.
+
+**Constraints:** 1 ≤ n ≤ 5000. From each digit the knight can reach: 0 → 4, 6; 1 → 6, 8; 2 → 7, 9; 3 → 4, 8; 4 → 0, 3, 9; 5 → none; 6 → 0, 1, 7; 7 → 2, 6; 8 → 1, 3; 9 → 2, 4. From one length to the next, keep only how many numbers end on each digit: 10 counts.
+starter:
+```python
+def knight_dialer(n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def knight_dialer(n):
+    moves = [[4, 6], [6, 8], [7, 9], [4, 8], [0, 3, 9], [], [0, 1, 7], [2, 6], [1, 3], [2, 4]]
+    counts = [1] * 10
+    for _ in range(n - 1):
+        new = [0] * 10
+        for d in range(10):
+            for nxt in moves[d]:
+                new[nxt] = (new[nxt] + counts[d]) % 1000000007
+        counts = new
+    return sum(counts) % 1000000007
+```
+tests:
+- knight_dialer(1)
+- knight_dialer(2)
+- knight_dialer(3)
+- knight_dialer(4)
+- knight_dialer(10)
+- knight_dialer(3131)
+fail[2]: 20 numbers of 2 digits.
+fail[3]: 46 numbers of 3 digits.
+fail[4]: 104 numbers of 4 digits.
+fail[5]: 14,912 numbers of 10 digits.
+fail[6]: 3,131 digits: 136,006,598 after the modulo. A table of counts for every length would have 3,131 rows; the last row of 10 counts is all each step needs.
+edges:
+- one digit :: n == 1 :: knight_dialer(1)
+- a few digits :: 1 < n <= 5 :: knight_dialer(3)
+- many digits :: n > 5 :: knight_dialer(8)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of digits.
+why_time: n − 1 rounds, each going through the 10 digits and their 20 moves: O(n).
+why_space: Two rows of 10 counts, a fixed size.
+hint: `counts[d]` is how many numbers of the current length end on digit d. For length 1, every count is 1.
+hint: For the next length, make `new = [0] * 10`, and for each digit d, add `counts[d]` to `new[x]` for every x the knight can reach from d. Then `counts = new`.
+hint: After n − 1 rounds, return `sum(counts) % 1000000007`.
+right: A table with a row for every length would be O(n) memory, but each row only needs the row before it: two rows of 10, O(1).
+wrong: `counts = [1] * 10`. Repeat n − 1 times: `new = [0] * 10`, add `counts[d]` to `new[x]` for each move from d to x, keeping the counts modulo 10⁹ + 7, then `counts = new`. Return the sum modulo 10⁹ + 7.
+
+=== task: code medium
+title: Triangle
+leetcode: 120 | Triangle | triangle
+patterns: trade
+prompt: triangle has rows of 1, 2, 3 and more numbers. A path starts at the top and goes down one row at a time, from position c to position c or c + 1 of the row below. Write `minimum_total(triangle)` that returns the smallest sum of a path from the top to the bottom row, using O(n) extra memory, where n is the number of rows.
+
+**Example 1:** `minimum_total([[2], [3, 4], [6, 5, 7], [4, 1, 8, 3]])` returns `11`: 2 + 3 + 5 + 1.
+
+**Example 2:** `minimum_total([[-10]])` returns `-10`.
+
+**Constraints:** 1 ≤ n ≤ 200, row r has r + 1 numbers, and −10⁴ ≤ `triangle[r][c]` ≤ 10⁴. Work from the bottom up with one row of best sums: `best[c]` becomes `triangle[r][c] + min(best[c], best[c + 1])`.
+starter:
+```python
+def minimum_total(triangle):
+    # your code here
+    return 0
+```
+solution:
+```python
+def minimum_total(triangle):
+    best = triangle[-1][:]
+    for r in range(len(triangle) - 2, -1, -1):
+        for c in range(r + 1):
+            best[c] = triangle[r][c] + min(best[c], best[c + 1])
+    return best[0]
+```
+tests:
+- minimum_total([[2], [3, 4], [6, 5, 7], [4, 1, 8, 3]])
+- minimum_total([[-10]])
+- minimum_total([[1], [2, 3]])
+- minimum_total([[1], [-5, 9], [3, 7, -1]])
+- minimum_total([[0], [1, 1], [1, 0, 1]])
+- minimum_total([[(r * 7 + c * 13) % 21 - 10 for c in range(r + 1)] for r in range(200)])
+fail[2]: One number: −10.
+fail[3]: 1 + 2 = 3.
+fail[4]: 1 + (−5) + 3 = −1. The −1 at the bottom right can only be reached through the 9.
+fail[5]: Every path adds up to 1.
+fail[6]: 200 rows make 2¹⁹⁹ paths. One row of best sums, worked up from the bottom, gives −1,300.
+edges:
+- one row :: len(triangle) == 1 :: minimum_total([[5]])
+- two rows :: len(triangle) == 2 :: minimum_total([[1], [4, 2]])
+- three rows or more :: len(triangle) >= 3 :: minimum_total([[1], [2, 3], [4, 5, 6]])
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the number of rows.
+why_time: Every number of the triangle is visited once: about n² / 2.
+why_space: One row of best sums, n numbers. A table of best sums for every number would be about n² / 2.
+hint: Copy the bottom row into `best`: from there, the best sum is the number itself.
+hint: For each row r from the second-to-last up to the top, and each c in that row: `best[c] = triangle[r][c] + min(best[c], best[c + 1])`. Going left to right is safe, because `best[c + 1]` hasn't been changed yet for this row.
+hint: At the end, `best[0]` is the answer.
+right: Each row's best sums only need the row below, so one row of n numbers replaces the whole table: O(n) space instead of O(n²), with the same O(n²) time.
+wrong: `best = triangle[-1][:]`. For r from n − 2 down to 0 and c from 0 to r: `best[c] = triangle[r][c] + min(best[c], best[c + 1])`. Return `best[0]`.
+
+=== task: code medium
+title: Number of Dice Rolls With Target Sum
+leetcode: 1155 | Number of Dice Rolls With Target Sum | number-of-dice-rolls-with-target-sum
+patterns: stack + trade
+prompt: You roll n dice, each with k faces numbered 1 to k. Write `num_rolls_to_target(n, k, target)` that returns how many of the kⁿ ways to roll them add up to target, modulo 10⁹ + 7. Write it as a recursion with a memo: `count_ways(dice, left, k, memo)` counts the ways for `dice` dice to add up to `left`.
+
+**Example 1:** `num_rolls_to_target(1, 6, 3)` returns `1`.
+
+**Example 2:** `num_rolls_to_target(2, 6, 7)` returns `6`: 1 + 6, 2 + 5, 3 + 4, 4 + 3, 5 + 2 and 6 + 1.
+
+**Constraints:** 1 ≤ n, k ≤ 30, and 1 ≤ target ≤ 1000. With no dice left, there's 1 way if left is 0 and none otherwise. When left is below dice or above dice × k, there are no ways.
+starter:
+```python
+def count_ways(dice, left, k, memo):
+    # your code here
+    return 0
+
+
+def num_rolls_to_target(n, k, target):
+    return count_ways(n, target, k, {})
+```
+solution:
+```python
+def count_ways(dice, left, k, memo):
+    if dice == 0:
+        return 1 if left == 0 else 0
+    if left < dice or left > dice * k:
+        return 0
+    key = (dice, left)
+    if key in memo:
+        return memo[key]
+    total = 0
+    for face in range(1, k + 1):
+        total += count_ways(dice - 1, left - face, k, memo)
+    total = total % 1000000007
+    memo[key] = total
+    return total
+
+
+def num_rolls_to_target(n, k, target):
+    return count_ways(n, target, k, {})
+```
+tests:
+- num_rolls_to_target(1, 6, 3)
+- num_rolls_to_target(2, 6, 7)
+- num_rolls_to_target(1, 2, 3)
+- num_rolls_to_target(2, 2, 3)
+- num_rolls_to_target(3, 6, 18)
+- num_rolls_to_target(15, 12, 90)
+fail[2]: 6 ways to make 7 with two dice.
+fail[3]: One die with faces 1 and 2 can't make 3: 0.
+fail[4]: 1 + 2 and 2 + 1: 2.
+fail[5]: Only 6 + 6 + 6: 1.
+fail[6]: 15 dice with 12 faces: 12¹⁵ rolls, far too many to try. The memo works out each (dice, left) pair once, at most 15 × 90 of them: 225,534,297 after the modulo.
+edges:
+- one die :: n == 1 :: num_rolls_to_target(1, 4, 4)
+- a target no roll can reach :: n > 1 and (target < n or target > n * k) :: num_rolls_to_target(2, 3, 7)
+- a target that can be reached :: n > 1 and n <= target <= n * k :: num_rolls_to_target(2, 3, 4)
+edge_count: 2
+complexity: time=O(n × k × target) | space=O(n × target)
+complexity_options: O(n × k × target); O(n × target); O(kⁿ); O(n)
+complexity_note: n is the number of dice, k the number of faces and target the sum.
+why_time: There are at most n × target different (dice, left) pairs, and each is worked out once, with a loop over the k faces: O(n × k × target).
+why_space: The memo, up to n × target entries, plus at most n calls waiting on the stack: O(n × target).
+hint: In `count_ways(dice, left, k, memo)`: if dice is 0, return 1 if left is 0 and 0 otherwise. Return 0 if `left < dice` or `left > dice * k`.
+hint: If `(dice, left)` is in memo, return it. Otherwise add up `count_ways(dice - 1, left - face, k, memo)` for each face from 1 to k, take it `% 1000000007`, and store it in memo.
+hint: `num_rolls_to_target` returns `count_ways(n, target, k, {})`.
+right: Without the memo, the recursion tries all kⁿ rolls. The memo spends O(n × target) memory to work out each (dice, left) pair once, and the stack adds only n waiting calls on top.
+wrong: count_ways returns 1 or 0 when dice is 0, 0 when left is out of reach, the memo entry if there is one, and otherwise the sum over the faces of `count_ways(dice - 1, left - face, k, memo)`, stored `% 1000000007`.
+
+=== task: code medium
+title: Find Original Array From Doubled Array
+leetcode: 2007 | Find Original Array From Doubled Array | find-original-array-from-doubled-array
+patterns: trade + grow
+prompt: A list original was turned into changed by adding twice every number of original and then shuffling. Write `find_original_array(changed)` that returns original in increasing order, or `[]` if changed can't have been made that way.
+
+**Example 1:** `find_original_array([1, 3, 4, 2, 6, 8])` returns `[1, 3, 4]`: their doubles are 2, 6 and 8.
+
+**Example 2:** `find_original_array([6, 3, 0, 1])` returns `[]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(changed)`, and 0 ≤ `changed[i]` ≤ 10⁵. Count every number, then go through them from smallest to biggest: the smallest number left must be from original, so its double must be there too.
+starter:
+```python
+def find_original_array(changed):
+    # your code here
+    return []
+```
+solution:
+```python
+def find_original_array(changed):
+    if len(changed) % 2 == 1:
+        return []
+    counts = {}
+    for x in changed:
+        counts[x] = counts.get(x, 0) + 1
+    original = []
+    for x in sorted(counts):
+        need = counts[x]
+        if need == 0:
+            continue
+        if x == 0:
+            if need % 2 == 1:
+                return []
+            original += [0] * (need // 2)
+            continue
+        if counts.get(2 * x, 0) < need:
+            return []
+        counts[2 * x] -= need
+        original += [x] * need
+    return original
+```
+tests:
+- find_original_array([1, 3, 4, 2, 6, 8])
+- find_original_array([6, 3, 0, 1])
+- find_original_array([1])
+- find_original_array([0, 0, 0, 0])
+- find_original_array([2, 1, 2, 4, 2, 4])
+- sum(find_original_array(list(range(1, 5001)) + [2 * i for i in range(1, 5001)]))
+fail[2]: 6 is 3's double, but 1 has no 2: `[]`.
+fail[3]: One number can't be split into a number and its double: `[]`.
+fail[4]: 0's double is 0, so the four 0s are two pairs: `[0, 0]`.
+fail[5]: 1 pairs with one 2, and the other two 2s pair with the 4s: `[1, 2, 2]`.
+fail[6]: 1 to 5,000 and their doubles: original is 1 to 5,000, which add up to 12,502,500. Searching a list for each double and removing it would be O(n²).
+edges:
+- one number :: len(changed) == 1 :: find_original_array([4])
+- zeros :: len(changed) > 1 and 0 in changed :: find_original_array([0, 0])
+- no zeros :: len(changed) > 1 and 0 not in changed :: find_original_array([2, 4])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of changed.
+why_time: Counting is O(n), and sorting the different numbers is up to O(n log n). Each number is then handled in one step with the counts.
+why_space: The dictionary of counts and the answer, up to n entries each.
+hint: If n is odd, return `[]`. Otherwise count every number in a dictionary.
+hint: Go through the numbers in increasing order. For x with a count c above 0, its double needs at least c copies left: take c off `counts[2 * x]`, and add c copies of x to the answer.
+hint: 0 is its own double: its count must be even, and it adds half of them.
+right: The counts let each double be found and used up in one step: O(n) memory buys O(n log n) time, where searching a list and removing from it is O(n²).
+wrong: Return `[]` for an odd n. Count the numbers, and for x in `sorted(counts)` with a count c above 0: for 0, add half its count if it's even; otherwise return `[]` if `counts.get(2 * x, 0) < c`, or take c off it and add c copies of x.
+
+=== task: code medium
+title: Make Sum Divisible by P
+leetcode: 1590 | Make Sum Divisible by P | make-sum-divisible-by-p
+patterns: trade + grow
+prompt: Write `min_subarray(nums, p)` that returns the length of the shortest stretch of nums you can remove so that the sum of the rest is divisible by p, or −1 if no stretch works. The stretch may be empty, but it can't be the whole list.
+
+**Example 1:** `min_subarray([3, 1, 4, 2], 6)` returns `1`: the total is 10, and removing 4 leaves 6.
+
+**Example 2:** `min_subarray([6, 3, 5, 2], 9)` returns `2`: removing 5 and 2 leaves 9.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(nums)`, 1 ≤ `nums[i]` ≤ 10⁹, and 1 ≤ p ≤ 10⁹. Let r be the total's remainder after dividing by p. A stretch works if its sum's remainder is r: with prefix sums, that's two prefixes whose remainders differ by r. Remember the last position of each prefix remainder in a dictionary.
+starter:
+```python
+def min_subarray(nums, p):
+    # your code here
+    return -1
+```
+solution:
+```python
+def min_subarray(nums, p):
+    target = sum(nums) % p
+    if target == 0:
+        return 0
+    last = {0: -1}
+    best = len(nums)
+    prefix = 0
+    for i in range(len(nums)):
+        prefix = (prefix + nums[i]) % p
+        want = (prefix - target) % p
+        if want in last:
+            best = min(best, i - last[want])
+        last[prefix] = i
+    if best == len(nums):
+        return -1
+    return best
+```
+tests:
+- min_subarray([3, 1, 4, 2], 6)
+- min_subarray([6, 3, 5, 2], 9)
+- min_subarray([1, 2, 3], 3)
+- min_subarray([1, 2, 3], 7)
+- min_subarray([1000000000, 1000000000, 1000000000], 3)
+- min_subarray([i * 7 % 100 + 1 for i in range(20000)], 1000003)
+fail[2]: Removing 5 and 2 leaves 9, and no single number works: 2.
+fail[3]: 6 is already divisible by 3: 0.
+fail[4]: The total is 6. Removing any stretch but the whole list leaves 1 to 5, and none of those is divisible by 7: −1.
+fail[5]: 3,000,000,000 is divisible by 3: 0.
+fail[6]: 20,000 numbers: checking every stretch is O(n²). One pass with the dictionary finds the shortest, 197 long.
+edges:
+- one number :: len(nums) == 1 :: min_subarray([4], 2)
+- the total is already divisible :: len(nums) > 1 and sum(nums) % p == 0 :: min_subarray([2, 4], 3)
+- something must go :: len(nums) > 1 and sum(nums) % p != 0 :: min_subarray([2, 4], 4)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums. The dictionary has at most one entry per prefix.
+why_time: One pass, with one dictionary lookup per number.
+why_space: The dictionary of prefix remainders, up to n + 1 entries.
+hint: Let r be `sum(nums) % p`. If r is 0, return 0.
+hint: Keep `last`, the last position of each prefix remainder, starting with `{0: -1}`. At position i, with prefix remainder `prefix`, a stretch ending at i works if `(prefix - r) % p` is in last: its length is i minus that position.
+hint: Keep the shortest, then store `last[prefix] = i`. Return −1 if the best is still the whole list.
+right: Trying every stretch is O(n²) time with O(1) memory. The dictionary remembers every prefix remainder seen, O(n) memory, so each position is answered in one step: O(n) time.
+wrong: r = `sum(nums) % p`, and return 0 if it's 0. Start `last = {0: -1}`; for each i, update the prefix remainder, check `(prefix - r) % p` in last for a shorter length, then set `last[prefix] = i`. Return the best, or −1 if it's n.
+
+=== task: code medium
+title: Reduce Array Size to The Half
+leetcode: 1338 | Reduce Array Size to The Half | reduce-array-size-to-the-half
+patterns: grow
+prompt: You choose a set of numbers and remove every copy of them from arr. Write `min_set_size(arr)` that returns the size of the smallest set that removes at least half of arr.
+
+**Example 1:** `min_set_size([3, 3, 3, 3, 5, 5, 5, 2, 2, 7])` returns `2`: removing 3 and 5 removes 7 of the 10 numbers.
+
+**Example 2:** `min_set_size([7, 7, 7, 7, 7, 7])` returns `1`.
+
+**Constraints:** 2 ≤ n ≤ 10⁵ where n is `len(arr)`, n is even, and 1 ≤ `arr[i]` ≤ 10⁵. Count each number, and remove the most frequent ones first.
+starter:
+```python
+def min_set_size(arr):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_set_size(arr):
+    counts = {}
+    for x in arr:
+        counts[x] = counts.get(x, 0) + 1
+    sizes = sorted(counts.values(), reverse=True)
+    removed = 0
+    chosen = 0
+    for c in sizes:
+        removed += c
+        chosen += 1
+        if removed * 2 >= len(arr):
+            break
+    return chosen
+```
+tests:
+- min_set_size([3, 3, 3, 3, 5, 5, 5, 2, 2, 7])
+- min_set_size([7, 7, 7, 7, 7, 7])
+- min_set_size([1, 2])
+- min_set_size([1, 2, 3, 4])
+- min_set_size([5, 5, 1, 2])
+- min_set_size([i % 1000 + 1 for i in range(20000)])
+fail[2]: Removing 7 removes everything: 1.
+fail[3]: Removing either number removes half: 1.
+fail[4]: Every number appears once, so two of them must go: 2.
+fail[5]: The two 5s are half: 1.
+fail[6]: 1,000 different numbers, 20 copies of each: removing half of the 20,000 takes 500 of them.
+edges:
+- two numbers :: len(arr) == 2 :: min_set_size([1, 1])
+- every number different :: len(arr) > 2 and len(set(arr)) == len(arr) :: min_set_size([1, 2, 3, 4])
+- repeated numbers :: len(arr) > 2 and len(set(arr)) < len(arr) :: min_set_size([1, 1, 2, 3])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of arr.
+why_time: Counting is O(n), and sorting the counts is O(n log n) when every number is different.
+why_space: The dictionary of counts and the sorted list of counts, up to n each.
+hint: Count each number in a dictionary.
+hint: Sort the counts from biggest to smallest.
+hint: Add them up one at a time; when the total reaches half of n, return how many you've added.
+right: The counts need one entry per different number, up to n: O(n) memory, needed to know which numbers are the most frequent.
+wrong: Count the numbers, sort the counts in reverse, and add them up until `removed * 2 >= len(arr)`. Return how many counts that took.
+
+=== task: code hard
+title: Dungeon Game
+leetcode: 174 | Dungeon Game | dungeon-game
+patterns: inplace + const
+prompt: A knight starts in the top-left room of an m × n dungeon and must reach the princess in the bottom-right room, moving only right or down. Each room changes his health by `dungeon[i][j]`: negative numbers are demons, positive ones are potions. His health must stay at least 1 at every moment, including in the first and the last room. Write `calculate_minimum_hp(dungeon)` that returns the smallest starting health that gets him through. Use O(1) extra memory: work from the bottom-right room back, storing in each room of dungeon the health he needs when he enters it, and return `dungeon[0][0]`.
+
+**Example 1:** `calculate_minimum_hp([[-2, -3, 3], [-5, -10, 1], [10, 30, -5]])` returns `7`: right, right, down, down.
+
+**Example 2:** `calculate_minimum_hp([[0]])` returns `1`.
+
+**Constraints:** 1 ≤ m, n ≤ 200, and −1000 ≤ `dungeon[i][j]` ≤ 1000. If the next room needs h on entry, he needs `max(1, h - dungeon[i][j])` entering this one, choosing the next room that needs less.
+starter:
+```python
+def calculate_minimum_hp(dungeon):
+    # your code here
+    return 1
+```
+solution:
+```python
+def calculate_minimum_hp(dungeon):
+    m = len(dungeon)
+    n = len(dungeon[0])
+    for i in range(m - 1, -1, -1):
+        for j in range(n - 1, -1, -1):
+            if i == m - 1 and j == n - 1:
+                need = 1
+            elif i == m - 1:
+                need = dungeon[i][j + 1]
+            elif j == n - 1:
+                need = dungeon[i + 1][j]
+            else:
+                need = min(dungeon[i + 1][j], dungeon[i][j + 1])
+            dungeon[i][j] = max(1, need - dungeon[i][j])
+    return dungeon[0][0]
+```
+tests:
+- calculate_minimum_hp([[-2, -3, 3], [-5, -10, 1], [10, 30, -5]])
+- calculate_minimum_hp([[0]])
+- calculate_minimum_hp([[100]])
+- calculate_minimum_hp([[-5]])
+- (lambda d: [calculate_minimum_hp(d), d[0][0]])([[1, -3], [-2, 2]])
+- calculate_minimum_hp([[(i * 37 + j * 17) % 201 - 100 for j in range(100)] for i in range(100)])
+fail[2]: A room of 0: he needs 1.
+fail[3]: A potion of 100, but his health has to be at least 1 from the start: 1.
+fail[4]: A demon of −5: he needs 6 to end with 1.
+fail[5]: Down, then right needs 2, and your function must also store it in `dungeon[0][0]`: `[2, 2]`.
+fail[6]: 100 × 100 rooms: trying every path is far too slow. Working back from the princess, room by room, gives 190.
+edges:
+- one room :: len(dungeon) == 1 and len(dungeon[0]) == 1 :: calculate_minimum_hp([[-4]])
+- one row or one column :: len(dungeon) * len(dungeon[0]) > 1 and (len(dungeon) == 1 or len(dungeon[0]) == 1) :: calculate_minimum_hp([[2, -5]])
+- several rows and columns :: len(dungeon) > 1 and len(dungeon[0]) > 1 :: calculate_minimum_hp([[1, -3], [-2, 2]])
+edge_count: 2
+complexity: time=O(m × n) | space=O(1)
+complexity_options: O(m × n); O(m + n)
+complexity_note: m is the number of rows and n the number of columns.
+why_time: Each room is worked out once, from at most two neighbours: O(m × n).
+why_space: A few variables. The answers are stored in dungeon itself, each over a number that has already been used.
+hint: Go through i from m − 1 down to 0 and j from n − 1 down to 0. The princess's room needs 1 after it; any other room takes the smaller need of the room below and the room to the right, or the only one of them on the last row or column.
+hint: Set `dungeon[i][j] = max(1, need - dungeon[i][j])`: the right side reads the room's number before it's overwritten.
+hint: Return `dungeon[0][0]`.
+right: A separate table of needs would cost O(m × n) memory. Each room's number is read once, right before its need is written over it, so dungeon itself can be the table: O(1) extra space.
+wrong: For i and j from the bottom-right back: need is 1 at the princess, or the smaller need of the rooms below and to the right that exist. Set `dungeon[i][j] = max(1, need - dungeon[i][j])`. Return `dungeon[0][0]`.
+
+=== task: code hard
+title: Find Longest Awesome Substring
+leetcode: 1542 | Find Longest Awesome Substring | find-longest-awesome-substring
+patterns: const
+prompt: s is made of digits. A substring is awesome if its digits can be rearranged into a palindrome, which means at most one digit appears an odd number of times in it. Write `longest_awesome(s)` that returns the length of the longest awesome substring.
+
+**Example 1:** `longest_awesome("3242415")` returns `5`: "24241" can become "24142".
+
+**Example 2:** `longest_awesome("213123")` returns `6`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(s)`, digits only. Keep a mask of 10 bits, where bit d says whether digit d has appeared an odd number of times so far. A substring is awesome if the masks at its two ends are equal or differ in one bit. Remember the first position of each mask: there are only 2¹⁰ = 1,024 of them.
+starter:
+```python
+def longest_awesome(s):
+    # your code here
+    return 1
+```
+solution:
+```python
+def longest_awesome(s):
+    first = {0: -1}
+    mask = 0
+    best = 0
+    for i in range(len(s)):
+        mask = mask ^ (1 << int(s[i]))
+        if mask in first:
+            best = max(best, i - first[mask])
+        else:
+            first[mask] = i
+        for d in range(10):
+            other = mask ^ (1 << d)
+            if other in first:
+                best = max(best, i - first[other])
+    return best
+```
+tests:
+- longest_awesome("3242415")
+- longest_awesome("12345678")
+- longest_awesome("213123")
+- longest_awesome("00")
+- longest_awesome("9")
+- longest_awesome("".join([str(i * i % 7) for i in range(4000)]))
+fail[2]: No digit repeats, so the longest is a single digit: 1.
+fail[3]: "213123" has every digit twice: 6.
+fail[4]: "00": 2.
+fail[5]: One digit: 1.
+fail[6]: 4,000 digits: comparing every pair of ends is O(n²). The dictionary of first positions never holds more than 1,024 masks, and the answer is 3,999.
+edges:
+- one digit :: len(s) == 1 :: longest_awesome("4")
+- the whole string is awesome :: len(s) > 1 and longest_awesome(s) == len(s) :: longest_awesome("121")
+- only part of it :: len(s) > 1 and longest_awesome(s) < len(s) :: longest_awesome("123")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s. There are 10 digits, so a mask has 10 bits, and there are 1,024 masks.
+why_time: For each of the n digits, 11 lookups: the mask itself and the 10 masks one bit away. 11n is O(n).
+why_space: The dictionary of first positions holds at most 1,024 masks, however long s is: O(1).
+hint: Start with `first = {0: -1}` and a mask of 0. For each i, flip the bit of digit `s[i]`: `mask = mask ^ (1 << int(s[i]))`.
+hint: If mask was seen before at position p, every digit appears an even number of times from `s[p + 1]` to `s[i]`: length i − p. If it wasn't, store `first[mask] = i`.
+hint: Also try each of the 10 masks one bit away, `mask ^ (1 << d)`: if one was seen at p, that stretch has one odd count, which is also awesome.
+right: Remembering the first position of every prefix would take O(n) memory, but prefixes with the same mask can share one entry: at most 1,024, O(1) space.
+wrong: `first = {0: -1}`. For each i, flip the digit's bit; compare with `first[mask]` if it's there, or store it; then compare with `first[mask ^ (1 << d)]` for each d. Return the best length.
+
+=== task: code hard
+title: Arithmetic Slices II - Subsequence
+leetcode: 446 | Arithmetic Slices II - Subsequence | arithmetic-slices-ii-subsequence
+patterns: trade + grow
+prompt: An arithmetic sequence has at least three numbers, each the same distance from the one before. Write `number_of_arithmetic_slices(nums)` that returns how many subsequences of nums are arithmetic. Two subsequences are different if they use different positions.
+
+**Example 1:** `number_of_arithmetic_slices([2, 4, 6, 8, 10])` returns `7`: `[2, 4, 6]`, `[4, 6, 8]`, `[6, 8, 10]`, `[2, 4, 6, 8]`, `[4, 6, 8, 10]`, `[2, 4, 6, 8, 10]` and `[2, 6, 10]`.
+
+**Example 2:** `number_of_arithmetic_slices([7, 7, 7, 7, 7])` returns `16`.
+
+**Constraints:** 1 ≤ n ≤ 1000 where n is `len(nums)`, and −2³¹ ≤ `nums[i]` ≤ 2³¹ − 1. For each position i, keep a dictionary: for each step d, how many sequences of 2 or more numbers end at i with step d. A pair (j, i) with step `nums[i] - nums[j]` extends every sequence that ends at j with that step.
+starter:
+```python
+def number_of_arithmetic_slices(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def number_of_arithmetic_slices(nums):
+    n = len(nums)
+    ends = [{} for _ in range(n)]
+    total = 0
+    for i in range(n):
+        for j in range(i):
+            d = nums[i] - nums[j]
+            from_j = ends[j].get(d, 0)
+            total += from_j
+            ends[i][d] = ends[i].get(d, 0) + from_j + 1
+    return total
+```
+tests:
+- number_of_arithmetic_slices([2, 4, 6, 8, 10])
+- number_of_arithmetic_slices([7, 7, 7, 7, 7])
+- number_of_arithmetic_slices([1])
+- number_of_arithmetic_slices([1, 2])
+- number_of_arithmetic_slices([1, 2, 3])
+- number_of_arithmetic_slices([i % 10 for i in range(250)])
+fail[2]: Every choice of 3 or more of the five 7s works: 10 + 5 + 1 = 16.
+fail[3]: One number: 0.
+fail[4]: Two numbers are too few: 0.
+fail[5]: `[1, 2, 3]` itself: 1.
+fail[6]: 250 numbers: the dictionaries hold up to about 31,000 counts, one per pair, and the count is 604,130,290.
+edges:
+- fewer than three numbers :: len(nums) < 3 :: number_of_arithmetic_slices([4, 8])
+- all the same :: len(nums) >= 3 and len(set(nums)) == 1 :: number_of_arithmetic_slices([3, 3, 3])
+- different numbers :: len(nums) >= 3 and len(set(nums)) > 1 :: number_of_arithmetic_slices([1, 3, 5])
+edge_count: 2
+complexity: time=O(n²) | space=O(n²)
+complexity_note: n is the length of nums.
+why_time: Every pair (j, i) with j < i does one dictionary lookup and one update: about n² / 2.
+why_space: Each pair can add a new step to i's dictionary: up to n² / 2 counts in all.
+hint: `ends[i]` is a dictionary from a step d to how many sequences of 2 or more numbers end at i with step d.
+hint: For each i, and each j < i, with `d = nums[i] - nums[j]`: the sequences ending at j with step d, `ends[j].get(d, 0)`, become 3 or more long with `nums[i]`, so add them to the answer.
+hint: Then `ends[i][d]` gains those sequences plus 1, for the new pair (j, i).
+right: The dictionaries spend O(n²) memory, one count per pair, so every sequence is counted without being listed: O(n²) time, where listing the subsequences is O(2ⁿ).
+wrong: `ends = [{} for _ in range(n)]`. For each i and each j < i: d = `nums[i] - nums[j]`; add `ends[j].get(d, 0)` to the answer, and add that plus 1 to `ends[i][d]`. Return the answer.
+
+=== task: code hard
+title: Decode Ways II
+leetcode: 639 | Decode Ways II | decode-ways-ii
+patterns: trade + const
+prompt: A message of letters was turned into digits, A as 1, B as 2 and on up to Z as 26, and some digits were then replaced by "*", which stands for any digit from 1 to 9. Write `num_decodings(s)` that returns how many messages s can decode to, modulo 10⁹ + 7. Use O(1) extra memory.
+
+**Example 1:** `num_decodings("*")` returns `9`: "*" is 1 to 9, A to I.
+
+**Example 2:** `num_decodings("1*")` returns `18`: the two characters can be read as one letter, 11 to 19, or as two letters, 1 and then 1 to 9.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(s)`, digits and "*". The number of ways to read the first i characters depends only on the ways for i − 1 and for i − 2 characters: the last character on its own, or the last two together.
+starter:
+```python
+def num_decodings(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def one_char(c):
+    if c == "*":
+        return 9
+    if c == "0":
+        return 0
+    return 1
+
+
+def two_chars(a, b):
+    if a == "*" and b == "*":
+        return 15
+    if a == "*":
+        if b <= "6":
+            return 2
+        return 1
+    if b == "*":
+        if a == "1":
+            return 9
+        if a == "2":
+            return 6
+        return 0
+    if a == "1" or (a == "2" and b <= "6"):
+        return 1
+    return 0
+
+
+def num_decodings(s):
+    before = 1
+    current = one_char(s[0])
+    for i in range(1, len(s)):
+        ways = (one_char(s[i]) * current + two_chars(s[i - 1], s[i]) * before) % 1000000007
+        before = current
+        current = ways
+    return current
+```
+tests:
+- num_decodings("*")
+- num_decodings("1*")
+- num_decodings("2*")
+- num_decodings("0")
+- num_decodings("**")
+- num_decodings("1*2*" * 2500)
+fail[2]: "1*" is 1 and then 1 to 9, 9 ways, or 11 to 19 as one letter, 9 more: 18.
+fail[3]: "2*" is 2 and then 1 to 9, 9 ways, or 21 to 26 as one letter, 6 more: 15.
+fail[4]: "0" isn't a letter on its own: 0.
+fail[5]: Two separate stars give 9 × 9 = 81 ways, and the pair as one letter, 11 to 19 or 21 to 26, gives 15 more: 96.
+fail[6]: 10,000 characters: a table of ways for every prefix would hold 10,000 numbers, but two are enough. 862,207,873 after the modulo.
+edges:
+- one character :: len(s) == 1 :: num_decodings("7")
+- no stars :: len(s) > 1 and "*" not in s :: num_decodings("12")
+- some stars :: len(s) > 1 and "*" in s :: num_decodings("*1")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s.
+why_time: One step per character, each looking at one or two characters.
+why_space: Two counts: the ways for the last two prefixes.
+hint: The last character alone can be read in `one_char(c)` ways: 9 for "*", 0 for "0", and 1 for any other digit.
+hint: The last two together can be read in `two_chars(a, b)` ways, one for each number from 10 to 26 they can stand for: "**" gives 15; "*" then a digit b gives 2 if b ≤ 6, and 1 otherwise; "1*" gives 9 and "2*" gives 6; two digits give 1 or 0.
+hint: Keep `before` and `current`, the ways for the prefix one shorter and for the current one. Each step's new count is `one_char * current + two_chars * before`, modulo 10⁹ + 7.
+right: A table of the ways for every prefix would take O(n) memory, but each step only reads the last two entries: two variables, O(1) space.
+wrong: `before = 1` and `current = one_char(s[0])`. For each next character, `ways = (one_char(s[i]) * current + two_chars(s[i - 1], s[i]) * before) % 1000000007`, then before = current and current = ways. Return current.
+
+=== task: code hard
+title: Maximum Score from Performing Multiplication Operations
+leetcode: 1770 | Maximum Score from Performing Multiplication Operations | maximum-score-from-performing-multiplication-operations
+patterns: stack + trade
+prompt: You have nums and multipliers, with m = `len(multipliers)` at most `len(nums)`. In step i, from 0 to m − 1, you take a number from either end of nums, remove it, and score `multipliers[i]` times it. Write `maximum_score(nums, multipliers)` that returns the highest total score. Write it as a recursion with a memo: `best_score(nums, multipliers, i, left, memo)`, where left is how many numbers have been taken from the front so far.
+
+**Example 1:** `maximum_score([1, 2, 3], [3, 2, 1])` returns `14`: 3 × 3 + 2 × 2 + 1 × 1, taking from the back each time.
+
+**Example 2:** `maximum_score([-5, -3, -3, -2, 7, 1], [-10, -5, 3, 4, 6])` returns `102`.
+
+**Constraints:** 1 ≤ m ≤ 300, m ≤ n ≤ 10⁵ where n is `len(nums)`, and −1000 ≤ every number ≤ 1000. After step i with left numbers taken from the front, i − left were taken from the back, so the back end is at `n - 1 - (i - left)`: everything depends only on (i, left).
+starter:
+```python
+def best_score(nums, multipliers, i, left, memo):
+    # your code here
+    return 0
+
+
+def maximum_score(nums, multipliers):
+    return best_score(nums, multipliers, 0, 0, {})
+```
+solution:
+```python
+def best_score(nums, multipliers, i, left, memo):
+    if i == len(multipliers):
+        return 0
+    key = (i, left)
+    if key in memo:
+        return memo[key]
+    right = len(nums) - 1 - (i - left)
+    take_left = multipliers[i] * nums[left] + best_score(nums, multipliers, i + 1, left + 1, memo)
+    take_right = multipliers[i] * nums[right] + best_score(nums, multipliers, i + 1, left, memo)
+    memo[key] = max(take_left, take_right)
+    return memo[key]
+
+
+def maximum_score(nums, multipliers):
+    return best_score(nums, multipliers, 0, 0, {})
+```
+tests:
+- maximum_score([1, 2, 3], [3, 2, 1])
+- maximum_score([-5, -3, -3, -2, 7, 1], [-10, -5, 3, 4, 6])
+- maximum_score([5], [2])
+- maximum_score([1, -1], [-1, 1])
+- maximum_score([4, -2, 7], [1, 1])
+- maximum_score([i * 37 % 2001 - 1000 for i in range(1000)], [i * 13 % 201 - 100 for i in range(60)])
+fail[2]: Take −5, −3 and −3 from the front, then 1 and 7 from the back: 50 + 15 − 9 + 4 + 42 = 102.
+fail[3]: One step: 2 × 5 = 10.
+fail[4]: Take −1 from the back first, −1 × −1 = 1, then 1 × 1 = 1: 2.
+fail[5]: Take 4 and 7, in either order: 11.
+fail[6]: 60 steps make 2⁶⁰ ways to choose the ends. The memo holds one score for each (i, left), about 1,800 of them, and the best total is 1,340,708.
+edges:
+- one step :: len(multipliers) == 1 :: maximum_score([3, 5], [2])
+- as many steps as numbers :: len(multipliers) > 1 and len(multipliers) == len(nums) :: maximum_score([1, 2], [1, 2])
+- fewer steps than numbers :: len(multipliers) > 1 and len(multipliers) < len(nums) :: maximum_score([1, 2, 3], [1, 2])
+edge_count: 2
+complexity: time=O(m²) | space=O(m²)
+complexity_options: O(m²); O(2ᵐ); O(m); O(n × m)
+complexity_note: m is the length of multipliers. n doesn't matter: only the m numbers nearest each end can ever be taken.
+why_time: There are about m² / 2 states (i, left), and each is worked out once, from two others: O(m²).
+why_space: The memo holds up to m² / 2 scores, and the stack goes m calls deep: O(m²).
+hint: If i is m, the score is 0. If (i, left) is in memo, return it.
+hint: Otherwise right = `len(nums) - 1 - (i - left)`. Taking the front scores `multipliers[i] * nums[left]` plus `best_score(nums, multipliers, i + 1, left + 1, memo)`, and taking the back scores `multipliers[i] * nums[right]` plus `best_score(nums, multipliers, i + 1, left, memo)`.
+hint: Store the bigger one in memo and return it. `maximum_score` calls `best_score(nums, multipliers, 0, 0, {})`.
+right: The memo turns 2ᵐ choices into about m² / 2 states, at the cost of O(m²) memory, plus m waiting calls on the stack. Filling the same table row by row from the last step would keep only one row: O(m) memory, in the same time.
+wrong: best_score returns 0 when i is m, the memo entry if there is one, and otherwise the bigger of taking the front (left + 1) or the back (left unchanged), each scoring `multipliers[i]` times that end's number, stored in memo.
+
+=== task: code hard
+title: Tallest Billboard
+leetcode: 956 | Tallest Billboard | tallest-billboard
+patterns: trade + grow
+prompt: A billboard stands on two steel supports of equal height, each made by welding rods together. Each rod in rods can go into one support or the other, or be left out. Write `tallest_billboard(rods)` that returns the tallest equal height the two supports can have, or 0 if there's none.
+
+**Example 1:** `tallest_billboard([1, 2, 3, 6])` returns `6`: 1 + 2 + 3 and 6.
+
+**Example 2:** `tallest_billboard([1, 2, 3, 4, 5, 6])` returns `10`: 2 + 3 + 5 and 4 + 6.
+
+**Constraints:** 1 ≤ n ≤ 20 where n is `len(rods)`, 1 ≤ `rods[i]` ≤ 1000, and `sum(rods)` ≤ 5000. Trying every choice is 3ⁿ. Keep a dictionary instead: for each difference d between the two supports, the tallest the taller support can be.
+starter:
+```python
+def tallest_billboard(rods):
+    # your code here
+    return 0
+```
+solution:
+```python
+def tallest_billboard(rods):
+    tallest = {0: 0}
+    for r in rods:
+        new = dict(tallest)
+        for d in tallest:
+            high = tallest[d]
+            if new.get(d + r, -1) < high + r:
+                new[d + r] = high + r
+            if r <= d:
+                nd = d - r
+                h = high
+            else:
+                nd = r - d
+                h = high - d + r
+            if new.get(nd, -1) < h:
+                new[nd] = h
+        tallest = new
+    return tallest[0]
+```
+tests:
+- tallest_billboard([1, 2, 3, 6])
+- tallest_billboard([1, 2, 3, 4, 5, 6])
+- tallest_billboard([1, 2])
+- tallest_billboard([7, 7])
+- tallest_billboard([3, 4, 5, 6])
+- tallest_billboard([i * 37 % 250 + 1 for i in range(20)])
+fail[2]: 2 + 3 + 5 and 4 + 6 are both 10.
+fail[3]: 1 and 2 can't match: 0.
+fail[4]: One 7 each: 7.
+fail[5]: 3 + 6 and 4 + 5: 9.
+fail[6]: 20 rods make 3²⁰, about 3.5 billion, choices. The dictionary holds at most one entry per difference, no more than the total length of the rods, and the answer is 1,145.
+edges:
+- one rod :: len(rods) == 1 :: tallest_billboard([5])
+- no equal supports :: len(rods) > 1 and tallest_billboard(rods) == 0 :: tallest_billboard([1, 4])
+- equal supports :: len(rods) > 1 and tallest_billboard(rods) > 0 :: tallest_billboard([2, 2])
+edge_count: 2
+complexity: time=O(n × S) | space=O(S)
+complexity_options: O(n × S); O(S); O(3ⁿ); O(2ⁿ)
+complexity_note: n is the number of rods and S their total length.
+why_time: For each of the n rods, each entry of the dictionary, at most S + 1 of them, tries three choices: O(n × S).
+why_space: Two dictionaries, with at most S + 1 differences each.
+hint: Start with `tallest = {0: 0}`: no rods, a difference of 0, and both supports 0 tall.
+hint: For each rod r, copy the dictionary into new, which leaves r out. Then for each difference d with taller height h: putting r on the taller support gives d + r and h + r.
+hint: Putting r on the shorter support gives d − r with h if r ≤ d, or r − d with `h - d + r` if r is longer. Keep the biggest height for each difference. The answer is `tallest[0]`.
+right: Listing every choice is 3ⁿ. Grouping the choices by their difference keeps only the best for each one: O(S) memory, which makes the time O(n × S).
+wrong: `tallest = {0: 0}`. For each rod, `new = dict(tallest)`; for each d and h, update `new[d + r]` with h + r, and the entry for the new difference with h if r ≤ d, or `h - d + r` otherwise, keeping the biggest. Then tallest = new. Return `tallest[0]`.
+
+=== task: code hard
+title: Minimum Distance to Type a Word Using Two Fingers
+leetcode: 1320 | Minimum Distance to Type a Word Using Two Fingers | minimum-distance-to-type-a-word-using-two-fingers
+patterns: trade + const
+prompt: A keyboard has the letters A to Z in rows of 6: A to F on row 0, G to L on row 1, M to R on row 2, S to X on row 3, and Y and Z on row 4. Letter number i, with A as 0, is at row `i // 6` and column `i % 6`, and the distance between two letters is the difference in rows plus the difference in columns. You type word with two fingers, which can start on any letters for free. Write `minimum_distance(word)` that returns the smallest total distance your fingers move. Use O(1) extra memory.
+
+**Example 1:** `minimum_distance("CAKE")` returns `3`: one finger types C and then A (distance 2), the other K and then E (distance 1).
+
+**Example 2:** `minimum_distance("HAPPY")` returns `6`.
+
+**Constraints:** 2 ≤ n ≤ 300 where n is `len(word)`, uppercase letters. After typing a letter, one finger is on it, so all that matters is where the other one is: on one of 26 letters, or not placed yet. Keep the best total for each of those 27 places.
+starter:
+```python
+def letter_distance(a, b):
+    if a == 26:
+        return 0
+    return abs(a // 6 - b // 6) + abs(a % 6 - b % 6)
+
+
+def minimum_distance(word):
+    # your code here
+    return 0
+```
+solution:
+```python
+def letter_distance(a, b):
+    if a == 26:
+        return 0
+    return abs(a // 6 - b // 6) + abs(a % 6 - b % 6)
+
+
+def minimum_distance(word):
+    letters = [ord(ch) - ord("A") for ch in word]
+    best = [-1] * 27
+    best[26] = 0
+    for t in range(1, len(letters)):
+        prev = letters[t - 1]
+        cur = letters[t]
+        new = [-1] * 27
+        for o in range(27):
+            if best[o] == -1:
+                continue
+            stay = best[o] + letter_distance(prev, cur)
+            if new[o] == -1 or stay < new[o]:
+                new[o] = stay
+            swap = best[o] + letter_distance(o, cur)
+            if new[prev] == -1 or swap < new[prev]:
+                new[prev] = swap
+        best = new
+    return min([v for v in best if v != -1])
+```
+tests:
+- minimum_distance("CAKE")
+- minimum_distance("HAPPY")
+- minimum_distance("AB")
+- minimum_distance("ZZZ")
+- minimum_distance("AZAZ")
+- minimum_distance("".join([chr(65 + i * 7 % 26) for i in range(300)]))
+fail[2]: H and then A with one finger (2), P and P with the other (0), and A to Y with the first (4): 6.
+fail[3]: One letter per finger: 0.
+fail[4]: The same letter three times: 0.
+fail[5]: One finger on A and one on Z: 0.
+fail[6]: 300 letters make 2³⁰⁰ ways to share them between the fingers. 27 totals per letter are enough: 733.
+edges:
+- two letters :: len(word) == 2 :: minimum_distance("AZ")
+- one letter repeated :: len(word) > 2 and len(set(word)) == 1 :: minimum_distance("MMM")
+- different letters :: len(word) > 2 and len(set(word)) > 1 :: minimum_distance("ABC")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of word. The other finger has 27 possible places: 26 letters, or not placed yet.
+why_time: For each of the n letters, the 27 places are updated with 2 choices each: 54n, O(n).
+why_space: Two lists of 27 totals, a fixed size.
+hint: `best[o]` is the smallest total so far with one finger on the last letter typed and the other on o, where 26 means not placed. Start with `best[26] = 0` and every other place unreachable.
+hint: For the next letter cur, after prev, either the finger on prev moves, costing `letter_distance(prev, cur)`, with the other still on o, or the other finger moves from o, costing `letter_distance(o, cur)` (free from 26), which leaves the first finger on prev.
+hint: Keep the smaller total for each new place, and return the smallest total at the end.
+right: A table over every letter and every place of the second finger would be n × 27. Each letter only needs the totals for the one before it: two lists of 27, O(1) memory.
+wrong: best has 27 places, all unreachable but `best[26] = 0`. For each next letter, make new with all unreachable; from each reachable o, update `new[o]` with `best[o] + letter_distance(prev, cur)`, and `new[prev]` with `best[o] + letter_distance(o, cur)`. Return the smallest reachable total.
+
+=== task: code hard
+title: Contains Duplicate III
+leetcode: 220 | Contains Duplicate III | contains-duplicate-iii
+patterns: trade + grow
+prompt: Write `contains_nearby_almost_duplicate(nums, index_diff, value_diff)` that returns True if there are two positions i ≠ j with `abs(i - j) <= index_diff` and `abs(nums[i] - nums[j]) <= value_diff`, and False otherwise.
+
+**Example 1:** `contains_nearby_almost_duplicate([1, 2, 3, 1], 3, 0)` returns `True`: the two 1s are 3 positions apart.
+
+**Example 2:** `contains_nearby_almost_duplicate([1, 5, 9, 1, 5, 9], 2, 3)` returns `False`.
+
+**Constraints:** 2 ≤ n ≤ 10⁵ where n is `len(nums)`, −10⁹ ≤ `nums[i]` ≤ 10⁹, 1 ≤ index_diff ≤ n, and 0 ≤ value_diff ≤ 10⁹. Put each number in a bucket, `x // (value_diff + 1)`: two numbers in the same bucket are close enough, and a close number can only be in that bucket or the ones on either side. Keep only the buckets of the last index_diff numbers.
+starter:
+```python
+def contains_nearby_almost_duplicate(nums, index_diff, value_diff):
+    # your code here
+    return False
+```
+solution:
+```python
+def contains_nearby_almost_duplicate(nums, index_diff, value_diff):
+    size = value_diff + 1
+    buckets = {}
+    for i in range(len(nums)):
+        x = nums[i]
+        b = x // size
+        if b in buckets:
+            return True
+        if b - 1 in buckets and x - buckets[b - 1] <= value_diff:
+            return True
+        if b + 1 in buckets and buckets[b + 1] - x <= value_diff:
+            return True
+        buckets[b] = x
+        if i >= index_diff:
+            del buckets[nums[i - index_diff] // size]
+    return False
+```
+tests:
+- contains_nearby_almost_duplicate([1, 2, 3, 1], 3, 0)
+- contains_nearby_almost_duplicate([1, 5, 9, 1, 5, 9], 2, 3)
+- contains_nearby_almost_duplicate([1, 2], 1, 0)
+- contains_nearby_almost_duplicate([-3, 3], 1, 6)
+- contains_nearby_almost_duplicate([10, 1, 20, 2], 2, 1)
+- contains_nearby_almost_duplicate([i * 1000 for i in range(15000)], 15000, 999)
+fail[2]: Numbers close in value are 3 positions apart, more than 2: False.
+fail[3]: 1 and 2 differ by 1, more than 0: False.
+fail[4]: −3 and 3 differ by exactly 6: True.
+fail[5]: 1 and 2 are two positions apart and differ by 1: True.
+fail[6]: 15,000 numbers, each 1,000 more than the one before: no two are within 999. Comparing every pair within reach is about 112 million checks; the buckets need 3 per number.
+edges:
+- two numbers :: len(nums) == 2 :: contains_nearby_almost_duplicate([1, 1], 1, 0)
+- value_diff is 0 :: len(nums) > 2 and value_diff == 0 :: contains_nearby_almost_duplicate([1, 2, 1], 1, 0)
+- value_diff above 0 :: len(nums) > 2 and value_diff > 0 :: contains_nearby_almost_duplicate([1, 5, 2], 1, 3)
+edge_count: 2
+complexity: time=O(n) | space=O(min(n, k))
+complexity_options: O(min(n, k)); O(n × k)
+complexity_note: n is the length of nums and k is index_diff. Count a dictionary lookup as one step.
+why_time: Each number goes into a bucket and is checked against 3 buckets: O(n).
+why_space: The dictionary holds the buckets of at most the last k numbers, and never more than n: O(min(n, k)).
+hint: With `size = value_diff + 1`, numbers in the same bucket, `x // size`, differ by at most value_diff. A bucket that got a second number would already have returned True, so each holds one number.
+hint: For each x: return True if its bucket is taken, or if the bucket below or above holds a number within value_diff of x.
+hint: Then store x in its bucket, and once i reaches index_diff, delete the bucket of `nums[i - index_diff]`, which is now too far back.
+right: Comparing each number with the k before it is O(n × k) time with O(1) memory. The buckets spend O(min(n, k)) memory, one entry per recent number, to make each check 3 lookups.
+wrong: `size = value_diff + 1`. For each i: b = `x // size`; return True if b is in buckets, or if b − 1 or b + 1 holds a number within value_diff. Then `buckets[b] = x`, and if `i >= index_diff`, delete the bucket of `nums[i - index_diff]`. Return False.
+
+=== task: code hard
+title: Number of Music Playlists
+leetcode: 920 | Number of Music Playlists | number-of-music-playlists
+patterns: trade
+prompt: Your music player has n different songs, and you want a playlist of goal songs in which every song plays at least once, and a song can only play again once k other songs have played since. Write `num_music_playlists(n, goal, k)` that returns how many playlists there are, modulo 10⁹ + 7. Use O(n) extra memory.
+
+**Example 1:** `num_music_playlists(3, 3, 1)` returns `6`: every order of the 3 songs.
+
+**Example 2:** `num_music_playlists(2, 3, 0)` returns `6`.
+
+**Constraints:** 0 ≤ k < n ≤ goal ≤ 100. Let `ways[j]` be the number of playlists of the current length using exactly j different songs. The next song is either new, n − j choices, or an old one that isn't among the last k, j − k choices when j > k. Each length only needs the one before it: keep one row of n + 1 counts.
+starter:
+```python
+def num_music_playlists(n, goal, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def num_music_playlists(n, goal, k):
+    ways = [0] * (n + 1)
+    ways[0] = 1
+    for length in range(1, goal + 1):
+        new = [0] * (n + 1)
+        for j in range(1, n + 1):
+            new[j] = (ways[j - 1] * (n - j + 1) + ways[j] * max(j - k, 0)) % 1000000007
+        ways = new
+    return ways[n]
+```
+tests:
+- num_music_playlists(3, 3, 1)
+- num_music_playlists(2, 3, 0)
+- num_music_playlists(2, 3, 1)
+- num_music_playlists(1, 1, 0)
+- num_music_playlists(3, 4, 2)
+- num_music_playlists(50, 100, 10)
+fail[2]: With k = 0, a song can repeat at once: 6 playlists of 3 slots use both songs.
+fail[3]: With k = 1, a song can't play twice in a row: song 1, 2, 1 and song 2, 1, 2.
+fail[4]: One song, one slot: 1.
+fail[5]: 3 songs, 4 slots, and 2 other songs between repeats: the fourth slot must replay the first song, so 6.
+fail[6]: 100 slots and 50 songs: a table would be 100 × 51 counts, but each row only needs the one before it. 663,536,800 after the modulo.
+edges:
+- goal equal to n :: goal == n :: num_music_playlists(2, 2, 1)
+- k is 0 :: goal > n and k == 0 :: num_music_playlists(2, 3, 0)
+- k above 0 :: goal > n and k > 0 :: num_music_playlists(3, 4, 1)
+edge_count: 2
+complexity: time=O(goal × n) | space=O(n)
+complexity_options: O(goal × n); O(goal × n²)
+complexity_note: n is the number of songs and goal the length of the playlist.
+why_time: goal rows, each with n counts worked out in one step each: O(goal × n).
+why_space: Two rows of n + 1 counts, instead of a table of goal × (n + 1).
+hint: Start with `ways[0] = 1` and every other count 0: the empty playlist uses 0 songs.
+hint: For each new length, `new[j] = ways[j - 1] * (n - j + 1) + ways[j] * max(j - k, 0)` for j from 1 to n: a new song, one of the n − j + 1 not used yet, or a replay of one of the j used songs that isn't among the last k.
+hint: After goal rows, return `ways[n]`, keeping every count modulo 10⁹ + 7.
+right: The full table would be goal × (n + 1) counts. Each row only needs the row before it, so two rows are enough: O(n) memory, with the same O(goal × n) time.
+wrong: `ways = [1] + [0] * n`. Repeat goal times: `new[j] = (ways[j - 1] * (n - j + 1) + ways[j] * max(j - k, 0)) % 1000000007` for j from 1 to n, then ways = new. Return `ways[n]`.
+
+=== task: code hard
+title: Shortest Common Supersequence
+leetcode: 1092 | Shortest Common Supersequence | shortest-common-supersequence
+patterns: grow
+prompt: Write `shortest_common_supersequence(str1, str2)` that returns a shortest string with both str1 and str2 as subsequences. Many strings can tie, so build this one. Fill a table `lcs[i][j]`, the length of the longest common subsequence of `str1[i:]` and `str2[j:]`, from the back. Then walk from i = j = 0: if `str1[i] == str2[j]`, add the letter once and move both on; otherwise add `str1[i]` and move i on if `lcs[i + 1][j] >= lcs[i][j + 1]`, or add `str2[j]` and move j on. At the end, add whatever is left of either string.
+
+**Example 1:** `shortest_common_supersequence("abac", "cab")` returns `"cabac"`.
+
+**Example 2:** `shortest_common_supersequence("a", "b")` returns `"ab"`.
+
+**Constraints:** 1 ≤ m, n ≤ 1000, where m is `len(str1)` and n is `len(str2)`, lowercase letters. The table is filled from its last row up, but the walk reads it from the first row down, so every row has to be kept.
+starter:
+```python
+def shortest_common_supersequence(str1, str2):
+    # your code here
+    return str1 + str2
+```
+solution:
+```python
+def shortest_common_supersequence(str1, str2):
+    m = len(str1)
+    n = len(str2)
+    lcs = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m - 1, -1, -1):
+        for j in range(n - 1, -1, -1):
+            if str1[i] == str2[j]:
+                lcs[i][j] = lcs[i + 1][j + 1] + 1
+            else:
+                lcs[i][j] = max(lcs[i + 1][j], lcs[i][j + 1])
+    result = []
+    i = 0
+    j = 0
+    while i < m and j < n:
+        if str1[i] == str2[j]:
+            result.append(str1[i])
             i += 1
+            j += 1
+        elif lcs[i + 1][j] >= lcs[i][j + 1]:
+            result.append(str1[i])
+            i += 1
+        else:
+            result.append(str2[j])
+            j += 1
+    result.append(str1[i:])
+    result.append(str2[j:])
+    return "".join(result)
 ```
-fail[1]: One of each value, in order: `[1, 2, 3]`. The list itself must change.
-fail[4]: Three 2s become one: `[2]`. Compare with the last **kept** value, `nums[w - 1]`.
-fail[5]: Nothing repeats, so nothing is removed.
-forbid[set(]: A set would cost O(n) space. Use the write position instead.
-forbid[append(]: Write into the same list instead of building a new one.
-hint: Loop `for i in range(1, len(nums)):`.
-hint: If `nums[i] != nums[w - 1]`, then `nums[w] = nums[i]` and `w += 1`.
-hint: Finally `while len(nums) > w: nums.pop()`.
-right: Each item is read once and written at most once, and the pops come off the end: O(n) time, O(1) space. Popping duplicates out of the middle shifts every later item: up to O(n²).
-wrong: Keep `w` as the length of the kept part; copy each new value to `nums[w]`; pop from the end until the list has `w` items.
-
-=== task: predict hard
-title: Depth of a halving recursion
-code:
-```python
-def walk(nums, depth):
-    if len(nums) <= 1:
-        return depth
-    mid = len(nums) // 2
-    return max(walk(nums[:mid], depth + 1), walk(nums[mid:], depth + 1))
-
-print(walk(list(range(8)), 1), walk(list(range(16)), 1))
-```
-wrong[8 16]: The calls split the list in half each time, so they only go about log₂ n deep, not n.
-wrong[3 4]: The first call counts as depth 1: 8 → 4 → 2 → 1 is 4 levels.
-wrong[15 31]: That's the total number of calls. The function returns how **deep** they go, the most calls waiting at once.
-hint: The lists shrink 8 → 4 → 2 → 1.
-hint: Count the levels, starting at depth 1.
-right: 4 and 5: about log₂ n + 1 levels. Although the function makes about 2n calls in total, only one chain of calls waits on the stack at a time, so the stack is only about log₂ n calls deep. Each waiting call also keeps its own slice (n/2 + n/4 + ... ≈ n items), so the extra space is O(n) unless the calls pass positions instead of slices.
-wrong: 8 → 4 → 2 → 1 is 4 levels deep, and 16 → 8 → 4 → 2 → 1 is 5.
-
-=== task: predict hard
-title: How big is the memo?
-code:
-```python
-memo = {}
-
-def fib(n):
-    if n < 2:
-        return n
-    if n in memo:
-        return memo[n]
-    memo[n] = fib(n - 1) + fib(n - 2)
-    return memo[n]
-
-print(fib(10), len(memo))
-```
-wrong[55 11]: The base cases, 0 and 1, return straight away and are never stored. The memo holds 2 to 10.
-wrong[55 10]: Only n = 2, 3, ..., 10 are stored: 9 entries.
-wrong[89 9]: fib(10) is 55: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55.
-hint: Which values of n get stored in `memo`?
-hint: Every n from 2 up to 10.
-right: 55, with 9 stored answers. The memo costs O(n) space, which is what buys the O(n) time.
-wrong: `fib(10)` is 55, and `memo` holds the answers for 2, 3, ..., 10: 9 entries.
-
-=== task: cells hard
-title: Calls waiting at once
-prompt: How deep do the calls go (the most calls waiting at once) for each of these?
-code:
-```python
-def down(n):
-    if n == 0:
-        return 1
-    return 1 + down(n - 1)
-
-def half(n):
-    if n <= 1:
-        return 1
-    return 1 + half(n // 2)
-```
-labels: down(1) | down(5) | down(50) | half(64)
-answer: 2 | 6 | 51 | 7
-wrong[1 | 5 | 50 | 6]: Count the base-case call too: down(1) calls down(0), so 2 calls wait at once.
-wrong[2 | 6 | 51 | 64]: `half` halves n each time: 64, 32, 16, 8, 4, 2, 1 is only 7 calls.
-hint: down(n) makes calls for n, n − 1, ..., 0.
-hint: half(64) makes calls for 64, 32, 16, 8, 4, 2 and 1.
-right: n + 1 calls for `down` (O(n) space) and log₂ n + 1 for `half` (O(log n) space): 2, 6, 51 and 7.
-wrong: down(1) = 2, down(5) = 6, down(50) = 51 calls, and half(64) = 7 calls.
-
-=== task: mcq hard
-title: Three duplicate checks
-prompt: Three ways to check a list of n items for duplicates: (A) nested loops over every pair, (B) a `seen` set, (C) sort a copy and compare neighbours. Which sentence is true?
-* A uses O(1) extra space but O(n²) time; B and C use O(n) space with less time :: Right. A keeps two positions; B keeps a set and C a sorted copy, both up to n items, in exchange for O(n) and O(n log n) time.
-- B uses the least memory, because sets are small :: A set of n values is O(n) space, more than A's two positions.
-- All three use O(1) space, because they only answer True or False :: The answer is small, but B and C build an O(n) set or copy along the way.
-- C uses O(n²) space, because it sorts :: A sorted copy holds n items: O(n).
-hint: What does each one build while it works?
-hint: Nested loops build nothing.
-right: A trades time for space (O(n²) time, O(1) space); B and C spend O(n) memory to run in O(n) and O(n log n) time.
-wrong: A: two variables, O(1) space, O(n²) time. B: a set of up to n items. C: a sorted copy of n items. B and C are both O(n) space.
-
-=== task: multi hard
-title: True about space
-prompt: Choose **every** true sentence.
-* `nums[1:]` makes a new list, so it costs O(n) space :: Right. A slice copies the items it keeps.
-* A recursive function that goes n calls deep uses O(n) space, even if it makes no lists :: Right. Each waiting call keeps its variables on the stack.
-* The input itself usually isn't counted in space complexity :: Right. Space complexity counts the extra memory the code needs.
-- A loop that runs n times always uses O(n) space :: A loop with a running total runs n times but keeps O(1) values.
-- `sorted(nums)` uses O(1) extra space, because the items are the same :: It builds a new list of n items: O(n) space.
-- Using more memory always makes code faster :: Memory only helps when it's used well, like a set that replaces a search.
-hint: Separate the time a loop takes from what it keeps.
-hint: Three of them are true.
-right: Slices copy, deep recursion fills the stack, and the input isn't counted. A long loop can still be O(1) space, `sorted` makes a copy, and memory isn't automatically speed.
-wrong: True: slices cost O(n), recursion depth costs stack space, the input isn't counted. False: loops aren't O(n) space by themselves, `sorted` copies, and more memory doesn't guarantee speed.
-
-=== task: parsons hard
-title: Binary search without slicing
-prompt: Arrange the lines so that `contains` does a recursive binary search between positions `lo` and `hi`, passing positions instead of slices (so no copies are made, and the stack only grows O(log n) deep). The program prints:
-
-```output
-True False
-```
-
-Not every line is needed.
-lines:
-```python
-def contains(nums, target, lo, hi):
-    if lo > hi:
-        return False
-    mid = (lo + hi) // 2
-    if nums[mid] == target:
-        return True
-    if nums[mid] < target:
-        return contains(nums, target, mid + 1, hi)
-    return contains(nums, target, lo, mid - 1)
-
-nums = [2, 4, 6, 8, 10]
-print(contains(nums, 8, 0, len(nums) - 1), contains(nums, 5, 0, len(nums) - 1))
-```
-distractors:
-```python
-        return contains(nums, target, mid, hi)
-    mid = (lo + hi) / 2
-```
-hint: The base case comes first: when `lo > hi`, nothing is left to search.
-hint: Too small? Search `mid + 1` to `hi`. Otherwise search `lo` to `mid - 1`.
-hint: Use `//` so `mid` is a whole number.
-right: Each call halves the range and passes two numbers, not a slice: O(log n) time and O(log n) stack space. Searching from `mid` instead of `mid + 1` could repeat the same call forever.
-wrong: Base case `lo > hi`, then `mid = (lo + hi) // 2`, return True on a match, then recurse on `mid + 1` to `hi` or `lo` to `mid - 1`.
+tests:
+- shortest_common_supersequence("abac", "cab")
+- shortest_common_supersequence("aaaaaaaa", "aaaaaaaa")
+- shortest_common_supersequence("a", "b")
+- shortest_common_supersequence("abc", "abc")
+- shortest_common_supersequence("ab", "ba")
+- len(shortest_common_supersequence("ab" * 60, "ba" * 60))
+fail[2]: Equal strings: the string itself, "aaaaaaaa".
+fail[3]: No letter in common, so both: "ab".
+fail[4]: Equal strings: "abc".
+fail[5]: "ab" and "ba" share one letter: "aba".
+fail[6]: Two strings of 120 letters with 119 in common: 121 letters.
+edges:
+- one letter each :: len(str1) == 1 and len(str2) == 1 :: shortest_common_supersequence("a", "a")
+- no letter in common :: len(str1) + len(str2) > 2 and len(set(str1) & set(str2)) == 0 :: shortest_common_supersequence("ab", "c")
+- letters in common :: len(str1) + len(str2) > 2 and len(set(str1) & set(str2)) > 0 :: shortest_common_supersequence("ab", "b")
+edge_count: 2
+complexity: time=O(m × n) | space=O(m × n)
+complexity_options: O(m × n); O(m + n); O(min(m, n))
+complexity_note: m and n are the lengths of str1 and str2.
+why_time: The table has (m + 1) × (n + 1) cells, each worked out in one step, and the walk takes at most m + n steps.
+why_space: The whole table: it's filled from the bottom row up, and the walk reads it from the top row down.
+hint: Make `lcs = [[0] * (n + 1) for _ in range(m + 1)]`, and fill it for i from m − 1 down and j from n − 1 down: equal letters give `lcs[i + 1][j + 1] + 1`, and different ones the bigger of `lcs[i + 1][j]` and `lcs[i][j + 1]`.
+hint: Walk with i and j from 0, adding letters to a list as the prompt says, while both strings have letters left.
+hint: Add `str1[i:]` and `str2[j:]`, and join the list into a string.
+right: Counting only the length would need two rows, but building the string walks the table in the other direction from the one it was filled in: the whole table has to stay, O(m × n) memory.
+wrong: Fill lcs from the back. Walk i and j from 0: on equal letters add one and move both on; otherwise add `str1[i]` if `lcs[i + 1][j] >= lcs[i][j + 1]`, and `str2[j]` if not. Append what's left of each and join.
