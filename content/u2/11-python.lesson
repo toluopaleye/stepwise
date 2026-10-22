@@ -80,7 +80,7 @@ Strings can't be changed once they're made. Every operation that "changes" a str
 | `s.upper()`, `s.split()`, `s.strip()` | O(n) |
 | `"".join(pieces)` | O(total length) |
 
-Building a long string with `s += piece` in a loop copies the string built so far on every turn: 1 + 2 + ... + n = O(n²) characters copied, in the worst case. (CPython often avoids the copy with a clever trick, but nothing guarantees it.) The dependable way is to collect the pieces in a list and join them once:
+Building a long string with `s += piece` in a loop copies the string built so far on every turn: 1 character, then 2, then 3, up to n, which adds up to about n² / 2. That's O(n²) characters copied, in the worst case. (CPython often avoids the copy with a clever trick, but nothing guarantees it.) The dependable way is to collect the pieces in a list and join them once:
 ```python
 pieces = []
 for i in range(10):
@@ -93,7 +93,7 @@ print(",".join(pieces))
 
 ### Choosing the right structure
 
-| You need to... | Use | Because |
+| What you need | Use | Because |
 | --- | --- | --- |
 | check "is x there?" many times | a set | `in` is O(1) |
 | count things, or look up a value by a key | a dictionary | `d[key]` is O(1) |
@@ -117,13 +117,206 @@ Each of these lines looks like one step, but inside a loop over n items it makes
 | `sorted(nums)` for every item | sort once, before the loop |
 | `sum(nums[:i])` for every i | keep a running total |
 
+### Solving problems with Python's costs in mind
+Every task in this lesson asks for the time and the space complexity of your solution. In each one, a line that looks like a single step can hide a whole loop, so start by spotting which of these six patterns the problem has:
+
+| Pattern | What you see | What it costs |
+| --- | --- | --- |
+| Why the front of a list is slow | a queue of people, jobs or tasks, taken from the front | `pop(0)` and `insert(0, x)` are O(n) each; the end of the list, or a position that moves, is O(1) |
+| Slices are copies | `nums[a:b]`, `s[i:j]`, a piece of the input | O(b − a) for each slice |
+| Dictionaries and sets: O(1) on average | "seen it before?", counts, first positions | O(1) per lookup |
+| Strings | building a string, `replace`, `count`, `find` | O(n) per call, and every change makes a new string |
+| Choosing the right structure | the same search or the same sort, again and again | a set, a dictionary, or one sort before the loop |
+| Hidden costs, and their fixes | a built-in call inside a loop | the loop's turns × the call's cost |
+
+### Combining patterns
+Most problems mix two of them:
+
+- **Swapping a search for a lookup** (hidden + hashing). `x in a_list`, `a_list.count(x)` and `a_list.index(x)` look through the whole list, so inside a loop they cost O(n) on every turn. Build a set or a dictionary once, before the loop, and each turn becomes an O(1) lookup.
+- **Working at the end of a list** (hidden + ends). `pop(0)` and `insert(0, x)` inside a loop move every item on every turn. Keep a position that moves along the list instead of removing from the front, or `append` and reverse once at the end.
+- **Comparing strings without slicing** (slices + strings). `s[i:j] == t` copies j − i letters before it compares anything. Compare one letter at a time by position, or keep a number that stands for the letters and update it as you go, so that each check is O(1).
+- **Keys that cost their length** (slices + hashing). A slice used as a dictionary key or a set item costs its length twice: once to copy it and once to hash it. Use a short key instead, like a pair `(letter, length)` or a number worked out as you go.
+- **Running totals instead of slices** (slices + hidden). `sum(nums[:i])` or `s[:i].count("1")` inside a loop costs O(i) on every turn. Keep a running total that changes by one item per turn, or store every total once, in a prefix list.
+- **Sorting once** (choose + hidden). `min`, `max` or `sorted` inside a loop costs O(n) or O(n log n) on every turn. Sort once, before the loop, and walk through the sorted order.
+
+Swapping a search for a lookup: count the words that aren't banned.
+```python
+def count_allowed(words, banned):
+    blocked = set(banned)
+    count = 0
+    for w in words:
+        if w not in blocked:
+            count += 1
+    return count
+
+print(count_allowed(["a", "b", "c", "b"], ["b"]))
+```
+```output
+2
+```
+`w not in banned`, on the list, would look through all m banned words for each of the n words: O(n × m). The set is built once, in O(m), and then each check is O(1): O(n + m) in all.
+
+Working at the end of a list: the digits of a number, in order.
+```python
+def digits(n):
+    out = []
+    while n > 0:
+        out.append(n % 10)
+        n //= 10
+    out.reverse()
+    return out
+
+print(digits(4096))
+```
+```output
+[4, 0, 9, 6]
+```
+`n % 10` gives the last digit first. `out.insert(0, n % 10)` would keep the digits in order, but each insert moves all the digits already there: O(d²) for d digits. Each `append` is O(1), and one `reverse` at the end is O(d): O(d) in all.
+
+Comparing strings without slicing: how many letters do two strings share at the start?
+```python
+def common_slow(a, b):
+    k = 0
+    while k < min(len(a), len(b)):
+        if a[:k + 1] != b[:k + 1]:
+            break
+        k += 1
+    return k
+
+def common(a, b):
+    k = 0
+    while k < min(len(a), len(b)):
+        if a[k] != b[k]:
+            break
+        k += 1
+    return k
+
+print(common_slow("flower", "flow"))
+print(common("flower", "flow"))
+```
+```output
+4
+4
+```
+The slow version copies 1 letter of each string, then 2, then 3, up to k: about k² letters copied, O(k²). The second compares one letter of each per turn: O(k).
+
+Keys that cost their length: count the runs of one letter, by letter and length.
+```python
+def run_counts(s):
+    counts = {}
+    i = 0
+    while i < len(s):
+        j = i
+        while j < len(s) and s[j] == s[i]:
+            j += 1
+        key = (s[i], j - i)
+        counts[key] = counts.get(key, 0) + 1
+        i = j
+    return counts
+
+print(run_counts("aabaaccc"))
+```
+```output
+{('a', 2): 2, ('b', 1): 1, ('c', 3): 1}
+```
+Each run is counted under a pair: its letter and its length. Using the run itself, `s[i:j]`, as the key would copy it and hash it, which costs its length every time. The pair costs O(1), however long the run is.
+
+Running totals instead of slices: the positions where both sides balance.
+```python
+def balance_points(nums):
+    total = sum(nums)
+    left = 0
+    found = []
+    for i in range(len(nums)):
+        right = total - left - nums[i]
+        if left == right:
+            found.append(i)
+        left += nums[i]
+    return found
+
+print(balance_points([1, 7, 3, 6, 5, 6]))
+```
+```output
+[3]
+```
+At position 3, the numbers on the left, 1 + 7 + 3, add up to the same as the numbers on the right, 5 + 6. `sum(nums[:i])` and `sum(nums[i + 1:])` would copy and add up to n numbers on every turn: O(n²). `left` grows by one number per turn, and `right` comes from the total: O(n).
+
+Sorting once: pair the smallest number left with the biggest, again and again.
+```python
+def pair_sums(nums):
+    order = sorted(nums)
+    i = 0
+    j = len(order) - 1
+    sums = []
+    while i < j:
+        sums.append(order[i] + order[j])
+        i += 1
+        j -= 1
+    return sums
+
+print(pair_sums([4, 1, 7, 3, 9, 2]))
+```
+```output
+[10, 9, 7]
+```
+Finding the two numbers with `min` and `max`, then removing them, costs O(n) for every pair: O(n²). Sorting once is O(n log n), and then two positions move in from both ends at O(1) per pair.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| the smallest input | one number, one letter | a position that starts past the end |
+| everything the same | `"aaaa"`, `[2, 2, 2]` | runs and counts that are off by one |
+| nothing found | no repeats, no match | the wrong "not found" answer: `""`, −1 or 0 |
+| the first or last place | a space before the first letter | a slice or a position that skips the edge |
+| the biggest input | 10⁵ letters | a built-in inside a loop that makes the code too slow |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Count the turns of each loop, and multiply by the cost of what happens inside. A built-in that costs O(n), inside a loop of n turns, is a loop inside a loop:
+
+| Inside a loop of n turns | Total time |
+| --- | --- |
+| `nums[i]`, `append`, `pop()`, `d[key]`, `x in a_set` | O(n) |
+| `pop(0)`, `insert(0, x)`, `x in a_list`, `sum(nums)` | O(n²) |
+| a slice of length k, or a string key of length k | O(n × k) |
+| `sorted(nums)` | O(n² log n) |
+
+**Space.** Count the memory that exists at the same time, besides the input, and keep the biggest part:
+
+| The code keeps | Space |
+| --- | --- |
+| a few numbers, or positions in a list | O(1) |
+| counts for 26 letters, or for 32 masks | O(1): a fixed size |
+| a slice or a sorted copy of n items | O(n) |
+| a set or a dictionary of n keys | O(n) |
+| an answer string or list of n items | O(n) |
+
 === keypoints
 - List: indexing, `len`, `append` and `pop()` are O(1). `insert(0, x)`, `pop(0)`, `remove`, `in`, `index`, `count`, `sum`, `min` and `max` are O(n).
-- The front of a list is slow because every other item has to move. The end is fast.
+- The front of a list is slow because every other item has to move. The end is fast, and a position that moves along the list is fast too.
 - Slicing copies: `nums[a:b]` costs O(b − a). Slices inside loops or recursion add up to O(n²).
-- Dictionaries and sets: getting, setting, `in`, `add` and `del` are O(1) on average. Looping over them is O(n).
+- Dictionaries and sets: getting, setting, `in`, `add` and `del` are O(1) on average. Looping over them is O(n). A string or tuple key costs its length to hash.
 - `sorted` and `.sort()` are O(n log n). `len` is O(1) for lists, strings, dictionaries and sets.
-- Strings can't change: `s + t` builds a new string. Build long strings with `"".join(pieces)`, not `+=` in a loop.
+- Strings can't change: `s + t` builds a new string, and `replace`, `count` and `find` are O(n). Build long strings with `"".join(pieces)`, not `+=` in a loop.
+- Combinations: swapping a search for a lookup; working at the end of a list; comparing strings without slicing; keys that cost their length; running totals instead of slices; and sorting once.
+
+=== patterns
+- ends | Why the front of a list is slow
+- slices | Slices are copies
+- hashing | Dictionaries and sets: O(1) on average
+- strings | Strings
+- choose | Choosing the right structure
+- hidden | Hidden costs, and their fixes
+combos:
+- hidden + hashing | Swapping a search for a lookup
+- hidden + ends | Working at the end of a list
+- slices + strings | Comparing strings without slicing
+- slices + hashing | Keys that cost their length
+- slices + hidden | Running totals instead of slices
+- choose + hidden | Sorting once
 
 === example: The front or the back?
 intro: The same jobs taken off a list, once from the front and once with a position that moves along.
@@ -197,744 +390,2041 @@ view: chart fns=n,n*(n-1)/2 labels=append_n_times,insert(0)_n_times n=0..40 step
 intro: The total work of building a list of n items by appending to the end, and by inserting each item at the front.
 1: For n = {n} items: appending takes {append_n_times} steps, and inserting at the front moves {insert(0)_n_times} items in all.
 
-=== task: predict easy
-title: From the end, from the front
-code:
-```python
-nums = [1, 2, 3, 4]
-a = nums.pop()
-b = nums.pop(0)
-print(a, b, nums)
-```
-wrong[1 4 [2, 3]]: `pop()` with no position takes the **last** item, and `pop(0)` the first.
-wrong[4 1 [1, 2, 3, 4]]: `pop` removes the item from the list as well as returning it.
-wrong[4 2 [1, 3]]: `pop(0)` takes the item at position 0, which is 1.
-hint: Which item does `pop()` take?
-hint: Which item does `pop(0)` take?
-right: `pop()` takes the 4 from the end in O(1); `pop(0)` takes the 1 from the front, and every other item moves one place left: O(n).
-wrong: `pop()` removes and returns the last item (4), `pop(0)` the first (1), leaving `[2, 3]`.
-
-=== task: mcq easy
-title: The cost of append
-prompt: What is the cost of `nums.append(x)` for a list of n items?
-* O(1), on average :: Right. It adds at the end, where nothing has to move. An occasional resize averages out.
-- O(n), because the list has to be copied :: The list only needs copying when it runs out of room, which is rare enough to average out to O(1).
-- O(log n) :: Nothing is halved: it's one step at the end.
-- O(n), because every item moves along :: That's `insert(0, x)`. At the end, nothing moves.
-hint: Does anything move when you add at the end?
-hint: Compare with `insert(0, x)`.
-right: `append` is O(1) on average, which is why building a list with appends is O(n) in all.
-wrong: Adding at the end moves nothing: O(1). It's `insert(0, x)` that moves every item.
-
-=== task: fill easy
-title: Join with dashes
-prompt: Fill in the blank so that the program joins the words with dashes in one O(n) step:
-
-```output
-a-b-c
-```
-code:
-```python
-words = ["a", "b", "c"]
-print(??.join(words))
-```
-answer: "-"
-wrong[","]: That joins them with commas: `a,b,c`.
-wrong[""]: An empty string joins them with nothing in between: `abc`.
-hint: `join` is a string method: the string goes between the pieces.
-hint: The pieces should be separated by "-".
-right: `"-".join(words)` puts a dash between the pieces and builds the whole string at once: O(total length).
-wrong: `"-".join(words)`. The string you call `join` on goes between each pair of pieces.
-
 === task: code easy
-title: Make a CSV line
-prompt: Write `make_csv(values)` that returns the values as one string, separated by commas, using `join`. The values are numbers, so turn each one into a string first.
+title: Kth Distinct String in an Array
+leetcode: 2053 | Kth Distinct String in an Array | kth-distinct-string-in-an-array
+patterns: hidden + hashing
+prompt: A string in arr is **distinct** if it appears exactly once in arr. Write `kth_distinct(arr, k)` that returns the k-th distinct string, counting them in the order they appear in arr, or `""` if there are fewer than k distinct strings. Count every string once, in a dictionary, before you look for the distinct ones: `arr.count(s)` for every string would search the whole list each time.
 
-For example, `make_csv([3, 14, 15])` returns `"3,14,15"`.
+**Example 1:** `kth_distinct(["d", "b", "c", "b", "c", "a"], 2)` returns `"a"`: the distinct strings are "d" and "a", in that order.
+
+**Example 2:** `kth_distinct(["aaa", "aa", "a"], 1)` returns `"aaa"`: every string is distinct.
+
+**Example 3:** `kth_distinct(["a", "b", "a"], 3)` returns `""`: only "b" is distinct.
+
+**Constraints:** 1 ≤ k ≤ `len(arr)` ≤ 1000, and each string has 1 to 5 small letters.
 starter:
 ```python
-def make_csv(values):
-    pieces = []
+def kth_distinct(arr, k):
     # your code here
     return ""
 ```
 solution:
 ```python
-def make_csv(values):
-    pieces = []
-    for v in values:
-        pieces.append(str(v))
-    return ",".join(pieces)
-```
-tests:
-- make_csv([3, 14, 15])
-- make_csv([])
-- make_csv([7])
-- make_csv([1, 2, 3, 4])
-fail[1]: The pieces are "3", "14" and "15", joined by commas: "3,14,15".
-fail[2]: With no values, the result is an empty string.
-fail[3]: One value has no commas: "7".
-require[join(]: Build the string with `join`.
-error[TypeError]: `join` needs strings: turn each number into a string with `str(v)` first.
-hint: Append `str(v)` for each value to `pieces`.
-hint: `",".join(pieces)` puts commas between them.
-hint: Return the joined string.
-right: Each `append` is O(1) and `join` builds the result once: O(n) for the whole line, with no repeated copying.
-wrong: `pieces.append(str(v))` for every value, then `return ",".join(pieces)`.
-
-=== task: predict easy
-title: A slice is a copy
-code:
-```python
-nums = [10, 20, 30, 40]
-part = nums[1:3]
-part[0] = 99
-print(nums, part)
-```
-wrong[[10, 99, 30, 40] [99, 30]]: A slice is a **new** list. Changing it doesn't change `nums`.
-wrong[[10, 20, 30, 40] [99, 30, 40]]: `nums[1:3]` stops before position 3: it holds 20 and 30 only.
-wrong[[10, 20, 30, 40] [20, 99]]: `part[0]` is the first item of the slice, 20, which becomes 99.
-hint: Is `part` the same list as `nums`, or a copy?
-hint: `nums[1:3]` copies positions 1 and 2.
-right: The slice copied 20 and 30 into a new list (O(b − a) work), so changing `part` leaves `nums` alone.
-wrong: `part` is a new list `[20, 30]`; setting `part[0] = 99` gives `[99, 30]`, and `nums` is unchanged.
-
-=== task: multi easy
-title: Which are O(1)?
-prompt: `nums` is a list of n items, and `seen` is a set. Choose **every** operation that is O(1) (on average, for the set).
-* `nums[5]` :: Right. Straight to one box.
-* `nums.append(7)` :: Right. Adds at the end; nothing moves.
-* `len(nums)` :: Right. The length is stored.
-* `7 in seen` :: Right. The hash leads straight to where 7 would be.
-- `7 in nums` :: Checks the items one by one: O(n).
-- `nums.pop(0)` :: Every other item moves one place left: O(n).
-- `nums.insert(0, 7)` :: Every item moves one place right: O(n).
-hint: Does the operation look through the items, or move them?
-hint: Four of them are O(1).
-right: Indexing, `append`, `len` and set membership go straight to one place. A list search and the front of a list touch every item.
-wrong: O(1): `nums[5]`, `append`, `len` and `in` on a set. O(n): `in` on a list, `pop(0)` and `insert(0, ...)`.
-
-=== task: parsons easy
-title: Shout the words
-prompt: Arrange the lines so that the program builds the sentence from upper-case words with `join`, and prints:
-
-```output
-BIG O IS FUN
-```
-
-Not every line is needed.
-lines:
-```python
-words = ["big", "o", "is", "fun"]
-pieces = []
-for w in words:
-    pieces.append(w.upper())
-print(" ".join(pieces))
-```
-distractors:
-```python
-    pieces = pieces + w.upper()
-print(pieces.join(" "))
-```
-hint: Collect the upper-case words in a list with `append`.
-hint: `" ".join(pieces)`: the separator comes first.
-right: n appends and one join: O(n). `pieces + w.upper()` would try to add a string to a list, and `pieces.join` doesn't exist: lists have no `join`.
-wrong: `pieces = []`, then `pieces.append(w.upper())` in the loop, then `print(" ".join(pieces))`.
-
-=== task: cells easy
-title: List costs
-prompt: `nums` is a list of n items. Fill in the Big O of each operation (type it like O(1) or O(n)).
-labels: nums[5] | nums.pop(0) | nums.append(7) | 7 in nums
-answer: O(1) | O(n) | O(1) | O(n)
-wrong[O(1) | O(1) | O(1) | O(n)]: `pop(0)` removes from the front, and every other item moves one place left: O(n).
-wrong[O(1) | O(n) | O(n) | O(n)]: `append` adds at the end, where nothing moves: O(1).
-wrong[O(1) | O(n) | O(1) | O(1)]: `in` on a list checks the items one by one: O(n). It's only O(1) for sets and dictionaries.
-hint: Straight to one place is O(1); looking through or moving items is O(n).
-hint: The end of a list is cheap; the front is expensive.
-right: Indexing and `append` are O(1); `pop(0)` moves items and `in` searches: O(n).
-wrong: `nums[5]` O(1), `pop(0)` O(n), `append` O(1), `in` O(n).
-
-=== task: mcq easy
-title: in, for a set
-prompt: `names` is a set of n names. What is the cost of `"Ann" in names`?
-* O(1) on average :: Right. The hash of "Ann" tells the set where to look.
-- O(n) :: That's `in` on a list. A set doesn't look through its items.
-- O(log n) :: A set doesn't halve anything: it goes straight to the right place.
-- O(n log n) :: That's sorting. Checking one name is far cheaper.
-hint: How does a set find an item?
-hint: By its hash, not by searching.
-right: O(1) on average, which is why turning a list into a set before many lookups is such a common speed-up.
-wrong: A set uses the hash to go straight to where "Ann" would be: O(1) on average.
-
-=== task: predict easy
-title: A new string
-code:
-```python
-s = "cat"
-t = s.upper()
-print(s, t)
-```
-wrong[CAT CAT]: Strings can't change. `upper()` builds a new string and leaves `s` as it was.
-wrong[cat cat]: `t` holds the new upper-case string: "CAT".
-wrong[CAT cat]: It's the other way round: `s` is unchanged and `t` is the new string.
-hint: Does `upper()` change `s`?
-hint: It returns a new string.
-right: `s.upper()` makes a new string of n characters (O(n)) and leaves `s` unchanged, because strings can't be changed.
-wrong: `s` stays "cat", and `t` is the new string "CAT".
-
-=== task: code medium
-title: Remove every x
-prompt: Write `remove_all_x(nums, x)` that returns a new list without any item equal to `x`, keeping the rest in order. Make it O(n): build the new list in one pass, instead of calling `remove` again and again.
-
-For example, `remove_all_x([3, 1, 3, 2], 3)` returns `[1, 2]`.
-starter:
-```python
-def remove_all_x(nums, x):
-    result = []
-    # your code here
-    return result
-```
-solution:
-```python
-def remove_all_x(nums, x):
-    result = []
-    for v in nums:
-        if v != x:
-            result.append(v)
-    return result
-```
-tests:
-- remove_all_x([3, 1, 3, 2], 3)
-- remove_all_x([], 1)
-- remove_all_x([1, 1], 1)
-- remove_all_x([1, 2], 5)
-speed: setup=nums = [0, 1] * n | call=remove_all_x(nums, 0) | target=O(n)
-slow:
-```python
-def remove_all_x(nums, x):
-    result = nums[:]
-    while x in result:
-        result.remove(x)
-    return result
-```
-fail[1]: Both 3s go, and 1 and 2 stay in their order.
-fail[3]: Every item is 1, so nothing is left.
-fail[4]: There's no 5, so every item stays.
-hint: Go through the items once.
-hint: Append every item that isn't equal to `x`.
-hint: Return the new list.
-right: One pass with O(1) work per item: O(n). `while x in result: result.remove(x)` searches and shifts the list for every copy of x: O(n²) when x appears often.
-wrong: `for v in nums: if v != x: result.append(v)`, then return `result`.
-
-=== task: code medium
-title: The most common word
-prompt: Write `most_common(words)` that returns the word that appears most often. If two words are tied, return the one that appears first in the list. Make it O(n): count the words in a dictionary in one pass, then go through the words again to find the best.
-
-For example, `most_common(["a", "b", "a"])` returns `"a"`.
-starter:
-```python
-def most_common(words):
+def kth_distinct(arr, k):
     counts = {}
-    # your code here
-    return words[0]
-```
-solution:
-```python
-def most_common(words):
-    counts = {}
-    for w in words:
-        counts[w] = counts.get(w, 0) + 1
-    best = words[0]
-    for w in words:
-        if counts[w] > counts[best]:
-            best = w
-    return best
+    for s in arr:
+        counts[s] = counts.get(s, 0) + 1
+    for s in arr:
+        if counts[s] == 1:
+            k -= 1
+            if k == 0:
+                return s
+    return ""
 ```
 tests:
-- most_common(["a", "b", "a"])
-- most_common(["x"])
-- most_common(["b", "a", "a", "b"])
-- most_common(["one", "two", "three"])
-- most_common(["c", "c", "d", "d", "d"])
-speed: setup=words = ["w" + str(i % 50) for i in range(n)] | call=most_common(words) | target=O(n)
+- kth_distinct(["d", "b", "c", "b", "c", "a"], 2)
+- kth_distinct(["aaa", "aa", "a"], 1)
+- kth_distinct(["a", "b", "a"], 3)
+- kth_distinct(["x"], 1)
+- kth_distinct(["ab", "ab", "cd", "ab", "ef"], 2)
+- kth_distinct([chr(97 + i % 26) + chr(97 + i // 26 % 26) for i in range(1000)], 300)
+fail[2]: Every string appears once, so the first one is the answer: "aaa".
+fail[3]: Only "b" is distinct, and k is 3: return `""`.
+fail[4]: One string, which appears once: "x".
+fail[5]: "ab" appears three times. The distinct strings are "cd" and "ef", so the second one is "ef".
+fail[6]: 1,000 two-letter strings: the first 324 appear twice, and the 352 after them once each. The 300th distinct string is "zx".
+speed: setup=arr = [str(i) for i in range(n)] | call=kth_distinct(arr, n) | target=O(n)
 slow:
 ```python
-def most_common(words):
-    best = words[0]
-    for w in words:
-        if words.count(w) > words.count(best):
-            best = w
-    return best
+def kth_distinct(arr, k):
+    for s in arr:
+        if arr.count(s) == 1:
+            k -= 1
+            if k == 0:
+                return s
+    return ""
 ```
-fail[3]: "b" and "a" both appear twice, and "b" comes first. Only replace the best when a count is **bigger**, not equal.
-fail[5]: "d" appears 3 times, more than "c".
-error[KeyError]: Count with `counts.get(w, 0) + 1`, so a new word starts at 0.
-hint: First pass: `counts[w] = counts.get(w, 0) + 1`.
-hint: Second pass: keep `best`, and replace it when `counts[w] > counts[best]`.
-hint: Start `best` at the first word.
-right: Two passes with O(1) dictionary work per word: O(n). Calling `words.count(w)` for every word would be a full pass each time: O(n²).
-wrong: Count every word in `counts`, then go through the words and keep the first one with the biggest count.
+fail[speed]: `arr.count(s)` looks through all n strings, and it runs once for every string: O(n²). Count every string in one pass first, in a dictionary, and then each check is O(1).
+edges:
+- one string :: len(arr) == 1 :: kth_distinct(["a"], 1)
+- fewer than k distinct strings :: len(arr) > 1 and len([s for s in arr if arr.count(s) == 1]) < k :: kth_distinct(["a", "a"], 1)
+- at least k distinct strings :: len(arr) > 1 and len([s for s in arr if arr.count(s) == 1]) >= k :: kth_distinct(["a", "b"], 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of arr. Each string has at most 5 letters, so hashing one is O(1).
+why_time: One pass to count, and one pass to find the k-th distinct string: 2n steps, O(n).
+why_space: The dictionary holds up to n different strings.
+hint: Make a dictionary `counts`: for each s in arr, `counts[s] = counts.get(s, 0) + 1`.
+hint: Go through arr again, in order. Each s with `counts[s] == 1` is distinct: take 1 off k, and when k reaches 0, return s.
+hint: If the loop ends, there were fewer than k distinct strings: return `""`.
+right: Counting first makes every "does it appear once?" check an O(1) lookup. With `arr.count(s)` inside the loop, each check would look through the whole list: O(n²).
+wrong: Count each string in a dictionary. Then go through arr in order: for each s with count 1, take 1 off k, and return s when k is 0. After the loop, return `""`.
 
-=== task: predict medium
-title: Copies add up
-code:
-```python
-copied = []
+=== task: code easy
+title: Add to Array-Form of Integer
+leetcode: 989 | Add to Array-Form of Integer | add-to-array-form-of-integer
+patterns: hidden + ends
+prompt: The **array-form** of a number is the list of its digits, from left to right: 1321 is `[1, 3, 2, 1]`. Write `add_to_array_form(num, k)` that returns the array-form of num + k, where num is an array-form and k is a number. Add from the last digit, as on paper, with a carry. The answer's digits come out last digit first: `append` each one and reverse the list once at the end, since `insert(0, digit)` would move every digit already in the list.
 
-def total(nums):
-    if len(nums) == 0:
-        return 0
-    rest = nums[1:]
-    copied.append(len(rest))
-    return nums[0] + total(rest)
+**Example 1:** `add_to_array_form([1, 2, 0, 0], 34)` returns `[1, 2, 3, 4]`: 1200 + 34 = 1234.
 
-print(total([5, 1, 4, 2]), sum(copied))
-```
-wrong[12 4]: Each call copies the rest of its list, not one item: 3 + 2 + 1 + 0.
-wrong[12 10]: The slice `nums[1:]` leaves out the first item, so the copies hold 3, 2, 1 and 0 items.
-wrong[12 0]: `nums[1:]` is a new list, and making it copies its items.
-hint: How long is `rest` in each call?
-hint: 3, then 2, then 1, then 0.
-right: The total is 12, but the slices copied 3 + 2 + 1 + 0 = 6 items: n(n − 1) / 2, which is O(n²) for adding up n numbers. Passing a position instead of a slice makes it O(n).
-wrong: 5 + 1 + 4 + 2 = 12, and the slices hold 3, 2, 1 and 0 items: 6 copies.
+**Example 2:** `add_to_array_form([2, 7, 4], 181)` returns `[4, 5, 5]`: 274 + 181 = 455.
 
-=== task: fill medium
-title: Take from the end
-prompt: Fill in the blank so that the program takes the items off the **end** of the list, which is O(1) each time, and prints:
+**Example 3:** `add_to_array_form([2, 1, 5], 806)` returns `[1, 0, 2, 1]`: 215 + 806 = 1021.
 
-```output
-[3, 2, 1]
-```
-code:
-```python
-stack = [1, 2, 3]
-order = []
-while len(stack) > 0:
-    order.append(stack.??)
-print(order)
-```
-answer: pop()
-wrong[pop(0)]: `pop(0)` takes from the front, so the order would be `[1, 2, 3]`, and every other item would move each time.
-wrong[pop(1)]: `pop(1)` takes the second item, and fails with IndexError once only one item is left.
-hint: Which `pop` takes the last item?
-hint: `pop` with no position.
-right: `pop()` takes the last item without moving anything: O(1) per item, O(n) for the whole list.
-wrong: `stack.pop()`. With no position, `pop` takes the last item.
-
-=== task: cells medium
-title: Steps for 100 items
-prompt: `nums` is a list of 100 items, and 5 isn't one of them. About how many items does each operation touch (read or move)?
-labels: nums[99] | nums.pop() | nums.insert(0, 1) | 5 in nums
-answer: 1 | 1 | 100 | 100
-wrong[1 | 100 | 100 | 100]: `pop()` takes from the end: one item, nothing moves.
-wrong[1 | 1 | 1 | 100]: `insert(0, ...)` makes room at the front by moving all 100 items.
-wrong[1 | 1 | 100 | 1]: 5 isn't there, so `in` checks all 100 items before answering False.
-hint: Which ones work at one place, and which touch every item?
-hint: A missing item is the worst case for `in`.
-right: 1, 1, 100 and 100: indexing and `pop()` are O(1), while `insert(0, ...)` and a failed `in` are O(n).
-wrong: `nums[99]` and `pop()` touch one item; `insert(0, 1)` moves all 100; `5 in nums` checks all 100.
-
-=== task: order medium
-title: Cheapest to dearest
-prompt: `nums` is a list of 1,000,000 numbers. Put these in order, from the fewest steps to the most.
-items:
-- `nums[-1]`
-- `nums.index(x)`, where x is the last item
-- `sorted(nums)`
-- `[a + b for a in nums for b in nums]`
-hint: Write each one in Big O: O(1), O(n), O(n log n), O(n²).
-hint: The comprehension has two `for` parts: every pair.
-right: 1 step, about 1,000,000, about 20,000,000, and a trillion. The last one would never finish: n² pairs for a million items.
-wrong: `nums[-1]` is O(1), `index` is O(n), `sorted` is O(n log n), and every pair is O(n²).
-
-=== task: predict medium
-title: Two ways to build "0123"
-code:
-```python
-s = ""
-for i in range(4):
-    s += str(i)
-t = "".join(str(i) for i in range(4))
-print(s, t, s == t)
-```
-wrong[0123 0123 False]: Both build the same characters in the same order, so they're equal.
-wrong[6 0123 False]: `str(i)` turns each number into text, so `+=` joins text, not adds numbers.
-wrong[0 1 2 3 0123 False]: Nothing is added between the pieces: "0", "1", "2", "3" make "0123".
-hint: `s += str(i)` sticks the pieces together.
-hint: `"".join(...)` sticks them together with nothing in between.
-right: Both make "0123". For long strings, `join` is the dependable choice: it builds the string once, while `+=` may copy the whole string on every turn.
-wrong: Both give "0123", so `s == t` is True.
-
-=== task: mcq medium
-title: Many lookups
-prompt: You have to check 1,000 names, one by one, against a list of 100,000 members. What's the fastest plan?
-* Turn the list into a set once, then check each name with `in` :: Right. 100,000 steps to build the set, then 1,000 O(1) checks.
-- Check each name with `in` on the list :: Each check can scan 100,000 members: up to 100,000,000 steps.
-- Sort the list, then check each name with `in` :: `in` on a list still checks one by one, sorted or not.
-- Check each name with `members.count(name) > 0` :: `count` always scans the whole list, even after finding the name.
-hint: Which structure answers `in` in O(1)?
-hint: Building it once costs one pass.
-right: O(n + q) with a set, against O(n × q) with the list: about 101,000 steps instead of 100,000,000.
-wrong: Build a set of the members once (O(n)), then each check is O(1): O(n + q) in all.
-
-=== task: multi medium
-title: Which are O(n)?
-prompt: `nums` is a list of n numbers. Choose **every** operation that is O(n).
-* `x in nums` :: Right. It checks the items one by one.
-* `nums.insert(0, x)` :: Right. Every item moves one place right.
-* `nums.pop(0)` :: Right. Every remaining item moves one place left.
-* `sum(nums)` :: Right. It adds every item.
-- `nums[3]` :: Straight to one box: O(1).
-- `nums.pop()` :: From the end, nothing moves: O(1).
-hint: Does the operation look at or move every item?
-hint: Four of them do.
-right: Searching, inserting or removing at the front, and summing all touch every item. Indexing and `pop()` from the end don't.
-wrong: O(n): `in`, `insert(0, ...)`, `pop(0)`, `sum`. O(1): indexing and `pop()`.
-
-=== task: code medium
-title: Reverse without insert(0)
-prompt: Write `reversed_copy(nums)` that returns a new list with the items in reverse order, leaving `nums` unchanged. Make it O(n): don't put each item at the front with `insert(0, ...)`, which moves every item each time.
-
-For example, `reversed_copy([1, 2, 3])` returns `[3, 2, 1]`.
+**Constraints:** 1 ≤ `len(num)` ≤ 10⁴, each digit is 0 to 9, num has no 0 at the front unless it's `[0]`, and 1 ≤ k ≤ 10⁴.
 starter:
 ```python
-def reversed_copy(nums):
-    result = []
+def add_to_array_form(num, k):
     # your code here
-    return result
+    return num
 ```
 solution:
 ```python
-def reversed_copy(nums):
+def add_to_array_form(num, k):
     result = []
-    for i in range(len(nums) - 1, -1, -1):
-        result.append(nums[i])
+    i = len(num) - 1
+    carry = k
+    while i >= 0 or carry > 0:
+        if i >= 0:
+            carry += num[i]
+        result.append(carry % 10)
+        carry //= 10
+        i -= 1
+    result.reverse()
     return result
 ```
 tests:
-- reversed_copy([1, 2, 3])
-- reversed_copy([])
-- reversed_copy([7])
-- reversed_copy(["a", "b"])
-speed: setup=nums = list(range(n)) | call=reversed_copy(nums) | target=O(n)
-slow:
-```python
-def reversed_copy(nums):
-    result = []
-    for x in nums:
-        result.insert(0, x)
-    return result
-```
-fail[1]: The last item comes first: `[3, 2, 1]`.
-fail[4]: Two items swap places: `["b", "a"]`.
-forbid[insert(]: Putting each item at the front moves all the others: O(n²). Append instead.
-hint: Go through the positions from the last to the first: `range(len(nums) - 1, -1, -1)`.
-hint: Append each item you meet.
-hint: Or append in order and reverse the result once at the end, or use a slice `nums[::-1]`.
-right: n appends at the end: O(n). Inserting each item at the front would move 0 + 1 + 2 + ... + (n − 1) items: O(n²).
-wrong: Loop backwards over the positions with `range(len(nums) - 1, -1, -1)` and append `nums[i]`.
+- add_to_array_form([1, 2, 0, 0], 34)
+- add_to_array_form([2, 7, 4], 181)
+- add_to_array_form([2, 1, 5], 806)
+- add_to_array_form([0], 10000)
+- add_to_array_form([9, 9], 1)
+- (lambda r: [len(r), r[:4], r[-4:]])(add_to_array_form([9] + [i * 7 % 10 for i in range(9999)], 9999))
+fail[2]: 274 + 181 = 455: `[4, 5, 5]`.
+fail[3]: 215 + 806 = 1021, one digit longer than num: `[1, 0, 2, 1]`.
+fail[4]: num is 0 and k is 10000, which has more digits than num: `[1, 0, 0, 0, 0]`.
+fail[5]: 99 + 1 = 100: the carry goes past the first digit.
+fail[6]: A 10,000-digit number plus 9999: the answer has 10,000 digits, starting 9, 0, 7, 4 and ending 5, 2, 9, 5. With `insert(0, digit)`, each insert moves every digit already in the list: about 50 million moves.
+edges:
+- num is 0 :: num == [0] :: add_to_array_form([0], 5)
+- k has more digits than num :: num != [0] and len(str(k)) > len(num) :: add_to_array_form([5], 95)
+- a carry past the first digit :: num != [0] and len(str(k)) <= len(num) and len(str(int("".join([str(d) for d in num])) + k)) > len(num) :: add_to_array_form([9, 9], 1)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of num. k has at most 5 digits.
+why_time: One turn per digit of num, plus a few for the digits of k and the last carry, each O(1). The one `reverse` at the end is O(n).
+why_space: The answer holds n or n + 1 digits.
+hint: Start with `carry = k` and `i = len(num) - 1`.
+hint: While `i >= 0` or `carry > 0`: if i is still a position in num, add `num[i]` to carry. Append `carry % 10`, then `carry //= 10` and `i -= 1`.
+hint: The digits came out last digit first: reverse the list once, then return it.
+right: Each `append` is O(1) and one `reverse` is O(n), so the whole sum is O(n). Inserting each digit at the front would move all the digits already there: 1 + 2 + 3 moves and onwards, up to n, which is O(n²).
+wrong: `carry = k`, `i = len(num) - 1`. While i ≥ 0 or carry > 0: if i ≥ 0, add `num[i]` to carry; append `carry % 10`; `carry //= 10`; `i -= 1`. Reverse the list and return it.
 
-=== task: code hard
-title: Sums of every window
-prompt: Write `window_sums(nums, k)` that returns the sums of every run of k neighbouring items, from left to right. If k is bigger than the list, return an empty list. Make it O(n): work out the first sum, then slide along, adding the item that comes in and taking away the item that drops out. Adding up a slice for every window would be O(n × k).
+=== task: code easy
+title: Find the Array Concatenation Value
+leetcode: 2562 | Find the Array Concatenation Value | find-the-array-concatenation-value
+patterns: ends
+prompt: Write `find_the_array_conc_val(nums)` that works out the **concatenation value** of nums. Start with a total of 0. While nums has two or more numbers, join the digits of the first and the last number into one number (7 and 4 make 74), add it to the total, and remove both. If one number is left, add it too. Return the total. Removing from the front with `pop(0)` would move every number left, each time: use two positions instead, one moving in from each end, and leave nums as it is.
 
-For example, `window_sums([1, 2, 3, 4, 5], 2)` returns `[3, 5, 7, 9]`.
+**Example 1:** `find_the_array_conc_val([7, 52, 2, 4])` returns `596`: 74 + 522.
+
+**Example 2:** `find_the_array_conc_val([5, 14, 13, 8, 12])` returns `673`: 512 + 148 + 13.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 1000, and 1 ≤ `nums[i]` ≤ 10⁴. `int(str(a) + str(b))` joins the digits of a and b.
 starter:
 ```python
-def window_sums(nums, k):
-    if k > len(nums):
-        return []
-    result = []
+def find_the_array_conc_val(nums):
     # your code here
-    return result
+    return 0
 ```
 solution:
 ```python
-def window_sums(nums, k):
-    if k > len(nums):
-        return []
-    result = []
+def find_the_array_conc_val(nums):
     total = 0
-    for i in range(k):
+    i = 0
+    j = len(nums) - 1
+    while i < j:
+        total += int(str(nums[i]) + str(nums[j]))
+        i += 1
+        j -= 1
+    if i == j:
         total += nums[i]
-    result.append(total)
-    for i in range(k, len(nums)):
-        total += nums[i] - nums[i - k]
-        result.append(total)
-    return result
+    return total
 ```
 tests:
-- window_sums([1, 2, 3, 4, 5], 2)
-- window_sums([1, 2, 3], 3)
-- window_sums([4], 1)
-- window_sums([1, 2], 3)
-- window_sums([5, -1, 3, 0], 2)
-speed: setup=nums = list(range(n)) | call=window_sums(nums, n // 2) | target=O(n)
+- find_the_array_conc_val([7, 52, 2, 4])
+- find_the_array_conc_val([5, 14, 13, 8, 12])
+- find_the_array_conc_val([9])
+- find_the_array_conc_val([1, 10])
+- find_the_array_conc_val([10000, 1, 10000])
+- find_the_array_conc_val(list(range(1, 1001)))
+fail[2]: 512 + 148, and the 13 in the middle on its own: 673.
+fail[3]: One number is added on its own: 9.
+fail[4]: 1 and 10 join to make 110.
+fail[5]: 10000 and 10000 make 1000010000, plus the 1 in the middle: 1000010001.
+fail[6]: The numbers 1 to 1000, joined in pairs from both ends: 1 and 1000 make 11000, then 2 and 999 make 2999. The total is 125634250.
+speed: setup=nums = list(range(1, n + 1)) | call=find_the_array_conc_val(nums) | target=O(n)
 slow:
 ```python
-def window_sums(nums, k):
-    if k > len(nums):
-        return []
-    result = []
-    for i in range(len(nums) - k + 1):
-        result.append(sum(nums[i:i + k]))
-    return result
+def find_the_array_conc_val(nums):
+    total = 0
+    while len(nums) > 1:
+        first = nums.pop(0)
+        last = nums.pop()
+        total += int(str(first) + str(last))
+    if len(nums) == 1:
+        total += nums.pop()
+    return total
 ```
-fail[1]: The windows are [1, 2], [2, 3], [3, 4] and [4, 5]: sums 3, 5, 7 and 9.
-fail[2]: One window covers the whole list: `[6]`.
-fail[5]: [5, -1] = 4, [-1, 3] = 2, [3, 0] = 3.
-error[IndexError]: The item that drops out is `nums[i - k]`, k places behind the new one.
-hint: First add up `nums[0]` to `nums[k - 1]`, and append that total.
-hint: For each later position i, the window gains `nums[i]` and loses `nums[i - k]`.
-hint: Append the total after each slide.
-right: k steps for the first window, then O(1) per slide: O(n) in all. `sum(nums[i:i + k])` for every window copies and adds k items each time: O(n × k), which is O(n²) when k is about n / 2.
-wrong: Sum the first k items, append it, then for i from k to the end: `total += nums[i] - nums[i - k]` and append.
+fail[speed]: Every `pop(0)` moves all the numbers left one place, so emptying the list costs about n² / 4 moves. Keep a position i at the front and j at the back, and move them toward each other.
+edges:
+- one number :: len(nums) == 1 :: find_the_array_conc_val([5])
+- an even count :: len(nums) % 2 == 0 :: find_the_array_conc_val([1, 2])
+- an odd count, more than 1 :: len(nums) > 1 and len(nums) % 2 == 1 :: find_the_array_conc_val([1, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. Each number has at most 5 digits, so joining two is O(1).
+why_time: Each turn moves both positions one step: n / 2 turns, O(1) each.
+why_space: Two positions and the total.
+hint: Set `i = 0` and `j = len(nums) - 1`.
+hint: While `i < j`: add `int(str(nums[i]) + str(nums[j]))` to the total, then move i forward and j back.
+hint: If `i == j` after the loop, one number is left in the middle: add it.
+right: The two positions do the work of removing from both ends without moving anything: O(1) per pair. `pop(0)` would shift every number left, O(n) per pair.
+wrong: `i = 0`, `j = len(nums) - 1`, total 0. While i < j: add `int(str(nums[i]) + str(nums[j]))`, then i += 1 and j -= 1. If i == j, add `nums[i]`. Return the total.
 
-=== task: code hard
-title: A phone book
-prompt: Write `lookup_all(names, numbers, queries)`. `names[i]` has the phone number `numbers[i]`. Return a list with the number for each name in `queries`, or None for a name that isn't there. Make it O(n + q): build a dictionary from name to number once, then look each query up.
+=== task: code easy
+title: Merge Strings Alternately
+leetcode: 1768 | Merge Strings Alternately | merge-strings-alternately
+patterns: strings
+prompt: Write `merge_alternately(word1, word2)` that merges two strings by taking letters in turn, starting with word1: letter 0 of word1, then letter 0 of word2, then letter 1 of each, and onwards. When one string runs out, the rest of the other goes on the end. Build the answer as a list of letters and join it once: adding letters with `+=` can copy the whole string built so far on every turn.
 
-For example, `lookup_all(["ann", "bob"], ["555-1", "555-2"], ["bob", "cal"])` returns `["555-2", None]`.
+**Example 1:** `merge_alternately("abc", "pqr")` returns `"apbqcr"`.
+
+**Example 2:** `merge_alternately("ab", "pqrs")` returns `"apbqrs"`: word1 runs out, and "rs" goes on the end.
+
+**Example 3:** `merge_alternately("abcd", "pq")` returns `"apbqcd"`.
+
+**Constraints:** both strings have 1 to 100 small letters.
 starter:
 ```python
-def lookup_all(names, numbers, queries):
-    book = {}
+def merge_alternately(word1, word2):
+    # your code here
+    return word1 + word2
+```
+solution:
+```python
+def merge_alternately(word1, word2):
+    pieces = []
+    for i in range(max(len(word1), len(word2))):
+        if i < len(word1):
+            pieces.append(word1[i])
+        if i < len(word2):
+            pieces.append(word2[i])
+    return "".join(pieces)
+```
+tests:
+- merge_alternately("abc", "pqr")
+- merge_alternately("ab", "pqrs")
+- merge_alternately("abcd", "pq")
+- merge_alternately("a", "z")
+- merge_alternately("x", "yyy")
+- merge_alternately("ab" * 50, "xyz" * 33)
+fail[2]: After "apbq", word1 has run out, so "rs" goes on the end: "apbqrs".
+fail[3]: After "apbq", word2 has run out, so "cd" goes on the end.
+fail[4]: One letter each: "az".
+fail[5]: "x" first, then all of "yyy": "xyyy".
+fail[6]: 100 letters and 99 letters: they take turns until word2 runs out, and then word1's last letter goes on the end.
+edges:
+- one letter each :: len(word1) == 1 and len(word2) == 1 :: merge_alternately("a", "b")
+- the same length, more than 1 :: len(word1) == len(word2) and len(word1) > 1 :: merge_alternately("ab", "cd")
+- different lengths :: len(word1) != len(word2) :: merge_alternately("a", "bc")
+edge_count: 2
+complexity: time=O(n + m) | space=O(n + m)
+complexity_options: O(n + m); O(n × m); O((n + m)²)
+complexity_note: n and m are the lengths of word1 and word2.
+why_time: One turn per position of the longer string, each appending at most 2 letters, then one join of n + m letters.
+why_space: The list of letters and the answer each hold n + m letters.
+hint: Make an empty list `pieces`.
+hint: For each i from 0 up to the longer length: if i is a position in word1, append `word1[i]`, then do the same for word2.
+hint: Return `"".join(pieces)`.
+right: Each `append` is O(1), and the join copies each letter once: O(n + m). Building the string with `+=` can copy everything built so far on each turn: O((n + m)²) in the worst case.
+wrong: `pieces = []`. For i in range(max(len(word1), len(word2))): if i < len(word1), append `word1[i]`; if i < len(word2), append `word2[i]`. Return `"".join(pieces)`.
+
+=== task: code easy
+title: Longest Common Prefix
+leetcode: 14 | Longest Common Prefix | longest-common-prefix
+patterns: slices + strings
+prompt: Write `longest_common_prefix(strs)` that returns the longest string that every string in strs starts with, or `""` if there's none. Compare one letter at a time: for each position i of the first string, check letter i of every string. Don't compare slices like `s[:i] == first[:i]`, since each slice copies i letters, and you'd make new ones for every i.
+
+**Example 1:** `longest_common_prefix(["flower", "flow", "flight"])` returns `"fl"`.
+
+**Example 2:** `longest_common_prefix(["dog", "racecar", "car"])` returns `""`.
+
+**Constraints:** 1 ≤ `len(strs)` ≤ 200, and each string has 0 to 200 small letters.
+starter:
+```python
+def longest_common_prefix(strs):
+    # your code here
+    return ""
+```
+solution:
+```python
+def longest_common_prefix(strs):
+    first = strs[0]
+    for i in range(len(first)):
+        for s in strs:
+            if i == len(s) or s[i] != first[i]:
+                return first[:i]
+    return first
+```
+tests:
+- longest_common_prefix(["flower", "flow", "flight"])
+- longest_common_prefix(["dog", "racecar", "car"])
+- longest_common_prefix(["alone"])
+- longest_common_prefix(["", "b"])
+- longest_common_prefix(["ab", "abc", "ab"])
+- len(longest_common_prefix(["a" * 200] * 199 + ["a" * 150 + "b"]))
+fail[2]: "dog", "racecar" and "car" already differ at their first letter: `""`.
+fail[3]: One string: all of it is the prefix, "alone".
+fail[4]: An empty string has no letters, so the prefix is `""`. Check `i == len(s)` before you read `s[i]`.
+fail[5]: "ab" and "abc" share "ab", and the strings "ab" end there: `"ab"`.
+fail[6]: 199 strings of 200 a's, and one with 150 a's and then a b: the prefix is 150 a's long.
+speed: setup=strs = ["a" * n] * 5 | call=longest_common_prefix(strs) | target=O(n)
+slow:
+```python
+def longest_common_prefix(strs):
+    best = ""
+    for size in range(1, len(strs[0]) + 1):
+        prefix = strs[0][:size]
+        for s in strs:
+            if s[:size] != prefix:
+                return best
+        best = prefix
+    return best
+```
+fail[speed]: For each length i, the slices `s[:i]` copy i letters of every string. Over all the lengths, that's about n × m² / 2 letters for n strings of length m. Comparing `s[i]` with `first[i]` reads one letter.
+edges:
+- one string :: len(strs) == 1 :: longest_common_prefix(["abc"])
+- an empty string :: len(strs) > 1 and "" in strs :: longest_common_prefix(["", "a"])
+- no empty strings :: len(strs) > 1 and "" not in strs :: longest_common_prefix(["ab", "ac"])
+edge_count: 2
+complexity: time=O(n × m) | space=O(m)
+complexity_options: O(n × m); O(n × m²); O(n + m); O(m)
+complexity_note: n is the number of strings, and m is the length of the first string.
+why_time: At most m positions, and each one checks one letter of each of the n strings.
+why_space: The answer, a slice of the first string, has at most m letters.
+hint: Call the first string `first`. For each position i in it, go through every string s.
+hint: If s has no letter i (`i == len(s)`), or `s[i] != first[i]`, the prefix stops before i: return `first[:i]`.
+hint: If every position matches, all of `first` is the prefix: return it.
+right: Each letter is read once per string, O(n × m), and the only slice is the answer. Slicing a prefix for every length would copy 1 + 2 + 3 letters and onwards, up to m, for each string: O(n × m²).
+wrong: `first = strs[0]`. For i in range(len(first)): for each s, if `i == len(s)` or `s[i] != first[i]`, return `first[:i]`. After both loops, return `first`.
+
+=== task: code easy
+title: Find Subarrays With Equal Sum
+leetcode: 2395 | Find Subarrays With Equal Sum | find-subarrays-with-equal-sum
+patterns: hashing
+prompt: Write `find_subarrays(nums)` that returns `True` if two different pairs of neighbours, `nums[i], nums[i + 1]` and `nums[j], nums[j + 1]` with i ≠ j, have the same sum, and `False` otherwise. Keep the sums seen so far in a set, so that "have I seen this sum?" is one O(1) step.
+
+**Example 1:** `find_subarrays([4, 2, 4])` returns `True`: 4 + 2 and 2 + 4 are both 6.
+
+**Example 2:** `find_subarrays([1, 2, 3, 4, 5])` returns `False`.
+
+**Example 3:** `find_subarrays([0, 0, 0])` returns `True`: the two pairs start at different places, even though they hold the same numbers.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 1000, and −10⁹ ≤ `nums[i]` ≤ 10⁹.
+starter:
+```python
+def find_subarrays(nums):
+    # your code here
+    return False
+```
+solution:
+```python
+def find_subarrays(nums):
+    seen = set()
+    for i in range(len(nums) - 1):
+        pair = nums[i] + nums[i + 1]
+        if pair in seen:
+            return True
+        seen.add(pair)
+    return False
+```
+tests:
+- find_subarrays([4, 2, 4])
+- find_subarrays([1, 2, 3, 4, 5])
+- find_subarrays([0, 0, 0])
+- find_subarrays([1, 2])
+- find_subarrays([-1000000000, 1000000000, 0, 0])
+- find_subarrays([i * i for i in range(1000)])
+fail[2]: The sums are 3, 5, 7 and 9, all different: `False`.
+fail[3]: Both pairs are 0 + 0. They start at different places, so they count: `True`.
+fail[4]: Two numbers make only one pair: `False`.
+fail[5]: −10⁹ + 10⁹ = 0, and 0 + 0 = 0: `True`.
+fail[6]: The squares 0, 1, 4, 9 and onwards: each pair adds up to more than the pair before, so no sum repeats: `False`.
+speed: setup=nums = list(range(n)) | call=find_subarrays(nums) | target=O(n)
+slow:
+```python
+def find_subarrays(nums):
+    sums = []
+    for i in range(len(nums) - 1):
+        pair = nums[i] + nums[i + 1]
+        if pair in sums:
+            return True
+        sums.append(pair)
+    return False
+```
+fail[speed]: `pair in sums` looks through the list of sums, which grows by one every turn: O(n²) in all. A set answers `in` in O(1) on average.
+edges:
+- two numbers :: len(nums) == 2 :: find_subarrays([1, 1])
+- every pair sum different :: len(nums) > 2 and len(set([nums[i] + nums[i + 1] for i in range(len(nums) - 1)])) == len(nums) - 1 :: find_subarrays([1, 2, 4])
+- a repeated pair sum :: len(nums) > 2 and len(set([nums[i] + nums[i + 1] for i in range(len(nums) - 1)])) < len(nums) - 1 :: find_subarrays([1, 2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: n − 1 pairs, each with one set lookup and one add, O(1) on average.
+why_space: The set holds up to n − 1 sums.
+hint: Make an empty set `seen`.
+hint: For each i from 0 to n − 2, work out `nums[i] + nums[i + 1]`. If it's in seen, return `True`; otherwise add it.
+hint: If the loop ends, no sum repeated: return `False`.
+right: A set turns "seen this sum before?" into one O(1) step, so n − 1 pairs cost O(n). A list would have to be searched every time: O(n²).
+wrong: `seen = set()`. For i in range(len(nums) - 1): `pair = nums[i] + nums[i + 1]`; if pair is in seen, return True; else add it. Return False.
+
+=== task: code easy
+title: Number of Students Unable to Eat Lunch
+leetcode: 1700 | Number of Students Unable to Eat Lunch | number-of-students-unable-to-eat-lunch
+patterns: choose
+prompt: A school serves two kinds of sandwiches, 0 and 1. `students[i]` is the kind student i wants, in queue order, and `sandwiches[i]` is the kind of sandwich i, from the top of the pile down. Each turn, the student at the front of the queue takes the top sandwich if it's the kind they want, and leaves. Otherwise they go to the back of the queue. This stops when no student in the queue wants the top sandwich. Write `count_students(students, sandwiches)` that returns how many students can't eat.
+
+You don't need the queue. Its order never decides whether a sandwich gets eaten: only how many students want each kind does. Count them, then go through the sandwiches from the top: when nobody left wants the top one, everyone left can't eat.
+
+**Example 1:** `count_students([1, 1, 0, 0], [0, 1, 0, 1])` returns `0`.
+
+**Example 2:** `count_students([1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1])` returns `3`: after three sandwiches, the top one is a 0, and the three students left all want 1.
+
+**Constraints:** 1 ≤ `len(students)` = `len(sandwiches)` ≤ 100, and every value is 0 or 1.
+starter:
+```python
+def count_students(students, sandwiches):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_students(students, sandwiches):
+    want = [0, 0]
+    for s in students:
+        want[s] += 1
+    for sandwich in sandwiches:
+        if want[sandwich] == 0:
+            return want[0] + want[1]
+        want[sandwich] -= 1
+    return 0
+```
+tests:
+- count_students([1, 1, 0, 0], [0, 1, 0, 1])
+- count_students([1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1])
+- count_students([0], [1])
+- count_students([1], [1])
+- count_students([0, 0, 0, 1], [1, 1, 0, 0])
+- count_students([i % 2 for i in range(100)], [1] * 60 + [0] * 40)
+fail[2]: Three sandwiches go to students. Then the top sandwich is a 0, and the three students left all want 1: 3.
+fail[3]: The only student wants 0, and the only sandwich is a 1: 1.
+fail[4]: The only student wants the only sandwich: 0.
+fail[5]: One student wants 1 and three want 0. The first two sandwiches are both 1s: nobody wants the second one, so 3 students can't eat.
+fail[6]: 50 students want 0 and 50 want 1, but the top 60 sandwiches are 1s. After 50 of them, nobody wants a 1: 50 students can't eat.
+speed: setup=students = [0, 1] * (n // 2); sandwiches = [1] * (n // 2) + [0] * (n // 2) | call=count_students(students, sandwiches) | target=O(n)
+slow:
+```python
+def count_students(students, sandwiches):
+    queue = list(students)
+    stack = list(sandwiches)
+    misses = 0
+    while len(queue) > 0 and misses < len(queue):
+        if queue[0] == stack[0]:
+            queue.pop(0)
+            stack.pop(0)
+            misses = 0
+        else:
+            queue.append(queue.pop(0))
+            misses += 1
+    return len(queue)
+```
+fail[speed]: Every `pop(0)` shifts all the students behind the front one, and there's at least one `pop(0)` for every sandwich taken: O(n²) in all. Two counts and one pass over the sandwiches are O(n).
+edges:
+- one student :: len(students) == 1 :: count_students([0], [0])
+- everyone eats :: len(students) > 1 and sorted(students) == sorted(sandwiches) :: count_students([1, 0], [0, 1])
+- someone can't eat :: len(students) > 1 and sorted(students) != sorted(sandwiches) :: count_students([1, 1], [0, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of students.
+why_time: One pass to count the students, and one pass over the sandwiches.
+why_space: Two counts.
+hint: Count how many students want each kind: `want = [0, 0]`, then `want[s] += 1` for each student s.
+hint: Go through the sandwiches from the top. If `want[sandwich] == 0`, nobody left wants it: return `want[0] + want[1]`.
+hint: Otherwise someone takes it: `want[sandwich] -= 1`. If every sandwich goes, return 0.
+right: The queue only changes the order the students eat in, not whether they eat, so two counts hold everything that matters. Choosing counts over a queue turns O(n²) shifting into O(n).
+wrong: `want = [0, 0]`; add 1 to `want[s]` for each student s. For each sandwich: if `want[sandwich] == 0`, return `want[0] + want[1]`; otherwise take 1 off `want[sandwich]`. Return 0.
+
+=== task: code easy
+title: Make Array Elements Equal to Zero
+leetcode: 3354 | Make Array Elements Equal to Zero | make-array-elements-equal-to-zero
+patterns: slices + hidden
+prompt: Pick a start position `curr` where `nums[curr] == 0`, and a direction, left or right. Then repeat until curr leaves the list: if `nums[curr]` is 0, step one place in your direction; otherwise take 1 off `nums[curr]`, turn around, and step one place. A choice of start and direction is **valid** if every number is 0 at the end. Write `count_valid_selections(nums)` that returns how many valid choices there are.
+
+Each bounce takes 1 from one side and sends you to the other side, so a start works exactly when the numbers to its left and to its right add up to the same total (then both directions work), or differ by 1 (then only heading toward the bigger side works). Keep the left total as you go, and get the right total from the total of all the numbers, instead of summing slices for every 0.
+
+**Example 1:** `count_valid_selections([1, 0, 2, 0, 3])` returns `2`: at position 3, both sides add up to 3, so both directions work.
+
+**Example 2:** `count_valid_selections([2, 3, 4, 0, 4, 1, 0])` returns `0`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, 0 ≤ `nums[i]` ≤ 100, and there's at least one 0.
+starter:
+```python
+def count_valid_selections(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_valid_selections(nums):
+    total = sum(nums)
+    left = 0
+    count = 0
+    for x in nums:
+        if x == 0:
+            right = total - left
+            if left == right:
+                count += 2
+            elif abs(left - right) == 1:
+                count += 1
+        left += x
+    return count
+```
+tests:
+- count_valid_selections([1, 0, 2, 0, 3])
+- count_valid_selections([2, 3, 4, 0, 4, 1, 0])
+- count_valid_selections([0])
+- count_valid_selections([0, 1])
+- count_valid_selections([3, 0, 1, 0, 2])
+- count_valid_selections([1] * 30 + [0] * 40 + [1] * 30)
+fail[2]: At position 3 the sides add up to 9 and 5, and at position 6 to 14 and 0: no start works.
+fail[3]: A single 0 has 0 on both sides: both directions work, 2.
+fail[4]: The left side adds up to 0 and the right side to 1: only heading right works, 1.
+fail[5]: At position 1 both sides add up to 3: 2 choices. At position 3 they're 4 and 2, which doesn't work.
+fail[6]: 30 ones, 40 zeros and 30 ones: every 0 has 30 on each side, so each gives 2 choices: 80.
+speed: setup=nums = [0] * n | call=count_valid_selections(nums) | target=O(n)
+slow:
+```python
+def count_valid_selections(nums):
+    count = 0
+    for i in range(len(nums)):
+        if nums[i] == 0:
+            left = sum(nums[:i])
+            right = sum(nums[i + 1:])
+            if left == right:
+                count += 2
+            elif abs(left - right) == 1:
+                count += 1
+    return count
+```
+fail[speed]: `sum(nums[:i])` and `sum(nums[i + 1:])` copy and add up n numbers for every 0: O(n²) when most numbers are 0. Keep `left` as you go: the right side is `total - left`.
+edges:
+- one number :: len(nums) == 1 :: count_valid_selections([0])
+- only zeros :: len(nums) > 1 and sum(nums) == 0 :: count_valid_selections([0, 0])
+- positive numbers too :: sum(nums) > 0 :: count_valid_selections([1, 0])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One `sum` for the total, then one pass with O(1) work per number.
+why_space: The total, the left total and the count.
+hint: Work out `total = sum(nums)` once, and keep `left = 0`.
+hint: Go through the numbers. At each 0, the right side is `total - left`: add 2 if the two sides are equal, or 1 if they differ by 1.
+hint: Add each number to `left` after you've checked it.
+right: The left total grows by one number per step, and the right total comes from `total - left`, so each 0 costs O(1). Summing two slices for every 0 would cost O(n) each time: O(n²).
+wrong: `total = sum(nums)`, `left = 0`, `count = 0`. For each x: if x == 0, let `right = total - left`; add 2 if `left == right`, or 1 if `abs(left - right) == 1`. Then `left += x`. Return count.
+
+=== task: code easy
+title: Delete Characters to Make Fancy String
+leetcode: 1957 | Delete Characters to Make Fancy String | delete-characters-to-make-fancy-string
+patterns: strings
+prompt: A string is **fancy** if no three letters in a row are the same. Write `make_fancy_string(s)` that deletes as few letters as possible from s to make it fancy, and returns the result. Keep the letters you want in a list: a letter is dropped when the last two letters kept are both the same as it. Join the list once at the end. Deleting from the string itself, with `s[:i] + s[i + 1:]`, would copy the whole string for every letter deleted.
+
+**Example 1:** `make_fancy_string("leeetcode")` returns `"leetcode"`.
+
+**Example 2:** `make_fancy_string("aaabaaaa")` returns `"aabaa"`.
+
+**Example 3:** `make_fancy_string("aab")` returns `"aab"`: it's already fancy.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, and s has only small letters.
+starter:
+```python
+def make_fancy_string(s):
+    # your code here
+    return s
+```
+solution:
+```python
+def make_fancy_string(s):
+    kept = []
+    for c in s:
+        if len(kept) >= 2 and kept[-1] == c and kept[-2] == c:
+            continue
+        kept.append(c)
+    return "".join(kept)
+```
+tests:
+- make_fancy_string("leeetcode")
+- make_fancy_string("aaabaaaa")
+- make_fancy_string("aab")
+- make_fancy_string("z")
+- make_fancy_string("bbbbb")
+- len(make_fancy_string("abbb" * 7500))
+fail[2]: Each run of a's keeps 2: "aa", then "b", then "aa".
+fail[3]: No letter appears three times in a row, so nothing goes: "aab".
+fail[4]: One letter is already fancy: "z".
+fail[5]: Five b's in a row keep 2: "bb".
+fail[6]: "abbb" 7,500 times: each "bbb" loses one b, which leaves 22,500 letters. Deleting each b with slices would copy the whole string 7,500 times.
+edges:
+- one letter :: len(s) == 1 :: make_fancy_string("a")
+- already fancy :: len(s) > 1 and all(not (s[i] == s[i - 1] and s[i] == s[i - 2]) for i in range(2, len(s))) :: make_fancy_string("aa")
+- three in a row :: any(s[i] == s[i - 1] and s[i] == s[i - 2] for i in range(2, len(s))) :: make_fancy_string("aaa")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass with O(1) work per letter (two reads at the end of the list and an append), then one join.
+why_space: The list of kept letters and the answer.
+hint: Make an empty list `kept`.
+hint: For each letter c: if kept has at least 2 letters and `kept[-1]` and `kept[-2]` are both c, skip c. Otherwise append it.
+hint: Return `"".join(kept)`.
+right: Reading the last two kept letters and appending are both O(1) at the end of a list, and the one join is O(n). Deleting from the string would copy it once per deleted letter: O(n²).
+wrong: `kept = []`. For each c in s: if `len(kept) >= 2 and kept[-1] == c and kept[-2] == c`, skip it; otherwise append it. Return `"".join(kept)`.
+
+=== task: code easy
+title: Minimum Number Game
+leetcode: 2974 | Minimum Number Game | minimum-number-game
+patterns: choose + hidden
+prompt: Alice and Bob play a game with nums, which has an even length, and an empty list arr. Each round, Alice removes the smallest number from nums, then Bob removes the smallest number left. Bob appends his number to arr, and then Alice appends hers. Write `number_game(nums)` that returns arr once nums is empty. Finding the smallest number with `min` and removing it with `remove` costs O(n) every round. Sort once instead: the numbers come out in sorted order, two per round.
+
+**Example 1:** `number_game([5, 4, 2, 3])` returns `[3, 2, 5, 4]`: Alice takes 2 and Bob takes 3, so arr gets 3 and then 2. Then Alice takes 4 and Bob takes 5.
+
+**Example 2:** `number_game([2, 5])` returns `[5, 2]`.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 100, `len(nums)` is even, and 1 ≤ `nums[i]` ≤ 100.
+starter:
+```python
+def number_game(nums):
+    # your code here
+    return nums
+```
+solution:
+```python
+def number_game(nums):
+    arr = sorted(nums)
+    for i in range(0, len(arr), 2):
+        arr[i], arr[i + 1] = arr[i + 1], arr[i]
+    return arr
+```
+tests:
+- number_game([5, 4, 2, 3])
+- number_game([2, 5])
+- number_game([7, 7])
+- number_game([1, 1, 2, 2])
+- number_game([9, 1, 8, 2, 7, 3])
+- number_game([i * 37 % 100 + 1 for i in range(100)])
+fail[2]: Alice takes 2 and Bob takes 5: arr is `[5, 2]`.
+fail[3]: Both numbers are 7: `[7, 7]`.
+fail[4]: The pairs are (1, 1) and (2, 2): swapping equal numbers changes nothing.
+fail[5]: Sorted, the numbers are 1, 2, 3, 7, 8, 9. Each pair goes in swapped: 2, 1, then 7, 3, then 9, 8.
+fail[6]: 100 numbers. Sorted and swapped in pairs, arr starts 2, 1, 4, 3.
+speed: setup=nums = list(range(n, 0, -1)) | call=number_game(nums) | target=O(n log n)
+slow:
+```python
+def number_game(nums):
+    nums = list(nums)
+    arr = []
+    while len(nums) > 0:
+        alice = min(nums)
+        nums.remove(alice)
+        bob = min(nums)
+        nums.remove(bob)
+        arr.append(bob)
+        arr.append(alice)
+    return arr
+```
+fail[speed]: `min(nums)` and `nums.remove(x)` each look through the list, and they run once per number: O(n²). One `sorted` is O(n log n), and then each pair is swapped in O(1).
+edges:
+- two numbers :: len(nums) == 2 :: number_game([1, 2])
+- all different :: len(nums) > 2 and len(set(nums)) == len(nums) :: number_game([4, 1, 3, 2])
+- repeated numbers :: len(nums) > 2 and len(set(nums)) < len(nums) :: number_game([2, 2, 1, 1])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One sort, O(n log n), then n / 2 swaps.
+why_space: The sorted list, which is also the answer.
+hint: Sort nums into a new list: `arr = sorted(nums)`.
+hint: The rounds take the numbers in sorted order, two at a time, and each pair goes into arr the other way round.
+hint: For i = 0, 2, 4 and onwards, swap `arr[i]` and `arr[i + 1]`. Return arr.
+right: Sorting once replaces n rounds of `min` and `remove`: O(n log n) instead of O(n²). After the sort, each round is one swap of two neighbours.
+wrong: `arr = sorted(nums)`. For i in range(0, len(arr), 2): swap `arr[i]` and `arr[i + 1]`. Return arr.
+
+=== task: code medium
+title: Dota2 Senate
+leetcode: 649 | Dota2 Senate | dota2-senate
+patterns: hidden + ends
+prompt: A senate has two parties, Radiant (`"R"`) and Dire (`"D"`), and `senate[i]` is senator i's party. The senators vote in rounds, from first to last, skipping any who have lost their rights. On their turn, a senator either bans another senator, who loses their rights for this round and every round after, or, if every senator who still has rights is in their own party, announces that their party wins. Write `predict_party_victory(senate)` that returns `"Radiant"` or `"Dire"`: the party that wins when every senator plays as well as they can for their party.
+
+The best move is always to ban the next senator of the other party who would vote. Keep the positions of each party's senators in two lists. Each step, the earlier of the two front senators bans the other one, and goes to the back of their own list for the next round, as position + n. Read the fronts with two positions that move forward: `pop(0)` would shift every senator in the list.
+
+**Example 1:** `predict_party_victory("RD")` returns `"Radiant"`: the R bans the D.
+
+**Example 2:** `predict_party_victory("RDD")` returns `"Dire"`: the R bans the first D, then the second D bans the R.
+
+**Constraints:** 1 ≤ n = `len(senate)` ≤ 10⁴, and every letter is `"R"` or `"D"`.
+starter:
+```python
+def predict_party_victory(senate):
+    # your code here
+    return "Radiant"
+```
+solution:
+```python
+def predict_party_victory(senate):
+    n = len(senate)
+    radiant = []
+    dire = []
+    for i in range(n):
+        if senate[i] == "R":
+            radiant.append(i)
+        else:
+            dire.append(i)
+    r = 0
+    d = 0
+    while r < len(radiant) and d < len(dire):
+        if radiant[r] < dire[d]:
+            radiant.append(radiant[r] + n)
+        else:
+            dire.append(dire[d] + n)
+        r += 1
+        d += 1
+    if r < len(radiant):
+        return "Radiant"
+    return "Dire"
+```
+tests:
+- predict_party_victory("RD")
+- predict_party_victory("RDD")
+- predict_party_victory("D")
+- predict_party_victory("DDRRR")
+- predict_party_victory("RRDDD")
+- predict_party_victory("RD" * 2500 + "D" * 2000 + "R" * 3000)
+fail[2]: The R bans the first D, but the second D still votes, and bans the R: "Dire".
+fail[3]: One senator: their party wins, "Dire".
+fail[4]: The two D's vote first and ban the first two R's. The last R bans the first D, and in the next round the second D bans that R: "Dire".
+fail[5]: The two R's vote first and ban the first two D's. The last D bans the first R, and in the next round the second R bans that D: "Radiant".
+fail[6]: 10,000 senators: 5,000 taking turns, then 2,000 D's, then 3,000 R's. The R's win: "Radiant". Taking the front senators with `pop(0)` would shift thousands of positions at every step.
+edges:
+- one senator :: len(senate) == 1 :: predict_party_victory("R")
+- one party only :: len(senate) > 1 and len(set(senate)) == 1 :: predict_party_victory("DD")
+- both parties :: len(set(senate)) == 2 :: predict_party_victory("DR")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of senate.
+why_time: Building the lists is O(n). Each step bans one senator, so there are fewer than n steps, each O(1).
+why_space: The two lists: n positions at the start, and at most one more for each ban.
+hint: Put the positions of the R's in one list and of the D's in another, and keep a front position for each list, both starting at 0.
+hint: While both lists have senators left: the smaller of the two front positions votes first. Append it + n to its own list (it votes again next round), then move both fronts forward one place: the other senator is banned.
+hint: The party whose list still has senators left wins.
+right: Both lists only grow at the end, and their fronts move forward by position, so every step is O(1): O(n) in all. With `pop(0)`, every step would shift a whole list: O(n²).
+wrong: Lists `radiant` and `dire` of positions, fronts `r = d = 0`. While r < len(radiant) and d < len(dire): if `radiant[r] < dire[d]`, append `radiant[r] + n` to radiant, else append `dire[d] + n` to dire; then add 1 to r and to d. Return "Radiant" if r < len(radiant), else "Dire".
+
+=== task: code medium
+title: Adding Spaces to a String
+leetcode: 2109 | Adding Spaces to a String | adding-spaces-to-a-string
+patterns: slices + strings
+prompt: Write `add_spaces(s, spaces)` that puts a space in front of the letters of s at the positions in spaces, and returns the new string. spaces is sorted from smallest to biggest. Cut s into pieces at those positions, each piece a slice from one position to the next, and join the pieces with spaces once. Rebuilding s for every space, with `s[:p] + " " + s[p:]`, would copy the whole string each time.
+
+**Example 1:** `add_spaces("LeetcodeHelpsMeLearn", [8, 13, 15])` returns `"Leetcode Helps Me Learn"`.
+
+**Example 2:** `add_spaces("icodeinpython", [1, 5, 7, 9])` returns `"i code in py thon"`.
+
+**Example 3:** `add_spaces("spacing", [0, 1, 2, 3, 4, 5, 6])` returns `" s p a c i n g"`: a space can go in front of the first letter too.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 3 × 10⁵, s has only letters, 1 ≤ `len(spaces)` ≤ 3 × 10⁵, every position is from 0 to `len(s) - 1`, and spaces is strictly increasing.
+starter:
+```python
+def add_spaces(s, spaces):
+    # your code here
+    return s
+```
+solution:
+```python
+def add_spaces(s, spaces):
+    pieces = []
+    start = 0
+    for p in spaces:
+        pieces.append(s[start:p])
+        start = p
+    pieces.append(s[start:])
+    return " ".join(pieces)
+```
+tests:
+- add_spaces("LeetcodeHelpsMeLearn", [8, 13, 15])
+- add_spaces("icodeinpython", [1, 5, 7, 9])
+- add_spaces("spacing", [0, 1, 2, 3, 4, 5, 6])
+- add_spaces("a", [0])
+- add_spaces("HelloWorld", [5])
+- (lambda t: [len(t), t[:9], t[-5:]])(add_spaces("abc" * 20000, list(range(0, 60000, 3))))
+fail[2]: Spaces go in front of positions 1, 5, 7 and 9: "i code in py thon".
+fail[3]: A space in front of position 0 makes the answer start with a space: the first piece is the empty slice `s[0:0]`.
+fail[4]: One letter with a space in front: " a".
+fail[5]: One space, in front of position 5: "Hello World".
+fail[6]: 60,000 letters and 20,000 spaces, one in front of every third letter: the answer has 80,000 characters and starts " abc abc ". Rebuilding the string for each space would copy it 20,000 times.
+edges:
+- a space in front of the first letter :: spaces[0] == 0 :: add_spaces("ab", [0])
+- one space, later on :: len(spaces) == 1 and spaces[0] > 0 :: add_spaces("ab", [1])
+- several spaces, none at the start :: len(spaces) > 1 and spaces[0] > 0 :: add_spaces("abc", [1, 2])
+edge_count: 2
+complexity: time=O(n + k) | space=O(n + k)
+complexity_options: O(n + k); O(n × k); O(k)
+complexity_note: n is the length of s, and k is the length of spaces.
+why_time: The k + 1 slices cover s once between them, n letters in all, and the join writes n + k characters.
+why_space: The pieces and the answer each hold about n + k characters.
+hint: Keep `start = 0`, where the next piece begins, and an empty list `pieces`.
+hint: For each position p in spaces: append `s[start:p]`, then set `start = p`.
+hint: After the loop, append the last piece, `s[start:]`, and return `" ".join(pieces)`.
+right: Each slice copies only its own piece, so the slices together copy n letters, and the join is O(n + k). Rebuilding s for every space would copy all n letters k times: O(n × k).
+wrong: `pieces = []`, `start = 0`. For each p in spaces: append `s[start:p]` and set `start = p`. Append `s[start:]`. Return `" ".join(pieces)`.
+
+=== task: code medium
+title: Find the Divisibility Array of a String
+leetcode: 2575 | Find the Divisibility Array of a String | find-the-divisibility-array-of-a-string
+patterns: slices + hidden
+prompt: word is a string of n digits, and m is a positive number. Write `divisibility_array(word, m)` that returns a list div of n numbers, where `div[i]` is 1 if the number made by the first i + 1 digits of word divides by m, and 0 otherwise. `int(word[:i + 1])` would copy a longer slice, and build a longer number, for every i. Keep only the remainder instead: putting digit d after a number with remainder r gives remainder `(r * 10 + d) % m`.
+
+**Example 1:** `divisibility_array("998244353", 3)` returns `[1, 1, 0, 0, 0, 1, 1, 0, 0]`: only 9, 99, 998244 and 9982443 divide by 3.
+
+**Example 2:** `divisibility_array("1010", 10)` returns `[0, 1, 0, 1]`: 10 and 1010 divide by 10.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, word has only digits, and 1 ≤ m ≤ 10⁹.
+starter:
+```python
+def divisibility_array(word, m):
     # your code here
     return []
 ```
 solution:
 ```python
-def lookup_all(names, numbers, queries):
-    book = {}
-    for i in range(len(names)):
-        book[names[i]] = numbers[i]
-    result = []
-    for q in queries:
-        result.append(book.get(q))
-    return result
-```
-tests:
-- lookup_all(["ann", "bob"], ["555-1", "555-2"], ["bob", "cal", "ann"])
-- lookup_all([], [], ["x"])
-- lookup_all(["ann"], ["555-1"], [])
-- lookup_all(["a", "b", "c"], [1, 2, 3], ["c", "c"])
-speed: setup=names = ["n" + str(i) for i in range(n)]; numbers = list(range(n)); queries = ["m" + str(i) for i in range(n)] | call=lookup_all(names, numbers, queries) | target=O(n)
-slow:
-```python
-def lookup_all(names, numbers, queries):
-    result = []
-    for q in queries:
-        if q in names:
-            result.append(numbers[names.index(q)])
+def divisibility_array(word, m):
+    div = []
+    rest = 0
+    for c in word:
+        rest = (rest * 10 + int(c)) % m
+        if rest == 0:
+            div.append(1)
         else:
-            result.append(None)
-    return result
+            div.append(0)
+    return div
 ```
-fail[1]: bob → 555-2, cal isn't there (None), ann → 555-1.
-fail[2]: An empty book has no names: None.
-fail[4]: The same query can come twice; each gets its number.
-error[KeyError]: `book[q]` fails for a missing name. Use `book.get(q)`, which gives None.
-hint: Fill the dictionary: `book[names[i]] = numbers[i]`.
-hint: For each query, append `book.get(q)`.
-hint: Return the list of answers.
-right: n steps to build the book, then q O(1) lookups: O(n + q). Searching the `names` list for every query would be O(n × q).
-wrong: Build `book` from the two lists, then append `book.get(q)` for every query.
+tests:
+- divisibility_array("998244353", 3)
+- divisibility_array("1010", 10)
+- divisibility_array("7", 1)
+- divisibility_array("0", 5)
+- divisibility_array("12345", 1000000000)
+- sum(divisibility_array("1234567" * 5700, 7))
+fail[2]: 10 and 1010 divide by 10, and 1 and 101 don't: `[0, 1, 0, 1]`.
+fail[3]: Every number divides by 1: `[1]`.
+fail[4]: 0 divides by every m: `[1]`.
+fail[5]: None of 1, 12, 123, 1234 and 12345 divides by 10⁹.
+fail[6]: 39,900 digits, "1234567" 5,700 times, with m = 7: 5,700 of the prefixes divide by 7. `int(word[:i + 1])` would copy about 800 million digits in all.
+edges:
+- one digit :: len(word) == 1 :: divisibility_array("4", 2)
+- m is 1 :: len(word) > 1 and m == 1 :: divisibility_array("12", 1)
+- m above 1 :: len(word) > 1 and m > 1 :: divisibility_array("12", 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of word.
+why_time: One pass, with O(1) work per digit: the remainder stays below m, however long the number gets.
+why_space: The answer list of n numbers.
+hint: Keep `rest = 0`, the remainder of the prefix so far.
+hint: For each digit c: `rest = (rest * 10 + int(c)) % m`. Append 1 if rest is 0, and 0 otherwise.
+hint: The prefix with one more digit is the old prefix × 10 + the new digit, so its remainder only needs the old remainder.
+right: The remainder is a small number that changes in O(1) per digit, so the pass is O(n). Slicing each prefix would copy 1 + 2 + 3 digits and onwards, up to n: O(n²), and turning each slice into a number costs as much again.
+wrong: `rest = 0`, `div = []`. For each c in word: `rest = (rest * 10 + int(c)) % m`; append 1 if `rest == 0`, else 0. Return div.
 
-=== task: code hard
-title: Reverse the words
-prompt: Write `reverse_words(sentence)` that returns the sentence with its words in reverse order, separated by single spaces. Make it O(n) with `split`, a reversed list, and `join`, instead of adding the words to a string one at a time.
+=== task: code medium
+title: Substring XOR Queries
+leetcode: 2564 | Substring XOR Queries | substring-xor-queries
+patterns: hidden + hashing
+prompt: s is a string of 0s and 1s. Each query `[first, second]` asks for the shortest piece of s whose value as a binary number, val, has `val ^ first == second`: that's the piece whose value is `first ^ second`. Write `substring_xor_queries(s, queries)` that returns, for each query, the start and end positions `[left, right]` of that piece (the one with the smallest left if there are several), or `[-1, -1]` if there's none.
 
-For example, `reverse_words("big o is fun")` returns `"fun is o big"`.
+Searching s for every query would cost O(n) per query. Work out the answers for every value once, in a dictionary, before the queries. `first ^ second` is below 2³⁰, so its piece has at most 30 digits, and the shortest piece for a value above 0 starts with a 1. So for each start i where `s[i]` is "1", build the values of the pieces starting there one digit at a time, for up to 30 digits, and store each value the first time you see it. The value 0 is the piece "0", if s has one.
+
+**Example 1:** `substring_xor_queries("101101", [[0, 5], [1, 2]])` returns `[[0, 2], [2, 3]]`: "101" is 5, and 5 ^ 0 = 5. "11" is 3, and 3 ^ 1 = 2.
+
+**Example 2:** `substring_xor_queries("0101", [[12, 8]])` returns `[[-1, -1]]`: 12 ^ 8 = 4, which is "100", and s has no "100".
+
+**Constraints:** 1 ≤ n = `len(s)` ≤ 10⁴, s has only 0s and 1s, 1 ≤ q = `len(queries)` ≤ 10⁵, and 0 ≤ first, second ≤ 10⁹.
 starter:
 ```python
-def reverse_words(sentence):
-    words = sentence.split()
+def substring_xor_queries(s, queries):
     # your code here
-    return sentence
+    return []
 ```
 solution:
 ```python
-def reverse_words(sentence):
-    words = sentence.split()
-    backwards = []
-    for i in range(len(words) - 1, -1, -1):
-        backwards.append(words[i])
-    return " ".join(backwards)
+def substring_xor_queries(s, queries):
+    where = {}
+    n = len(s)
+    for i in range(n):
+        if s[i] == "0":
+            if 0 not in where:
+                where[0] = [i, i]
+            continue
+        value = 0
+        for j in range(i, min(n, i + 30)):
+            value = value * 2 + int(s[j])
+            if value not in where:
+                where[value] = [i, j]
+    answer = []
+    for first, second in queries:
+        answer.append(where.get(first ^ second, [-1, -1]))
+    return answer
 ```
 tests:
-- reverse_words("big o is fun")
-- reverse_words("hello")
-- reverse_words("")
-- reverse_words("a b")
-- reverse_words("  two   spaces ")
-fail[1]: The words go in the opposite order: fun, is, o, big.
-fail[3]: An empty sentence has no words: the answer is an empty string.
-fail[5]: `split()` with no argument ignores extra spaces, and `join` puts single spaces back: "spaces two".
-require[join(]: Put the words back together with `join`.
-hint: `sentence.split()` gives the words.
-hint: Collect them from the last to the first.
-hint: `" ".join(...)` puts them back with single spaces.
-right: `split`, the reversal and `join` are each one pass: O(n). Adding each word to a growing string with `+` could copy the string again for every word.
-wrong: Split into words, build a list from the last word to the first, and return `" ".join` of it.
+- substring_xor_queries("101101", [[0, 5], [1, 2]])
+- substring_xor_queries("0101", [[12, 8]])
+- substring_xor_queries("1", [[4, 5]])
+- substring_xor_queries("0", [[3, 3], [1, 0]])
+- substring_xor_queries("1001", [[0, 9], [2, 3], [5, 5]])
+- (lambda r: [sum(1 for p in r if p[0] >= 0), r[:3]])(substring_xor_queries(bin(3 ** 1000)[2:1502], [[i, i * 7 % 1024] for i in range(20000)]))
+fail[2]: 12 ^ 8 = 4, which is "100" in binary, and s has no "100": `[[-1, -1]]`.
+fail[3]: 4 ^ 5 = 1, which is the "1" at position 0: `[[0, 0]]`.
+fail[4]: 3 ^ 3 = 0, the "0" at position 0. 1 ^ 0 = 1, and s has no 1: `[[0, 0], [-1, -1]]`.
+fail[5]: 9 is "1001", all of s. 1 is the first "1", at position 0. 0 is the first "0", at position 1.
+fail[6]: 1,500 digits and 20,000 queries, and 4,070 of the queries have an answer. Searching s for every query would read up to 1,500 digits 20,000 times.
+edges:
+- a query whose answer is 0 :: any(a == b for a, b in queries) :: substring_xor_queries("10", [[3, 3]])
+- a value that isn't in s :: all(a != b for a, b in queries) and any(bin(a ^ b)[2:] not in s for a, b in queries) :: substring_xor_queries("0", [[1, 0]])
+- every value is in s, none is 0 :: all(a != b and bin(a ^ b)[2:] in s for a, b in queries) :: substring_xor_queries("1", [[1, 0]])
+edge_count: 2
+complexity: time=O(n + q) | space=O(n + q)
+complexity_options: O(n + q); O(n × q); O(n² + q)
+complexity_note: n is the length of s, and q is the number of queries. A piece has at most 30 digits, a fixed number.
+why_time: At most 30 pieces start at each of the n positions, each built in O(1) from the one before: 30n steps, O(n). Then each query is one dictionary lookup.
+why_space: The dictionary holds at most 30n values, and the answer has q pairs.
+hint: Make a dictionary `where` from a value to its `[left, right]`. Go through the starts i in order, so that the first time you store a value, its left is the smallest.
+hint: If `s[i]` is "0", store `where[0] = [i, i]` if 0 isn't there yet, and go on to the next start: a longer piece starting with 0 is never the shortest.
+hint: Otherwise keep `value = 0`, and for j from i to i + 29 (stopping at the end of s): `value = value * 2 + int(s[j])`, and store `[i, j]` if value isn't in the dictionary yet.
+hint: For each query, look up `first ^ second`, with `[-1, -1]` when it's missing.
+right: The dictionary is built once, in O(30n), and then each query is O(1): O(n + q). Searching s for every query would cost O(n) each: O(n × q).
+wrong: For each start i: if `s[i]` is "0", store 0 → `[i, i]` the first time; otherwise build `value = value * 2 + int(s[j])` for j from i to i + 29, storing `[i, j]` the first time each value appears. Then answer each query with `where.get(first ^ second, [-1, -1])`.
 
-=== task: code hard
-title: Group the anagrams
-prompt: Write `anagram_groups(words)` that groups words made of the same letters. Two words are in the same group when their sorted letters match, so `"".join(sorted(w))` is a good key for a dictionary of groups. Return the groups as a list of lists, in the order each group first appears, with the words of each group in their original order. Make it O(n) in the number of words, with a dictionary instead of comparing every pair of words.
+=== task: code medium
+title: Find the Longest Substring Containing Vowels in Even Counts
+leetcode: 1371 | Find the Longest Substring Containing Vowels in Even Counts | find-the-longest-substring-containing-vowels-in-even-counts
+patterns: hashing
+prompt: Write `find_the_longest_substring(s)` that returns the length of the longest piece of s in which each vowel, a, e, i, o and u, appears an even number of times (0 counts as even). Keep a **mask**: a number whose 5 bits say which vowels have appeared an odd number of times so far. a flips bit 1, e flips 2, i flips 4, o flips 8 and u flips 16, with `mask ^= bit`. The piece from position j + 1 to position i has even counts exactly when the mask after i is the same as the mask after j. So keep a dictionary of the first position where each mask appeared, starting with mask 0 at position −1: the longest good piece ending at i starts right after that first position.
 
-For example, `anagram_groups(["tea", "eat", "tan", "ate"])` returns `[["tea", "eat", "ate"], ["tan"]]`.
+**Example 1:** `find_the_longest_substring("eleetminicoworoep")` returns `13`: "leetminicowor" has two e's, two i's and two o's.
+
+**Example 2:** `find_the_longest_substring("leetcodeisgreat")` returns `5`: "leetc".
+
+**Example 3:** `find_the_longest_substring("bcbcbc")` returns `6`: there are no vowels at all.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 5 × 10⁵, and s has only small letters.
 starter:
 ```python
-def anagram_groups(words):
-    groups = {}
-    order = []
+def find_the_longest_substring(s):
     # your code here
-    return [groups[key] for key in order]
+    return 0
 ```
 solution:
 ```python
-def anagram_groups(words):
-    groups = {}
-    order = []
-    for w in words:
-        key = "".join(sorted(w))
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(w)
-    return [groups[key] for key in order]
+def find_the_longest_substring(s):
+    bit = {"a": 1, "e": 2, "i": 4, "o": 8, "u": 16}
+    first = {0: -1}
+    mask = 0
+    best = 0
+    for i in range(len(s)):
+        if s[i] in bit:
+            mask ^= bit[s[i]]
+        if mask in first:
+            best = max(best, i - first[mask])
+        else:
+            first[mask] = i
+    return best
 ```
 tests:
-- anagram_groups(["tea", "eat", "tan", "ate", "nat", "bat"])
-- anagram_groups([])
-- anagram_groups(["a"])
-- anagram_groups(["ab", "ba", "ab"])
-speed: setup=words = ["w" + str(i) for i in range(n)] | call=anagram_groups(words) | target=O(n)
+- find_the_longest_substring("eleetminicoworoep")
+- find_the_longest_substring("leetcodeisgreat")
+- find_the_longest_substring("bcbcbc")
+- find_the_longest_substring("a")
+- find_the_longest_substring("aeiouaeiou")
+- find_the_longest_substring("x" * 5000 + "a" + "y" * 20000 + "e" + "z" * 14998)
+fail[2]: "leetc" has two e's and no other vowels: 5.
+fail[3]: No vowels, so the whole string works: 6. The mask is 0 everywhere, and its first position is −1.
+fail[4]: The only piece is "a", which has one a: 0.
+fail[5]: Every vowel appears twice: the whole string, 10.
+fail[6]: 5,000 x's, an a, 20,000 y's, an e and 14,998 z's. The mask is 1 right after the a and still 1 right before the e, so the 20,000 y's are the longest piece.
+edges:
+- one letter :: len(s) == 1 :: find_the_longest_substring("e")
+- no vowels :: len(s) > 1 and not any(c in "aeiou" for c in s) :: find_the_longest_substring("xy")
+- some vowels :: len(s) > 1 and any(c in "aeiou" for c in s) :: find_the_longest_substring("ax")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s. There are only 32 masks.
+why_time: One pass, with O(1) dictionary work per letter.
+why_space: The dictionary holds at most 32 masks, a fixed size, whatever n is.
+hint: Make `bit = {"a": 1, "e": 2, "i": 4, "o": 8, "u": 16}`, `first = {0: -1}` and `mask = 0`.
+hint: For each position i: if `s[i]` is a vowel, `mask ^= bit[s[i]]`.
+hint: If mask is in first, the piece from `first[mask] + 1` to i works, and its length is `i - first[mask]`. Otherwise store `first[mask] = i`. Keep the best length.
+right: Equal masks at two positions mean every vowel appeared an even number of times between them, so one dictionary of first positions answers each position in O(1). Checking every piece would be O(n²) or worse.
+wrong: `first = {0: -1}`, `mask = 0`, `best = 0`. For each i: flip the vowel's bit in mask; if mask is in first, `best = max(best, i - first[mask])`, else `first[mask] = i`. Return best.
+
+=== task: code medium
+title: Find Longest Special Substring That Occurs Thrice II
+leetcode: 2982 | Find Longest Special Substring That Occurs Thrice II | find-longest-special-substring-that-occurs-thrice-ii
+patterns: slices + hashing
+prompt: A string is **special** if all its letters are the same, like "ddd" or "f". Write `maximum_length(s)` that returns the length of the longest special piece of s that appears at least three times (the copies can overlap), or −1 if there's none.
+
+Using the pieces themselves as dictionary keys would copy and hash every one of them: up to n² / 2 pieces, of up to n letters each. Key by the pair `(letter, length)` instead. Go through s one run of the same letter at a time: a run of length L holds L − t + 1 copies of the special piece of length t, for every t from 1 to L.
+
+**Example 1:** `maximum_length("aaaa")` returns `2`: "aa" appears three times, at positions 0, 1 and 2.
+
+**Example 2:** `maximum_length("abcdef")` returns `-1`.
+
+**Example 3:** `maximum_length("abcaba")` returns `1`: "a" appears three times.
+
+**Constraints:** 3 ≤ `len(s)` ≤ 5 × 10⁵, and s has only small letters.
+starter:
+```python
+def maximum_length(s):
+    # your code here
+    return -1
+```
+solution:
+```python
+def maximum_length(s):
+    count = {}
+    n = len(s)
+    i = 0
+    while i < n:
+        j = i
+        while j < n and s[j] == s[i]:
+            j += 1
+        run = j - i
+        for t in range(1, run + 1):
+            key = (s[i], t)
+            count[key] = count.get(key, 0) + run - t + 1
+        i = j
+    best = -1
+    for key in count:
+        if count[key] >= 3 and key[1] > best:
+            best = key[1]
+    return best
+```
+tests:
+- maximum_length("aaaa")
+- maximum_length("abcdef")
+- maximum_length("abcaba")
+- maximum_length("aaa")
+- maximum_length("aabaaabaaaab")
+- maximum_length("x" * 10000 + "y" * 9999 + "x" * 10000)
+fail[2]: Every letter appears once: −1.
+fail[3]: The three a's are in different places, and each one is a special piece of length 1: 1.
+fail[4]: "aaa" has three copies of "a" but only two of "aa": 1.
+fail[5]: The a's come in runs of 2, 3 and 4. "aaa" appears once in the run of 3 and twice in the run of 4, three times in all: 3.
+fail[6]: Two runs of 10,000 x's and one of 9,999 y's. Each x run holds two copies of 9,999 x's, four in all, so the answer is 9,999. Slicing every special piece would copy billions of letters.
+edges:
+- the shortest string :: len(s) == 3 :: maximum_length("abc")
+- one letter repeated :: len(s) > 3 and len(set(s)) == 1 :: maximum_length("aaaa")
+- different letters :: len(s) > 3 and len(set(s)) > 1 :: maximum_length("aaab")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: A run of length L adds L keys, and the runs' lengths add up to n. A pair is O(1) to hash.
+why_space: Up to n `(letter, length)` keys.
+hint: Walk through s run by run: from position i, move j forward while `s[j] == s[i]`. The run's length is `j - i`.
+hint: For each t from 1 to the run's length L, add `L - t + 1` to `count[(s[i], t)]`.
+hint: The answer is the biggest t among the keys with a count of at least 3, or −1 if there's none.
+right: A pair is O(1) to hash, however long the piece it stands for, and each run adds as many keys as its length: O(n) in all. The pieces themselves as keys would each cost their length, and there are O(n²) of them.
+wrong: For each run of letter c with length L: for t from 1 to L, add `L - t + 1` to `count[(c, t)]`. Return the biggest t whose count is at least 3, or −1.
+
+=== task: code medium
+title: Smallest String With A Given Numeric Value
+leetcode: 1663 | Smallest String With A Given Numeric Value | smallest-string-with-a-given-numeric-value
+patterns: strings
+prompt: Each small letter has a **value**: its place in the alphabet, from a = 1 to z = 26. A string's value is the sum of its letters' values. Write `get_smallest_string(n, k)` that returns the string of length n with value k that comes first in alphabetical order. Start from n a's, which have value n. The k − n left over goes on the end of the string, 25 at a time, since an a becomes a z by adding 25, and whatever is left after that goes on the letter right before the z's. Build the answer once, with `*` and `+`: putting letters on the front one at a time would copy the string every time.
+
+**Example 1:** `get_smallest_string(3, 27)` returns `"aay"`: 1 + 1 + 25.
+
+**Example 2:** `get_smallest_string(5, 73)` returns `"aaszz"`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, and n ≤ k ≤ 26 × n.
+starter:
+```python
+def get_smallest_string(n, k):
+    # your code here
+    return "a" * n
+```
+solution:
+```python
+def get_smallest_string(n, k):
+    extra = k - n
+    z = extra // 25
+    if z == n:
+        return "z" * n
+    middle = chr(ord("a") + extra % 25)
+    return "a" * (n - z - 1) + middle + "z" * z
+```
+tests:
+- get_smallest_string(3, 27)
+- get_smallest_string(5, 73)
+- get_smallest_string(1, 1)
+- get_smallest_string(1, 26)
+- get_smallest_string(4, 104)
+- (lambda t: [len(t), t[:3], t[-3:], t.count("z")])(get_smallest_string(100000, 1000000))
+fail[2]: 73 − 5 = 68 left over: two z's take 50, and the 18 left makes an s: "aaszz".
+fail[3]: One letter with value 1: "a".
+fail[4]: One letter with value 26: "z".
+fail[5]: 104 is 26 × 4, so every letter is z: "zzzz".
+fail[6]: n is 100,000 and k is 1,000,000. The 900,000 left over makes exactly 36,000 z's, so the answer is 64,000 a's and then 36,000 z's.
+edges:
+- one letter :: n == 1 :: get_smallest_string(1, 5)
+- every letter is z :: n > 1 and k == 26 * n :: get_smallest_string(2, 52)
+- some letters below z :: n > 1 and k < 26 * n :: get_smallest_string(2, 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of the answer.
+why_time: A few sums, then one string of n letters built with `*` and `+`.
+why_space: The answer has n letters.
+hint: The value left over is `extra = k - n`, and the number of z's at the end is `z = extra // 25`.
+hint: If z is n, every letter is z. Otherwise the letter before the z's is `chr(ord("a") + extra % 25)`.
+hint: Return `"a" * (n - z - 1) + middle + "z" * z`.
+right: Working out the shape of the answer first means the string is built once, in O(n). Adding letters to the front one at a time copies the string every time: O(n²).
+wrong: `extra = k - n`, `z = extra // 25`. If z == n, return `"z" * n`. Otherwise `middle = chr(ord("a") + extra % 25)`, and return `"a" * (n - z - 1) + middle + "z" * z`.
+
+=== task: code medium
+title: Time Needed to Rearrange a Binary String
+leetcode: 2380 | Time Needed to Rearrange a Binary String | time-needed-to-rearrange-a-binary-string
+patterns: strings
+prompt: s is a string of 0s and 1s. Every second, every "01" in s turns into "10", all at the same time. Write `seconds_to_remove_occurrences(s)` that returns how many seconds pass until s has no "01" left.
+
+Running it with `s.replace("01", "10")` in a loop builds a whole new string every second, for up to n seconds: O(n²). Count instead. Each 1 has to move left past every 0 before it, one 0 per second, and it can't catch up with the 1 in front of it. So go from left to right, with `zeros`, the number of 0s so far: a 1 that has 0s before it is done at `max(seconds + 1, zeros)`, where seconds is when the 1 before it was done.
+
+**Example 1:** `seconds_to_remove_occurrences("0110101")` returns `4`: "0110101", "1011010", "1101100", "1110100", "1111000".
+
+**Example 2:** `seconds_to_remove_occurrences("11100")` returns `0`: there's no "01" to begin with.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 1000, and s has only 0s and 1s.
+starter:
+```python
+def seconds_to_remove_occurrences(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def seconds_to_remove_occurrences(s):
+    zeros = 0
+    seconds = 0
+    for c in s:
+        if c == "0":
+            zeros += 1
+        elif zeros > 0:
+            seconds = max(seconds + 1, zeros)
+    return seconds
+```
+tests:
+- seconds_to_remove_occurrences("0110101")
+- seconds_to_remove_occurrences("11100")
+- seconds_to_remove_occurrences("0")
+- seconds_to_remove_occurrences("01")
+- seconds_to_remove_occurrences("001011")
+- seconds_to_remove_occurrences("0" * 500 + "1" * 500)
+fail[2]: No "01" at all: 0 seconds.
+fail[3]: One digit can't hold a "01": 0.
+fail[4]: "01" becomes "10" in one second: 1.
+fail[5]: The 1s have 2, 3 and 3 zeros before them. The first is done at 2, the second at max(3, 3) = 3 and the third at max(4, 3) = 4.
+fail[6]: 500 zeros, then 500 ones. The first 1 needs 500 seconds, and each 1 after it is done one second after the one in front: 999.
+speed: setup=s = "0" * (n // 2) + "1" * (n // 2) | call=seconds_to_remove_occurrences(s) | target=O(n)
 slow:
 ```python
-def anagram_groups(words):
-    groups = []
-    for w in words:
-        placed = False
-        for g in groups:
-            if sorted(g[0]) == sorted(w):
-                g.append(w)
-                placed = True
-                break
-        if not placed:
-            groups.append([w])
-    return groups
+def seconds_to_remove_occurrences(s):
+    seconds = 0
+    while "01" in s:
+        s = s.replace("01", "10")
+        seconds += 1
+    return seconds
 ```
-fail[1]: "tea", "eat" and "ate" share the letters a, e, t; "tan" and "nat" share a, n, t; "bat" is alone.
-fail[4]: All three words have the letters a and b, so they form one group, repeats included.
-error[KeyError]: Create the group the first time you meet a key: `groups[key] = []`.
-hint: For each word, `key = "".join(sorted(w))`.
-hint: If the key is new, start an empty group and remember the key in `order`.
-hint: Append the word to `groups[key]`.
-right: Each word costs one sort of its own letters and one O(1) dictionary step, so the time grows in proportion to the number of words. Comparing each word with every group so far would be O(n²) for n different words.
-wrong: For each word, make its key from its sorted letters; create the group if it's new (and note the key's order), then append the word.
+fail[speed]: Each `replace` reads and builds the whole string, and the loop runs once per second, up to n seconds: O(n²). Counting the 0s in one pass is O(n).
+edges:
+- one digit :: len(s) == 1 :: seconds_to_remove_occurrences("1")
+- no "01" to start with :: len(s) > 1 and "01" not in s :: seconds_to_remove_occurrences("10")
+- a "01" to fix :: "01" in s :: seconds_to_remove_occurrences("01")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s.
+why_time: One pass with O(1) work per digit.
+why_space: Two numbers, zeros and seconds.
+hint: Keep `zeros = 0` and `seconds = 0`, and go through s from left to right.
+hint: A 0 adds 1 to zeros. A 1 with no 0s before it never moves: skip it.
+hint: A 1 with 0s before it is done at `max(seconds + 1, zeros)`: at least one second after the 1 in front of it, and at least one second for each 0 it passes.
+right: The answer only depends on how many 0s each 1 has to pass and on the 1 in front of it, so one pass of counting replaces up to n rebuilds of the string: O(n) instead of O(n²).
+wrong: `zeros = seconds = 0`. For each c: if c is "0", `zeros += 1`; else if `zeros > 0`, `seconds = max(seconds + 1, zeros)`. Return seconds.
 
-=== task: predict hard
-title: Counting the moves
-code:
+=== task: code medium
+title: Find Score of an Array After Marking All Elements
+leetcode: 2593 | Find Score of an Array After Marking All Elements | find-score-of-an-array-after-marking-all-elements
+patterns: choose + hidden
+prompt: Start with a score of 0, and repeat until every number in nums is marked: pick the smallest number that isn't marked (the one at the smaller position, if there's a tie), add it to the score, and mark it and its neighbours on both sides, if they exist. Write `find_score(nums)` that returns the final score.
+
+Searching for the smallest unmarked number each time is O(n) per pick. Sort the positions once by their numbers instead, `sorted(range(n), key=lambda i: nums[i])`, then go through them in that order, skipping any that are already marked. `sorted` keeps tied numbers in their first order, so the smaller position comes first.
+
+**Example 1:** `find_score([2, 1, 3, 4, 5, 2])` returns `7`: the 1 is picked and marks itself and the 2 and 3 next to it. The last 2 is picked and marks the 5 next to it. Then the 4 is left: 1 + 2 + 4.
+
+**Example 2:** `find_score([2, 3, 5, 1, 3, 2])` returns `5`: 1 + 2 + 2.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 1 ≤ `nums[i]` ≤ 10⁶.
+starter:
 ```python
-moves = 0
-nums = []
-for x in range(5):
-    moves += len(nums)
-    nums.insert(0, x)
-print(nums, moves)
+def find_score(nums):
+    # your code here
+    return 0
 ```
-wrong[[0, 1, 2, 3, 4] 10]: Each item goes in at the **front**, so the last one inserted, 4, ends up first.
-wrong[[4, 3, 2, 1, 0] 15]: Before each insert, the list holds 0, 1, 2, 3 and 4 items: 10 moves in all.
-wrong[[4, 3, 2, 1, 0] 5]: Each insert moves every item already in the list, not one item.
-hint: What's in `nums` before each insert?
-hint: The moves are 0 + 1 + 2 + 3 + 4.
-right: Inserting at the front moves every item already there: 0 + 1 + 2 + 3 + 4 = 10, which is n(n − 1) / 2, O(n²) for n inserts. With `append`, nothing would move.
-wrong: `nums` grows from the front: [0], [1, 0], ..., [4, 3, 2, 1, 0]. The moves are 0 + 1 + 2 + 3 + 4 = 10.
-
-=== task: predict hard
-title: Remove until gone
-code:
+solution:
 ```python
-nums = [3, 1, 3, 2, 3]
-checks = 0
-while 3 in nums:
-    nums.remove(3)
-    checks += 1
-print(nums, checks)
+def find_score(nums):
+    n = len(nums)
+    order = sorted(range(n), key=lambda i: nums[i])
+    marked = [False] * n
+    score = 0
+    for i in order:
+        if not marked[i]:
+            score += nums[i]
+            marked[i] = True
+            if i > 0:
+                marked[i - 1] = True
+            if i < n - 1:
+                marked[i + 1] = True
+    return score
 ```
-wrong[[1, 3, 2, 3] 1]: `remove` takes away one 3 at a time, but the loop keeps going while any 3 is left.
-wrong[[1, 2] 1]: `remove(3)` removes only the **first** 3 each time, so the loop runs three times.
-wrong[[1, 2, 3] 2]: There are three 3s, so it takes three removes to clear them all.
-hint: `remove` deletes only the first match.
-hint: How many 3s are there?
-right: Three removes leave `[1, 2]`. Each `in` and each `remove` scans the list (and `remove` moves the items after the 3), so clearing many copies this way is O(n²). One pass that keeps the other items is O(n).
-wrong: Each turn removes the first 3: [1, 3, 2, 3], then [1, 2, 3], then [1, 2]. That's 3 removes.
+tests:
+- find_score([2, 1, 3, 4, 5, 2])
+- find_score([2, 3, 5, 1, 3, 2])
+- find_score([10])
+- find_score([5, 5])
+- find_score([1, 2, 3, 4, 5])
+- find_score([i * 7919 % 100003 + 1 for i in range(12000)])
+fail[2]: The 1 marks positions 2 to 4, the first 2 marks positions 0 and 1, and the last 2 is left: 1 + 2 + 2 = 5.
+fail[3]: One number: 10.
+fail[4]: Both numbers are 5. The first is picked, and it marks the second: 5.
+fail[5]: 1 marks itself and 2, then 3 marks itself and 4, then 5 is left: 1 + 3 + 5 = 9.
+fail[6]: 12,000 numbers: the score is 248330942. Searching for the smallest unmarked number before every pick would read the list thousands of times.
+edges:
+- one number :: len(nums) == 1 :: find_score([4])
+- all the same :: len(nums) > 1 and len(set(nums)) == 1 :: find_score([2, 2])
+- different numbers :: len(set(nums)) > 1 :: find_score([2, 1])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One sort, O(n log n), then one pass over the sorted positions with O(1) work each.
+why_space: The sorted positions and the marks: n of each.
+hint: `order = sorted(range(n), key=lambda i: nums[i])` lists the positions from the smallest number to the biggest, with ties in position order.
+hint: Keep `marked = [False] * n`, and go through order, skipping any position that's marked.
+hint: Otherwise add `nums[i]` to the score, and mark i, i − 1 and i + 1 (those that are in the list).
+right: The picks always go in order of size, so one sort sets the order for all of them: O(n log n). Searching for the smallest unmarked number before every pick would be O(n) each time: O(n²).
+wrong: `order = sorted(range(n), key=lambda i: nums[i])`, `marked = [False] * n`. For each i in order: if it isn't marked, add `nums[i]` and mark i and its neighbours. Return the score.
 
-=== task: cells hard
-title: String costs
-prompt: `s` is a string of n characters. Fill in the Big O of each operation (type it like O(1) or O(n)).
-labels: s[0] | len(s) | s.upper() | "x" in s
-answer: O(1) | O(1) | O(n) | O(n)
-wrong[O(1) | O(n) | O(n) | O(n)]: The length of a string is stored, so `len` is O(1), like for lists.
-wrong[O(1) | O(1) | O(1) | O(n)]: `upper()` builds a new string, converting every character: O(n).
-wrong[O(1) | O(1) | O(n) | O(1)]: `in` on a string searches through it: O(n). Only sets and dictionaries answer `in` in O(1).
-hint: Does the operation touch every character?
-hint: Building a new string of n characters is O(n).
-right: Indexing and `len` are O(1); `upper()` builds n new characters, and `in` searches the string: O(n).
-wrong: `s[0]` and `len(s)` are O(1); `s.upper()` and `"x" in s` are O(n).
+=== task: code medium
+title: Count Zero Request Servers
+leetcode: 2747 | Count Zero Request Servers | count-zero-request-servers
+patterns: choose + hidden
+prompt: There are n servers, numbered 1 to n. `logs[i] = [server_id, time]` means that server got a request at that time. For each query time q, count the servers that got no requests from time q − x to time q, both ends included. Write `count_servers(n, logs, x, queries)` that returns those counts, in the order of queries.
 
-=== task: mcq hard
-title: A queue with pop(0)
-prompt: A program keeps a queue of n jobs in a list. Each turn, it takes the first job with `jobs.pop(0)` and handles it in O(1), until the queue is empty. What is the total cost?
-* O(n²) :: Right. Each `pop(0)` moves every remaining job: (n − 1) + (n − 2) + ... + 0 moves.
-- O(n) :: There are n turns, but each `pop(0)` is O(n) itself.
-- O(n log n) :: Nothing is sorted or halved: the moves add up to about n² / 2.
-- O(1) :: Each turn does work that grows with the queue.
-hint: How many jobs move on each `pop(0)`?
-hint: Add up the moves for every turn.
-right: n(n − 1) / 2 moves: O(n²). Reading the jobs with a position that moves along, or using a deque (Unit 3), makes it O(n).
-wrong: Each `pop(0)` shifts all the jobs behind it, so the total is (n − 1) + (n − 2) + ... + 0: O(n²).
+Checking every log for every query costs O(m) per query. Sort the logs by time, and the queries by time (sort the queries' positions, so each answer can go back to its place). Then a window of logs slides forward: a right position adds the logs up to q, a left position drops the logs before q − x, and a count for each server says how many of its logs are in the window. Keep `active`, the number of servers with a count above 0: the answer is `n - active`.
 
-=== task: multi hard
-title: True about dictionaries and sets
-prompt: Choose **every** true sentence.
-* `key in d` is O(1) on average for a dictionary :: Right. The key's hash leads straight to its place.
-* Building a set from a list of n items, `set(nums)`, is O(n) :: Right. Each item is added once, in O(1) on average.
-* Looping over all the keys of a dictionary is O(n) :: Right. Every key is visited.
-* In rare cases, a dictionary lookup can take O(n) steps :: Right. If many keys land in the same place, the lookup has to check them all. Python makes this very unlikely.
-- A set keeps its items in sorted order :: Sets have no order. Use `sorted(s)` to get the items in order.
-- `len(d)` counts the keys, so it's O(n) :: The size is stored: O(1).
-hint: Think about hashing, and about what has to visit every item.
-hint: Four of them are true.
-right: Lookups are O(1) on average (with a rare O(n) worst case), building a set and looping are O(n). Sets have no order, and `len` is stored.
-wrong: True: O(1) average lookups, O(n) to build a set, O(n) to loop, and a rare O(n) worst case. False: sets aren't sorted, and `len` is O(1).
+**Example 1:** `count_servers(3, [[1, 3], [2, 6], [1, 5]], 5, [10, 11])` returns `[1, 2]`: from 5 to 10, servers 1 and 2 got requests, so only server 3 didn't. From 6 to 11, only server 2 did.
 
-=== task: parsons hard
-title: Count every word
-prompt: Arrange the lines so that `word_counts` counts each word in one pass with a dictionary (O(n)), and the program prints:
+**Example 2:** `count_servers(3, [[2, 4], [2, 1], [1, 2], [3, 1]], 2, [3, 4])` returns `[0, 1]`.
 
-```output
-{'to': 2, 'be': 2, 'or': 1, 'not': 1}
-```
-
-Not every line is needed.
-lines:
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ m = `len(logs)` ≤ 10⁵, 1 ≤ q = `len(queries)` ≤ 10⁵, every time is from 1 to 10⁶, 1 ≤ x ≤ 10⁵, and x < `queries[i]` ≤ 10⁶.
+starter:
 ```python
-def word_counts(text):
-    counts = {}
-    for w in text.split():
-        counts[w] = counts.get(w, 0) + 1
-    return counts
-
-print(word_counts("to be or not to be"))
+def count_servers(n, logs, x, queries):
+    # your code here
+    return [n] * len(queries)
 ```
-distractors:
+solution:
 ```python
-        counts[w] = text.count(w)
-    for w in text:
+def count_servers(n, logs, x, queries):
+    logs = sorted(logs, key=lambda log: log[1])
+    order = sorted(range(len(queries)), key=lambda i: queries[i])
+    count = [0] * (n + 1)
+    active = 0
+    answer = [0] * len(queries)
+    left = 0
+    right = 0
+    for i in order:
+        q = queries[i]
+        while right < len(logs) and logs[right][1] <= q:
+            server = logs[right][0]
+            if count[server] == 0:
+                active += 1
+            count[server] += 1
+            right += 1
+        while left < right and logs[left][1] < q - x:
+            server = logs[left][0]
+            count[server] -= 1
+            if count[server] == 0:
+                active -= 1
+            left += 1
+        answer[i] = n - active
+    return answer
 ```
-hint: Loop over the words, not the characters: `text.split()`.
-hint: `counts.get(w, 0) + 1` adds one to a word's count, starting from 0.
-right: One pass with O(1) dictionary updates: O(n). `text.count(w)` would scan the whole text for every word (O(n²)), and it would also count "to" inside "tomato".
-wrong: `counts = {}`, then `for w in text.split():` with `counts[w] = counts.get(w, 0) + 1`, then `return counts`.
+tests:
+- count_servers(3, [[1, 3], [2, 6], [1, 5]], 5, [10, 11])
+- count_servers(3, [[2, 4], [2, 1], [1, 2], [3, 1]], 2, [3, 4])
+- count_servers(1, [[1, 1]], 1, [2])
+- count_servers(2, [[1, 1]], 1, [5])
+- count_servers(4, [[1, 10], [2, 10], [3, 20]], 5, [12, 21, 10])
+- sum(count_servers(500, [[i % 500 + 1, i * 37 % 3000 + 1] for i in range(3000)], 100, [101 + i * 53 % 2900 for i in range(3000)]))
+fail[2]: From 1 to 3, all three servers got requests: 0. From 2 to 4, server 3's only request, at time 1, is too early: 1.
+fail[3]: The window from 1 to 2 holds the request at time 1: no server is without one, 0.
+fail[4]: The request at time 1 is before the window from 4 to 5: both servers had none, 2.
+fail[5]: The queries aren't in order. 12 sees servers 1 and 2, 21 sees server 3, and 10 sees servers 1 and 2. Each answer goes back to its own place: `[2, 3, 2]`.
+fail[6]: 500 servers, 3,000 logs and 3,000 queries. Scanning all the logs for every query would check 9 million logs.
+edges:
+- one query :: len(queries) == 1 :: count_servers(2, [[1, 3]], 1, [5])
+- queries out of order :: len(queries) > 1 and queries != sorted(queries) :: count_servers(2, [[1, 3]], 1, [5, 3])
+- queries in order :: len(queries) > 1 and queries == sorted(queries) :: count_servers(2, [[1, 3]], 1, [3, 5])
+edge_count: 2
+complexity: time=O(n + m log m + q log q) | space=O(n + m + q)
+complexity_options: O(n + m log m + q log q); O(m × q); O(n + m + q); O(n × q)
+complexity_note: n is the number of servers, m the number of logs and q the number of queries.
+why_time: Sorting the logs is O(m log m), and sorting the queries O(q log q). The two window positions only move forward, m times each at most. Making the counts list is O(n).
+why_space: A count for each server, the sorted logs, and the sorted positions and answers of the queries.
+hint: `logs = sorted(logs, key=lambda log: log[1])` and `order = sorted(range(len(queries)), key=lambda i: queries[i])`.
+hint: Keep `count = [0] * (n + 1)`, `active = 0`, and positions `left = right = 0` in the sorted logs.
+hint: For each i in order, with `q = queries[i]`: move right forward over the logs with time ≤ q, adding 1 to their server's count (a count going from 0 to 1 adds 1 to active). Then move left forward over the logs with time < q − x, taking 1 off (a count going down to 0 takes 1 off active).
+hint: Set `answer[i] = n - active`.
+right: Sorting once lets both ends of the window move only forward, so the sweep is O(m + q) after the sorts. Scanning all the logs for each query would be O(m × q).
+wrong: Sort the logs by time and the query positions by their times. Slide a window of logs: add the logs up to q, drop the logs before q − x, and keep a count per server and the number of servers with a count above 0. Each answer is n minus that number, stored at the query's own position.
+
+=== task: code hard
+title: Maximum Deletions on a String
+leetcode: 2430 | Maximum Deletions on a String | maximum-deletions-on-a-string
+patterns: slices + strings
+prompt: In one operation on a string s, you can delete all of s, or delete its first i letters if they're the same as the i letters after them, for any i from 1 to half the length of s. Write `delete_string(s)` that returns the most operations it can take to delete all of s.
+
+Let `best[i]` be the most operations for the end of s from position i, `s[i:]`. Deleting all of it is 1 operation, and deleting the first `size` letters, when they match the next `size`, gives 1 + `best[i + size]`. Work out best from the end of s back to the start. Comparing the slices `s[i:i + size]` and `s[i + size:i + 2 * size]` copies 2 × size letters for each check: O(n³) in all. Instead, keep `row[j]`, the number of letters that match going forward from i and from j: if `s[i] == s[j]` it's 1 more than the same number for i + 1 and j + 1, and 0 otherwise. Then the two pieces match exactly when `row[i + size] >= size`, an O(1) check. Row i only needs row i + 1, so keep only the row below.
+
+**Example 1:** `delete_string("abcabcdabc")` returns `2`: delete "abc", then all of "abcdabc".
+
+**Example 2:** `delete_string("aaabaab")` returns `4`: delete "a", then "aab", then "a", then all of "ab".
+
+**Example 3:** `delete_string("aaaaa")` returns `5`: delete one a at a time.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 4000, and s has only small letters.
+starter:
+```python
+def delete_string(s):
+    # your code here
+    return 1
+```
+solution:
+```python
+def delete_string(s):
+    n = len(s)
+    best = [1] * (n + 1)
+    below = [0] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        row = [0] * (n + 1)
+        for j in range(n - 1, i, -1):
+            if s[i] == s[j]:
+                row[j] = below[j + 1] + 1
+        for size in range(1, (n - i) // 2 + 1):
+            if row[i + size] >= size:
+                best[i] = max(best[i], best[i + size] + 1)
+        below = row
+    return best[0]
+```
+tests:
+- delete_string("abcabcdabc")
+- delete_string("aaabaab")
+- delete_string("aaaaa")
+- delete_string("a")
+- delete_string("abab")
+- delete_string("ab" * 60 + "a" * 130)
+fail[2]: Delete "a" (the next letter is an a), then "aab" (the next 3 letters are "aab"), then "a", then the last "ab": 4.
+fail[3]: Each a matches the a after it: four deletions of one a, then the last a on its own, 5.
+fail[4]: One letter: delete it all, 1.
+fail[5]: Delete "ab", which matches the "ab" after it, then the rest: 2.
+fail[6]: "ab" 60 times, then 130 a's. Deleting "ab" 59 times leaves "ab" and the a's, and from there no start matches the letters after it: 59 + 1 = 60.
+speed: setup=s = "a" * n | call=delete_string(s) | target=O(n²) | sizes=50,100,200,400
+slow:
+```python
+def most_from(s, i, memo):
+    if i in memo:
+        return memo[i]
+    best = 1
+    for size in range(1, (len(s) - i) // 2 + 1):
+        if s[i:i + size] == s[i + size:i + 2 * size]:
+            best = max(best, most_from(s, i + size, memo) + 1)
+    memo[i] = best
+    return best
+
+
+def delete_string(s):
+    return most_from(s, 0, {})
+```
+fail[speed]: Each check `s[i:i + size] == s[i + size:i + 2 * size]` copies 2 × size letters, and there are about n² / 4 checks: O(n³). The row of match counts makes each check O(1).
+edges:
+- one letter :: len(s) == 1 :: delete_string("a")
+- one letter repeated :: len(s) > 1 and len(set(s)) == 1 :: delete_string("aa")
+- different letters :: len(set(s)) > 1 :: delete_string("ab")
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_options: O(n²); O(n³); O(n² log n)
+complexity_note: n is the length of s.
+why_time: For each of the n positions i, filling the row and trying every size are both O(n): n × n.
+why_space: Two rows of match counts and the best list, n + 1 numbers each.
+hint: `best = [1] * (n + 1)`, and `below = [0] * (n + 1)` for the row of position i + 1. Go from i = n − 1 down to 0.
+hint: Make a new `row = [0] * (n + 1)`. For j from n − 1 down to i + 1: if `s[i] == s[j]`, `row[j] = below[j + 1] + 1`.
+hint: For each size from 1 to `(n - i) // 2`: if `row[i + size] >= size`, `best[i] = max(best[i], best[i + size] + 1)`.
+hint: Set `below = row` before the next i. Return `best[0]`.
+right: The match counts turn each "do these two pieces match?" into one comparison of numbers, so the work is O(n²) instead of O(n³), and keeping only the row below keeps the space at O(n) instead of an n × n table.
+wrong: From i = n − 1 down to 0: fill `row[j]` for j > i with `below[j + 1] + 1` if `s[i] == s[j]`, else 0. Then for each size up to `(n - i) // 2` with `row[i + size] >= size`, `best[i] = max(best[i], best[i + size] + 1)`. Then `below = row`. Return `best[0]`.
+
+=== task: code hard
+title: Count Distinct Subarrays Divisible by K in Sorted Array
+leetcode: 3729 | Count Distinct Subarrays Divisible by K in Sorted Array | count-distinct-subarrays-divisible-by-k-in-sorted-array
+patterns: slices + hashing
+prompt: nums is sorted from smallest to biggest. A piece of nums (a subarray) is **good** if its sum divides by k. Write `num_good_subarrays(nums, k)` that returns the number of different good pieces, where two pieces count as the same if they hold the same numbers in the same order.
+
+A set of `tuple(nums[i:j])` would remove the repeats, but every slice copies and hashes up to n numbers: O(n³). Count in two steps instead. First count every good piece, repeats included: the piece from i to j − 1 is good when the running totals before i and before j have the same remainder mod k, so keep a dictionary counting the remainders seen so far, and each new running total adds the number of earlier totals with its remainder. Then remove the repeats. Since nums is sorted, a piece with two different numbers in it can only appear once. Only pieces made of one number repeated can appear more than once, and they all sit in that number's run. A run of L copies of v holds L − size + 1 copies of the piece of `size` v's: if `v * size % k == 0`, that piece was counted L − size + 1 times but should count once, so take off L − size.
+
+**Example 1:** `num_good_subarrays([1, 2, 3], 3)` returns `3`: [1, 2], [3] and [1, 2, 3].
+
+**Example 2:** `num_good_subarrays([2, 2, 2, 2, 2, 2], 6)` returns `2`: [2, 2, 2] and all six 2s.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, 1 ≤ `nums[i]` ≤ 10⁹, nums is sorted, and 1 ≤ k ≤ 10⁹.
+starter:
+```python
+def num_good_subarrays(nums, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def num_good_subarrays(nums, k):
+    seen = {0: 1}
+    prefix = 0
+    total = 0
+    for x in nums:
+        prefix = (prefix + x) % k
+        total += seen.get(prefix, 0)
+        seen[prefix] = seen.get(prefix, 0) + 1
+    n = len(nums)
+    i = 0
+    while i < n:
+        j = i
+        while j < n and nums[j] == nums[i]:
+            j += 1
+        run = j - i
+        for size in range(1, run + 1):
+            if nums[i] * size % k == 0:
+                total -= run - size
+        i = j
+    return total
+```
+tests:
+- num_good_subarrays([1, 2, 3], 3)
+- num_good_subarrays([2, 2, 2, 2, 2, 2], 6)
+- num_good_subarrays([5], 5)
+- num_good_subarrays([1, 1], 3)
+- num_good_subarrays([1, 1, 2, 2, 2], 2)
+- num_good_subarrays(sorted([i * 37 % 50 + 1 for i in range(600)]), 7)
+fail[2]: [2, 2, 2] adds up to 6 and appears 4 times, but counts once. All six 2s add up to 12: 2.
+fail[3]: [5] divides by 5: 1.
+fail[4]: 1, 1 and 2 don't divide by 3: 0.
+fail[5]: The good pieces are [1, 1], [2], [2, 2], [2, 2, 2], [1, 1, 2], [1, 1, 2, 2] and all five: 7. [2] appears 3 times and [2, 2] twice, but each counts once.
+fail[6]: 600 sorted numbers, 12 copies of each number from 1 to 50: 28,512 different good pieces. A set of slices would copy about 36 million numbers.
+edges:
+- one number :: len(nums) == 1 :: num_good_subarrays([3], 3)
+- one number repeated :: len(nums) > 1 and len(set(nums)) == 1 :: num_good_subarrays([3, 3], 3)
+- different numbers :: len(set(nums)) > 1 :: num_good_subarrays([1, 2], 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One pass of running totals with O(1) dictionary work each, then one pass over the runs, trying each size up to the run's length: the runs' lengths add up to n.
+why_space: The dictionary holds up to n + 1 remainders.
+hint: `seen = {0: 1}` (the total before any number), `prefix = 0`. For each x: `prefix = (prefix + x) % k`, add `seen.get(prefix, 0)` to the total, then add 1 to `seen[prefix]`.
+hint: Then walk through the runs: from i, move j forward while `nums[j] == nums[i]`. The run's length is L = j − i.
+hint: For each size from 1 to L with `nums[i] * size % k == 0`, take `L - size` off the total.
+right: The dictionary of remainders counts every good piece in O(n) without building any of them, and because nums is sorted, repeats only happen inside runs, which a second O(n) pass fixes. A set of slices would copy and hash every good piece: O(n³).
+wrong: Count the pairs of running totals with equal remainders, using `seen = {0: 1}`. Then for each run of L copies of v, and each size from 1 to L with `v * size % k == 0`, take off `L - size`. Return the total.
+
+=== task: code hard
+title: Make Array Empty
+leetcode: 2659 | Make Array Empty | make-array-empty
+patterns: choose + hidden
+prompt: The numbers in nums are all different. Repeat until nums is empty: if the first number is the smallest one left, remove it; otherwise move it to the end. Write `count_operations_to_empty_array(nums)` that returns how many operations that takes.
+
+Running it with `min`, `pop(0)` and `append` costs O(n) per operation, and there can be O(n²) operations. Count instead. The numbers are removed from smallest to biggest, so sort the positions once by their numbers: `order = sorted(range(n), key=lambda i: nums[i])`. Think of the operations as passes over the list from front to back: in each pass, every number still there is either removed or moved to the end. So each number is moved once for every pass before the one that removes it. A new pass starts at the i-th removal exactly when `order[i] < order[i - 1]`: the next number to remove is behind the last one. From then on, each of the n − i numbers left is moved one more time. So the answer is n removals, plus n − i for every such i.
+
+**Example 1:** `count_operations_to_empty_array([3, 4, -1])` returns `5`: 3 and 4 move to the end, then −1, 3 and 4 are removed.
+
+**Example 2:** `count_operations_to_empty_array([1, 2, 4, 3])` returns `5`: 1 and 2 are removed, 4 moves to the end, then 3 and 4 are removed.
+
+**Example 3:** `count_operations_to_empty_array([1, 2, 3])` returns `3`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, −10⁹ ≤ `nums[i]` ≤ 10⁹, and the numbers are all different.
+starter:
+```python
+def count_operations_to_empty_array(nums):
+    # your code here
+    return len(nums)
+```
+solution:
+```python
+def count_operations_to_empty_array(nums):
+    n = len(nums)
+    order = sorted(range(n), key=lambda i: nums[i])
+    total = n
+    for i in range(1, n):
+        if order[i] < order[i - 1]:
+            total += n - i
+    return total
+```
+tests:
+- count_operations_to_empty_array([3, 4, -1])
+- count_operations_to_empty_array([1, 2, 4, 3])
+- count_operations_to_empty_array([1, 2, 3])
+- count_operations_to_empty_array([7])
+- count_operations_to_empty_array([3, 2, 1])
+- count_operations_to_empty_array([i * 7919 % 15013 - 7000 for i in range(15000)])
+fail[2]: 1 and 2 are removed in order. 3 is behind 4, so a new pass starts, and the one number still waiting, 4, is moved once: 4 + 1 = 5.
+fail[3]: Already sorted, so nothing is ever moved: 3.
+fail[4]: One number: 1.
+fail[5]: The numbers are removed from the back, so every removal after the first starts a new pass: 3 removals, and 2 + 1 moves, 6.
+fail[6]: 15,000 numbers in a scrambled order take 67,603,492 operations. Doing them one at a time would take far too long, and each `pop(0)` is O(n) on top.
+edges:
+- one number :: len(nums) == 1 :: count_operations_to_empty_array([5])
+- already sorted :: len(nums) > 1 and nums == sorted(nums) :: count_operations_to_empty_array([1, 2])
+- not sorted :: nums != sorted(nums) :: count_operations_to_empty_array([2, 1])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One sort of the positions, O(n log n), then one pass over them.
+why_space: The sorted list of n positions.
+hint: `order = sorted(range(n), key=lambda i: nums[i])`: the positions in the order their numbers are removed.
+hint: Start the total at n: every number is removed once.
+hint: For i from 1 to n − 1: if `order[i] < order[i - 1]`, a new pass starts, and the n − i numbers still in the list are each moved once more: add `n - i`.
+right: Sorting once gives the order of every removal, and comparing neighbouring positions in that order counts the passes: O(n log n). Running the operations one by one would take up to O(n²) of them, each with an O(n) `pop(0)` or `min`.
+wrong: `order = sorted(range(n), key=lambda i: nums[i])`, total = n. For i from 1 to n − 1: if `order[i] < order[i - 1]`, add `n - i`. Return the total.
+
+=== task: code hard
+title: Maximum Number of Tasks You Can Assign
+leetcode: 2071 | Maximum Number of Tasks You Can Assign | maximum-number-of-tasks-you-can-assign
+patterns: hidden + ends
+prompt: Task i needs strength `tasks[i]`, and worker j has strength `workers[j]`. A worker can do at most one task, and only one that needs no more than their strength. You also have `pills` pills: a pill adds `strength` to one worker's strength, and each worker can take at most one. Write `max_task_assign(tasks, workers, pills, strength)` that returns the most tasks that can be done.
+
+Sort both lists. If k tasks can be done, the k easiest tasks can be done by the k strongest workers, and if k can be done, so can k − 1: binary search for the biggest k. To check a k, go through those k workers from the weakest to the strongest, and keep a list of waiting tasks, easiest first: every task from the k easiest that the current worker could do with a pill, added as the workers get stronger. If the easiest waiting task needs no more than the worker's strength, the worker does it without a pill. Otherwise the worker takes a pill, if one is left, and does the hardest waiting task, the last one in the list. If nothing is waiting, or no pill is left when one is needed, k fails. Take the easiest task with a position `front` that moves forward, and the hardest with `pop()`: `pop(0)` would shift every task waiting.
+
+**Example 1:** `max_task_assign([3, 2, 1], [0, 3, 3], 1, 1)` returns `3`: the pill takes the worker of strength 0 to 1, enough for the task that needs 1, and the two workers of strength 3 do the others.
+
+**Example 2:** `max_task_assign([5, 4], [0, 0, 0], 1, 5)` returns `1`: one worker takes the pill and does one task.
+
+**Example 3:** `max_task_assign([10, 15, 30], [0, 10, 10, 10, 10], 3, 10)` returns `2`.
+
+**Constraints:** 1 ≤ n = `len(tasks)` ≤ 5 × 10⁴, 1 ≤ m = `len(workers)` ≤ 5 × 10⁴, 0 ≤ pills ≤ m, and every strength is from 0 to 10⁹.
+starter:
+```python
+def max_task_assign(tasks, workers, pills, strength):
+    # your code here
+    return 0
+```
+solution:
+```python
+def can_do(tasks, workers, pills, strength, k):
+    waiting = []
+    front = 0
+    t = 0
+    for w in workers[len(workers) - k:]:
+        while t < k and tasks[t] <= w + strength:
+            waiting.append(tasks[t])
+            t += 1
+        if front == len(waiting):
+            return False
+        if waiting[front] <= w:
+            front += 1
+        elif pills == 0:
+            return False
+        else:
+            pills -= 1
+            waiting.pop()
+    return True
+
+
+def max_task_assign(tasks, workers, pills, strength):
+    tasks = sorted(tasks)
+    workers = sorted(workers)
+    low = 0
+    high = min(len(tasks), len(workers))
+    while low < high:
+        mid = (low + high + 1) // 2
+        if can_do(tasks, workers, pills, strength, mid):
+            low = mid
+        else:
+            high = mid - 1
+    return low
+```
+tests:
+- max_task_assign([3, 2, 1], [0, 3, 3], 1, 1)
+- max_task_assign([5, 4], [0, 0, 0], 1, 5)
+- max_task_assign([10, 15, 30], [0, 10, 10, 10, 10], 3, 10)
+- max_task_assign([5], [4], 0, 10)
+- max_task_assign([1, 1, 1], [0, 0, 1], 2, 1)
+- max_task_assign([i * 37 % 1000 for i in range(2000)], [i * 53 % 900 for i in range(2000)], 500, 150)
+fail[2]: One pill takes one worker to 5, enough for one task. The other workers have strength 0: 1.
+fail[3]: A worker of strength 10 does the task that needs 10, and another takes a pill to reach 20 for the 15. Nobody can reach 30: 2.
+fail[4]: The worker has strength 4 and there are no pills, so the task that needs 5 can't be done: 0.
+fail[5]: The worker of strength 1 does one task, and the two pills take the workers of strength 0 to 1 for the other two: 3.
+fail[6]: 2,000 tasks and 2,000 workers, with 500 pills of strength 150: 1,960 tasks. Each check of a k takes an easiest waiting task up to k times, and with `pop(0)` each of those is O(k).
+edges:
+- no pills :: pills == 0 :: max_task_assign([1], [1], 0, 5)
+- more workers than tasks :: pills > 0 and len(workers) > len(tasks) :: max_task_assign([2], [0, 1], 1, 1)
+- no more workers than tasks :: pills > 0 and len(workers) <= len(tasks) :: max_task_assign([2, 3], [0], 1, 1)
+edge_count: 2
+complexity: time=O(n log n + m log m) | space=O(n + m)
+complexity_options: O(n log n + m log m); O(n × m); O((n + m)² log (n + m)); O(n + m)
+complexity_note: n is the number of tasks and m the number of workers.
+why_time: Sorting is O(n log n + m log m). The binary search tries O(log(min(n, m))) values of k, and each check is O(k), since every task is added once and taken once: less than the sorting.
+why_space: The sorted copies, and a waiting list of up to k tasks.
+hint: Sort tasks and workers. Binary search with `low = 0` and `high = min(n, m)`: try `mid = (low + high + 1) // 2`, and keep the half where the answer is.
+hint: To check k: the workers are `workers[m - k:]`, weakest first, and the tasks are `tasks[:k]`. For each worker w, append every next task t with `t <= w + strength` to `waiting`.
+hint: If `front == len(waiting)`, nothing is waiting: k fails. If `waiting[front] <= w`, add 1 to front. Otherwise k fails if no pills are left; if there are, use one and `waiting.pop()` the hardest task.
+hint: If every worker gets a task, k works.
+right: The waiting list only gives up tasks at its two ends: the easiest through a moving position and the hardest with `pop()`, both O(1), so each check is O(k). With `pop(0)`, each check would be O(k²).
+wrong: Sort both lists. Binary search for the biggest k that passes the check. The check goes through the k strongest workers from the weakest, appends the tasks among the k easiest that the worker could do with a pill, then either takes `waiting[front]` without a pill (front += 1) or uses a pill on `waiting.pop()`, failing when nothing is waiting or no pill is left.
+
+=== task: code hard
+title: Minimum Adjacent Swaps for K Consecutive Ones
+leetcode: 1703 | Minimum Adjacent Swaps for K Consecutive Ones | minimum-adjacent-swaps-for-k-consecutive-ones
+patterns: slices + hidden
+prompt: nums holds 0s and 1s. In one move you can swap two neighbouring numbers. Write `min_moves(nums, k)` that returns the fewest moves that put k 1s next to each other.
+
+The k 1s that end up together are k 1s in a row in the list of positions of the 1s. Take away from the position of the j-th 1 (counting from 0) the j 1s before it: `q[j] = position - j`. Then moving the 1s numbered start to start + k − 1 into one block costs the sum of the distances of their q values from one value, and the cheapest value is their middle one, `m = q[mid]` with `mid = start + k // 2`. Summing the distances over the slice `q[start:start + k]` for every start would cost O(k) per start. Keep a prefix list instead, where `prefix[i]` is the sum of the first i values of q: the distances on the left of the middle add up to `m * (mid - start) - (prefix[mid] - prefix[start])`, and the right side works the same way, so each start costs O(1).
+
+**Example 1:** `min_moves([1, 0, 0, 1, 0, 1], 2)` returns `1`: swap the last two numbers to get `[1, 0, 0, 0, 1, 1]`.
+
+**Example 2:** `min_moves([1, 0, 0, 0, 0, 0, 1, 1], 3)` returns `5`: move the first 1 five places to the right.
+
+**Example 3:** `min_moves([1, 1, 0, 1], 2)` returns `0`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, every number is 0 or 1, and 1 ≤ k ≤ the number of 1s.
+starter:
+```python
+def min_moves(nums, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_moves(nums, k):
+    q = []
+    for i in range(len(nums)):
+        if nums[i] == 1:
+            q.append(i - len(q))
+    prefix = [0]
+    for v in q:
+        prefix.append(prefix[-1] + v)
+    half = k // 2
+    best = -1
+    for start in range(len(q) - k + 1):
+        mid = start + half
+        m = q[mid]
+        left = m * (mid - start) - (prefix[mid] - prefix[start])
+        right_sum = prefix[start + k] - prefix[mid + 1]
+        right = right_sum - m * (start + k - mid - 1)
+        if best == -1 or left + right < best:
+            best = left + right
+    return best
+```
+tests:
+- min_moves([1, 0, 0, 1, 0, 1], 2)
+- min_moves([1, 0, 0, 0, 0, 0, 1, 1], 3)
+- min_moves([1, 1, 0, 1], 2)
+- min_moves([1], 1)
+- min_moves([1, 0, 1, 0, 1, 0, 1], 4)
+- min_moves([int(c) for c in bin(3 ** 20000)[2:]], 8000)
+fail[2]: The first 1 has to move five places to join the two at the end: 5.
+fail[3]: The first two numbers are already two 1s together: 0.
+fail[4]: One 1, and k is 1: 0.
+fail[5]: The 1s are at 0, 2, 4 and 6, so q is 0, 1, 2, 3. The middle value is 2, and the distances add up to 2 + 1 + 0 + 1 = 4.
+fail[6]: The binary digits of 3²⁰⁰⁰⁰: 31,700 numbers with 15,888 1s, and k = 8000. Summing a slice of 8,000 values for each of the 7,889 starts would add up over 63 million numbers.
+edges:
+- k is 1 :: k == 1 :: min_moves([0, 1], 1)
+- k is all the 1s :: k > 1 and k == sum(nums) :: min_moves([1, 0, 1], 2)
+- k is fewer than all the 1s :: k > 1 and k < sum(nums) :: min_moves([1, 1, 0, 1], 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One pass to build q, one to build the prefix list, and one over the starts, each with O(1) work per step.
+why_space: q and the prefix list.
+hint: Build q: for each position i with `nums[i] == 1`, append `i - len(q)`. Then `prefix = [0]`, and append `prefix[-1] + v` for each v in q.
+hint: For each start from 0 to `len(q) - k`: `mid = start + k // 2` and `m = q[mid]`.
+hint: The left side costs `m * (mid - start) - (prefix[mid] - prefix[start])`, and the right side costs `(prefix[start + k] - prefix[mid + 1]) - m * (start + k - mid - 1)`.
+hint: Keep the smallest left + right.
+right: Each sum of distances comes from subtractions in the prefix list instead of a pass over a slice, so every start is O(1): O(n) in all. Summing each window's slice would be O(k) per start: O(n × k).
+wrong: Build `q[j]` = the position of the j-th 1 minus j, and its prefix sums. For each start, with `mid = start + k // 2` and `m = q[mid]`, add the left cost `m * (mid - start) - (prefix[mid] - prefix[start])` and the right cost `prefix[start + k] - prefix[mid + 1] - m * (start + k - mid - 1)`. Return the smallest.
+
+=== task: code hard
+title: Smallest Unique Subarray
+leetcode: 3934 | Smallest Unique Subarray | smallest-unique-subarray
+patterns: slices + hashing
+prompt: A piece of nums (a subarray) is **unique** if no piece at another place holds the same numbers in the same order. Write `smallest_unique_subarray(nums)` that returns the length of the shortest unique piece.
+
+If some piece of length L is unique, so is every longer piece that contains it, so binary search for the smallest L that has a unique piece. To check a length L, count the pieces of length L in a dictionary. Using `tuple(nums[i:i + L])` as the key would copy and hash L numbers for every piece. Use a **rolling hash** instead: read the piece's numbers as the digits of one number in base B = 1000003, kept below M = 2305843009213693951 (that's 2⁶¹ − 1) with `% M`. Moving one place to the right takes the first number out and puts the next one in, in O(1): `h = ((h - nums[i] * top) * B + nums[i + L]) % M`, where `top = pow(B, L - 1, M)`. With M that big, two different pieces getting the same hash is so unlikely that you can rely on it.
+
+**Example 1:** `smallest_unique_subarray([3, 3, 3])` returns `3`: [3] appears 3 times and [3, 3] twice, so only the whole list is unique.
+
+**Example 2:** `smallest_unique_subarray([2, 1, 2, 3, 3])` returns `1`: [1] appears once.
+
+**Example 3:** `smallest_unique_subarray([1, 1, 2, 2, 1])` returns `2`: every number repeats, but [1, 2] appears once.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 1 ≤ `nums[i]` ≤ 10⁵.
+starter:
+```python
+def smallest_unique_subarray(nums):
+    # your code here
+    return len(nums)
+```
+solution:
+```python
+def has_unique(nums, size):
+    mod = 2305843009213693951
+    base = 1000003
+    top = pow(base, size - 1, mod)
+    h = 0
+    for i in range(size):
+        h = (h * base + nums[i]) % mod
+    count = {h: 1}
+    for i in range(size, len(nums)):
+        h = ((h - nums[i - size] * top) * base + nums[i]) % mod
+        count[h] = count.get(h, 0) + 1
+    for c in count.values():
+        if c == 1:
+            return True
+    return False
+
+
+def smallest_unique_subarray(nums):
+    low = 1
+    high = len(nums)
+    while low < high:
+        mid = (low + high) // 2
+        if has_unique(nums, mid):
+            high = mid
+        else:
+            low = mid + 1
+    return low
+```
+tests:
+- smallest_unique_subarray([3, 3, 3])
+- smallest_unique_subarray([2, 1, 2, 3, 3])
+- smallest_unique_subarray([1, 1, 2, 2, 1])
+- smallest_unique_subarray([7])
+- smallest_unique_subarray([1, 2, 1, 2])
+- smallest_unique_subarray([1, 2, 3] * 1000)
+fail[2]: [1] appears only once: 1.
+fail[3]: 1 and 2 both repeat, but [1, 2] appears once: 2.
+fail[4]: One number is unique on its own: 1.
+fail[5]: [1, 2] appears twice, but [2, 1] only once: 2.
+fail[6]: [1, 2, 3] 1,000 times: a piece appears at every third place where it fits, and the shortest piece that fits only once has length 2,996. Slicing pieces that long as keys would copy millions of numbers for each length tried.
+edges:
+- one number :: len(nums) == 1 :: smallest_unique_subarray([4])
+- a number that appears once :: len(nums) > 1 and any(nums.count(x) == 1 for x in nums) :: smallest_unique_subarray([1, 2])
+- every number repeats :: len(nums) > 1 and all(nums.count(x) > 1 for x in nums) :: smallest_unique_subarray([1, 1])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: The binary search tries O(log n) lengths, and each check rolls the hash across nums in O(n).
+why_space: The dictionary holds up to n hashes.
+hint: Write `has_unique(nums, size)`: build the hash of the first `size` numbers with `h = (h * B + nums[i]) % M`, count it in a dictionary, then roll it one place at a time, counting each new hash.
+hint: `has_unique` returns True if some count is 1.
+hint: Binary search with `low = 1` and `high = len(nums)` (the whole list is always unique). While `low < high`, try `mid = (low + high) // 2`: if it has a unique piece, `high = mid`, else `low = mid + 1`.
+right: Each piece's hash comes from the one before in O(1), so a check is O(n) whatever the length, and the binary search needs O(log n) checks. Tuples of slices as keys would cost O(L) each: O(n × L) per check.
+wrong: Binary search the length from 1 to n. To check a length L, roll a hash `h = ((h - nums[i] * top) * B + nums[i + L]) % M` across nums, count the hashes in a dictionary, and see if any count is 1.
+
+=== task: code hard
+title: Minimum Cost to Split an Array
+leetcode: 2547 | Minimum Cost to Split an Array | minimum-cost-to-split-an-array
+patterns: slices + hidden
+prompt: Split nums into pieces, each a run of neighbouring numbers. The **trimmed** form of a piece drops every number that appears only once in it: `[3, 1, 2, 4, 3, 4]` trims to `[3, 4, 3, 4]`. A piece costs k plus the length of its trimmed form, and a split costs the total of its pieces. Write `min_cost(nums, k)` that returns the cheapest split.
+
+Let `best[end]` be the cheapest split of `nums[:end]`. The last piece runs from some start to end, so `best[end]` is the smallest `best[start] + k + trimmed length of nums[start:end]`. Working out each trimmed length from a slice, with fresh counts each time, costs O(n) per start: O(n³) in all. Instead, for each end, move start back from end − 1 to 0, adding `nums[start]` to a running count: when a number's count reaches 2, the trimmed length grows by 2 (both copies now stay), and after that by 1 for each copy.
+
+**Example 1:** `min_cost([1, 2, 1, 2, 1, 3, 3], 2)` returns `8`: [1, 2] costs 2 + 0, and [1, 2, 1, 3, 3] costs 2 + 4.
+
+**Example 2:** `min_cost([1, 2, 1, 2, 1], 2)` returns `6`: [1, 2] and [1, 2, 1] cost 2 and 4.
+
+**Example 3:** `min_cost([1, 2, 1, 2, 1], 5)` returns `10`: one piece, 5 + 5.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 1000, 0 ≤ `nums[i]` < `len(nums)`, and 1 ≤ k ≤ 10⁹.
+starter:
+```python
+def min_cost(nums, k):
+    # your code here
+    return k
+```
+solution:
+```python
+def min_cost(nums, k):
+    n = len(nums)
+    best = [0] * (n + 1)
+    for end in range(1, n + 1):
+        count = [0] * n
+        trimmed = 0
+        best[end] = -1
+        for start in range(end - 1, -1, -1):
+            x = nums[start]
+            count[x] += 1
+            if count[x] == 2:
+                trimmed += 2
+            elif count[x] > 2:
+                trimmed += 1
+            cost = best[start] + k + trimmed
+            if best[end] == -1 or cost < best[end]:
+                best[end] = cost
+    return best[n]
+```
+tests:
+- min_cost([1, 2, 1, 2, 1, 3, 3], 2)
+- min_cost([1, 2, 1, 2, 1], 2)
+- min_cost([1, 2, 1, 2, 1], 5)
+- min_cost([0], 7)
+- min_cost([0, 0], 1)
+- min_cost([i * i % 37 for i in range(200)], 4)
+fail[2]: [1, 2] costs 2 + 0, and [1, 2, 1] trims to [1, 1], so it costs 2 + 2: 6.
+fail[3]: With k = 5, one piece is cheapest: [1, 2, 1, 2, 1] keeps all 5 numbers, so 5 + 5 = 10.
+fail[4]: One number, one piece: 7 + 0 = 7.
+fail[5]: [0] and [0] cost 1 + 1 = 2. As one piece, [0, 0] keeps both 0s: 1 + 2 = 3.
+fail[6]: 200 numbers with k = 4: 44. Fresh counts for every piece would count about 1.3 million numbers.
+edges:
+- one number :: len(nums) == 1 :: min_cost([0], 1)
+- no number repeats :: len(nums) > 1 and len(set(nums)) == len(nums) :: min_cost([0, 1], 1)
+- repeated numbers :: len(set(nums)) < len(nums) :: min_cost([0, 0], 1)
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_options: O(n²); O(n³); O(n² log n)
+complexity_note: n is the length of nums.
+why_time: For each of the n ends, start moves back over at most n positions, with O(1) work each.
+why_space: The best list, and the counts for the current end: n numbers each.
+hint: `best = [0] * (n + 1)`: splitting nothing costs nothing. For each end from 1 to n, start fresh with `count = [0] * n` and `trimmed = 0`.
+hint: For start from end − 1 down to 0: add 1 to `count[nums[start]]`. If it's now 2, add 2 to trimmed; if it's more than 2, add 1.
+hint: Ending the last piece here costs `best[start] + k + trimmed`. Keep the smallest as `best[end]`, and return `best[n]`.
+right: Growing the piece one number at a time keeps the counts and the trimmed length up to date in O(1) per step, so all the pieces cost O(n²) together. Counting each piece's slice from scratch would be O(n³).
+wrong: For each end, start fresh counts and trimmed = 0, then move start from end − 1 down to 0: count `nums[start]` (+2 to trimmed when its count reaches 2, +1 after that), and set `best[end]` to the smallest `best[start] + k + trimmed`. Return `best[n]`.
+
+=== task: code hard
+title: Longest Happy Prefix
+leetcode: 1392 | Longest Happy Prefix | longest-happy-prefix
+patterns: slices + strings
+prompt: A **happy prefix** of s is a start of s that's also an end of s, other than all of s (the start and the end can overlap). Write `longest_prefix(s)` that returns the longest happy prefix, or `""` if there's none.
+
+Checking `s[:size] == s[n - size:]` for every size copies and compares up to n letters each time: O(n²). Compare numbers instead. Read letters as digits in base B = 131, each letter's digit being `ord(letter)`, and keep the numbers below M = 2305843009213693951 with `% M`. For each size from 1 to n − 1, the start's number gains a digit on the right, `front = (front * B + ord(s[size - 1])) % M`, and the end's number gains a digit on the left, `back = (ord(s[n - size]) * power + back) % M`, where power is B to the power size − 1. When front equals back, the start and the end of that size match. With M that big, two different strings getting the same number is so unlikely that you can rely on it.
+
+**Example 1:** `longest_prefix("level")` returns `"l"`.
+
+**Example 2:** `longest_prefix("ababab")` returns `"abab"`: it's both the start and the end, overlapping in the middle.
+
+**Constraints:** 1 ≤ n = `len(s)` ≤ 10⁵, and s has only small letters.
+starter:
+```python
+def longest_prefix(s):
+    # your code here
+    return ""
+```
+solution:
+```python
+def longest_prefix(s):
+    mod = 2305843009213693951
+    base = 131
+    n = len(s)
+    front = 0
+    back = 0
+    power = 1
+    best = 0
+    for size in range(1, n):
+        front = (front * base + ord(s[size - 1])) % mod
+        back = (ord(s[n - size]) * power + back) % mod
+        power = power * base % mod
+        if front == back:
+            best = size
+    return s[:best]
+```
+tests:
+- longest_prefix("level")
+- longest_prefix("ababab")
+- longest_prefix("a")
+- longest_prefix("ab")
+- longest_prefix("aaaa")
+- longest_prefix("ab" + "c" * 29996 + "ab")
+fail[2]: "abab" starts and ends s, overlapping: "abab".
+fail[3]: A happy prefix can't be all of s, and there's nothing shorter: `""`.
+fail[4]: "a" and "b" differ: `""`.
+fail[5]: "aaa" is both the start and the end: "aaa".
+fail[6]: "ab", 29,996 c's, and "ab" again: the answer is "ab". Comparing slices would try every size from 29,999 down, copying thousands of letters for each.
+edges:
+- one letter :: len(s) == 1 :: longest_prefix("a")
+- the first and last letters differ :: len(s) > 1 and s[0] != s[-1] :: longest_prefix("ab")
+- the first and last letters match :: len(s) > 1 and s[0] == s[-1] :: longest_prefix("aba")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass over the sizes with O(1) arithmetic for each, and one slice at the end.
+why_space: The answer, a slice of up to n − 1 letters.
+hint: Keep `front = 0`, `back = 0`, `power = 1` and `best = 0`.
+hint: For size from 1 to n − 1: `front = (front * B + ord(s[size - 1])) % M`, `back = (ord(s[n - size]) * power + back) % M`, then `power = power * B % M`.
+hint: When `front == back`, set `best = size`. Return `s[:best]`.
+right: Each size changes front and back by one letter each, in O(1), so all the sizes cost O(n), and the only slice is the answer. Comparing slices for every size would copy up to n letters each time: O(n²).
+wrong: For each size from 1 to n − 1, add `s[size - 1]` on the right of front's number and `s[n - size]` on the left of back's number, both mod M, and remember the last size where they're equal. Return `s[:best]`.
+
+=== task: code hard
+title: Count Subarrays With Majority Element II
+leetcode: 3739 | Count Subarrays With Majority Element II | count-subarrays-with-majority-element-ii
+patterns: hidden + hashing
+prompt: Write `count_majority_subarrays(nums, target)` that returns how many pieces of nums (subarrays) have target as their **majority**: target fills more than half the places in the piece.
+
+Count +1 for target and −1 for every other number. A piece has target as its majority exactly when its count is above 0, which is when the running total at its end is bigger than the running total right before its start. So for each end, you need how many earlier running totals (including the 0 before the first number) are smaller than the current one. Scanning the earlier totals would be O(n) per end. But the running total only moves by 1 at a time. Keep `below`, the number of earlier totals smaller than the current one, and a dictionary `count` of how many times each total has appeared. When the total goes up from p to p + 1, add `count[p]` to below; when it goes down from p to p − 1, take off `count[p - 1]`.
+
+**Example 1:** `count_majority_subarrays([1, 2, 2, 3], 2)` returns `5`: [2], [2], [2, 2], [1, 2, 2] and [2, 2, 3].
+
+**Example 2:** `count_majority_subarrays([1, 1, 1, 1], 1)` returns `10`: all 10 pieces.
+
+**Example 3:** `count_majority_subarrays([1, 2, 3], 4)` returns `0`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, 1 ≤ `nums[i]` ≤ 10⁹, and 1 ≤ target ≤ 10⁹.
+starter:
+```python
+def count_majority_subarrays(nums, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_majority_subarrays(nums, target):
+    count = {0: 1}
+    prefix = 0
+    below = 0
+    total = 0
+    for x in nums:
+        if x == target:
+            below += count.get(prefix, 0)
+            prefix += 1
+        else:
+            prefix -= 1
+            below -= count.get(prefix, 0)
+        total += below
+        count[prefix] = count.get(prefix, 0) + 1
+    return total
+```
+tests:
+- count_majority_subarrays([1, 2, 2, 3], 2)
+- count_majority_subarrays([1, 1, 1, 1], 1)
+- count_majority_subarrays([1, 2, 3], 4)
+- count_majority_subarrays([5], 5)
+- count_majority_subarrays([2, 1, 2, 1, 2], 2)
+- count_majority_subarrays([1 if i * i % 5 < 2 else 2 for i in range(30000)], 1)
+fail[2]: Every piece is all 1s: 4 + 3 + 2 + 1 = 10.
+fail[3]: 4 isn't in nums: 0.
+fail[4]: [5] is all target: 1.
+fail[5]: The pieces with more 2s than 1s are the three [2]s, the two [2, 1, 2]s and all five numbers: 6.
+fail[6]: 30,000 numbers, 3 in every 5 of them the target: 449,919,008 of the 450,015,000 pieces. Checking each end against every earlier total would take about 450 million comparisons.
+edges:
+- one number :: len(nums) == 1 :: count_majority_subarrays([3], 3)
+- target isn't in nums :: len(nums) > 1 and target not in nums :: count_majority_subarrays([1, 2], 3)
+- target is in nums :: len(nums) > 1 and target in nums :: count_majority_subarrays([3, 1], 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One pass, with O(1) dictionary work per number.
+why_space: The running total takes up to 2n + 1 different values, one dictionary entry each.
+hint: Start with `count = {0: 1}`, `prefix = 0`, `below = 0` and `total = 0`.
+hint: For x equal to target: `below += count.get(prefix, 0)`, then `prefix += 1`. For any other x: `prefix -= 1`, then `below -= count.get(prefix, 0)`.
+hint: Add below to total (each smaller earlier total is the start of a good piece ending here), then add 1 to `count[prefix]`.
+right: The running total moves by 1, so the number of earlier totals below it changes by exactly the count of one value, which is a dictionary lookup: O(1) per number, O(n) in all. Comparing with every earlier total would be O(n²).
+wrong: `count = {0: 1}`, `prefix = below = total = 0`. For each x: if x is target, add `count.get(prefix, 0)` to below and then add 1 to prefix; otherwise take 1 off prefix and then take `count.get(prefix, 0)` off below. Add below to total, and 1 to `count[prefix]`. Return total.
+
+=== task: code hard
+title: Concatenated Words
+leetcode: 472 | Concatenated Words | concatenated-words
+patterns: hidden + hashing
+prompt: The words in words are all different. A word is **concatenated** if it's made by joining two or more words from the list (the same word can be used more than once). Write `find_all_concatenated_words_in_a_dict(words)` that returns the concatenated words, in the order they appear in words.
+
+For a word w of length L, let `ok[end]` say whether `w[:end]` can be cut into words from the list. `ok[0]` is True, and `ok[end]` is True when some `ok[start]` is True and `w[start:end]` is a word, apart from the cut from 0 to L, which is w itself. w is concatenated when `ok[L]` is True. `w[start:end] in words` would search the whole list for every cut: put the words in a set first, so each check costs only the slice and its hash, O(L).
+
+**Example 1:** `find_all_concatenated_words_in_a_dict(["cat", "cats", "catsdogcats", "dog", "dogcatsdog", "hippopotamuses", "rat", "ratcatdogcat"])` returns `["catsdogcats", "dogcatsdog", "ratcatdogcat"]`: "catsdogcats" is "cats" + "dog" + "cats", and "ratcatdogcat" is "rat" + "cat" + "dog" + "cat".
+
+**Example 2:** `find_all_concatenated_words_in_a_dict(["cat", "dog", "catdog"])` returns `["catdog"]`.
+
+**Constraints:** 1 ≤ `len(words)` ≤ 10⁴, each word has 1 to 30 small letters, the words are all different, and their lengths add up to at most 10⁵.
+starter:
+```python
+def find_all_concatenated_words_in_a_dict(words):
+    # your code here
+    return []
+```
+solution:
+```python
+def find_all_concatenated_words_in_a_dict(words):
+    known = set(words)
+    found = []
+    for word in words:
+        n = len(word)
+        ok = [False] * (n + 1)
+        ok[0] = True
+        for end in range(1, n + 1):
+            for start in range(end):
+                if not ok[start] or (start == 0 and end == n):
+                    continue
+                if word[start:end] in known:
+                    ok[end] = True
+                    break
+        if ok[n]:
+            found.append(word)
+    return found
+```
+tests:
+- find_all_concatenated_words_in_a_dict(["cat", "cats", "catsdogcats", "dog", "dogcatsdog", "hippopotamuses", "rat", "ratcatdogcat"])
+- find_all_concatenated_words_in_a_dict(["cat", "dog", "catdog"])
+- find_all_concatenated_words_in_a_dict(["a"])
+- find_all_concatenated_words_in_a_dict(["a", "aa", "aaa"])
+- find_all_concatenated_words_in_a_dict(["x", "xyx", "y", "yy", "xyy"])
+- (lambda r: [len(r), r[:3]])(find_all_concatenated_words_in_a_dict(["ab", "ba", "aab"] + ["".join([["ab", "ba", "aab"][i // 3 ** j % 3] for j in range(5)]) + "a" * (i % 2) for i in range(100)] + [chr(100 + i % 20) + chr(100 + i // 20 % 20) + chr(100 + i // 400) for i in range(1000)]))
+fail[2]: "catdog" is "cat" + "dog": `["catdog"]`.
+fail[3]: One word can't be made from two or more others: `[]`.
+fail[4]: "aa" is "a" + "a", and "aaa" is "a" + "a" + "a": `["aa", "aaa"]`.
+fail[5]: "xyx" is "x" + "y" + "x", "yy" is "y" + "y", and "xyy" is "x" + "yy": all three, in the list's order.
+fail[6]: 1,103 words: 3 short ones, 100 made of 5 of them (half with an extra "a" on the end, which breaks them), and 1,000 three-letter words that don't fit together. 50 are concatenated. Searching the list for every cut would read all 1,103 words thousands of times.
+edges:
+- one word :: len(words) == 1 :: find_all_concatenated_words_in_a_dict(["a"])
+- a word that's another word repeated :: len(words) > 1 and any(len(w) > len(v) and w == v * (len(w) // len(v)) for w in words for v in words) :: find_all_concatenated_words_in_a_dict(["a", "aa"])
+- no word starts with another :: len(words) > 1 and not any(w != v and w.startswith(v) for w in words for v in words) :: find_all_concatenated_words_in_a_dict(["ab", "cd"])
+edge_count: 2
+complexity: time=O(n × L³) | space=O(n × L)
+complexity_options: O(n × L³); O(n × L²); O(n² × L³); O(n × L)
+complexity_note: n is the number of words, and L is the length of the longest word.
+why_time: Each word has O(L²) cuts, and each cut slices and hashes up to L letters: O(L³) per word.
+why_space: The set holds all the words, up to n × L letters, and each word's ok list has L + 1 entries.
+hint: `known = set(words)`. For each word, make `ok = [False] * (L + 1)` and set `ok[0] = True`.
+hint: For each end from 1 to L, try each start from 0 to end − 1, skipping it if `ok[start]` is False, or if start is 0 and end is L (the whole word).
+hint: If `word[start:end] in known`, set `ok[end] = True` and stop trying starts for this end.
+hint: If `ok[L]` is True, append the word.
+right: The set makes each lookup cost only the slice and its hash, O(L), so each word costs O(L³) whatever the size of the list. Searching the list would multiply every lookup by n: O(n² × L³).
+wrong: Put the words in a set. For each word, set `ok[end]` = True when some `ok[start]` is True and `word[start:end]` is in the set, skipping the cut that's the whole word. Append the word when `ok[L]` is True.
