@@ -14,10 +14,14 @@ def checks_needed(nums, target):
     return len(nums)
 
 nums = [4, 8, 15, 16, 23]
-print(checks_needed(nums, 4), checks_needed(nums, 15), checks_needed(nums, 23), checks_needed(nums, 99))
+for target in [4, 15, 23, 99]:
+    print(checks_needed(nums, target))
 ```
 ```output
-1 3 5 5
+1
+3
+5
+5
 ```
 `checks_needed` returns how many items the search compares before it stops. All four searches are on the same 5 items, but they take 1, 3, 5 and 5 checks.
 
@@ -54,7 +58,7 @@ print(total / len(nums))
 ```output
 3.0
 ```
-The five targets take 1, 2, 3, 4 and 5 checks: 15 in all, so 15 / 5 = 3 on average. For n items, the average is (1 + 2 + ... + n) / n = (n + 1) / 2, about half the list. Half of n is still O(n), so linear search is O(n) on average too.
+The five targets take 1, 2, 3, 4 and 5 checks: 15 in all, so 15 / 5 = 3 on average. For n items, the checks are 1, 2, 3 and onwards up to n, which add up to n × (n + 1) / 2, so the average is (n + 1) / 2, about half the list. Half of n is still O(n), so linear search is O(n) on average too.
 
 ### Why Big O usually means the worst case
 When someone says "linear search is O(n)", they mean its worst case, for three reasons:
@@ -74,10 +78,12 @@ def has_negative(nums):
             return True
     return False
 
-print(has_negative([-3, 5, 8, 1]), has_negative([3, 5, 8, 1]))
+print(has_negative([-3, 5, 8, 1]))
+print(has_negative([3, 5, 8, 1]))
 ```
 ```output
-True False
+True
+False
 ```
 The first list is the best case: the answer is known after 1 check. The second is the worst case: with no negative number, the loop has to check all n items before it can say False. Best case O(1), worst case O(n), so `has_negative` is O(n).
 
@@ -103,8 +109,10 @@ Other code has a best case far below its worst:
 | duplicate check with nested loops and an early `return` | the first two items are equal: O(1) | no duplicates: O(n²) |
 | binary search | the target is the middle item: O(1) | the target isn't there: O(log n) |
 | Python's `sorted` | the list is already sorted: O(n) | the items are in a random order: O(n log n) |
+| comparing two strings with `==` or `<` | the first letters differ: O(1) | they match up to the end: O(n) |
+| binary search for the smallest number of a rotated sorted list | the numbers are all different: O(log n) | almost all the numbers are equal: O(n) |
 
-Each time, the Big O you quote is the worst case: the duplicate check is O(n²), binary search is O(log n), and sorting is O(n log n).
+Each time, the Big O you quote is the worst case: the duplicate check is O(n²), binary search is O(log n), sorting is O(n log n), comparing strings is O(n), and the rotated search is O(n), even though it's usually far faster.
 
 ### Finding the worst-case input
 To measure how slow code can be, run it on its **worst-case input**: the input that makes it do the most work. Ask: what makes the loop stop early? Then make sure that never happens.
@@ -118,13 +126,199 @@ To measure how slow code can be, run it on its **worst-case input**: the input t
 
 The speed checks in this course do exactly this. Code tasks usually test with lists like `list(range(n))`, which have no duplicates, and search for targets like -1, which aren't there, so the code can't finish early.
 
+Sometimes a loop's turns depend on the values rather than on the length of a list. Then the worst case is the most it can ever run, and you find it by looking for whatever limits it:
+```python
+def cycle_length(k):
+    seen = {}
+    r = 1
+    step = 0
+    while r not in seen:
+        seen[r] = step
+        r = r * 10 % k
+        step += 1
+    return step - seen[r]
+
+print(cycle_length(7), cycle_length(3))
+print(cycle_length(12))
+```
+```output
+6 1
+1
+```
+`cycle_length` finds how many digits repeat in the decimal of 1 / k: 1 / 7 is 0.142857142857, with 142857 repeating forever, so 6. `r` is always a remainder after dividing by k, one of 0 to k − 1, so there are at most k different values. Within k + 1 turns one of them must come round again, and the loop stops: whatever k is, it runs at most k + 1 times, O(k). Other limits work the same way: `&` can only switch bits off, so a number below 2²⁰ that keeps being AND-ed changes at most 20 times.
+
+### Solving problems with the cases
+Every task in this lesson asks for the time complexity of your solution, which means its worst case. Five patterns cover how the cases come into a problem:
+
+| Pattern | What you see | What to quote |
+| --- | --- | --- |
+| Stopping early | "is there", "does any", "the first": the answer can be known before the end | the worst case: the input where the early exit never fires |
+| When the cases are the same | a total, a count, an average, the biggest: every item matters | the one cost that every input of size n has |
+| Cases that differ a lot | early exits inside loops, string comparisons, binary search with repeats | the worst case, even when it's rare |
+| Finding the worst-case input | a loop whose turns depend on the values, not the length | the most it can ever run: k remainders, 20 bits, n turns |
+| Working out the average | an average, a probability, a total over every case | count each item's share instead of running every case |
+
+### Combining patterns
+Most problems mix two of them:
+
+- **The early exit that never comes** (early + worst). Code that stops at the first problem it finds does the most work on an input with no problem at all: a valid input, a sorted list, a missing target. That's the case to quote and to test.
+- **Counting everything, then stopping early** (early + every). A first pass reads every item, because a count isn't known until the end. A second pass can stop at the first answer. The first pass alone makes it O(n), however early the second stops.
+- **Guarding against the worst case** (differ + worst). Some code is fast on most inputs and slow on a few: an inner loop that usually stops early, comparisons that usually end at the first letter. Find the input that makes it slow, then change the code so that input is fast too.
+- **Adding up every case** (every + average). To total or average something over every case, such as every stretch of a list or every way to split it, count how many cases each item takes part in instead of running them one by one.
+
+The early exit that never comes: the first number smaller than the one before it.
+```python
+def first_drop(nums):
+    checks = 0
+    for i in range(1, len(nums)):
+        checks += 1
+        if nums[i] < nums[i - 1]:
+            return i, checks
+    return -1, checks
+
+print(first_drop([3, 1, 4, 5, 9]))
+print(first_drop([1, 3, 4, 5, 9]))
+```
+```output
+(1, 1)
+(-1, 4)
+```
+In the first list, 1 is smaller than 3, so the loop stops after 1 check. The second list is sorted, so the exit never comes: all n − 1 pairs are checked before it returns −1. That's the worst case, O(n).
+
+Counting everything, then stopping early: the position of the first letter that appears only once.
+```python
+def first_unique(s):
+    counts = {}
+    for ch in s:
+        counts[ch] = counts.get(ch, 0) + 1
+    for i in range(len(s)):
+        if counts[s[i]] == 1:
+            return i
+    return -1
+
+print(first_unique("leetcode"))
+print(first_unique("aabb"))
+```
+```output
+0
+-1
+```
+The first loop can't stop early: a letter's count isn't known until the last letter is read. The second loop stops at the first letter with a count of 1: at once for "leetcode", whose "l" appears once, and only after all n letters for "aabb", which has none. The worst case is n + n, O(n).
+
+Guarding against the worst case: how many numbers of `a` are also in `b`.
+```python
+def in_both_slow(a, b):
+    checks = 0
+    total = 0
+    for x in a:
+        for y in b:
+            checks += 1
+            if x == y:
+                total += 1
+                break
+    return total, checks
+
+print(in_both_slow([1, 2, 3], [1, 2, 3, 4]))
+print(in_both_slow([5, 6, 7], [1, 2, 3, 4]))
+```
+```output
+(3, 6)
+(0, 12)
+```
+When every number is found near the front of `b`, the inner loop stops early: 1 + 2 + 3 = 6 checks. When nothing matches, every number scans all of `b`: 3 × 4 = 12 checks, O(a × b) for lists of sizes a and b. A set answers `x in seen` in one step on average, whether x is there or not:
+```python
+def in_both(a, b):
+    seen = set(b)
+    total = 0
+    for x in a:
+        if x in seen:
+            total += 1
+    return total
+
+print(in_both([5, 6, 7], [1, 2, 3, 4]))
+```
+```output
+0
+```
+Building the set is O(b) and the loop O(a), so the worst case is O(a + b).
+
+Adding up every case: the sum of every stretch of a list.
+```python
+def all_sums_slow(nums):
+    total = 0
+    for i in range(len(nums)):
+        for j in range(i, len(nums)):
+            total += sum(nums[i:j + 1])
+    return total
+
+def all_sums(nums):
+    n = len(nums)
+    total = 0
+    for i in range(n):
+        total += nums[i] * (i + 1) * (n - i)
+    return total
+
+nums = [1, 2, 3]
+print(all_sums_slow(nums), all_sums(nums))
+```
+```output
+20 20
+```
+The stretches of `[1, 2, 3]` are `[1]`, `[2]`, `[3]`, `[1, 2]`, `[2, 3]` and `[1, 2, 3]`, with sums 1, 2, 3, 3, 5 and 6: 20 in all. The slow version adds up every stretch: about n² / 2 stretches of up to n numbers each, O(n³). The fast one counts how many stretches each number is in. A stretch that contains position i starts at one of the i + 1 positions up to i and ends at one of the n − i positions from i on, so `nums[i]` is in (i + 1) × (n − i) stretches: one multiplication per number, O(n). Dividing the total by the n × (n + 1) / 2 stretches gives the average stretch sum, the same way the average number of checks was worked out.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| the early exit never fires | a valid input, a missing target | a missing return at the end of the function |
+| the early exit fires at once | the answer is the first item | an off-by-one at the start |
+| everything equal | `[5, 5, 5]`, `"aaaa"` | comparisons that run to the end, a binary search that can't tell its halves apart |
+| the smallest input | one item, one letter | a loop that expects a pair |
+| nothing to average | no item matches | dividing by zero |
+| huge values | k = 10⁹ | a loop that runs k times instead of n |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Give the worst case:
+
+1. Find the worst-case input: what stops each loop early, and what input makes sure it never does?
+2. Count the steps for that input, then simplify with the rules: drop constant factors and smaller terms.
+3. If a loop's turns depend on the values rather than the length, find what limits them: at most k remainders, at most 20 bits, a state that must repeat.
+4. Mention the best case only to explain: it's never the answer.
+
+**Space** follows the same rules: the most memory the code keeps for any input of size n.
+
+| The code keeps | Space |
+| --- | --- |
+| a few numbers | O(1) |
+| counts for 26 letters, or for values up to 100 | O(1): a fixed size |
+| a set, a dictionary or a copy of the input | O(n) |
+| an answer string or list of length k | O(k) |
+| the call stack of a recursion d calls deep | O(d) |
+
 === keypoints
 - Best case: the fewest steps for an input of size n. Worst case: the most. Average case: the typical number, over the inputs you expect.
 - Linear search: best 1 check (the target is first), worst n (last or missing), average (n + 1) / 2. All but the best case are O(n).
 - Big O usually describes the worst case: it's a promise that the code never takes longer, and it needs no guesses about the inputs.
-- `return` and `break` make the best and average cases faster, but not the worst case.
+- `return` and `break` make the best and average cases faster, but not the worst case: for a checker, the worst input is a valid one.
 - Code that must look at every item (sum, max, counting) has the same best and worst case.
-- To test speed, use the worst-case input: a missing target, no duplicates, a condition that never ends the loop early.
+- When a loop's turns depend on the values, find what limits them: at most k remainders, at most 20 bits, a state that must repeat.
+- To total or average over every case, count how many cases each item is in instead of running every case.
+- Combinations: the early exit that never comes; counting everything, then stopping early; guarding against the worst case; and adding up every case.
+
+=== patterns
+- early | Stopping early
+- every | When the cases are the same
+- differ | Cases that differ a lot
+- worst | Finding the worst-case input
+- average | Working out the average
+combos:
+- early + worst | The early exit that never comes
+- early + every | Counting everything, then stopping early
+- differ + worst | Guarding against the worst case
+- every + average | Adding up every case
 
 === example: Three cases of a duplicate check
 intro: The nested-loop duplicate check stops at the first equal pair. Three lists of 6 items show how much that depends on the input.
@@ -195,772 +389,1880 @@ view: chart fns=1,(n+1)/2,n labels=best,average,worst n=1..40 step=2
 intro: The checks linear search makes in its best, average and worst case, as the list grows. The best case stays flat; the other two grow in a straight line.
 1: For n = {n} items: best {best}, average about {average}, worst {worst}.
 
-=== task: predict easy
-title: First, fourth, missing
-code:
+=== task: code easy
+title: Check if Bitwise OR Has Trailing Zeros
+leetcode: 2980 | Check if Bitwise OR Has Trailing Zeros | check-if-bitwise-or-has-trailing-zeros
+patterns: early
+prompt: Write `has_trailing_zeros(nums)` that returns True if you can pick two or more numbers from nums whose bitwise OR, `|`, ends in a 0 bit, which means it's even, and False otherwise.
+
+**Example 1:** `has_trailing_zeros([1, 2, 3, 4, 5])` returns `True`: `2 | 4` is 6, `110` in binary.
+
+**Example 2:** `has_trailing_zeros([1, 3, 5, 7, 9])` returns `False`.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 100, and 1 ≤ `nums[i]` ≤ 100. An OR is even only when every number in it is even, so two even numbers are enough: stop as soon as you've found them.
+starter:
 ```python
-def checks_needed(nums, target):
-    for i in range(len(nums)):
-        if nums[i] == target:
-            return i + 1
-    return len(nums)
-
-data = [9, 4, 7, 2, 5]
-print(checks_needed(data, 9), checks_needed(data, 2), checks_needed(data, 6))
-```
-wrong[0 3 5]: The function returns `i + 1`, the number of items checked, not the position i.
-wrong[1 4 0]: When the target is missing, every item is checked before giving up: 5 checks.
-wrong[1 4 -1]: The last line returns `len(nums)`, the number of checks made, not -1.
-hint: 9 is the first item. Where is 2?
-hint: 6 isn't in the list.
-right: 9 is found at once (best case), 2 after 4 checks, and 6 only after all 5 items have been checked (worst case).
-wrong: 9 → 1 check, 2 → 4 checks (it's the fourth item), 6 → all 5 checks.
-
-=== task: mcq easy
-title: The best case of linear search
-prompt: Linear search looks through a list of n items. What is its best case?
-* 1 check, when the target is the first item :: Right. The search stops at once: O(1).
-- n checks, when the target isn't there :: That's the worst case: every item has to be checked.
-- About n / 2 checks :: That's the average case, when the target is somewhere in the list.
-- 0 checks :: The search has to look at the first item at least.
-hint: Which position makes the search stop soonest?
-hint: The first one.
-right: 1 check. Every search has a best case like this, which is why the best case says so little.
-wrong: The best case is the fewest steps: the target is the first item, so 1 check.
-
-=== task: fill easy
-title: Stop at the first one
-prompt: Fill in the blank so that `has_negative` stops and answers as soon as it finds a negative number, and the program prints:
-
-```output
-True False
-```
-code:
-```python
-def has_negative(nums):
-    for x in nums:
-        if x < 0:
-            return ??
+def has_trailing_zeros(nums):
+    # your code here
     return False
-
-print(has_negative([4, -2, 7]), has_negative([4, 2, 7]))
 ```
-answer: True
-wrong[False]: The function would answer False for every list, even when it finds a negative number.
-wrong[x]: That returns the negative number itself, -2, instead of True.
-hint: What should the function answer once it has found a negative number?
-hint: There's at least one, so the answer is True.
-right: `return True` stops the loop at the first negative number: the best case takes 1 check. With no negative numbers the loop goes all the way, so the worst case is n checks, O(n).
-wrong: `return True`. One negative number is enough to answer, so there's no need to look further.
+solution:
+```python
+def has_trailing_zeros(nums):
+    evens = 0
+    for x in nums:
+        if x % 2 == 0:
+            evens += 1
+            if evens == 2:
+                return True
+    return False
+```
+tests:
+- has_trailing_zeros([1, 2, 3, 4, 5])
+- has_trailing_zeros([2, 4, 8, 16])
+- has_trailing_zeros([1, 3, 5, 7, 9])
+- has_trailing_zeros([3, 6])
+- has_trailing_zeros([6, 10])
+- has_trailing_zeros(list(range(1, 100, 2)) + [64])
+fail[2]: 2 and 4 are even, and `2 | 4` is 6: True.
+fail[3]: Every number is odd, and an OR with an odd number in it is odd: False.
+fail[4]: Only 6 is even, and you need two numbers: False.
+fail[5]: 6 and 10 are both even, and `6 | 10` is 14: True.
+fail[6]: 50 odd numbers and one even number, 64: the loop has to read everything, and the answer is False.
+edges:
+- two numbers :: len(nums) == 2 :: has_trailing_zeros([2, 4])
+- fewer than two even numbers :: len(nums) > 2 and len([x for x in nums if x % 2 == 0]) < 2 :: has_trailing_zeros([1, 3, 6])
+- two even numbers or more :: len(nums) > 2 and len([x for x in nums if x % 2 == 0]) >= 2 :: has_trailing_zeros([1, 2, 6])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. Give the worst case.
+why_time: The loop stops at the second even number, after 2 steps in the best case. In the worst case there aren't two, and it reads all n numbers: O(n).
+why_space: A count of even numbers.
+hint: The last bit of an OR is 1 if any of the numbers ends in a 1 bit, which means any of them is odd.
+hint: So you need two even numbers. Count them as you go.
+hint: Return True as soon as the count reaches 2, and False after the loop.
+right: Stopping at the second even number makes lucky inputs fast, but the worst case, with fewer than two even numbers, still reads all n: O(n).
+wrong: Count the even numbers; return True when the count reaches 2, and False after the loop.
 
 === task: code easy
-title: Any negative numbers?
-prompt: Write `has_negative(nums)` that returns True if any number in the list is below 0, and False otherwise. Stop as soon as you find one. Its worst case should be O(n).
+title: Find Common Elements Between Two Arrays
+leetcode: 2956 | Find Common Elements Between Two Arrays | find-common-elements-between-two-arrays
+patterns: differ + worst
+prompt: Write `find_intersection_values(nums1, nums2)` that returns `[answer1, answer2]`: answer1 is how many positions of nums1 hold a number that's somewhere in nums2, and answer2 how many positions of nums2 hold a number that's somewhere in nums1.
 
-For example, `has_negative([3, -1, 4])` returns True.
+**Example 1:** `find_intersection_values([2, 3, 2], [1, 2])` returns `[2, 1]`: both 2s of nums1 are in nums2, and the 2 of nums2 is in nums1.
+
+**Example 2:** `find_intersection_values([4, 3, 2, 3, 1], [2, 2, 5, 2, 3, 6])` returns `[3, 4]`.
+
+**Constraints:** 1 ≤ n, m ≤ 100, where n is `len(nums1)` and m is `len(nums2)`, and every number is from 1 to 100. `x in nums2` scans the list, which takes m steps whenever x isn't there: use sets, so that each check is one step.
 starter:
 ```python
-def has_negative(nums):
+def find_intersection_values(nums1, nums2):
     # your code here
-    return False
+    return [0, 0]
 ```
 solution:
 ```python
-def has_negative(nums):
-    for x in nums:
-        if x < 0:
-            return True
-    return False
+def find_intersection_values(nums1, nums2):
+    set1 = set(nums1)
+    set2 = set(nums2)
+    answer1 = 0
+    for x in nums1:
+        if x in set2:
+            answer1 += 1
+    answer2 = 0
+    for x in nums2:
+        if x in set1:
+            answer2 += 1
+    return [answer1, answer2]
 ```
 tests:
-- has_negative([3, -1, 4])
-- has_negative([1, 2, 3])
-- has_negative([])
-- has_negative([-5])
-- has_negative([0, 0])
-speed: setup=nums = list(range(n)) | call=has_negative(nums) | target=O(n)
-slow:
-```python
-def has_negative(nums):
-    for i in range(len(nums)):
-        if min(nums[i:]) < 0:
-            return True
-    return False
-```
-fail[1]: -1 is below 0, so the answer is True.
-fail[5]: 0 isn't negative: use `x < 0`, not `x <= 0`.
-hint: Loop over the numbers.
-hint: Return True as soon as `x < 0`.
-hint: Return False only after the loop has checked every number.
-right: The best case returns after 1 check; the worst case (no negatives) checks all n numbers: O(n). Returning False inside the loop would answer too soon.
-wrong: `for x in nums: if x < 0: return True`, then `return False` after the loop.
+- find_intersection_values([2, 3, 2], [1, 2])
+- find_intersection_values([4, 3, 2, 3, 1], [2, 2, 5, 2, 3, 6])
+- find_intersection_values([3, 4, 2, 3], [1, 5])
+- find_intersection_values([7], [7])
+- find_intersection_values([1, 1, 1], [1])
+- find_intersection_values([i % 50 + 1 for i in range(100)], list(range(26, 101)))
+fail[2]: The two 3s and the 2 of nums1 are in nums2: 3. The three 2s and the 3 of nums2 are in nums1: 4.
+fail[3]: No number is in both: `[0, 0]`.
+fail[4]: 7 is in both: `[1, 1]`.
+fail[5]: All three 1s of nums1 are in nums2, and the one 1 of nums2 is in nums1: `[3, 1]`.
+fail[6]: nums1 holds 1 to 50 twice and nums2 holds 26 to 100. The 50 positions of nums1 holding 26 to 50 count, and so do the 25 numbers 26 to 50 of nums2: `[50, 25]`.
+edges:
+- one number each :: len(nums1) == 1 and len(nums2) == 1 :: find_intersection_values([3], [4])
+- nothing in common :: len(nums1) + len(nums2) > 2 and len(set(nums1) & set(nums2)) == 0 :: find_intersection_values([1, 2], [3])
+- something in common :: len(nums1) + len(nums2) > 2 and len(set(nums1) & set(nums2)) > 0 :: find_intersection_values([1, 2], [2])
+edge_count: 2
+complexity: time=O(n + m) | space=O(n + m)
+complexity_options: O(n + m); O(n × m)
+complexity_note: n and m are the lengths of nums1 and nums2. Count a check with `in` on a set as one step: it is, on average.
+why_time: Building the two sets is n + m steps, and the two loops make n + m checks of one step each: O(n + m), however many numbers match.
+why_space: The two sets, of up to n and m numbers.
+hint: `x in nums2` on a list stops as soon as it finds x, but when x isn't there it checks all m numbers: n × m steps in the worst case.
+hint: Make `set(nums1)` and `set(nums2)` first. Checking `x in` a set takes one step whether x is there or not.
+hint: Count the numbers of nums1 that are in the second set, and the numbers of nums2 that are in the first.
+right: With lists, the worst case is when few numbers match: every check scans the whole other list, O(n × m). The sets make every check one step, so even that input costs O(n + m).
+wrong: `set1 = set(nums1)` and `set2 = set(nums2)`. answer1 counts the x in nums1 with `x in set2`, and answer2 the x in nums2 with `x in set1`.
 
-=== task: predict easy
-title: Every item, every time
-code:
-```python
-def biggest_steps(nums):
-    steps = 0
-    best = nums[0]
-    for x in nums:
-        steps += 1
-        if x > best:
-            best = x
-    return steps
+=== task: code easy
+title: Minimum Operations to Exceed Threshold Value I
+leetcode: 3065 | Minimum Operations to Exceed Threshold Value I | minimum-operations-to-exceed-threshold-value-i
+patterns: every
+prompt: In one operation, you remove one copy of the smallest number in nums. Write `min_operations(nums, k)` that returns the fewest operations needed so that every number left is at least k.
 
-print(biggest_steps([9, 1, 2, 3]), biggest_steps([1, 2, 3, 9]))
-```
-wrong[1 4]: The loop has no `break` or `return`, so it always looks at every item, even when the biggest comes first.
-wrong[4 1]: Finding the biggest number means checking all of them: the last one might always be bigger.
-wrong[3 3]: The loop visits all 4 items, the first one included.
-hint: Can this loop stop early?
-hint: Count the turns for each list.
-right: 4 and 4: the best, worst and average cases are all the same, because the biggest number could be anywhere, so every item must be checked.
-wrong: There's no early exit, so both lists take 4 steps.
+**Example 1:** `min_operations([2, 11, 10, 1, 3], 10)` returns `3`: removing 1, 2 and 3 leaves `[11, 10]`.
 
-=== task: multi easy
-title: Same in every case
-prompt: `nums` is a list of n numbers. Choose **every** piece of code whose best case and worst case are the same.
-* `sum(nums)` :: Right. Every number is added, whatever the numbers are.
-* Finding the biggest number with a loop :: Right. The biggest could be anywhere, so every item is checked.
-* Counting the even numbers :: Right. Every number has to be tested.
-- Linear search for a target :: It can stop at the first item (best case) or check all n (worst case).
-- `has_negative` with an early `return` :: It stops at the first negative number, so its best case is 1 check.
-- A nested-loop duplicate check that returns at the first equal pair :: Its best case is 1 check; its worst case checks every pair.
-hint: Can the code ever stop before it has looked at everything?
-hint: Three of them can't.
-right: Sums, maximums and counts must look at every item, so their cases match. Searches with an early exit have a fast best case and a slow worst case.
-wrong: The same in every case: sum, maximum, counting. Different: anything that can stop early, like a search, `has_negative` or a duplicate check with `return`.
+**Example 2:** `min_operations([1, 1, 2, 4, 9], 1)` returns `0`.
 
-=== task: parsons easy
-title: Count the checks
-prompt: Arrange the lines so that the program counts how many checks it takes to find 8, stopping as soon as it's found, and prints:
-
-```output
-3
-```
-
-Not every line is needed.
-lines:
-```python
-nums = [5, 2, 8, 6, 8]
-checks = 0
-for x in nums:
-    checks += 1
-    if x == 8:
-        break
-print(checks)
-```
-distractors:
-```python
-    if x == 8:
-        continue
-```
-hint: Count each check before comparing.
-hint: `break` ends the loop at the first 8.
-right: The search checks 5, 2 and then 8, and stops: 3 checks. Without `break` it would go on to check all 5 items. `continue` would only skip to the next turn.
-wrong: `checks = 0`, then in the loop `checks += 1` and `if x == 8: break`, and `print(checks)` after the loop.
-
-=== task: cells easy
-title: Checks for each target
-prompt: Linear search looks through `[3, 8, 1, 9]` from the start. How many checks does it make for each target?
-labels: find 3 | find 1 | find 9 | find 7
-answer: 1 | 3 | 4 | 4
-wrong[0 | 2 | 3 | 4]: Count the checks, not the positions: finding 3 at position 0 takes 1 check.
-wrong[1 | 3 | 4 | 0]: A missing target takes the most checks: every item is checked before giving up.
-hint: The search stops at the first match.
-hint: 7 isn't in the list.
-right: 1, 3 and 4 checks for the targets in the list, and 4 for the missing 7: finding the last item and not finding anything are both worst cases.
-wrong: 3 is first (1 check), 1 is third (3), 9 is last (4), and 7 is missing, so all 4 items are checked.
-
-=== task: mcq easy
-title: Which case does Big O mean?
-prompt: When people say "linear search is O(n)" without saying which case, which case do they mean?
-- The best case :: The best case of linear search is O(1): the target comes first.
-* The worst case :: Right. It's a promise: the search never takes more than about n checks.
-- The average case :: The average is also O(n) here, but Big O on its own usually means the worst case.
-- Whichever case is fastest :: Big O gives an upper limit, so it describes the slowest case.
-hint: Which case makes a promise that holds for every input?
-hint: The one with the most steps.
-right: Big O usually describes the worst case, because it holds for every input and needs no guesses about which inputs are likely.
-wrong: Unless a case is named, Big O means the worst case: the most steps the code can take.
-
-=== task: predict easy
-title: Stop at the first big one
-code:
-```python
-def steps_until_big(nums):
-    steps = 0
-    for x in nums:
-        steps += 1
-        if x > 10:
-            break
-    return steps
-
-print(steps_until_big([4, 12, 7, 30]), steps_until_big([1, 2, 3, 4]))
-```
-wrong[1 4]: The step for 4 is counted before 12 is reached, so the first call makes 2 steps.
-wrong[2 0]: When no number is over 10, the loop never breaks: it counts all 4 items.
-wrong[4 4]: `break` stops the first loop at 12, the second item.
-hint: Which number is the first one over 10?
-hint: The second list has no number over 10.
-right: The first list stops at 12 after 2 steps. The second has no number over 10, so it's the worst case: all 4 items.
-wrong: [4, 12, ...] stops at the second item: 2 steps. [1, 2, 3, 4] never breaks: 4 steps.
-
-=== task: code medium
-title: Is it sorted?
-prompt: Write `is_sorted(nums)` that returns True if every number is less than or equal to the next one. Return False as soon as you find a pair out of order. Its worst case, a list that **is** sorted, should be O(n).
-
-For example, `is_sorted([1, 2, 2, 5])` returns True, and `is_sorted([3, 1])` returns False.
+**Constraints:** 1 ≤ `len(nums)` ≤ 50, 1 ≤ `nums[i]`, k ≤ 10⁹, and at least one number is at least k. The numbers below k are exactly the ones that must go.
 starter:
 ```python
-def is_sorted(nums):
-    # your code here
-    return True
-```
-solution:
-```python
-def is_sorted(nums):
-    for i in range(len(nums) - 1):
-        if nums[i] > nums[i + 1]:
-            return False
-    return True
-```
-tests:
-- is_sorted([1, 2, 2, 5])
-- is_sorted([3, 1])
-- is_sorted([])
-- is_sorted([4])
-- is_sorted([1, 3, 2])
-- is_sorted([5, 4, 3, 2, 1])
-speed: setup=nums = list(range(n)) | call=is_sorted(nums) | target=O(n)
-slow:
-```python
-def is_sorted(nums):
-    for i in range(len(nums)):
-        for j in range(i + 1, len(nums)):
-            if nums[i] > nums[j]:
-                return False
-    return True
-```
-fail[2]: 3 comes before 1, so the list isn't sorted.
-fail[5]: The pair 3, 2 is out of order. Check every pair of neighbours.
-error[IndexError]: Compare `nums[i]` with `nums[i + 1]`, so stop the loop one before the end: `range(len(nums) - 1)`.
-hint: Compare each number with the next one.
-hint: Return False at the first pair where `nums[i] > nums[i + 1]`.
-hint: Return True after the loop: every pair was in order.
-right: The best case (the first pair is out of order) takes 1 check; the worst case (a sorted list) checks all n - 1 pairs of neighbours: O(n).
-wrong: `for i in range(len(nums) - 1): if nums[i] > nums[i + 1]: return False`, then `return True`.
-
-=== task: code medium
-title: The first one over the limit
-prompt: Write `first_over(nums, limit)` that returns the position of the first number bigger than `limit`, or -1 if there is none. Stop as soon as you find it. Its worst case should be O(n).
-
-For example, `first_over([3, 8, 12, 20], 10)` returns 2.
-starter:
-```python
-def first_over(nums, limit):
-    # your code here
-    return -1
-```
-solution:
-```python
-def first_over(nums, limit):
-    for i in range(len(nums)):
-        if nums[i] > limit:
-            return i
-    return -1
-```
-tests:
-- first_over([3, 8, 12, 20], 10)
-- first_over([1, 2], 5)
-- first_over([], 0)
-- first_over([11], 10)
-- first_over([5, 10, 10], 10)
-- first_over([-3, -1], -2)
-speed: setup=nums = list(range(n)) | call=first_over(nums, n) | target=O(n)
-slow:
-```python
-def first_over(nums, limit):
-    for i in range(len(nums)):
-        if max(nums[:i + 1]) > limit:
-            return i
-    return -1
-```
-fail[1]: 12 at position 2 is the first number over 10. Return its position, not the number.
-fail[5]: 10 isn't **bigger** than 10, so nothing is over the limit: -1.
-fail[6]: -1 is bigger than -2, and it's at position 1.
-hint: Loop over the positions.
-hint: Return `i` at the first `nums[i] > limit`.
-hint: Return -1 after the loop.
-right: Best case: the first number is over the limit, 1 check. Worst case: none is, so all n are checked: O(n).
-wrong: `for i in range(len(nums)): if nums[i] > limit: return i`, then `return -1`.
-
-=== task: predict medium
-title: The average search
-code:
-```python
-def checks_needed(nums, target):
-    for i in range(len(nums)):
-        if nums[i] == target:
-            return i + 1
-    return len(nums)
-
-nums = [10, 20, 30, 40]
-total = 0
-for t in nums:
-    total += checks_needed(nums, t)
-print(total / len(nums))
-```
-wrong[2.0]: The checks for the four targets are 1, 2, 3 and 4: 10 in all, and 10 / 4 = 2.5.
-wrong[4.0]: That's the worst case. On average, the target is about half way along: (n + 1) / 2.
-wrong[10.0]: That's the total. The program divides it by the number of targets, 4.
-hint: How many checks does each target take?
-hint: 1 + 2 + 3 + 4, divided by 4.
-right: (1 + 2 + 3 + 4) / 4 = 2.5, which is (n + 1) / 2 for n = 4. The average grows in proportion to n: O(n).
-wrong: The targets take 1, 2, 3 and 4 checks: 10 / 4 = 2.5.
-
-=== task: fill medium
-title: The worst input
-prompt: Fill in a target that makes the search do the **most** checks, so the program prints:
-
-```output
-(3, -1)
-```
-code:
-```python
-def search(nums, target):
-    checks = 0
-    for i in range(len(nums)):
-        checks += 1
-        if nums[i] == target:
-            return checks, i
-    return checks, -1
-
-print(search([5, 1, 4], ??))
-```
-answer: 7
-wrong[5]: 5 is the first item: found after 1 check. That's the best case.
-wrong[4]: 4 is the last item, which also takes 3 checks, but the search finds it, so it returns `(3, 2)`.
-hint: Which targets make the search check all 3 items?
-hint: A target that isn't in the list is checked against every item and still not found.
-right: Any number that isn't in the list, like 7, makes the search check all 3 items and return -1. That's the worst case, and the input to use when testing speed.
-wrong: A missing target, like 7: every item is checked, so the result is `(3, -1)`.
-
-=== task: cells medium
-title: Three cases for 10 items
-prompt: Linear search looks for a target in a list of 10 different items. Fill in the number of checks in each case. (For the average, assume the target is in the list, and every position is equally likely.)
-labels: best case | worst case | average case
-answer: 1 | 10 | 5.5
-wrong[0 | 10 | 5]: The best case still checks one item. The average is (1 + 2 + ... + 10) / 10 = 55 / 10 = 5.5.
-wrong[1 | 10 | 5]: The average is (n + 1) / 2 = 11 / 2 = 5.5, not 5.
-wrong[1 | 9 | 5]: The worst case checks every item: all 10.
-hint: Best: the target comes first. Worst: it's last, or missing.
-hint: Average: (n + 1) / 2.
-right: 1, 10 and 5.5. The best case is O(1); the average and worst cases grow with n: O(n).
-wrong: Best 1, worst 10, and average (1 + 2 + ... + 10) / 10 = 5.5.
-
-=== task: order medium
-title: From fewest checks to most
-prompt: Linear search looks through `[2, 4, 6, 8, 10, 12]` from the start. Put these searches in order, from the fewest checks to the most.
-items:
-- searching for 2
-- searching for 6
-- searching for 10
-- searching for 7
-hint: The search stops at the first match.
-hint: 7 isn't in the list.
-right: 1, 3, 5 and 6 checks. A missing target is the worst case: all 6 items are checked.
-wrong: 2 is first (1 check), 6 is third (3), 10 is fifth (5), and 7 isn't there (all 6).
-
-=== task: predict medium
-title: Duplicates, early or never
-code:
-```python
-def dup_checks(nums):
-    checks = 0
-    for i in range(len(nums)):
-        for j in range(i + 1, len(nums)):
-            checks += 1
-            if nums[i] == nums[j]:
-                return checks
-    return checks
-
-print(dup_checks([1, 2, 1, 3]), dup_checks([1, 2, 3, 4]))
-```
-wrong[3 6]: The first pairs checked are (0, 1) and then (0, 2), and position 2 holds another 1: found after 2 checks.
-wrong[2 16]: j starts after i, so each pair is checked once: 4 × 3 / 2 = 6 pairs.
-wrong[2 4]: With no duplicates, every pair is checked: 3 + 2 + 1 = 6.
-hint: In the first list, which pair is the first equal one?
-hint: The second list has no duplicates.
-right: The first list stops after 2 checks; the second has no duplicates, so all 6 pairs are checked. The worst case, n(n − 1) / 2 checks, is why the duplicate check is O(n²).
-wrong: [1, 2, 1, 3]: 1 vs 2, then 1 vs 1: 2 checks. [1, 2, 3, 4]: all 6 pairs.
-
-=== task: mcq medium
-title: Why the worst case?
-prompt: Why does Big O usually describe the worst case?
-* It's a promise that holds for every input, without guessing which inputs are likely :: Right. Whatever input arrives, the code never takes longer than its worst case.
-- The worst case is the input that happens most often :: It might be rare. Big O uses it because it gives a guarantee.
-- The best case is always O(1), so it's not interesting :: The best case isn't always O(1): `sum(nums)` takes n steps even at best. And the main reason is that the worst case is a guarantee.
-- The average case can't be worked out :: It can, but it needs a guess about how likely each input is.
-hint: Which case can you rely on, whatever the input?
-hint: An upper limit is a promise.
-right: The worst case is a guarantee: the code is never slower than that. The average case needs assumptions, and the best case says little.
-wrong: Big O usually gives the worst case because it holds for every input. The average depends on which inputs you expect.
-
-=== task: multi medium
-title: Worst inputs for the duplicate check
-prompt: A nested-loop duplicate check compares pairs in order and returns as soon as it finds an equal pair. Choose **every** list of 5 items that makes it check **all** 10 pairs.
-* `[1, 2, 3, 4, 5]` :: Right. No duplicates: every pair has to be checked before it can return False.
-* `[1, 2, 3, 4, 4]` :: Right. The only equal pair, positions 3 and 4, is the very last pair the loops reach.
-- `[4, 4, 1, 2, 3]` :: The first pair checked is equal: it stops after 1 check.
-- `[1, 2, 1, 3, 4]` :: Positions 0 and 2 are equal, and that's only the second pair checked.
-- `[9, 1, 2, 3, 9]` :: Positions 0 and 4 hold the same number: found on the 4th check.
-hint: The pairs are checked in the order (0, 1), (0, 2), (0, 3), (0, 4), (1, 2), ... (3, 4).
-hint: Two of them check all 10 pairs.
-right: With no duplicates, or with the only equal pair being (3, 4), every pair is checked. Both are worst cases: 10 checks for 5 items.
-wrong: Only lists with no equal pair before the last one make it check all 10: `[1, 2, 3, 4, 5]` and `[1, 2, 3, 4, 4]`.
-
-=== task: code medium
-title: How many checks?
-prompt: Write `count_checks(nums, target)` that returns how many items linear search compares before it stops: the position of the first match plus 1, or `len(nums)` if the target isn't there.
-
-For example, `count_checks([4, 8, 15], 8)` returns 2.
-starter:
-```python
-def count_checks(nums, target):
-    checks = 0
-    # your code here
-    return checks
-```
-solution:
-```python
-def count_checks(nums, target):
-    checks = 0
-    for x in nums:
-        checks += 1
-        if x == target:
-            return checks
-    return checks
-```
-tests:
-- count_checks([4, 8, 15], 8)
-- count_checks([4, 8, 15], 99)
-- count_checks([], 3)
-- count_checks([7, 7], 7)
-- count_checks([1, 2, 3, 4], 4)
-fail[1]: 8 is the second item: 2 checks. Count the check that finds it too.
-fail[2]: 99 isn't there, so all 3 items are checked: 3.
-fail[4]: The search stops at the first 7: 1 check.
-hint: Add 1 for every item you compare.
-hint: Return the count as soon as you find the target.
-hint: If the loop ends, every item was checked: return the count.
-right: 1 check in the best case, n in the worst. Measuring the checks like this is how you compare the cases of a search.
-wrong: For each `x`: `checks += 1`, and `return checks` if `x == target`. After the loop, return `checks`.
-
-=== task: code hard
-title: The average number of checks
-prompt: Write `average_checks(nums)` that returns, rounded to 2 decimal places, the average number of checks linear search makes when it looks for each item of `nums` once. For an item that appears more than once, the search stops at its **first** position. Make it O(n): store each value's first position in a dictionary in one pass, instead of running a search for every item.
-
-For example, `average_checks([5, 5, 3])` returns 1.67: the 5s take 1 check each and the 3 takes 3, so (1 + 1 + 3) / 3.
-starter:
-```python
-def average_checks(nums):
-    first = {}
+def min_operations(nums, k):
     # your code here
     return 0
 ```
 solution:
 ```python
-def average_checks(nums):
-    first = {}
-    for i in range(len(nums)):
-        if nums[i] not in first:
-            first[nums[i]] = i + 1
-    total = 0
-    for x in nums:
-        total += first[x]
-    return round(total / len(nums), 2)
-```
-tests:
-- average_checks([4, 8, 15, 16, 23])
-- average_checks([5, 5, 3])
-- average_checks([7])
-- average_checks([1, 2])
-- average_checks([2, 2, 2, 2])
-speed: setup=nums = list(range(n)) | call=average_checks(nums) | target=O(n)
-slow:
-```python
-def average_checks(nums):
-    total = 0
-    for target in nums:
-        for i in range(len(nums)):
-            if nums[i] == target:
-                total += i + 1
-                break
-    return round(total / len(nums), 2)
-```
-fail[1]: The five items take 1, 2, 3, 4 and 5 checks: 15 / 5 = 3.0.
-fail[2]: Both 5s are found at the first position, 1 check each. Store a value's position only the first time you see it.
-fail[5]: Every search stops at the first 2: 1 check each, so the average is 1.0.
-error[KeyError]: Fill `first` with every value before you look values up.
-error[ZeroDivisionError]: Divide by `len(nums)`, the number of searches.
-hint: First pass: `first[nums[i]] = i + 1`, but only if `nums[i]` isn't in `first` yet.
-hint: Second pass: add up `first[x]` for every `x`.
-hint: Return `round(total / len(nums), 2)`.
-right: Two passes with O(1) dictionary work per item: O(n). Running a separate linear search for every item would be O(n²).
-wrong: Store each value's first position + 1 in `first`, add up `first[x]` for every item, and divide by `len(nums)`, rounding to 2 places.
-
-=== task: code hard
-title: Where the first repeat is
-prompt: Write `first_repeat_index(nums)` that returns the position of the first item that equals some item **before** it, or -1 if no item repeats. Stop as soon as you find it. Its worst case (no repeats) should be O(n): remember the values you've seen in a set.
-
-For example, `first_repeat_index([3, 1, 4, 1, 5])` returns 3: the second 1.
-starter:
-```python
-def first_repeat_index(nums):
-    seen = set()
-    # your code here
-    return -1
-```
-solution:
-```python
-def first_repeat_index(nums):
-    seen = set()
-    for i in range(len(nums)):
-        if nums[i] in seen:
-            return i
-        seen.add(nums[i])
-    return -1
-```
-tests:
-- first_repeat_index([3, 1, 4, 1, 5])
-- first_repeat_index([1, 2, 3])
-- first_repeat_index([])
-- first_repeat_index([7, 7])
-- first_repeat_index([2, 5, 2, 5])
-speed: setup=nums = list(range(n)) | call=first_repeat_index(nums) | target=O(n)
-slow:
-```python
-def first_repeat_index(nums):
-    for i in range(len(nums)):
-        if nums[i] in nums[:i]:
-            return i
-    return -1
-```
-fail[1]: The second 1 is at position 3, and it's the first item that matches something before it.
-fail[4]: The second 7, at position 1, repeats the first.
-fail[5]: At position 2, the 2 repeats the first 2. That comes before the second 5.
-error[AttributeError]: Sets use `add`, not `append`.
-hint: For each position, check `nums[i] in seen` before adding it.
-hint: Return `i` at the first repeat.
-hint: Return -1 after the loop.
-right: Best case: the second item repeats the first, 2 checks. Worst case: no repeats, n O(1) checks: O(n). Searching `nums[:i]` at every position would make the worst case O(n²).
-wrong: `for i in range(len(nums)):` return `i` if `nums[i] in seen`, otherwise `seen.add(nums[i])`. Return -1 at the end.
-
-=== task: code hard
-title: Find every match
-prompt: Write `find_all(nums, target)` that returns a list of **every** position where `target` appears. Unlike a search for the first match, this can never stop early, so its best and worst cases are the same: O(n).
-
-For example, `find_all([3, 1, 3, 2, 3], 3)` returns `[0, 2, 4]`.
-starter:
-```python
-def find_all(nums, target):
-    positions = []
-    # your code here
-    return positions
-```
-solution:
-```python
-def find_all(nums, target):
-    positions = []
-    for i in range(len(nums)):
-        if nums[i] == target:
-            positions.append(i)
-    return positions
-```
-tests:
-- find_all([3, 1, 3, 2, 3], 3)
-- find_all([], 1)
-- find_all([1, 2], 5)
-- find_all([4, 4], 4)
-fail[1]: 3 appears at positions 0, 2 and 4. Don't stop at the first one.
-fail[3]: 5 isn't in the list, so the answer is an empty list.
-fail[4]: Both positions count: `[0, 1]`.
-forbid[.index(]: Check every position yourself: `.index` only finds the first match.
-hint: Loop over every position.
-hint: Append `i` whenever `nums[i] == target`.
-hint: Return the list after the loop, never from inside it.
-right: Any position might hold another match, so every item must be checked: best case = worst case = n checks, O(n).
-wrong: `for i in range(len(nums)): if nums[i] == target: positions.append(i)`, then return `positions`.
-
-=== task: code hard
-title: Binary search, case by case
-prompt: Write `bs_checks(nums, target)` that runs binary search on the sorted list `nums` and returns how many checks it makes before it stops: when it finds the target, or when nothing is left (`lo > hi`). Count each middle item it compares.
-
-For example, `bs_checks([1, 3, 5, 7, 9, 11, 13], 7)` returns 1: 7 is the middle item, the best case.
-starter:
-```python
-def bs_checks(nums, target):
-    lo = 0
-    hi = len(nums) - 1
-    checks = 0
-    # your code here
-    return checks
-```
-solution:
-```python
-def bs_checks(nums, target):
-    lo = 0
-    hi = len(nums) - 1
-    checks = 0
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        checks += 1
-        if nums[mid] == target:
-            return checks
-        elif nums[mid] < target:
-            lo = mid + 1
-        else:
-            hi = mid - 1
-    return checks
-```
-tests:
-- bs_checks([1, 3, 5, 7, 9, 11, 13], 7)
-- bs_checks([1, 3, 5, 7, 9, 11, 13], 13)
-- bs_checks([1, 3, 5, 7, 9, 11, 13], 4)
-- bs_checks([], 5)
-- bs_checks([2], 2)
-- bs_checks([2, 4], 4)
-fail[1]: The middle of 7 items is position 3, which holds 7: found on the first check.
-fail[2]: 7, then 11, then 13: 3 checks, the worst case for 7 items.
-fail[3]: 4 isn't there: 7, then 3, then 5, and then nothing is left. 3 checks.
-fail[4]: An empty list has nothing to check: 0.
-hint: Loop `while lo <= hi:` and count each middle item you compare.
-hint: Return the count when `nums[mid] == target`.
-hint: Otherwise move `lo` or `hi` past `mid`, and return the count when the loop ends.
-right: Best case: 1 check (the middle). Worst case: about log₂ n checks, so binary search is O(log n). For a million items that's 20 checks at most.
-wrong: `while lo <= hi:` with `mid = (lo + hi) // 2` and `checks += 1`; return `checks` if found, otherwise move `lo` or `hi`. Return `checks` after the loop.
-
-=== task: predict hard
-title: Binary search counts
-code:
-```python
-def bs_checks(nums, target):
-    lo = 0
-    hi = len(nums) - 1
-    checks = 0
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        checks += 1
-        if nums[mid] == target:
-            return checks
-        elif nums[mid] < target:
-            lo = mid + 1
-        else:
-            hi = mid - 1
-    return checks
-
-s = [1, 3, 5, 7, 9, 11, 13]
-print(bs_checks(s, 7), bs_checks(s, 1), bs_checks(s, 8))
-```
-wrong[1 1 3]: 1 is the first item, but binary search starts in the middle: 7, then 3, then 1.
-wrong[4 1 7]: Binary search doesn't go from the start. It checks the middle first: 7 is found at once.
-wrong[1 3 4]: 8 isn't there: 7, then 11, then 9, and then nothing is left. 3 checks.
-hint: The middle of 7 items is position 3.
-hint: For 8: 7 (too small), 11 (too big), 9 (too big), and then lo > hi.
-right: 1, 3 and 3. Binary search's best case is the middle item, 1 check; its worst case is about log₂ n checks, whether the target is at an end or missing.
-wrong: 7 is the middle (1 check). 1: 7, 3, 1 (3 checks). 8: 7, 11, 9, then nothing left (3 checks).
-
-=== task: predict hard
-title: Sorted or not?
-code:
-```python
-def sorted_checks(nums):
-    checks = 0
-    for i in range(len(nums) - 1):
-        checks += 1
-        if nums[i] > nums[i + 1]:
-            return checks
-    return checks
-
-print(sorted_checks([1, 3, 2, 5, 6]), sorted_checks([1, 2, 3, 4, 5]))
-```
-wrong[3 5]: There are only n − 1 = 4 pairs of neighbours in a list of 5. And 3 > 2 is found on the 2nd check.
-wrong[2 5]: A list of 5 has 4 pairs of neighbours, so a sorted list takes 4 checks.
-wrong[1 4]: The first pair, 1 and 3, is in order. The second pair, 3 and 2, is the first out of order.
-hint: Which pair is the first one out of order?
-hint: How many pairs of neighbours does a list of 5 have?
-right: The first list stops at the second pair (3, 2): 2 checks. The sorted list is the worst case: all 4 pairs are checked. Worst case n − 1 checks: O(n).
-wrong: [1, 3, 2, 5, 6]: (1, 3) fine, (3, 2) out of order: 2 checks. [1, 2, 3, 4, 5]: all 4 pairs fine: 4 checks.
-
-=== task: cells hard
-title: Four lists of six
-prompt: The nested-loop duplicate check compares the pairs (0, 1), (0, 2), ..., (0, 5), (1, 2), ..., (4, 5) in that order and stops at the first equal pair. How many checks does it make for each list of 6 items?
-labels: [6, 6, 2, 3, 4, 5] | [2, 3, 4, 5, 6, 6] | [2, 3, 4, 5, 6, 7] | [8, 2, 3, 8, 4, 5]
-answer: 1 | 15 | 15 | 3
-wrong[1 | 14 | 15 | 3]: (4, 5) is the 15th pair, the very last: 5 + 4 + 3 + 2 + 1 = 15.
-wrong[1 | 15 | 15 | 4]: (0, 3) is only the 3rd pair checked: (0, 1), (0, 2), (0, 3).
-wrong[1 | 15 | 30 | 3]: Each pair is checked once, because j starts after i: 6 × 5 / 2 = 15 pairs in all.
-hint: The pairs with i = 0 come first: (0, 1), (0, 2), (0, 3), (0, 4), (0, 5).
-hint: With no equal pair, all 15 are checked.
-right: 1 (best case), 15 (the only equal pair is the last one), 15 (no duplicates, the worst case) and 3.
-wrong: The first equal pair is (0, 1); then (4, 5), which is the 15th; then none at all, so all 15; then (0, 3), the 3rd.
-
-=== task: mcq hard
-title: Sorting a sorted list
-prompt: Python's `sorted` takes about n steps when the list is already sorted, and about n log n steps for a list in random order. What is the Big O of `sorted`?
-- O(n), because it can be that fast :: That's its best case. Big O without a named case gives the worst case.
-* O(n log n) :: Right. Its worst case is about n log n steps, so that's the promise you can rely on.
-- O(n²) :: Python's sort never takes n² steps: its worst case is n log n.
-- It doesn't have one, because it depends on the input :: Many algorithms depend on their input. Big O on its own describes the worst case.
-hint: Which case does Big O describe, unless you say otherwise?
-hint: The worst case of `sorted` is a random order.
-right: `sorted` is O(n log n): that's its worst case. Its best case, an already sorted list, is O(n), which is nice, but not something you can count on.
-wrong: Quote the worst case: n log n steps for a list in random order. The O(n) best case only happens for sorted input.
-
-=== task: multi hard
-title: True about the cases
-prompt: Choose **every** true sentence.
-* An early `return` can make the best case much faster than the worst case :: Right. A search that finds its target first stops after 1 check.
-* The worst-case input for linear search is a target that isn't in the list :: Right. Every item has to be checked before giving up (or, equally, the target is last).
-* `max(nums)` takes the same number of steps whatever the numbers are :: Right. Every item has to be looked at.
-- An early `return` makes the worst case faster :: The worst-case input never triggers it, so the worst case doesn't change.
-- Binary search is O(1), because its best case is 1 check :: Big O describes the worst case: about log₂ n checks, O(log n).
-- The average case is always half way between the best and worst cases :: Not always. For a duplicate check, the average depends on how likely duplicates are.
-hint: Which statements describe the worst case correctly?
-hint: Three of them are true.
-right: Early exits help the best case, a missing target is linear search's worst case, and `max` has no early exit. Early exits don't help the worst case, binary search is O(log n), and averages depend on the inputs.
-wrong: True: early exits speed up the best case, a missing target is the worst for linear search, `max` always looks at everything. False: early exits don't change the worst case, binary search is O(log n), averages aren't always half way.
-
-=== task: parsons hard
-title: The worst case of a duplicate check
-prompt: Arrange the lines so that `checks` counts how many pairs the duplicate check compares before it stops, and the program shows the worst case and the best case of a list of 4 items:
-
-```output
-6 1
-```
-
-Not every line is needed.
-lines:
-```python
-def checks(nums):
+def min_operations(nums, k):
     count = 0
-    for i in range(len(nums)):
-        for j in range(i + 1, len(nums)):
+    for x in nums:
+        if x < k:
             count += 1
-            if nums[i] == nums[j]:
-                return count
     return count
+```
+tests:
+- min_operations([2, 11, 10, 1, 3], 10)
+- min_operations([1, 1, 2, 4, 9], 1)
+- min_operations([1, 1, 2, 4, 9], 9)
+- min_operations([5], 5)
+- min_operations([1, 1000000000], 1000000000)
+- min_operations([i * 7 % 50 + 1 for i in range(50)], 26)
+fail[2]: Every number is already at least 1: 0.
+fail[3]: Only 9 is at least 9, so the other 4 numbers go: 4.
+fail[4]: 5 is at least 5: 0.
+fail[5]: Only the 1 is below k: 1.
+fail[6]: The 50 numbers are 1 to 50 in a jumbled order, and 1 to 25 are below 26: 25.
+edges:
+- one number :: len(nums) == 1 :: min_operations([5], 3)
+- nothing to remove :: len(nums) > 1 and min(nums) >= k :: min_operations([4, 6], 4)
+- some numbers too small :: len(nums) > 1 and min(nums) < k :: min_operations([2, 6], 4)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: Every number has to be compared with k, whatever the input: n steps in the best case and in the worst, O(n).
+why_space: One count.
+hint: Removing the smallest number again and again removes exactly the numbers below k, smallest first.
+hint: So there's no need to remove anything: count the numbers below k.
+right: No early exit is possible, since a number below k could be anywhere: every case reads all n numbers, O(n). Removing the smallest one at a time would cost O(n) per removal, O(n²) in all.
+wrong: Count the x in nums with `x < k`.
 
-print(checks([1, 2, 3, 4]), checks([5, 5, 6, 7]))
-```
-distractors:
+=== task: code easy
+title: Find Indices With Index and Value Difference I
+leetcode: 2903 | Find Indices With Index and Value Difference I | find-indices-with-index-and-value-difference-i
+patterns: differ
+prompt: Write `find_indices(nums, index_difference, value_difference)` that returns a pair `[i, j]` with `abs(i - j) >= index_difference` and `abs(nums[i] - nums[j]) >= value_difference`, or `[-1, -1]` if there's none. i and j may be equal. Check the pairs in this order: i from 0 up, and for each i, j from `i + index_difference` up, and return the first pair that works. (A pair with j before i works the other way round too, so it's found earlier.)
+
+**Example 1:** `find_indices([5, 1, 4, 1], 2, 4)` returns `[0, 3]`: the positions are 3 apart and the values 4 apart.
+
+**Example 2:** `find_indices([1, 2, 3], 2, 4)` returns `[-1, -1]`.
+
+**Constraints:** 1 ≤ n ≤ 100 where n is `len(nums)`, 0 ≤ `nums[i]` ≤ 50, 0 ≤ index_difference ≤ 100, and 0 ≤ value_difference ≤ 50.
+starter:
 ```python
-        for j in range(len(nums)):
-    count = 1
+def find_indices(nums, index_difference, value_difference):
+    # your code here
+    return [-1, -1]
 ```
-hint: j starts after i, so each pair is compared once.
-hint: Count the comparison, then return straight away if the pair is equal. The last `return count` comes after both loops.
-right: `[1, 2, 3, 4]` has no duplicates, so all 6 pairs are checked (worst case); `[5, 5, 6, 7]` stops at the first pair (best case).
-wrong: Two loops with j from `i + 1`, `count += 1`, then `if nums[i] == nums[j]: return count`, and `return count` after the loops.
+solution:
+```python
+def find_indices(nums, index_difference, value_difference):
+    n = len(nums)
+    for i in range(n):
+        for j in range(i + index_difference, n):
+            if abs(nums[i] - nums[j]) >= value_difference:
+                return [i, j]
+    return [-1, -1]
+```
+tests:
+- find_indices([5, 1, 4, 1], 2, 4)
+- find_indices([2, 1], 0, 0)
+- find_indices([1, 2, 3], 2, 4)
+- find_indices([7], 0, 0)
+- find_indices([4, 9, 4, 0], 2, 5)
+- find_indices([i % 2 for i in range(100)], 1, 2)
+fail[2]: With both differences 0, i = 0 and j = 0 already work: `[0, 0]`.
+fail[3]: The only pair 2 apart is 1 and 3, which are only 2 apart in value: `[-1, -1]`.
+fail[4]: One number: i = j = 0 is 0 apart in both, which is enough here: `[0, 0]`.
+fail[5]: For i = 0, neither 4 nor 0 is 5 away from 4. For i = 1, 9 and 0 are 9 apart: `[1, 3]`.
+fail[6]: 100 numbers, all 0 or 1, are never 2 apart: every pair is checked, about 5,000 of them, and the answer is `[-1, -1]`.
+edges:
+- one number :: len(nums) == 1 :: find_indices([4], 0, 0)
+- no pair works :: len(nums) > 1 and find_indices(nums, index_difference, value_difference) == [-1, -1] :: find_indices([1, 2], 1, 5)
+- a pair works :: len(nums) > 1 and find_indices(nums, index_difference, value_difference) != [-1, -1] :: find_indices([1, 6], 1, 5)
+edge_count: 2
+complexity: time=O(n²) | space=O(1)
+complexity_note: n is the length of nums. Give the worst case.
+why_time: The loops stop at the first pair that works, at once in the best case. When no pair works, they check every pair: about n² / 2, O(n²).
+why_space: Two positions.
+hint: Use two loops: i from 0 to n − 1, and j from `i + index_difference` to n − 1.
+hint: Return `[i, j]` as soon as `abs(nums[i] - nums[j]) >= value_difference`.
+hint: If the loops finish, no pair works: return `[-1, -1]`.
+right: The early return makes the best case O(1), but when no pair works every pair is checked: the worst case is O(n²).
+wrong: For i in `range(n)` and j in `range(i + index_difference, n)`: return `[i, j]` if `abs(nums[i] - nums[j]) >= value_difference`. After the loops, return `[-1, -1]`.
+
+=== task: code easy
+title: Delete Columns to Make Sorted
+leetcode: 944 | Delete Columns to Make Sorted | delete-columns-to-make-sorted
+patterns: differ
+prompt: strs holds n strings of the same length m. Written one under another, they make a grid with m columns. Write `min_deletion_size(strs)` that returns how many of the columns are not in alphabetical order from top to bottom.
+
+**Example 1:** `min_deletion_size(["cba", "daf", "ghi"])` returns `1`: the columns read "cdg", "bah" and "afi", and only "bah" is out of order.
+
+**Example 2:** `min_deletion_size(["a", "b"])` returns `0`.
+
+**Constraints:** 1 ≤ n ≤ 100, 1 ≤ m ≤ 1000, lowercase letters. Stop checking a column at its first pair out of order.
+starter:
+```python
+def min_deletion_size(strs):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_deletion_size(strs):
+    deleted = 0
+    for c in range(len(strs[0])):
+        for r in range(1, len(strs)):
+            if strs[r][c] < strs[r - 1][c]:
+                deleted += 1
+                break
+    return deleted
+```
+tests:
+- min_deletion_size(["cba", "daf", "ghi"])
+- min_deletion_size(["a", "b"])
+- min_deletion_size(["zyx", "wvu", "tsr"])
+- min_deletion_size(["abc"])
+- min_deletion_size(["ab", "ab", "aa"])
+- min_deletion_size([chr(97 + r // 4) * 300 for r in range(100)])
+fail[2]: The one column is "a" then "b", in order: 0.
+fail[3]: Every column goes backwards through the alphabet: 3.
+fail[4]: One string: each column has one letter, so it's in order: 0.
+fail[5]: The second column reads b, b, a: 1.
+fail[6]: 100 strings of 300 letters with every column in order: each column needs all 99 checks, and the answer is 0.
+edges:
+- one string :: len(strs) == 1 :: min_deletion_size(["cab"])
+- every column in order :: len(strs) > 1 and min_deletion_size(strs) == 0 :: min_deletion_size(["ab", "cd"])
+- a column out of order :: len(strs) > 1 and min_deletion_size(strs) > 0 :: min_deletion_size(["ba", "ab"])
+edge_count: 2
+complexity: time=O(n × m) | space=O(1)
+complexity_options: O(n × m); O(n + m)
+complexity_note: n is the number of strings and m their length. Give the worst case.
+why_time: A column out of order can stop at its first bad pair, as early as row 1. A column in order needs all n − 1 checks. In the worst case every column is in order: m × (n − 1) checks, O(n × m).
+why_space: A count and two positions.
+hint: For each column c, compare `strs[r][c]` with `strs[r - 1][c]` for r from 1 to n − 1.
+hint: At the first r where the letter comes before the one above it, count the column and `break`.
+right: The break helps when columns go wrong early, but a grid with every column in order checks all m × (n − 1) pairs: O(n × m).
+wrong: For each column c, loop r from 1: if `strs[r][c] < strs[r - 1][c]`, add 1 and break. Return the count.
+
+=== task: code easy
+title: Mean of Array After Removing Some Elements
+leetcode: 1619 | Mean of Array After Removing Some Elements | mean-of-array-after-removing-some-elements
+patterns: average
+prompt: Write `trim_mean(arr)` that returns the average of arr after removing its smallest 5% of numbers and its biggest 5%.
+
+**Example 1:** `trim_mean([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3])` returns `2.0`: removing the 1 and the 3 leaves eighteen 2s.
+
+**Example 2:** `trim_mean([6, 2, 7, 5, 1, 2, 0, 3, 10, 2, 5, 0, 5, 5, 0, 8, 7, 6, 8, 0])` returns `4.0`.
+
+**Constraints:** 20 ≤ n ≤ 1000 where n is `len(arr)`, n is a multiple of 20, and 0 ≤ `arr[i]` ≤ 10⁵. 5% of n is `n // 20` numbers at each end.
+starter:
+```python
+def trim_mean(arr):
+    # your code here
+    return 0.0
+```
+solution:
+```python
+def trim_mean(arr):
+    s = sorted(arr)
+    cut = len(s) // 20
+    middle = s[cut:len(s) - cut]
+    return sum(middle) / len(middle)
+```
+tests:
+- trim_mean([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3])
+- trim_mean([6, 2, 7, 5, 1, 2, 0, 3, 10, 2, 5, 0, 5, 5, 0, 8, 7, 6, 8, 0])
+- round(trim_mean([6, 0, 7, 0, 7, 5, 7, 8, 3, 4, 0, 7, 8, 1, 6, 8, 1, 1, 2, 4, 8, 1, 9, 5, 4, 3, 8, 5, 10, 8, 6, 6, 1, 0, 6, 10, 8, 2, 3, 4]), 5)
+- trim_mean([5] * 20)
+- trim_mean([0] * 19 + [100000])
+- trim_mean([i * 37 % 1000 for i in range(1000)])
+fail[2]: Removing one 0 and the 10 leaves 18 numbers that add up to 72: 4.0.
+fail[3]: 40 numbers: remove the 2 smallest and the 2 biggest, and the other 36 average 4.77778.
+fail[4]: Every number is 5: 5.0.
+fail[5]: The 100000 goes, along with one 0, and the rest are 0s: 0.0.
+fail[6]: 1,000 numbers, 0 to 999: removing 50 from each end leaves 50 to 949, which average 499.5.
+edges:
+- 20 numbers :: len(arr) == 20 :: trim_mean([1] * 19 + [100])
+- all the same :: len(arr) > 20 and len(set(arr)) == 1 :: trim_mean([3] * 40)
+- different numbers :: len(arr) > 20 and len(set(arr)) > 1 :: trim_mean(list(range(40)))
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of arr.
+why_time: Sorting is O(n log n), and adding up the middle O(n). Every input of size n is sorted in full: O(n log n) in every case.
+why_space: The sorted copy.
+hint: Sort the numbers. The ones to remove are then the first `n // 20` and the last `n // 20`.
+hint: Take the slice in between and return `sum(middle) / len(middle)`.
+right: An average needs every number that's kept, and finding which ones to drop needs the order: a sort and a pass, the same work for every input, O(n log n).
+wrong: `s = sorted(arr)`, `cut = len(s) // 20` and `middle = s[cut:len(s) - cut]`. Return `sum(middle) / len(middle)`.
+
+=== task: code easy
+title: Check If All 1's Are at Least Length K Places Away
+leetcode: 1437 | Check If All 1's Are at Least Length K Places Away | check-if-all-1s-are-at-least-length-k-places-away
+patterns: early + worst
+prompt: nums holds 0s and 1s. Write `k_length_apart(nums, k)` that returns True if every two 1s have at least k numbers between them, and False otherwise.
+
+**Example 1:** `k_length_apart([1, 0, 0, 0, 1, 0, 0, 1], 2)` returns `True`: the 1s have 3 and 2 numbers between them.
+
+**Example 2:** `k_length_apart([1, 0, 0, 1, 0, 1], 2)` returns `False`: the last two 1s have only 1 number between them.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 0 ≤ k ≤ `len(nums)`. Only neighbouring 1s need comparing: remember where the last 1 was.
+starter:
+```python
+def k_length_apart(nums, k):
+    # your code here
+    return True
+```
+solution:
+```python
+def k_length_apart(nums, k):
+    last = -1
+    for i in range(len(nums)):
+        if nums[i] == 1:
+            if last != -1 and i - last - 1 < k:
+                return False
+            last = i
+    return True
+```
+tests:
+- k_length_apart([1, 0, 0, 0, 1, 0, 0, 1], 2)
+- k_length_apart([1, 0, 0, 1, 0, 1], 2)
+- k_length_apart([0, 0, 0], 3)
+- k_length_apart([1, 1], 0)
+- k_length_apart([1, 0, 1], 2)
+- k_length_apart([1 if i % 5 == 0 else 0 for i in range(5000)], 4)
+fail[2]: The 1s at positions 3 and 5 have one 0 between them, fewer than 2: False.
+fail[3]: There are no 1s at all, so no two are too close: True.
+fail[4]: With k = 0, two 1s side by side are far enough apart: True.
+fail[5]: One 0 between the 1s, and k is 2: False.
+fail[6]: 1,000 1s with exactly 4 zeros between neighbours: no pair is too close, so the loop reads all 5,000 numbers before returning True.
+edges:
+- one number :: len(nums) == 1 :: k_length_apart([1], 1)
+- fewer than two 1s :: len(nums) > 1 and nums.count(1) < 2 :: k_length_apart([0, 1, 0], 2)
+- two 1s or more :: len(nums) > 1 and nums.count(1) >= 2 :: k_length_apart([1, 0, 1], 1)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. Give the worst case.
+why_time: The loop returns False at the first pair that's too close. The worst case is an input where no pair is: the loop reads all n numbers, O(n).
+why_space: The position of the last 1.
+hint: Keep `last`, the position of the last 1 seen, starting at −1.
+hint: At each 1, at position i: if last isn't −1 and `i - last - 1 < k`, return False. Then set last to i.
+hint: If the loop finishes, every pair was far enough apart: return True.
+right: The exit only comes for an input with a pair too close. A valid input never triggers it, so that's the worst case: O(n).
+wrong: `last = -1`. For each i with `nums[i] == 1`: return False if `last != -1` and `i - last - 1 < k`, then set `last = i`. Return True after the loop.
+
+=== task: code easy
+title: Three Divisors
+leetcode: 1952 | Three Divisors | three-divisors
+patterns: early + worst
+prompt: Write `is_three(n)` that returns True if n has exactly three divisors, and False otherwise. A divisor of n is a whole number from 1 to n that divides n exactly.
+
+**Example 1:** `is_three(2)` returns `False`: its divisors are 1 and 2.
+
+**Example 2:** `is_three(4)` returns `True`: 1, 2 and 4.
+
+**Constraints:** 1 ≤ n ≤ 10⁴. Divisors come in pairs, d and `n // d`, so only d up to √n need checking. Stop as soon as you've found more than three.
+starter:
+```python
+def is_three(n):
+    # your code here
+    return False
+```
+solution:
+```python
+def is_three(n):
+    count = 0
+    d = 1
+    while d * d <= n:
+        if n % d == 0:
+            if d * d == n:
+                count += 1
+            else:
+                count += 2
+            if count > 3:
+                return False
+        d += 1
+    return count == 3
+```
+tests:
+- is_three(2)
+- is_three(4)
+- is_three(1)
+- is_three(9)
+- is_three(12)
+- is_three(9409)
+fail[2]: 1, 2 and 4: True.
+fail[3]: 1 has one divisor: False.
+fail[4]: 1, 3 and 9: True.
+fail[5]: 12 has 1, 2, 3, 4, 6 and 12. The pairs 1 and 12, then 2 and 6, already make four, so the loop can stop at d = 2: False.
+fail[6]: 9,409 is 97 × 97, with divisors 1, 97 and 9,409. The loop runs d up to 97 without passing three divisors: True.
+edges:
+- n is 1 :: n == 1 :: is_three(1)
+- a prime :: n > 1 and all(n % d != 0 for d in range(2, n)) :: is_three(7)
+- not a prime :: n > 1 and any(n % d == 0 for d in range(2, n)) :: is_three(25)
+edge_count: 2
+complexity: time=O(√n) | space=O(1)
+complexity_options: O(√n); O(n)
+complexity_note: n is the number. Give the worst case.
+why_time: d goes up to √n, and the loop stops once more than three divisors are found, within a few steps for most numbers. The worst case is a number with few divisors, a prime or the square of a prime, which never triggers the exit: √n steps.
+why_space: A count and d.
+hint: For each d with `d * d <= n` that divides n, there are two divisors, d and `n // d`, or only one when `d * d == n`.
+hint: Return False as soon as the count is above 3.
+hint: After the loop, return `count == 3`.
+right: Even numbers above 4 stop at d = 2, but primes and squares of primes never pass three divisors, so the loop runs to √n: O(√n) in the worst case.
+wrong: Loop d from 1 while `d * d <= n`: if `n % d == 0`, add 1 when `d * d == n` and 2 otherwise, and return False if the count is above 3. Return `count == 3`.
+
+=== task: code easy
+title: Check if Any Element Has Prime Frequency
+leetcode: 3591 | Check if Any Element Has Prime Frequency | check-if-any-element-has-prime-frequency
+patterns: early + every
+prompt: Write `check_prime_frequency(nums)` that returns True if some number appears a prime number of times in nums, and False otherwise. A prime is a whole number above 1 that only 1 and itself divide exactly.
+
+**Example 1:** `check_prime_frequency([1, 2, 3, 4, 5, 4])` returns `True`: 4 appears twice, and 2 is prime.
+
+**Example 2:** `check_prime_frequency([1, 2, 3, 4, 5])` returns `False`: every number appears once, and 1 isn't prime.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, and 0 ≤ `nums[i]` ≤ 100. Count every number first, then check the counts.
+starter:
+```python
+def check_prime_frequency(nums):
+    # your code here
+    return False
+```
+solution:
+```python
+def is_prime(x):
+    if x < 2:
+        return False
+    d = 2
+    while d * d <= x:
+        if x % d == 0:
+            return False
+        d += 1
+    return True
+
+
+def check_prime_frequency(nums):
+    counts = {}
+    for x in nums:
+        counts[x] = counts.get(x, 0) + 1
+    for x in counts:
+        if is_prime(counts[x]):
+            return True
+    return False
+```
+tests:
+- check_prime_frequency([1, 2, 3, 4, 5, 4])
+- check_prime_frequency([1, 2, 3, 4, 5])
+- check_prime_frequency([2, 2, 2, 4, 4])
+- check_prime_frequency([7])
+- check_prime_frequency([0, 0, 0, 0])
+- check_prime_frequency([i // 4 for i in range(100)])
+fail[2]: Every count is 1: False.
+fail[3]: 2 appears 3 times and 4 twice, both prime: True.
+fail[4]: One number, appearing once: False.
+fail[5]: 0 appears 4 times, and 4 isn't prime: False.
+fail[6]: 25 numbers, each appearing 4 times: every count has to be checked, and none is prime, so False.
+edges:
+- one number :: len(nums) == 1 :: check_prime_frequency([3])
+- every number once :: len(nums) > 1 and len(set(nums)) == len(nums) :: check_prime_frequency([1, 2])
+- a repeated number :: len(set(nums)) < len(nums) :: check_prime_frequency([5, 5])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. The numbers are at most 100, so there are at most 101 counts. Give the worst case.
+why_time: Counting reads all n numbers, in every case. Checking the counts can stop at the first prime one. In the worst case it tests them all, and testing a count c takes up to √c steps, which add up to at most n: O(n).
+why_space: At most 101 counts, a fixed size.
+hint: Count each number in a dictionary.
+hint: Write `is_prime(c)`: c is at least 2, and no d with `d * d <= c` divides it.
+hint: Go through the counts and return True at the first prime one. After the loop, return False.
+right: The counting pass can't stop early, because a count isn't known until the end. The second pass stops at the first prime count, but the counting already costs O(n).
+wrong: Count the numbers in `counts`. For each count, return True if `is_prime(count)`. After the loop, return False.
+
+=== task: code easy
+title: Average Value of Even Numbers That Are Divisible by Three
+leetcode: 2455 | Average Value of Even Numbers That Are Divisible by Three | average-value-of-even-numbers-that-are-divisible-by-three
+patterns: every + average
+prompt: Write `average_value(nums)` that returns the average of the numbers in nums that are even and divisible by 3, rounded down to a whole number, or 0 if there are none.
+
+**Example 1:** `average_value([1, 3, 6, 10, 12, 15])` returns `9`: (6 + 12) / 2.
+
+**Example 2:** `average_value([1, 2, 4, 7, 10])` returns `0`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 1000, and 1 ≤ `nums[i]` ≤ 1000.
+starter:
+```python
+def average_value(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def average_value(nums):
+    total = 0
+    count = 0
+    for x in nums:
+        if x % 6 == 0:
+            total += x
+            count += 1
+    if count == 0:
+        return 0
+    return total // count
+```
+tests:
+- average_value([1, 3, 6, 10, 12, 15])
+- average_value([1, 2, 4, 7, 10])
+- average_value([6])
+- average_value([3, 4])
+- average_value([6, 12, 13])
+- average_value(list(range(1, 1001)))
+fail[2]: No number is both even and divisible by 3: 0.
+fail[3]: 6 on its own: 6.
+fail[4]: 3 is odd, and 4 isn't divisible by 3: 0.
+fail[5]: (6 + 12) / 2 = 9, and 13 doesn't count: 9.
+fail[6]: The multiples of 6 from 6 to 996: 166 of them, averaging 501.
+edges:
+- one number :: len(nums) == 1 :: average_value([12])
+- no number counts :: len(nums) > 1 and all(x % 6 != 0 for x in nums) :: average_value([3, 4])
+- some numbers count :: len(nums) > 1 and any(x % 6 == 0 for x in nums) :: average_value([6, 9])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: Any number might count, so every number is checked: n steps in every case, O(n).
+why_space: A total and a count.
+hint: Even and divisible by 3 means divisible by 6: `x % 6 == 0`.
+hint: Keep a total and a count of those numbers. If the count is 0, return 0; otherwise return `total // count`.
+right: An average needs every number that counts, and any number might: no early exit, so every case is O(n).
+wrong: Add each x with `x % 6 == 0` to total and count it. Return 0 if the count is 0, otherwise `total // count`.
+
+=== task: code medium
+title: UTF-8 Validation
+leetcode: 393 | UTF-8 Validation | utf-8-validation
+patterns: early + worst
+prompt: data is a list of bytes, numbers from 0 to 255. In UTF-8, each character is 1 to 4 bytes:
+
+- a 1-byte character is `0xxxxxxx` in binary,
+- a character of k bytes, for k from 2 to 4, starts with a byte of k 1s and a 0 (`110xxxxx`, `1110xxxx` or `11110xxx`), followed by k − 1 bytes that each start with `10`.
+
+Write `valid_utf8(data)` that returns True if data is a valid sequence of characters, and False otherwise.
+
+**Example 1:** `valid_utf8([197, 130, 1])` returns `True`: 197 is `11000101`, the start of a 2-byte character, 130 is `10000010`, and 1 is a 1-byte character.
+
+**Example 2:** `valid_utf8([235, 140, 4])` returns `False`: 235 is `11101011`, the start of a 3-byte character, but 4 is `00000100`, which doesn't start with `10`.
+
+**Constraints:** 1 ≤ `len(data)` ≤ 2 × 10⁴, and 0 ≤ `data[i]` ≤ 255. `b >> 6` keeps the top 2 bits of a byte b, `b >> 5` the top 3, `b >> 4` the top 4 and `b >> 3` the top 5.
+starter:
+```python
+def valid_utf8(data):
+    # your code here
+    return False
+```
+solution:
+```python
+def valid_utf8(data):
+    need = 0
+    for b in data:
+        if need > 0:
+            if b >> 6 != 2:
+                return False
+            need -= 1
+        elif b >> 7 == 0:
+            need = 0
+        elif b >> 5 == 6:
+            need = 1
+        elif b >> 4 == 14:
+            need = 2
+        elif b >> 3 == 30:
+            need = 3
+        else:
+            return False
+    return need == 0
+```
+tests:
+- valid_utf8([197, 130, 1])
+- valid_utf8([235, 140, 4])
+- valid_utf8([0])
+- valid_utf8([145])
+- valid_utf8([240, 162, 138, 147])
+- valid_utf8([228, 189, 160] * 3000)
+fail[2]: 235 starts a 3-byte character, so the next two bytes must start with `10`. 140 does, but 4 doesn't: False.
+fail[3]: 0 is `00000000`, a 1-byte character: True.
+fail[4]: 145 is `10010001`, which can only continue a character, not start one: False.
+fail[5]: 240 is `11110000`, the start of a 4-byte character, and 162, 138 and 147 all start with `10`: True.
+fail[6]: 3,000 valid 3-byte characters: no byte is wrong, so all 9,000 bytes are read before returning True.
+edges:
+- one byte :: len(data) == 1 :: valid_utf8([65])
+- an invalid sequence :: len(data) > 1 and not valid_utf8(data) :: valid_utf8([197, 65])
+- a valid sequence :: len(data) > 1 and valid_utf8(data) :: valid_utf8([197, 130])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of bytes. Give the worst case.
+why_time: The loop returns False at the first byte that breaks the rules. Valid data has no such byte, so the worst case reads all n bytes: O(n).
+why_space: One count of the bytes still needed.
+hint: Keep `need`, how many `10` bytes the current character still needs.
+hint: If need is above 0, the byte must have `b >> 6 == 2`; take 1 off need. Otherwise the byte starts a character: `b >> 7 == 0` (need 0), `b >> 5 == 6` (need 1), `b >> 4 == 14` (need 2), `b >> 3 == 30` (need 3), or it's invalid.
+hint: At the end, need must be 0: the last character can't be cut off.
+right: Invalid data stops at its first bad byte, but valid data, the worst case, is read to the end: O(n).
+wrong: Keep `need = 0`. For each byte: if need > 0, return False unless `b >> 6 == 2`, and take 1 off need; otherwise set need from the top bits, or return False. Return `need == 0`.
+
+=== task: code medium
+title: Minimum Index of a Valid Split
+leetcode: 2780 | Minimum Index of a Valid Split | minimum-index-of-a-valid-split
+patterns: early + every
+prompt: A number is dominant in a list if it fills more than half of it. nums has a dominant number. Splitting nums at i, for 0 ≤ i < n − 1, makes two parts: `nums[0]` to `nums[i]`, and `nums[i + 1]` to the end. The split is valid if both parts have the same dominant number. Write `minimum_index(nums)` that returns the smallest i of a valid split, or −1 if there's none.
+
+**Example 1:** `minimum_index([1, 2, 2, 2])` returns `2`: `[1, 2, 2]` and `[2]` both have 2 dominant.
+
+**Example 2:** `minimum_index([3, 3, 3, 3, 7, 2, 2])` returns `-1`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(nums)`, 1 ≤ `nums[i]` ≤ 10⁹, and nums has exactly one dominant number. The two parts can only share nums' own dominant number.
+starter:
+```python
+def minimum_index(nums):
+    # your code here
+    return -1
+```
+solution:
+```python
+def minimum_index(nums):
+    counts = {}
+    for x in nums:
+        counts[x] = counts.get(x, 0) + 1
+    n = len(nums)
+    dominant = nums[0]
+    for x in counts:
+        if counts[x] * 2 > n:
+            dominant = x
+    total = counts[dominant]
+    left = 0
+    for i in range(n - 1):
+        if nums[i] == dominant:
+            left += 1
+        right = total - left
+        if left * 2 > i + 1 and right * 2 > n - i - 1:
+            return i
+    return -1
+```
+tests:
+- minimum_index([1, 2, 2, 2])
+- minimum_index([2, 1, 3, 1, 1, 1, 7, 1, 2, 1])
+- minimum_index([3, 3, 3, 3, 7, 2, 2])
+- minimum_index([5])
+- minimum_index([4, 4])
+- minimum_index([2] * 5000 + [1] * 5001)
+fail[2]: Splitting at 4 gives `[2, 1, 3, 1, 1]` and `[1, 7, 1, 2, 1]`, with 1 dominant in both, and no earlier split works: 4.
+fail[3]: 3 is dominant in every left part, but no right part is more than half 3s: −1.
+fail[4]: One number can't be split: −1.
+fail[5]: `[4]` and `[4]`: 0.
+fail[6]: 5,000 2s, then 5,001 1s: 1 is dominant, but no left part is more than half 1s before the last position. Every split is checked, and the answer is −1.
+edges:
+- one number :: len(nums) == 1 :: minimum_index([3])
+- no valid split :: len(nums) > 1 and minimum_index(nums) == -1 :: minimum_index([1, 1, 2])
+- a valid split :: len(nums) > 1 and minimum_index(nums) != -1 :: minimum_index([1, 1, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums. Give the worst case.
+why_time: Counting reads every number, O(n), in every case. The split loop stops at the first valid split; in the worst case there's none and it checks all n − 1. O(n) + O(n) is O(n).
+why_space: The dictionary of counts, up to n entries.
+hint: Count every number, and find the dominant one: its count times 2 is above n. Only it can be dominant in both parts.
+hint: Go through the splits in order, keeping `left`, how many copies of the dominant number are in the left part. The right part has the rest, `total - left`.
+hint: Split i is valid when `left * 2 > i + 1` and `(total - left) * 2 > n - i - 1`. Return the first such i.
+right: The count has to read everything before any split can be judged; the split loop then stops at the first valid one. The worst case is 2n steps, O(n), where counting both parts again at every split would be O(n²).
+wrong: Count with a dictionary and find the dominant number d. For each i from 0 to n − 2, add 1 to left if `nums[i] == d`, and return i if `left * 2 > i + 1` and `(total - left) * 2 > n - i - 1`. Return −1.
+
+=== task: code medium
+title: Check If Array Pairs Are Divisible by k
+leetcode: 1497 | Check If Array Pairs Are Divisible by k | check-if-array-pairs-are-divisible-by-k
+patterns: early + every
+prompt: arr holds an even number of numbers. Write `can_arrange(arr, k)` that returns True if the numbers can be split into pairs whose sums are all divisible by k, and False otherwise.
+
+**Example 1:** `can_arrange([1, 2, 3, 4, 5, 10, 6, 7, 8, 9], 5)` returns `True`: (1, 9), (2, 8), (3, 7), (4, 6) and (5, 10).
+
+**Example 2:** `can_arrange([1, 2, 3, 4, 5, 6], 10)` returns `False`.
+
+**Constraints:** 2 ≤ n ≤ 10⁵ where n is `len(arr)`, n is even, −10⁹ ≤ `arr[i]` ≤ 10⁹, and 1 ≤ k ≤ 10⁵. Only the remainders `x % k` matter, and in Python they're never negative.
+starter:
+```python
+def can_arrange(arr, k):
+    # your code here
+    return False
+```
+solution:
+```python
+def can_arrange(arr, k):
+    counts = [0] * k
+    for x in arr:
+        counts[x % k] += 1
+    if counts[0] % 2 != 0:
+        return False
+    for r in range(1, k // 2 + 1):
+        if r == k - r:
+            if counts[r] % 2 != 0:
+                return False
+        elif counts[r] != counts[k - r]:
+            return False
+    return True
+```
+tests:
+- can_arrange([1, 2, 3, 4, 5, 10, 6, 7, 8, 9], 5)
+- can_arrange([1, 2, 3, 4, 5, 6], 7)
+- can_arrange([1, 2, 3, 4, 5, 6], 10)
+- can_arrange([-3, 7], 4)
+- can_arrange([3, 3, 3, 1], 6)
+- can_arrange(list(range(1, 2001)), 2001)
+fail[2]: (1, 6), (2, 5) and (3, 4) all add up to 7: True.
+fail[3]: 1 would need a partner with remainder 9, and there isn't one: False.
+fail[4]: −3 + 7 = 4: True. `-3 % 4` is 1 and `7 % 4` is 3, which add up to 4.
+fail[5]: Remainder 3 can only pair with another 3, and there are three of them: False.
+fail[6]: 1 to 2,000 with k = 2,001: each x pairs with 2,001 − x, so every remainder has a partner, and every count is checked before returning True.
+edges:
+- two numbers :: len(arr) == 2 :: can_arrange([1, 4], 5)
+- no pairing works :: len(arr) > 2 and not can_arrange(arr, k) :: can_arrange([1, 2, 3, 4], 3)
+- a pairing works :: len(arr) > 2 and can_arrange(arr, k) :: can_arrange([1, 2, 3, 4], 5)
+edge_count: 2
+complexity: time=O(n + k) | space=O(k)
+complexity_options: O(n + k); O(n × k); O(n²); O(k)
+complexity_note: n is the length of arr. Give the worst case.
+why_time: Counting the remainders reads all n numbers, in every case. Checking them stops at the first remainder without partners; in the worst case every remainder up to k / 2 is checked: O(n + k).
+why_space: The k counts.
+hint: Two numbers add up to a multiple of k exactly when their remainders add up to 0 or k.
+hint: Count how many numbers have each remainder, in a list of k counts.
+hint: Remainder 0 pairs with itself, so its count must be even. Remainder r pairs with k − r, so their counts must be equal, and when r == k − r, the count must be even. Return False at the first one that fails.
+right: The counts need every number before anything can be decided; then the check stops at the first remainder without partners. The worst case is n + k steps.
+wrong: `counts[x % k] += 1` for every x. Return False if `counts[0]` is odd, or if for some r from 1 to k // 2, `counts[r] != counts[k - r]` (or `counts[r]` is odd when r == k − r). Otherwise return True.
+
+=== task: code medium
+title: Minimum Number of Operations to Make All Array Elements Equal to 1
+leetcode: 2654 | Minimum Number of Operations to Make All Array Elements Equal to 1 | minimum-number-of-operations-to-make-all-array-elements-equal-to-1
+patterns: differ
+prompt: In one operation, you pick two neighbours `nums[i]` and `nums[i + 1]` and replace one of them with their greatest common divisor, `math.gcd(nums[i], nums[i + 1])`. Write `min_operations(nums)` that returns the fewest operations that make every number 1, or −1 if it can't be done.
+
+**Example 1:** `min_operations([2, 6, 3, 4])` returns `4`: the gcd of 3 and 4 makes `[2, 6, 1, 4]`, then `[2, 1, 1, 4]`, `[1, 1, 1, 4]` and `[1, 1, 1, 1]`.
+
+**Example 2:** `min_operations([2, 10, 6, 14])` returns `-1`.
+
+**Constraints:** 2 ≤ n ≤ 50 where n is `len(nums)`, and 1 ≤ `nums[i]` ≤ 10⁶. Once there's a 1, each operation can turn a neighbour into 1. If there's no 1, find the shortest stretch whose gcd is 1: from each start, extend the stretch until the gcd reaches 1, and stop there.
+starter:
+```python
+import math
+
+
+def min_operations(nums):
+    # your code here
+    return -1
+```
+solution:
+```python
+import math
+
+
+def min_operations(nums):
+    n = len(nums)
+    ones = 0
+    for x in nums:
+        if x == 1:
+            ones += 1
+    if ones > 0:
+        return n - ones
+    shortest = -1
+    for i in range(n):
+        g = nums[i]
+        for j in range(i + 1, n):
+            g = math.gcd(g, nums[j])
+            if g == 1:
+                if shortest == -1 or j - i < shortest:
+                    shortest = j - i
+                break
+    if shortest == -1:
+        return -1
+    return shortest + n - 1
+```
+tests:
+- min_operations([2, 6, 3, 4])
+- min_operations([2, 10, 6, 14])
+- min_operations([1, 1])
+- min_operations([1, 5, 7])
+- min_operations([6, 10, 15])
+- min_operations([2 * (i + 1) for i in range(49)] + [3])
+fail[2]: Every number is even, so every gcd is even, and no 1 can ever appear: −1.
+fail[3]: Every number is already 1: 0.
+fail[4]: There's already a 1, so each of the other 2 numbers takes one operation: 2.
+fail[5]: No 1 yet. The shortest stretch with gcd 1 is all three numbers, gcd(6, 10, 15) = 1, which takes 2 operations to make a 1. Then 2 more spread it: 4.
+fail[6]: 49 even numbers and a 3 at the end: from every start, the gcd stays even until the 3, so each inner loop runs to the end. The shortest stretch is 98 and 3: 1 operation, then 49 more, 50.
+edges:
+- a 1 already :: 1 in nums :: min_operations([1, 4])
+- no 1 can be made :: 1 not in nums and min_operations(nums) == -1 :: min_operations([4, 6])
+- a 1 can be made :: 1 not in nums and min_operations(nums) != -1 :: min_operations([4, 6, 9])
+edge_count: 2
+complexity: time=O(n²) | space=O(1)
+complexity_note: n is the length of nums. Count `math.gcd` as O(1). Give the worst case.
+why_time: With a 1 in nums, one pass: O(n). Otherwise each start extends until its gcd reaches 1 and stops, often after a step or two. When no stretch reaches 1, or only the last one does, every start runs to the end: about n² / 2 gcds, O(n²).
+why_space: A few numbers.
+hint: If nums has c 1s, each other number takes one operation: return n − c.
+hint: Otherwise, for each i, start `g = nums[i]` and extend j from i + 1 with `g = math.gcd(g, nums[j])`. At the first j where g is 1, the stretch takes j − i operations to make a 1: keep the smallest, and `break`.
+hint: If no stretch reaches 1, return −1. Otherwise return the smallest j − i plus n − 1.
+right: The break makes most starts short, but when the gcd won't reach 1 none of them stop early: O(n²) in the worst case, against O(n) when there's already a 1.
+wrong: Return n − c if c > 0. Otherwise, for each i, extend j with a running gcd and break at the first gcd of 1, keeping the smallest j − i. Return −1 if there's none, or the smallest plus n − 1.
+
+=== task: code medium
+title: Find The First Player to win K Games in a Row
+leetcode: 3175 | Find The First Player to win K Games in a Row | find-the-first-player-to-win-k-games-in-a-row
+patterns: differ + worst
+prompt: n players stand in a queue, player i with skill `skills[i]`, all different. The first two in the queue play a game: the more skilled one wins and stays at the front, and the other goes to the back. Write `find_winning_player(skills, k)` that returns the number of the first player to win k games in a row.
+
+**Example 1:** `find_winning_player([4, 2, 6, 3, 9], 2)` returns `2`: player 0 beats player 1, player 2 beats player 0, then player 2 beats player 3, two in a row.
+
+**Example 2:** `find_winning_player([2, 5, 4], 3)` returns `1`.
+
+**Constraints:** 2 ≤ n ≤ 10⁵ where n is `len(skills)`, 1 ≤ k ≤ 10⁹, and 1 ≤ `skills[i]` ≤ 10⁶, all different. k can be far bigger than n: once the most skilled player is at the front, nobody beats them, so you never need more than n − 1 games.
+starter:
+```python
+def find_winning_player(skills, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def find_winning_player(skills, k):
+    best = 0
+    wins = 0
+    for i in range(1, len(skills)):
+        if skills[i] > skills[best]:
+            best = i
+            wins = 1
+        else:
+            wins += 1
+        if wins == k:
+            return best
+    return best
+```
+tests:
+- find_winning_player([4, 2, 6, 3, 9], 2)
+- find_winning_player([2, 5, 4], 3)
+- find_winning_player([1, 2], 1)
+- find_winning_player([3, 1], 1000000000)
+- find_winning_player([5, 1, 2, 3], 3)
+- find_winning_player(list(range(30000, 0, -1)), 1000000000)
+fail[2]: Player 1 beats player 0, then player 2, and then keeps winning forever: 1.
+fail[3]: Player 1 wins the first game: 1.
+fail[4]: Player 0 beats player 1 every time, so a billion games in a row are certain: 0.
+fail[5]: Player 0 beats players 1, 2 and 3 in turn: 0.
+fail[6]: Player 0 is the most skilled of 30,000 players, so they win every game. Playing a billion games one by one would never finish; once the other 29,999 have each lost once, the answer is settled: 0.
+edges:
+- two players :: len(skills) == 2 :: find_winning_player([3, 8], 1)
+- k at least n − 1 :: len(skills) > 2 and k >= len(skills) - 1 :: find_winning_player([1, 9, 4], 5)
+- k below n − 1 :: len(skills) > 2 and k < len(skills) - 1 :: find_winning_player([5, 1, 9, 2], 1)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_options: O(n); O(k); O(n + k); O(n × k)
+complexity_note: n is the number of players. Give the worst case.
+why_time: The challengers come out of the queue in their order, 1 to n − 1, so one pass plays every game that matters: at most n − 1 steps, however big k is.
+why_space: The current winner and their run of wins.
+hint: The losers go to the back, behind everyone who hasn't played yet, so the challengers come in order: player 1, then 2, then 3, up to n − 1.
+hint: Keep the current winner and how many games in a row they've won. A new winner starts a run of 1.
+hint: Return the winner as soon as the run reaches k. After the loop, the winner is the most skilled player, who never loses again: return them.
+right: Playing game by game takes k steps when the best player starts at the front, up to a billion. One pass over the challengers caps it at n − 1, whatever k is: O(n).
+wrong: `best = 0` and `wins = 0`. For i from 1 to n − 1: if `skills[i] > skills[best]`, set best to i and wins to 1, otherwise add 1 to wins; return best when wins reaches k. After the loop, return best.
+
+=== task: code medium
+title: Smallest All-Ones Multiple
+leetcode: 3790 | Smallest All-Ones Multiple | smallest-all-ones-multiple
+patterns: worst
+prompt: Write `min_all_one_multiple(k)` that returns how many digits are in the smallest number made only of 1s (1, 11, 111 and onwards) that k divides exactly, or −1 if there's none.
+
+**Example 1:** `min_all_one_multiple(3)` returns `3`: 111 is 3 × 37.
+
+**Example 2:** `min_all_one_multiple(7)` returns `6`: 111111 is 7 × 15873.
+
+**Constraints:** 2 ≤ k ≤ 10⁵. The number can have tens of thousands of digits, so keep only its remainder after dividing by k. A number made of 1s is odd and doesn't end in 0 or 5, so no k divisible by 2 or 5 works.
+starter:
+```python
+def min_all_one_multiple(k):
+    # your code here
+    return -1
+```
+solution:
+```python
+def min_all_one_multiple(k):
+    if k % 2 == 0 or k % 5 == 0:
+        return -1
+    r = 0
+    for length in range(1, k + 1):
+        r = (r * 10 + 1) % k
+        if r == 0:
+            return length
+    return -1
+```
+tests:
+- min_all_one_multiple(3)
+- min_all_one_multiple(7)
+- min_all_one_multiple(2)
+- min_all_one_multiple(11)
+- min_all_one_multiple(25)
+- min_all_one_multiple(90019)
+fail[2]: 111111 is 7 × 15873, and no shorter number of 1s is a multiple of 7: 6.
+fail[3]: Numbers made of 1s are odd: −1.
+fail[4]: 11 itself: 2.
+fail[5]: Numbers made of 1s never end in 0 or 5, so 25 can't divide them: −1.
+fail[6]: For k = 90,019, the smallest number of 1s has 30,006 digits. Keeping only remainders, each step is small, and the loop can never run more than 90,019 times.
+edges:
+- k divisible by 2 or 5 :: k % 2 == 0 or k % 5 == 0 :: min_all_one_multiple(4)
+- a short answer :: k % 2 != 0 and k % 5 != 0 and min_all_one_multiple(k) < 5 :: min_all_one_multiple(11)
+- a long answer :: k % 2 != 0 and k % 5 != 0 and min_all_one_multiple(k) >= 5 :: min_all_one_multiple(7)
+edge_count: 2
+complexity: time=O(k) | space=O(1)
+complexity_options: O(k); O(k²); O(log k)
+complexity_note: k is the number. Give the worst case.
+why_time: The loop's turns depend on k's value, not on a list. Its remainders are 0 to k − 1, so within k turns either one is 0 or they've started repeating: at most k turns, O(k).
+why_space: One remainder.
+hint: Going from one number of 1s to the next is `x * 10 + 1`, so the remainders follow `r = (r * 10 + 1) % k`, starting from r = 0.
+hint: There are only k possible remainders. If none of the first k is 0, they've started repeating, and none ever will be.
+hint: Return −1 at once if k is divisible by 2 or 5.
+right: Without the limit, it isn't clear the loop ever ends. With only k remainders, k turns is the most it can run: O(k), and the numbers stay below k instead of growing to thousands of digits.
+wrong: Return −1 if k is divisible by 2 or 5. Otherwise, with r = 0, for each length from 1 to k, set `r = (r * 10 + 1) % k` and return the length when r is 0. Return −1 after the loop.
+
+=== task: code medium
+title: Average Waiting Time
+leetcode: 1701 | Average Waiting Time | average-waiting-time
+patterns: every + average
+prompt: A restaurant has one chef. `customers[i] = [arrival, time]`: customer i arrives at `arrival`, and their order takes `time` to cook. The chef cooks the orders one at a time, in the order the customers arrive, starting each one as soon as its customer has arrived and the chef is free. A customer's waiting time runs from their arrival until their order is ready. Write `average_waiting_time(customers)` that returns the average waiting time.
+
+**Example 1:** `average_waiting_time([[1, 2], [2, 5], [4, 3]])` returns `5.0`: the orders are ready at 3, 8 and 11, so the waiting times are 2, 6 and 7.
+
+**Example 2:** `average_waiting_time([[5, 2], [5, 4], [10, 3], [20, 1]])` returns `3.25`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(customers)`, 1 ≤ arrival, time ≤ 10⁴, and the arrivals are in order.
+starter:
+```python
+def average_waiting_time(customers):
+    # your code here
+    return 0.0
+```
+solution:
+```python
+def average_waiting_time(customers):
+    time = 0
+    total = 0
+    for arrival, need in customers:
+        time = max(time, arrival) + need
+        total += time - arrival
+    return total / len(customers)
+```
+tests:
+- average_waiting_time([[1, 2], [2, 5], [4, 3]])
+- average_waiting_time([[5, 2], [5, 4], [10, 3], [20, 1]])
+- average_waiting_time([[1, 1]])
+- average_waiting_time([[1, 5], [1, 5]])
+- average_waiting_time([[1, 1], [10, 2]])
+- round(average_waiting_time([[i, 3] for i in range(1, 2001)]), 5)
+fail[2]: The orders are ready at 7, 11, 14 and 21, so the waiting times are 2, 6, 4 and 1: 13 / 4 = 3.25.
+fail[3]: One customer, whose order takes 1: 1.0.
+fail[4]: The first customer's order is ready after 5, and the second's after both orders, 10: 15 / 2 = 7.5.
+fail[5]: The chef is free when each customer arrives: waiting times of 1 and 2, 1.5.
+fail[6]: 2,000 customers, one a minute, with orders of 3 minutes: the chef falls further behind with each one, and the waiting times average 2,002.0.
+edges:
+- one customer :: len(customers) == 1 :: average_waiting_time([[2, 3]])
+- customers arriving together :: len(customers) > 1 and len(set([c[0] for c in customers])) < len(customers) :: average_waiting_time([[1, 2], [1, 2]])
+- all different arrival times :: len(customers) > 1 and len(set([c[0] for c in customers])) == len(customers) :: average_waiting_time([[1, 2], [5, 2]])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of customers.
+why_time: Every customer's waiting time is part of the average, so every customer is handled once: n steps in every case, O(n).
+why_space: The time the chef is next free, and the total waiting time.
+hint: Keep `time`, when the chef is next free. Customer i's order starts at `max(time, arrival)` and is ready `need` later.
+hint: Add `ready - arrival` to the total, and return `total / len(customers)`.
+right: An average over every customer needs every customer: no early exit, O(n) in every case.
+wrong: `time = 0` and `total = 0`. For each `[arrival, need]`: `time = max(time, arrival) + need`, then `total += time - arrival`. Return `total / len(customers)`.
+
+=== task: code medium
+title: Sum of Distances
+leetcode: 2615 | Sum of Distances | sum-of-distances
+patterns: average
+prompt: Write `distance(nums)` that returns a list whose item i is the sum of `abs(i - j)` over every j ≠ i with `nums[j] == nums[i]`, or 0 if there's no such j.
+
+**Example 1:** `distance([1, 3, 1, 1, 2])` returns `[5, 0, 3, 4, 0]`: the 1s are at 0, 2 and 3, so position 0 gets 2 + 3 = 5.
+
+**Example 2:** `distance([0, 5, 3])` returns `[0, 0, 0]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(nums)`, and 0 ≤ `nums[i]` ≤ 10⁹. Comparing every pair is O(n²): group the positions of each value, and use running sums inside each group.
+starter:
+```python
+def distance(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def distance(nums):
+    groups = {}
+    for i in range(len(nums)):
+        if nums[i] not in groups:
+            groups[nums[i]] = []
+        groups[nums[i]].append(i)
+    result = [0] * len(nums)
+    for positions in groups.values():
+        m = len(positions)
+        total = sum(positions)
+        before = 0
+        for k in range(m):
+            p = positions[k]
+            after = total - before - p
+            result[p] = p * k - before + after - p * (m - 1 - k)
+            before += p
+    return result
+```
+tests:
+- distance([1, 3, 1, 1, 2])
+- distance([0, 5, 3])
+- distance([7])
+- distance([2, 2])
+- distance([1, 2, 1, 2, 1])
+- sum(distance([i % 3 for i in range(3000)]))
+fail[2]: Every number appears once: `[0, 0, 0]`.
+fail[3]: One number: `[0]`.
+fail[4]: The two 2s are 1 apart: `[1, 1]`.
+fail[5]: The 1s are at 0, 2 and 4: 2 + 4 = 6, 2 + 2 = 4 and 4 + 2 = 6. The 2s at 1 and 3 are 2 apart.
+fail[6]: 3,000 numbers in three groups of 1,000: the answers add up to 2,999,997,000. Comparing every pair would take 9 million steps.
+edges:
+- one number :: len(nums) == 1 :: distance([4])
+- all different :: len(nums) > 1 and len(set(nums)) == len(nums) :: distance([1, 2])
+- a repeated number :: len(set(nums)) < len(nums) :: distance([3, 3, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Grouping the positions is one pass, and each group is then handled in a pass of its own. The groups hold n positions in all: O(n).
+why_space: The groups and the answer, n positions each.
+hint: Collect the positions of each value in a dictionary of lists, in order.
+hint: In a group p of length m, the positions before `p[k]` add up to `before`, and the ones after it to `after = total - before - p[k]`.
+hint: The earlier positions are all smaller and the later ones all bigger, so the answer at `p[k]` is `p[k] * k - before + after - p[k] * (m - 1 - k)`.
+right: Instead of measuring every pair, each position gets its total from two running sums: a sum over every case without going through every case. O(n), where comparing pairs is O(n²).
+wrong: Group the positions by value. For each group, with `total = sum(group)` and `before = 0`, set each answer to `p * k - before + (total - before - p) - p * (m - 1 - k)`, then add p to before.
+
+=== task: code medium
+title: Statistics from a Large Sample
+leetcode: 1093 | Statistics from a Large Sample | statistics-from-a-large-sample
+patterns: every
+prompt: A sample of whole numbers from 0 to 255 is given as counts: `count[v]` is how many times v appears, and count always has 256 items. Write `sample_stats(count)` that returns `[minimum, maximum, mean, median, mode]` as floats: the smallest and biggest values, the average, the middle value (the average of the two middle values if the sample size is even), and the most frequent value.
+
+**Example 1:** `sample_stats([0, 1, 3, 4] + [0] * 252)` returns `[1.0, 3.0, 2.375, 2.5, 3.0]`: the sample is 1, 2, 2, 2, 3, 3, 3, 3.
+
+**Example 2:** `sample_stats([0, 4, 3, 2, 2] + [0] * 251)` returns `[1.0, 4.0, 2.1818181818181817, 2.0, 1.0]`.
+
+**Constraints:** the sample has 1 to 10⁹ numbers, and the mode is unique. A sample of a billion numbers is far too big to build: work with the counts.
+starter:
+```python
+def sample_stats(count):
+    # your code here
+    return []
+```
+solution:
+```python
+def kth_value(count, k):
+    seen = 0
+    for v in range(256):
+        seen += count[v]
+        if seen >= k:
+            return v
+    return 255
+
+
+def sample_stats(count):
+    low = -1
+    high = -1
+    mode = 0
+    total = 0
+    value_sum = 0
+    for v in range(256):
+        if count[v] > 0:
+            if low == -1:
+                low = v
+            high = v
+            total += count[v]
+            value_sum += v * count[v]
+            if count[v] > count[mode]:
+                mode = v
+    if total % 2 == 1:
+        median = kth_value(count, total // 2 + 1)
+    else:
+        median = (kth_value(count, total // 2) + kth_value(count, total // 2 + 1)) / 2
+    return [float(low), float(high), value_sum / total, float(median), float(mode)]
+```
+tests:
+- sample_stats([0, 1, 3, 4] + [0] * 252)
+- [round(x, 5) for x in sample_stats([0, 4, 3, 2, 2] + [0] * 251)]
+- sample_stats([0] * 7 + [5] + [0] * 248)
+- sample_stats([2] + [0] * 254 + [1])
+- sample_stats([1, 3, 1] + [0] * 253)
+- [round(x, 5) for x in sample_stats([i * 37 % 100 for i in range(255)] + [900000000])]
+fail[2]: 11 numbers: the mean is 24 / 11, about 2.18182, the 6th number is 2, and 1 appears most: `[1.0, 4.0, 2.18182, 2.0, 1.0]`.
+fail[3]: Five 7s: every statistic is 7.0.
+fail[4]: 0, 0 and 255: the mean is 255 / 3 = 85.0, and the median and mode are 0.0.
+fail[5]: 0, 1, 1, 1 and 2: `[0.0, 2.0, 1.0, 1.0, 1.0]`.
+fail[6]: The sample has about 900 million numbers, almost all 255: building it would take far too long, but the 256 counts give everything.
+edges:
+- one value :: len([c for c in count if c > 0]) == 1 :: sample_stats([0] * 5 + [3] + [0] * 250)
+- an even sample size :: len([c for c in count if c > 0]) > 1 and sum(count) % 2 == 0 :: sample_stats([3, 1] + [0] * 254)
+- an odd sample size :: len([c for c in count if c > 0]) > 1 and sum(count) % 2 == 1 :: sample_stats([1, 2] + [0] * 254)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: The input is always 256 counts, however big the sample is.
+why_time: Two or three passes over the 256 counts, whatever the sample holds: the same fixed number of steps for every input, O(1).
+why_space: A few numbers and the answer of 5.
+hint: One pass over v from 0 to 255 finds the first and last values with a count, the sample size, the sum of `v * count[v]` and the value with the biggest count.
+hint: Write `kth_value(count, k)`: add up the counts from v = 0 until the total reaches k, and return that v.
+hint: For an odd size n, the median is `kth_value(count, n // 2 + 1)`; for an even n, it's the average of the values at positions n // 2 and n // 2 + 1.
+right: Every count has to be read, but there are always 256 of them, so every case is the same: O(1). Building the sample would cost as much as the sample is big, up to a billion steps.
+wrong: In one pass over v, track the lowest and highest values, the size, the sum and the mode. Find the median with `kth_value`, once or twice, and return the five as floats, with `sum / size` as the mean.
+
+=== task: code medium
+title: Lexicographically Smallest String After Substring Operation
+leetcode: 2734 | Lexicographically Smallest String After Substring Operation | lexicographically-smallest-string-after-substring-operation
+patterns: early
+prompt: In one operation, you pick a non-empty stretch of s and replace each of its letters with the letter before it in the alphabet, with "a" becoming "z". Write `smallest_string(s)` that returns the string that comes first in alphabetical order out of everything one operation can make.
+
+**Example 1:** `smallest_string("cbabc")` returns `"baabc"`: change the "cb" at the start.
+
+**Example 2:** `smallest_string("leetcode")` returns `"kddsbncd"`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 3 × 10⁵, lowercase letters. Skip the "a"s at the start, then change letters until the next "a", and stop there: changing an "a" would make a "z".
+starter:
+```python
+def smallest_string(s):
+    # your code here
+    return s
+```
+solution:
+```python
+def smallest_string(s):
+    chars = list(s)
+    i = 0
+    while i < len(chars) and chars[i] == "a":
+        i += 1
+    if i == len(chars):
+        chars[-1] = "z"
+        return "".join(chars)
+    while i < len(chars) and chars[i] != "a":
+        chars[i] = chr(ord(chars[i]) - 1)
+        i += 1
+    return "".join(chars)
+```
+tests:
+- smallest_string("cbabc")
+- smallest_string("acbbc")
+- smallest_string("leetcode")
+- smallest_string("a")
+- smallest_string("aaab")
+- smallest_string("a" * 20000)[-3:]
+fail[2]: The "a" at the start stays, and "cbbc" becomes "baab": "abaab".
+fail[3]: There's no "a", so every letter moves back one: "kddsbncd".
+fail[4]: The operation must change something, and "a" becomes "z": "z".
+fail[5]: Skip the three "a"s and change the "b": "aaaa".
+fail[6]: 20,000 "a"s: the search for a letter that isn't "a" reaches the end, so the last letter has to become "z". The string ends "aaz".
+edges:
+- one letter :: len(s) == 1 :: smallest_string("c")
+- every letter "a" :: len(s) > 1 and s.count("a") == len(s) :: smallest_string("aa")
+- a letter other than "a" :: len(s) > 1 and s.count("a") < len(s) :: smallest_string("ab")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s. Give the worst case.
+why_time: The two scans stop early, at the first letter that isn't "a" and at the next "a" after it. But turning the list of letters back into a string costs n steps in every case: O(n).
+why_space: The list of n letters.
+hint: Make `chars = list(s)` and skip the "a"s at the start.
+hint: If every letter is "a", any change makes things bigger, and the least bad is changing the last letter to "z".
+hint: Otherwise, change letters with `chr(ord(ch) - 1)` until the next "a" or the end, and stop there.
+right: The scans stop as soon as nothing better can come, but copying the letters into a list and back is n steps anyway: O(n) in every case.
+wrong: `chars = list(s)`; skip the leading "a"s; if every letter is "a", set the last one to "z". Otherwise move each letter back one until the next "a". Return `"".join(chars)`.
+
+=== task: code hard
+title: Find Minimum in Rotated Sorted Array II
+leetcode: 154 | Find Minimum in Rotated Sorted Array II | find-minimum-in-rotated-sorted-array-ii
+patterns: differ
+prompt: nums was sorted from smallest to biggest and then rotated: some numbers from the end were moved to the front, keeping their order. It may hold repeated numbers. Write `find_min(nums)` that returns the smallest number. Use a binary search: when the numbers are all different, it must take O(log n) steps.
+
+**Example 1:** `find_min([1, 3, 5])` returns `1`.
+
+**Example 2:** `find_min([2, 2, 2, 0, 1])` returns `0`.
+
+**Constraints:** 1 ≤ n ≤ 5000 where n is `len(nums)`, and −5000 ≤ `nums[i]` ≤ 5000. Compare the middle number of the range with the last one: if it's bigger, the smallest is to its right; if it's smaller, the smallest is at the middle or to its left. When they're equal you can't tell, so drop the last one.
+starter:
+```python
+def find_min(nums):
+    # your code here
+    return nums[0]
+```
+solution:
+```python
+def find_min(nums):
+    lo = 0
+    hi = len(nums) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if nums[mid] > nums[hi]:
+            lo = mid + 1
+        elif nums[mid] < nums[hi]:
+            hi = mid
+        else:
+            hi -= 1
+    return nums[lo]
+```
+tests:
+- find_min([1, 3, 5])
+- find_min([2, 2, 2, 0, 1])
+- find_min([1])
+- find_min([3, 3, 1, 3])
+- find_min([10, 1, 10, 10, 10])
+- find_min([1] * 2500 + [0] + [1] * 2499)
+fail[2]: `[2, 2, 2, 0, 1]` is `[0, 1, 2, 2, 2]` rotated: 0.
+fail[3]: One number: 1.
+fail[4]: The middle and the last are both 3, so the search drops the last one and tries again: 1.
+fail[5]: The middle and the last are both 10, so the search can only drop the last number and try again: 1.
+fail[6]: 5,000 numbers, all 1 except a single 0: almost every comparison finds two equal numbers, so the range shrinks by one number at a time. The search still has to find the 0.
+speed: setup=nums = list(range(n // 2, n)) + list(range(n // 2)) | call=find_min(nums) | target=O(log n)
+slow:
+```python
+def find_min(nums):
+    return min(nums)
+```
+fail[speed]: `min(nums)` reads all n numbers. With all-different numbers, a binary search halves the range at every step: compare `nums[mid]` with `nums[hi]` and keep the half that holds the drop.
+edges:
+- one number :: len(nums) == 1 :: find_min([4])
+- all the same :: len(nums) > 1 and len(set(nums)) == 1 :: find_min([2, 2, 2])
+- different numbers :: len(set(nums)) > 1 :: find_min([3, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums. Give the worst case.
+why_time: Each comparison of two different numbers halves the range, so all-different numbers take O(log n). But when `nums[mid] == nums[hi]`, only one number is dropped. With almost every number equal, that happens at nearly every step, and the worst case is O(n).
+why_space: Three positions.
+hint: Keep `lo = 0` and `hi = n - 1`, and loop while `lo < hi` with `mid = (lo + hi) // 2`.
+hint: If `nums[mid] > nums[hi]`, the drop is to the right of mid: `lo = mid + 1`. If `nums[mid] < nums[hi]`, the smallest is at mid or to its left: `hi = mid`.
+hint: If they're equal, you can't tell which side holds the drop, but `nums[hi]` can go, because `nums[mid]` has the same value: `hi -= 1`.
+right: All-different numbers take O(log n) every time. Repeats can force the `hi -= 1` step again and again, and the worst case, almost all equal numbers, is O(n). The quoted Big O is that worst case.
+wrong: Binary search with lo and hi: `lo = mid + 1` if `nums[mid] > nums[hi]`, `hi = mid` if it's smaller, and `hi -= 1` if they're equal. Return `nums[lo]`.
+
+=== task: code hard
+title: Last Substring in Lexicographical Order
+leetcode: 1163 | Last Substring in Lexicographical Order | last-substring-in-lexicographical-order
+patterns: differ + worst
+prompt: Write `last_substring(s)` that returns the substring of s that comes last in alphabetical order.
+
+**Example 1:** `last_substring("abab")` returns `"bab"`.
+
+**Example 2:** `last_substring("leetcode")` returns `"tcode"`.
+
+**Constraints:** 1 ≤ n ≤ 4 × 10⁵ where n is `len(s)`, lowercase letters. The answer is always a suffix, so the task is to find where it starts. Comparing suffixes with each other is fast when they differ early, but on a string like "zzzz" every comparison runs to the end: O(n²). Compare two candidate starts letter by letter instead, and never compare the same letters twice.
+starter:
+```python
+def last_substring(s):
+    # your code here
+    return s
+```
+solution:
+```python
+def last_substring(s):
+    n = len(s)
+    i = 0
+    j = 1
+    k = 0
+    while j + k < n:
+        if s[i + k] == s[j + k]:
+            k += 1
+        elif s[i + k] > s[j + k]:
+            j = j + k + 1
+            k = 0
+        else:
+            i = max(i + k + 1, j)
+            j = i + 1
+            k = 0
+    return s[i:]
+```
+tests:
+- last_substring("abab")
+- last_substring("leetcode")
+- last_substring("a")
+- last_substring("zzz")
+- last_substring("cacacb")
+- len(last_substring("z" * 6000))
+fail[2]: "t" is the biggest letter, and the suffix starting there is "tcode".
+fail[3]: One letter: "a".
+fail[4]: All the suffixes of "zzz" start alike, and the longest comes last: "zzz".
+fail[5]: "c" is at 0, 2 and 4, starting "cacacb", "cacb" and "cb". The letter after the last "c" is "b", which beats "a": "cb".
+fail[6]: 6,000 "z"s: the answer is the whole string, 6,000 letters. Comparing suffixes with each other on this input takes about 18 million letter comparisons.
+edges:
+- one letter :: len(s) == 1 :: last_substring("q")
+- all the same letter :: len(s) > 1 and len(set(s)) == 1 :: last_substring("bbb")
+- different letters :: len(set(s)) > 1 :: last_substring("abc")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s. Give the worst case.
+why_time: Each step either grows k by 1, or moves i or j past the letters it has compared. i + j + k grows at every step and can't pass 3n, so there are at most 3n steps, whatever the letters.
+why_space: The answer, up to n letters.
+hint: Keep the best start so far, i = 0, a challenger, j = 1, and k, how many letters of the two suffixes have matched so far.
+hint: If `s[i + k] == s[j + k]`, add 1 to k. If `s[i + k] > s[j + k]`, the challenger loses, and so does every start up to j + k: set `j = j + k + 1` and `k = 0`.
+hint: If `s[i + k] < s[j + k]`, i loses, and so does every start up to i + k: set `i = max(i + k + 1, j)`, `j = i + 1` and `k = 0`. Stop when `j + k` reaches n, and return `s[i:]`.
+right: Comparing whole suffixes is quick on most strings, where they differ at the first letter, but on "zzzz" every comparison runs to the end: O(n²). Skipping every start that has already lost guards against that input: O(n) for every string.
+wrong: Start with i, j and k at 0, 1 and 0. While `j + k < n`: equal letters add 1 to k; if `s[i + k]` is bigger, `j = j + k + 1`; if it's smaller, `i = max(i + k + 1, j)` and `j = i + 1`; reset k to 0 after a jump. Return `s[i:]`.
+
+=== task: code hard
+title: Count The Repetitions
+leetcode: 466 | Count The Repetitions | count-the-repetitions
+patterns: worst
+prompt: `[s, n]` means s written n times in a row: `["abc", 3]` is "abcabcabc". A string a can be obtained from b if deleting some letters of b leaves a. Write `get_max_repetitions(s1, n1, s2, n2)` that returns the biggest m such that s2 written n2 × m times can be obtained from `[s1, n1]`.
+
+**Example 1:** `get_max_repetitions("acb", 4, "ab", 2)` returns `2`: "acbacbacbacb" holds "ab" 4 times in order, which is `["ab", 2]` twice.
+
+**Example 2:** `get_max_repetitions("acb", 1, "acb", 1)` returns `1`.
+
+**Constraints:** 1 ≤ `len(s1)`, `len(s2)` ≤ 100, 1 ≤ n1, n2 ≤ 10⁶, lowercase letters. Reading all n1 copies of s1 can mean 10⁸ letters. But at the end of each copy, all that matters is where you are in s2, and there are only `len(s2)` places: within `len(s2) + 1` copies a place must come round again, and from then on everything repeats.
+starter:
+```python
+def get_max_repetitions(s1, n1, s2, n2):
+    # your code here
+    return 0
+```
+solution:
+```python
+def get_max_repetitions(s1, n1, s2, n2):
+    m = len(s2)
+    nxt = []
+    done = []
+    for j in range(m):
+        pos = j
+        count = 0
+        for ch in s1:
+            if ch == s2[pos]:
+                pos += 1
+                if pos == m:
+                    pos = 0
+                    count += 1
+        nxt.append(pos)
+        done.append(count)
+    seen = {}
+    pos = 0
+    total = 0
+    block = 0
+    while block < n1:
+        if pos in seen:
+            first_block, first_total = seen[pos]
+            length = block - first_block
+            rounds = (n1 - block) // length
+            block += rounds * length
+            total += rounds * (total - first_total)
+            seen = {}
+            if block == n1:
+                break
+        seen[pos] = (block, total)
+        total += done[pos]
+        pos = nxt[pos]
+        block += 1
+    return total // n2
+```
+tests:
+- get_max_repetitions("acb", 4, "ab", 2)
+- get_max_repetitions("acb", 1, "acb", 1)
+- get_max_repetitions("a", 1, "b", 1)
+- get_max_repetitions("aaa", 3, "aa", 1)
+- get_max_repetitions("abc", 10, "cba", 1)
+- get_max_repetitions("abcdefghijklmnopqrstuvwxyz" * 3 + "a", 1000000, "zyxwvutsrqponmlkjihgfedcba", 7)
+fail[2]: "acb" holds "acb" once: 1.
+fail[3]: There's no "b" to match: 0.
+fail[4]: 9 "a"s hold "aa" 4 times: 4.
+fail[5]: Each "cba" needs a "c", then a "b" from the next copy, then an "a" after that: about two copies each, so 10 copies hold it 4 times.
+fail[6]: A million copies of a 79-letter string is 79 million letters, too many to read one by one. The place in s2 repeats within 27 copies, and after that each cycle's gain can be multiplied: 17,142.
+edges:
+- one copy :: n1 == 1 :: get_max_repetitions("ab", 1, "a", 1)
+- s2 has a letter s1 lacks :: n1 > 1 and any(ch not in s1 for ch in s2) :: get_max_repetitions("ab", 3, "c", 1)
+- every letter of s2 is in s1 :: n1 > 1 and all(ch in s1 for ch in s2) :: get_max_repetitions("ab", 3, "ba", 1)
+edge_count: 2
+complexity: time=O(a × b) | space=O(b)
+complexity_options: O(a × b); O(b); O(a × n1); O(a × b × n1)
+complexity_note: a and b are the lengths of s1 and s2. Give the worst case.
+why_time: The tables take one pass of s1 for each of the b places in s2: a × b steps. Then at most b + 1 copies run before a place repeats, and the rest is a multiplication. n1 doesn't appear: a million copies cost the same as a hundred.
+why_space: Two tables of b numbers, and the places seen so far.
+hint: For each place j in s2, from 0 to b − 1, work out once where you end up after reading one copy of s1 from place j, `nxt[j]`, and how many whole s2s you completed, `done[j]`.
+hint: Then go copy by copy using the tables, remembering in a dictionary the copy number and the total at which each place was first seen.
+hint: When a place comes round again, the copies in between form a cycle: skip as many whole cycles as fit, adding their gain, and finish the last few copies one by one. Return the total `// n2`.
+right: Reading every copy costs a × n1 steps, up to 10⁸. Since the place in s2 must repeat within b + 1 copies, the cycle turns the worst case into O(a × b).
+wrong: Build `nxt` and `done` for each starting place. Walk the copies with a dictionary `seen[place] = (copy, total)`; on a repeat, skip `(n1 - copy) // length` cycles of `length` copies at once. Return `total // n2`.
+
+=== task: code hard
+title: Find the String with LCP
+leetcode: 2573 | Find the String with LCP | find-the-string-with-lcp
+patterns: early + worst
+prompt: For a word of length n, its LCP table is the n × n table where `lcp[i][j]` is the length of the longest common start of `word[i:]` and `word[j:]`. Write `find_the_string(lcp)` that returns the word of lowercase letters that comes first in alphabetical order and has exactly that LCP table, or "" if no word has it.
+
+**Example 1:** `find_the_string([[4, 0, 2, 0], [0, 3, 0, 1], [2, 0, 2, 0], [0, 1, 0, 1]])` returns `"abab"`.
+
+**Example 2:** `find_the_string([[4, 3, 2, 1], [3, 3, 2, 1], [2, 2, 2, 1], [1, 1, 1, 3]])` returns `""`: `word[3:]` has 1 letter, so `lcp[3][3]` can't be 3.
+
+**Constraints:** 1 ≤ n ≤ 1000, and 0 ≤ `lcp[i][j]` ≤ n. `lcp[i][j] > 0` means `word[i] == word[j]`: give out letters in order of first appearance. Then check the whole table against the word you built, and return "" at the first entry that's wrong.
+starter:
+```python
+def find_the_string(lcp):
+    # your code here
+    return ""
+```
+solution:
+```python
+def find_the_string(lcp):
+    n = len(lcp)
+    word = [""] * n
+    letter = 0
+    for i in range(n):
+        if word[i] == "":
+            if letter == 26:
+                return ""
+            ch = chr(ord("a") + letter)
+            letter += 1
+            for j in range(i, n):
+                if lcp[i][j] > 0:
+                    word[j] = ch
+    for i in range(n - 1, -1, -1):
+        for j in range(n - 1, -1, -1):
+            if word[i] != word[j]:
+                expected = 0
+            elif i == n - 1 or j == n - 1:
+                expected = 1
+            else:
+                expected = lcp[i + 1][j + 1] + 1
+            if lcp[i][j] != expected:
+                return ""
+    return "".join(word)
+```
+tests:
+- find_the_string([[4, 0, 2, 0], [0, 3, 0, 1], [2, 0, 2, 0], [0, 1, 0, 1]])
+- find_the_string([[4, 3, 2, 1], [3, 3, 2, 1], [2, 2, 2, 1], [1, 1, 1, 1]])
+- find_the_string([[4, 3, 2, 1], [3, 3, 2, 1], [2, 2, 2, 1], [1, 1, 1, 3]])
+- find_the_string([[2, 0], [0, 1]])
+- find_the_string([[27 - i if i == j else 0 for j in range(27)] for i in range(27)])
+- find_the_string([[120 - max(i, j) if (i - j) % 2 == 0 else 0 for j in range(120)] for i in range(120)])[:6]
+fail[2]: Every suffix starts with the same letters: "aaaa".
+fail[3]: `lcp[3][3]` is 3, but `word[3:]` is only 1 letter long: "".
+fail[4]: The two positions share nothing: "ab".
+fail[5]: Every pair of different positions has a common start of 0, so all 27 letters must differ, but there are only 26: "".
+fail[6]: The table of a 120-letter word "abab", with "ab" repeated: every one of the 14,400 entries is right, so the check has to read them all. The word starts "ababab".
+edges:
+- one position :: len(lcp) == 1 :: find_the_string([[1]])
+- a table with no word :: len(lcp) > 1 and find_the_string(lcp) == "" :: find_the_string([[2, 1], [1, 2]])
+- a table with a word :: len(lcp) > 1 and find_the_string(lcp) != "" :: find_the_string([[2, 1], [1, 1]])
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_options: O(n²); O(n³); O(n)
+complexity_note: n is the size of the table. Give the worst case.
+why_time: Giving out letters takes at most 26 passes of n: O(n). The check visits the n² entries and stops at the first wrong one. A correct table has none, so the worst case reads every entry: O(n²).
+why_space: The word of n letters.
+hint: Go through i in order. If `word[i]` has no letter yet, give it the next unused letter, and give the same letter to every j with `lcp[i][j] > 0`. If you'd need a 27th letter, return "".
+hint: For the word you built, `lcp[i][j]` should be 0 if `word[i] != word[j]`, and otherwise 1 plus `lcp[i + 1][j + 1]` (or 1 when i or j is the last position).
+hint: Check i and j from n − 1 down to 0, so that `lcp[i + 1][j + 1]` has already been checked. Return "" at the first entry that doesn't match.
+right: A wrong table usually fails within a few entries, but a correct one, which is what the task is really for, never triggers the exit: all n² entries are checked, O(n²).
+wrong: Fill word with letters in order of first appearance, using `lcp[i][j] > 0`. Then, for i and j from n − 1 down, work out the expected value from word and `lcp[i + 1][j + 1]`, and return "" if `lcp[i][j]` differs. Return `"".join(word)`.
+
+=== task: code hard
+title: Find a Value of a Mysterious Function Closest to Target
+leetcode: 1521 | Find a Value of a Mysterious Function Closest to Target | find-a-value-of-a-mysterious-function-closest-to-target
+patterns: worst
+prompt: The AND of a stretch `arr[l]` to `arr[r]` is all its numbers combined with `&`. Write `closest_to_target(arr, target)` that returns the smallest `abs(AND - target)` over every stretch.
+
+**Example 1:** `closest_to_target([9, 12, 3, 7, 15], 5)` returns `2`: the stretches give the ANDs 9, 12, 3, 7, 15, 8, 0, 3, 7, 0, 0, 3, 0, 0 and 0, and 7 and 3 are 2 away from 5.
+
+**Example 2:** `closest_to_target([1000000, 1000000, 1000000], 1)` returns `999999`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ where n is `len(arr)`, 1 ≤ `arr[i]` ≤ 10⁶, and 0 ≤ target ≤ 10⁷. Trying every stretch is O(n²). Keep the set of ANDs of the stretches that end at the current position: AND-ing can only switch bits off, and the numbers are below 2²⁰, so the set never holds more than 21 values.
+starter:
+```python
+def closest_to_target(arr, target):
+    # your code here
+    return 0
+```
+solution:
+```python
+def closest_to_target(arr, target):
+    best = abs(arr[0] - target)
+    ending = set()
+    for x in arr:
+        new = {x}
+        for v in ending:
+            new.add(v & x)
+        ending = new
+        for v in ending:
+            best = min(best, abs(v - target))
+    return best
+```
+tests:
+- closest_to_target([9, 12, 3, 7, 15], 5)
+- closest_to_target([1000000, 1000000, 1000000], 1)
+- closest_to_target([1, 2, 4, 8, 16], 0)
+- closest_to_target([7], 7)
+- closest_to_target([5, 6], 3)
+- closest_to_target([i * 7919 % 1000000 + 1 for i in range(3000)], 12345)
+fail[2]: Every stretch has the AND 1,000,000, which is 999,999 away from 1.
+fail[3]: `1 & 2` is 0, and the target is 0: 0.
+fail[4]: The one stretch is 7: 0.
+fail[5]: The ANDs are 5, 6 and 4, and 4 is 1 away from 3.
+fail[6]: 3,000 numbers make about 4.5 million stretches, but the sets of ANDs stay small. The closest AND is 126 away.
+edges:
+- one number :: len(arr) == 1 :: closest_to_target([6], 4)
+- the target is reached :: len(arr) > 1 and closest_to_target(arr, target) == 0 :: closest_to_target([6, 5], 4)
+- the target isn't reached :: len(arr) > 1 and closest_to_target(arr, target) > 0 :: closest_to_target([6, 5], 3)
+edge_count: 2
+complexity: time=O(n log V) | space=O(log V)
+complexity_options: O(n log V); O(log V); O(n²); O(n × V)
+complexity_note: n is the length of arr and V its biggest number, so a number has about log₂ V bits. Give the worst case.
+why_time: The set of ANDs ending at a position holds at most log₂ V + 1 values: a longer stretch's AND keeps only bits the shorter one has, so each new value has lost at least one bit. Each position costs O(log V), and n positions O(n log V).
+why_space: One set of at most log₂ V + 1 values.
+hint: The ANDs of the stretches ending at position r are x = `arr[r]` itself, and `v & x` for each AND v of the stretches ending at r − 1.
+hint: Keep them in a set, `ending`, and rebuild it for each new x. Compare every value in it with the target.
+hint: The set stays small: its different values are nested, each one's bits a part of the next shorter stretch's bits, so numbers with 20 bits give at most 21 values.
+right: The inner loop looks as if it could run n times, but the most it can ever run is the number of bits plus 1: finding that limit turns O(n²) into O(n log V).
+wrong: `ending = set()`. For each x: `new = {x}`, plus `v & x` for every v in ending; then `ending = new`, and compare every value in it with the target, keeping the smallest difference.
+
+=== task: code hard
+title: Super Egg Drop
+leetcode: 887 | Super Egg Drop | super-egg-drop
+patterns: worst
+prompt: You have k identical eggs and a building with floors 1 to n. There's a floor f, from 0 to n, such that an egg dropped from above f breaks and an egg dropped from f or below doesn't. An egg that doesn't break can be dropped again. Write `super_egg_drop(k, n)` that returns the fewest drops that find f for certain, however unlucky the drops are: the number needed in the worst case.
+
+**Example 1:** `super_egg_drop(1, 2)` returns `2`: with one egg you must try floor 1, then floor 2.
+
+**Example 2:** `super_egg_drop(2, 6)` returns `3`.
+
+**Constraints:** 1 ≤ k ≤ 100, and 1 ≤ n ≤ 10⁴. Turn the question round: with m drops and e eggs, how many floors can you always handle? A drop either breaks the egg, leaving m − 1 drops and e − 1 eggs for the floors below, or doesn't, leaving m − 1 drops and e eggs for the floors above. So `floors(m, e) = floors(m - 1, e - 1) + 1 + floors(m - 1, e)`. Find the smallest m with `floors(m, k) >= n`.
+starter:
+```python
+def super_egg_drop(k, n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def super_egg_drop(k, n):
+    floors = [0] * (k + 1)
+    moves = 0
+    while floors[k] < n:
+        moves += 1
+        for e in range(k, 0, -1):
+            floors[e] = floors[e] + floors[e - 1] + 1
+    return moves
+```
+tests:
+- super_egg_drop(1, 2)
+- super_egg_drop(2, 6)
+- super_egg_drop(3, 14)
+- super_egg_drop(1, 1)
+- super_egg_drop(100, 10000)
+- super_egg_drop(2, 10000)
+fail[2]: 3 drops with 2 eggs can handle up to 6 floors: 3.
+fail[3]: 4 drops with 3 eggs can handle up to 14 floors: 4.
+fail[4]: One floor, one drop: 1.
+fail[5]: With 100 eggs, each drop can halve the floors left, like a binary search: 14 drops for 10,000 floors.
+fail[6]: 2 eggs and 10,000 floors: 141 drops. Trying every first floor for every number of floors is about 10,000 × 10,000 steps; counting floors drop by drop takes 141 × 2.
+edges:
+- one egg :: k == 1 :: super_egg_drop(1, 5)
+- one floor :: k > 1 and n == 1 :: super_egg_drop(3, 1)
+- several eggs and floors :: k > 1 and n > 1 :: super_egg_drop(2, 10)
+edge_count: 2
+complexity: time=O(k × n) | space=O(k)
+complexity_options: O(k × n); O(k); O(k × n²); O(n log n)
+complexity_note: k is the number of eggs and n the number of floors. Give the worst case.
+why_time: Each turn of the while loop updates k counts, and there's one turn per drop of the answer. The answer is at most n, exactly n with one egg, so the worst case is O(k × n). With more eggs the answer is far smaller: 14 for 100 eggs and 10,000 floors.
+why_space: The k + 1 counts of floors.
+hint: Keep `floors[e]`, how many floors e eggs can handle with the drops so far, all starting at 0.
+hint: Each new drop updates every e from k down to 1: `floors[e] = floors[e] + floors[e - 1] + 1`. Going down means `floors[e - 1]` still holds its value from before this drop.
+hint: Count the drops until `floors[k] >= n`.
+right: The problem itself is about the worst case: whichever floor f is, the drops must find it. The counts answer "how many floors can I always handle", and the loop stops as soon as that reaches n.
+wrong: `floors = [0] * (k + 1)` and `moves = 0`. While `floors[k] < n`: add 1 to moves, and for e from k down to 1, `floors[e] += floors[e - 1] + 1`. Return moves.
+
+=== task: code hard
+title: Probability of a Two Boxes Having The Same Number of Distinct Balls
+leetcode: 1467 | Probability of a Two Boxes Having The Same Number of Distinct Balls | probability-of-a-two-boxes-having-the-same-number-of-distinct-balls
+patterns: every + average
+prompt: There are k colors of balls, `balls[i]` of color i, and an even number of balls in all. The balls are shuffled at random, every order equally likely, and the first half go into one box and the second half into another. Write `get_probability(balls)` that returns the probability that both boxes hold the same number of different colors.
+
+**Example 1:** `get_probability([1, 1])` returns `1.0`: each box gets one ball, so one color each.
+
+**Example 2:** `get_probability([2, 1, 1])` returns `0.6666666666666666`.
+
+**Constraints:** 1 ≤ k ≤ 8, 1 ≤ `balls[i]` ≤ 6, and `sum(balls)` is even. The probability is the number of good ways to fill the first box divided by the number of all ways. Count them color by color: t of a color's b balls can be chosen in `math.comb(b, t)` ways.
+starter:
+```python
+import math
+
+
+def get_probability(balls):
+    # your code here
+    return 0.0
+```
+solution:
+```python
+import math
+
+
+def count_splits(balls, i, left, diff):
+    if i == len(balls):
+        if left != 0:
+            return (0, 0)
+        if diff == 0:
+            return (1, 1)
+        return (0, 1)
+    b = balls[i]
+    good = 0
+    total = 0
+    for t in range(min(b, left) + 1):
+        d = diff
+        if t > 0:
+            d += 1
+        if t < b:
+            d -= 1
+        g, a = count_splits(balls, i + 1, left - t, d)
+        ways = math.comb(b, t)
+        good += g * ways
+        total += a * ways
+    return (good, total)
+
+
+def get_probability(balls):
+    good, total = count_splits(balls, 0, sum(balls) // 2, 0)
+    return good / total
+```
+tests:
+- get_probability([1, 1])
+- round(get_probability([2, 1, 1]), 5)
+- round(get_probability([1, 2, 1, 2]), 5)
+- get_probability([2])
+- round(get_probability([3, 3]), 5)
+- round(get_probability([6, 5, 4, 3, 2, 1, 1]), 5)
+fail[2]: Of the 6 ways to choose the 2 balls of the first box, 4 give both boxes 2 colors: 0.66667.
+fail[3]: 6 balls in 4 colors: 0.6 of the ways give both boxes the same number of colors.
+fail[4]: Two balls of one color: each box gets one, so 1 color each: 1.0.
+fail[5]: Two colors of 3 balls: if the first box has one color, so does the second, and if it has both, so does the second. It always works: 1.0.
+fail[6]: 22 balls can fill the first box in 705,432 ways, too many to list. Counting color by color gives 0.27783.
+edges:
+- one color :: len(balls) == 1 :: get_probability([4])
+- two colors :: len(balls) == 2 :: get_probability([1, 3])
+- three colors or more :: len(balls) >= 3 :: get_probability([1, 1, 1, 1])
+edge_count: 2
+complexity: time=O(7ᵏ) | space=O(k)
+complexity_options: O(7ᵏ); O(k); O(2ⁿ); O(n!)
+complexity_note: k is the number of colors and n the number of balls. Each color has at most 6 balls, so it can split in at most 7 ways.
+why_time: Each color tries every count t from 0 to its number of balls, at most 7 choices, and the colors multiply: at most 7ᵏ splits, about 5.8 million for k = 8. Listing the balls one by one instead would mean 2ⁿ subsets, up to 2⁴⁸.
+why_space: The recursion goes one call deep per color: O(k).
+hint: Write `count_splits(balls, i, left, diff)`, which returns a pair (good ways, all ways) for the colors from i on, where left is how many balls the first box still needs, and diff is the first box's colors minus the second box's so far.
+hint: For color i with b balls, try every t from 0 to `min(b, left)`: t > 0 adds a color to the first box, and t < b adds one to the second. Multiply the ways from the rest by `math.comb(b, t)`.
+hint: After the last color, a split counts if left is 0, and it's good if diff is also 0. Return good divided by all.
+right: The answer is an average over every way to fill the boxes, and counting color by color covers them all without listing them: at most 7 choices per color, O(7ᵏ), instead of 2ⁿ subsets of balls.
+wrong: Recurse over the colors, trying each t from 0 to `min(b, left)`, weighting by `math.comb(b, t)` and updating diff for t > 0 and t < b. At the end, count every split with left == 0 as one of all, and the ones with diff == 0 as good. Return good / all.
+
+=== task: code hard
+title: Minimum Operations to Make Array Elements Zero
+leetcode: 3495 | Minimum Operations to Make Array Elements Zero | minimum-operations-to-make-array-elements-zero
+patterns: average
+prompt: Each query `[l, r]` gives the list of every whole number from l to r. In one operation, you pick two of its numbers a and b and replace them with `a // 4` and `b // 4`. For each query, find the fewest operations that make every number 0. Write `min_operations(queries)` that returns the total over all the queries.
+
+**Example 1:** `min_operations([[1, 2], [2, 4]])` returns `3`: `[1, 2]` takes 1 operation, and `[2, 3, 4]` takes 2.
+
+**Example 2:** `min_operations([[2, 6]])` returns `4`.
+
+**Constraints:** 1 ≤ q ≤ 10⁵ where q is `len(queries)`, and 1 ≤ l < r ≤ 10⁹. A number x needs s(x) divisions by 4 to reach 0: 1 for 1 to 3, 2 for 4 to 15, 3 for 16 to 63, and up. Each operation does 2 divisions, so a query takes `(S + 1) // 2` operations, where S is the total of s(x) from l to r. A range can hold a billion numbers: add up s(x) one block of equal values at a time.
+starter:
+```python
+def min_operations(queries):
+    # your code here
+    return 0
+```
+solution:
+```python
+def steps_up_to(n):
+    total = 0
+    steps = 1
+    low = 1
+    while low <= n:
+        high = min(n, low * 4 - 1)
+        total += steps * (high - low + 1)
+        low = low * 4
+        steps += 1
+    return total
+
+
+def min_operations(queries):
+    answer = 0
+    for l, r in queries:
+        steps = steps_up_to(r) - steps_up_to(l - 1)
+        answer += (steps + 1) // 2
+    return answer
+```
+tests:
+- min_operations([[1, 2], [2, 4]])
+- min_operations([[2, 6]])
+- min_operations([[1, 3]])
+- min_operations([[4, 5]])
+- min_operations([[1, 1000000000]])
+- min_operations([[i, i * 1000 + 7] for i in range(1, 2001)])
+fail[2]: 2 and 3 need 1 division each, and 4, 5 and 6 need 2: S = 8, so 4 operations.
+fail[3]: 1, 2 and 3 need 1 division each: S = 3, so 2 operations.
+fail[4]: 4 and 5 need 2 divisions each: S = 4, so 2 operations.
+fail[5]: A billion numbers: adding them one by one would take far too long, but block by block there are only 15 blocks. The answer is 7,321,043,037.
+fail[6]: 2,000 queries of about a million numbers each: 9,895,418,226.
+edges:
+- one query :: len(queries) == 1 :: min_operations([[3, 5]])
+- only short ranges :: len(queries) > 1 and all(r - l < 10 for l, r in queries) :: min_operations([[1, 2], [5, 9]])
+- a long range :: len(queries) > 1 and any(r - l >= 10 for l, r in queries) :: min_operations([[1, 2], [1, 100]])
+edge_count: 2
+complexity: time=O(q log r) | space=O(1)
+complexity_options: O(q log r); O(q × r); O(q)
+complexity_note: q is the number of queries and r the biggest right end.
+why_time: Each query adds up two totals of blocks, and the blocks start at 1, 4, 16, 64 and onwards, so there are about log₄ r of them: O(log r) per query, and O(q log r) in all.
+why_space: A few running totals.
+hint: Write `steps_up_to(n)`: the total of s(x) for x from 1 to n. The numbers from low to `4 * low - 1`, for low = 1, 4, 16 and onwards, all need the same number of divisions, so each block adds that number times how many of its numbers are at most n.
+hint: S for a query is `steps_up_to(r) - steps_up_to(l - 1)`.
+hint: Add `(S + 1) // 2` for each query.
+right: Adding s(x) one number at a time is O(r) per query. Each block of equal values adds its share with one multiplication, so a query costs one step per block: O(log r).
+wrong: `steps_up_to(n)` adds `steps * (min(n, low * 4 - 1) - low + 1)` for low = 1, 4, 16 and onwards while `low <= n`, with steps going up by 1 each block. Add `(steps_up_to(r) - steps_up_to(l - 1) + 1) // 2` over the queries.
+
+=== task: code hard
+title: Find Substring With Given Hash Value
+leetcode: 2156 | Find Substring With Given Hash Value | find-substring-with-given-hash-value
+patterns: every
+prompt: The value of a letter is its place in the alphabet: "a" is 1 and "z" is 26. The hash of a string t of length k adds up `value(t[i]) * power ** i` for i from 0 to k − 1, and takes the total `% modulo`. Write `sub_str_hash(s, power, modulo, k, hash_value)` that returns the first substring of s of length k whose hash is hash_value. There's always one.
+
+**Example 1:** `sub_str_hash("leetcode", 7, 20, 2, 0)` returns `"ee"`: `(5 * 1 + 5 * 7) % 20` is 0.
+
+**Example 2:** `sub_str_hash("fbxzaad", 31, 100, 3, 32)` returns `"fbx"`.
+
+**Constraints:** 1 ≤ k ≤ n ≤ 2 × 10⁴ where n is `len(s)`, 1 ≤ power, modulo ≤ 10⁹, and 0 ≤ hash_value < modulo. Working out each window's hash from scratch is O(n × k). Going from right to left, the next window's hash comes from the last one in one step: multiply by power, add the new letter, and take off the letter that falls out. But then you can't stop at the first match: keep the last one you see.
+starter:
+```python
+def sub_str_hash(s, power, modulo, k, hash_value):
+    # your code here
+    return ""
+```
+solution:
+```python
+def sub_str_hash(s, power, modulo, k, hash_value):
+    n = len(s)
+    top = pow(power, k, modulo)
+    h = 0
+    found = 0
+    for i in range(n - 1, -1, -1):
+        h = (h * power + ord(s[i]) - 96) % modulo
+        if i + k < n:
+            h = (h - (ord(s[i + k]) - 96) * top) % modulo
+        if i + k <= n and h == hash_value:
+            found = i
+    return s[found:found + k]
+```
+tests:
+- sub_str_hash("leetcode", 7, 20, 2, 0)
+- sub_str_hash("fbxzaad", 31, 100, 3, 32)
+- sub_str_hash("a", 1, 1, 1, 0)
+- sub_str_hash("ab", 2, 1000, 1, 2)
+- sub_str_hash("aa", 5, 7, 1, 1)
+- sub_str_hash("".join([chr(97 + i * i % 20011 % 26) for i in range(20000)]), 31, 999999937, 5000, 10064639)[:10]
+fail[2]: f, b and x are 6, 2 and 24: 6 + 2 × 31 + 24 × 961 = 23,132, and `23132 % 100` is 32: "fbx".
+fail[3]: Every hash `% 1` is 0: "a".
+fail[4]: "b" has the value 2: "b".
+fail[5]: Both windows are "a", with hash 1: the first one.
+fail[6]: 20,000 letters and windows of 5,000: hashing every window from scratch is 75 million steps. Rolling from the right, each window costs one step, and the first match starts at position 14,000.
+edges:
+- k equal to the length :: k == len(s) :: sub_str_hash("ab", 2, 100, 2, 5)
+- windows of one letter :: k == 1 and len(s) > 1 :: sub_str_hash("ba", 3, 10, 1, 1)
+- longer windows :: 1 < k < len(s) :: sub_str_hash("abc", 2, 100, 2, 8)
+edge_count: 2
+complexity: time=O(n) | space=O(k)
+complexity_options: O(n); O(n × k); O(k)
+complexity_note: n is the length of s and k the window length. Give the worst case.
+why_time: Each window takes one step, and every window is visited, even after a match: the answer is the leftmost and the scan runs leftwards, so it can't stop early. O(n) in every case.
+why_space: A few numbers, and the answer of k letters.
+hint: Going from the end, adding a letter on the left is `h = (h * power + value) % modulo`: every letter already in moves up one power.
+hint: Once the window is longer than k, take off the letter that falls out on the right: `h = (h - value(s[i + k]) * pk) % modulo`, where `pk = pow(power, k, modulo)`.
+hint: Whenever the window has k letters and its hash matches, remember its start. The last start you remember is the leftmost: return `s[found:found + k]`.
+right: The rolling hash makes each window one step, but only from right to left. The scan can't stop at the first match it meets, because that's the rightmost: every case visits all n windows, O(n).
+wrong: `pk = pow(power, k, modulo)`. For i from n − 1 down to 0: `h = (h * power + value(s[i])) % modulo`; if `i + k < n`, subtract `value(s[i + k]) * pk`; if `i + k <= n` and h matches, set `found = i`. Return `s[found:found + k]`.
+
+=== task: code hard
+title: Count K-Subsequences of a String With Maximum Beauty
+leetcode: 2842 | Count K-Subsequences of a String With Maximum Beauty | count-k-subsequences-of-a-string-with-maximum-beauty
+patterns: every + average
+prompt: A k-subsequence of s picks k positions holding k different letters. Its beauty is the sum of f(c) over its letters, where f(c) is how many times c appears in s. Write `count_k_subsequences_with_max_beauty(s, k)` that returns how many k-subsequences have the biggest beauty possible, modulo 10⁹ + 7. Two k-subsequences are different if they use different positions.
+
+**Example 1:** `count_k_subsequences_with_max_beauty("bcca", 2)` returns `4`: the biggest beauty, 3, comes from one of the 2 "c"s with the "b" or the "a".
+
+**Example 2:** `count_k_subsequences_with_max_beauty("abbcd", 4)` returns `2`.
+
+**Constraints:** 1 ≤ k ≤ `len(s)` ≤ 2 × 10⁵, lowercase letters. There can be astronomically many k-subsequences: count the best ones by multiplying, not by listing them.
+starter:
+```python
+import math
+
+
+def count_k_subsequences_with_max_beauty(s, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+import math
+
+
+def count_k_subsequences_with_max_beauty(s, k):
+    counts = {}
+    for ch in s:
+        counts[ch] = counts.get(ch, 0) + 1
+    if k > len(counts):
+        return 0
+    freqs = sorted(counts.values(), reverse=True)
+    cut = freqs[k - 1]
+    answer = 1
+    taken = 0
+    for f in freqs:
+        if f > cut:
+            answer = answer * f % 1000000007
+            taken += 1
+    need = k - taken
+    answer = answer * math.comb(freqs.count(cut), need) % 1000000007
+    answer = answer * pow(cut, need, 1000000007) % 1000000007
+    return answer
+```
+tests:
+- count_k_subsequences_with_max_beauty("bcca", 2)
+- count_k_subsequences_with_max_beauty("abbcd", 4)
+- count_k_subsequences_with_max_beauty("aab", 3)
+- count_k_subsequences_with_max_beauty("aaa", 1)
+- count_k_subsequences_with_max_beauty("abcd", 2)
+- count_k_subsequences_with_max_beauty("".join([chr(97 + i % 26) * (i % 7 + 1) for i in range(5000)]), 13)
+fail[2]: The 4 letters must be a, b, c and d, and the "b" can be either of 2: 2.
+fail[3]: "aab" has only 2 different letters, so 3 can't be picked: 0.
+fail[4]: Any one of the 3 "a"s: 3.
+fail[5]: Every letter appears once, so every pair of letters has beauty 2: `math.comb(4, 2)` is 6.
+fail[6]: The 13 most frequent letters must be picked, with a choice among the letters tied at the cut: 532,780,607 after the modulo.
+edges:
+- k is 1 :: k == 1 :: count_k_subsequences_with_max_beauty("aab", 1)
+- not enough different letters :: k > 1 and k > len(set(s)) :: count_k_subsequences_with_max_beauty("aab", 3)
+- enough different letters :: k > 1 and k <= len(set(s)) :: count_k_subsequences_with_max_beauty("aab", 2)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s. There are at most 26 letters, so sorting their counts is a fixed amount of work.
+why_time: Counting the letters reads all n of them, in every case. Everything after that works on at most 26 counts, O(1): in all, O(n).
+why_space: At most 26 counts.
+hint: Count each letter. If fewer than k different letters appear, return 0.
+hint: The best beauty takes the k biggest counts. Sort the counts from big to small and let cut be the k-th: every letter with a count above cut must be picked, and each can come from any of its f(c) positions.
+hint: The rest come from the letters whose count equals cut: choose which with `math.comb(same, need)`, and each gives cut positions, so multiply by `cut ** need`. Keep everything `% 1000000007`.
+right: The number of best k-subsequences is a sum over every choice of letters and positions, but it comes out as a product of counts and one `math.comb`: no case is listed one by one. O(n), for the counting alone.
+wrong: Count the letters, sort the counts from big to small, and set cut to the k-th. Multiply the counts above cut, then `math.comb(freqs.count(cut), need)` and `pow(cut, need, 1000000007)`, where need is k minus how many counts are above cut. Return the result `% 1000000007`.
