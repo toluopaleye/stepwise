@@ -1,7 +1,7 @@
 === lesson
 id: bigo-on
 title: O(n): linear time
-summary: Most everyday code makes one pass over its input: adding up a list, finding the biggest item, searching for a value. Its steps grow in step with n, which is O(n), linear time. You'll recognise O(n) code, see why stopping early doesn't change the worst case, and learn why several passes are still O(n).
+summary: Most everyday code makes one pass over its input: adding up a list, finding the biggest item, searching for a value. Its steps grow in step with n, which is O(n), linear time. You'll recognise O(n) code, see why stopping early doesn't change the worst case, learn why several passes are still O(n), and solve problems by deciding what each pass carries along.
 
 === learn
 ### One pass over the input
@@ -166,6 +166,176 @@ Code is O(n) when:
 
 O(n) is usually the best you can do when the answer depends on **every** item: a total, a maximum, or making sure a value isn't there.
 
+### Solving problems in one pass
+The tasks in this lesson are LeetCode problems, and every one of them can be solved in O(n): a fixed number of passes over the input, with O(1) work per item. The slow answers usually hide a loop inside the loop: `sum`, `max`, `count` or a slice, worked out again at every position. Before you write a loop, decide what it needs to **carry along** from one item to the next. Six patterns cover the tasks, and a clue in the question tells you which:
+
+| Pattern | Clue in the question | What the loop carries |
+| --- | --- | --- |
+| One pass over the input | a total, a count, the length of the current run | a running value, updated by each item |
+| Looking at every item: maximum and counting | the largest, the smallest, the closest, the longest | the best so far |
+| Linear search | the first item that fits, or whether one exists | nothing: stop at the first match |
+| Several passes are still O(n) | each item needs a fact about the whole list: the total, the last place something appears | a first pass works the fact out, a second one uses it |
+| Hidden passes | the slow answer calls `sum`, `max`, `count` or `in` on a list, inside its loop | a value kept up to date instead of worked out again |
+| Building a new list is O(n) | the answer is a list, one entry per position | a new list, one `append` per item |
+
+Some of the hard tasks look like they need to try every subarray or every choice. The way in is the same: walk once, and keep a few running values that sum up everything seen so far, such as "the best total of a stretch ending here".
+
+### Combining patterns
+Harder tasks need two patterns together:
+
+- **Two running values in one pass** (best + pass). One value follows the items, like a running total or the length of the current run, and a second keeps the best that the first has reached.
+- **Totals first, then the pass** (passes + hidden). If each position needs the total or the count of the whole list, work it out once, before the loop. Inside the loop it would be a hidden pass. With the total known, the right side of any split is `total - left`.
+- **A list from each side** (passes + build). A pass from the left fills a list with what's known about everything **before** each position, and a pass from the right fills another with everything **after** it. A third pass then combines the two lists at each position.
+- **Running totals in a list** (hidden + build). Save the running total after every item, and the sum of any stretch is one subtraction, with no `sum` of a slice.
+- **Searching from both ends** (search + passes). One search walks from the left and another from the right, each stopping at its first match. Together they check each item at most twice.
+- **The best so far at every position** (best + build). Save the best so far after every item, so that each position knows the largest or smallest value up to it, without `max` of a slice.
+
+Two running values in one pass: the highest point of a walk, starting at altitude 0.
+```python
+def highest_point(gains):
+    altitude = 0
+    best = 0
+    for g in gains:
+        altitude += g
+        best = max(best, altitude)
+    return best
+
+print(highest_point([-5, 1, 5, 0, -7]))
+```
+```output
+1
+```
+The altitudes are -5, -4, 1, 1 and -6. `altitude` follows the walk, and `best` remembers its highest value, including the start at 0.
+
+Totals first, then the pass: how many numbers are above the average?
+```python
+def above_average(nums):
+    average = sum(nums) / len(nums)
+    count = 0
+    for x in nums:
+        if x > average:
+            count += 1
+    return count
+
+print(above_average([3, 9, 4, 8]))
+```
+```output
+2
+```
+Writing `if x > sum(nums) / len(nums):` would work out the average again at every turn: a hidden pass inside the loop, O(n²). Working it out once, before the loop, keeps the function O(n).
+
+A list from each side: the tallest wall before and after each position.
+```python
+def walls(heights):
+    n = len(heights)
+    left = [0] * n
+    best = 0
+    for i in range(n):
+        left[i] = best
+        best = max(best, heights[i])
+    right = [0] * n
+    best = 0
+    for i in range(n - 1, -1, -1):
+        right[i] = best
+        best = max(best, heights[i])
+    return left, right
+
+print(walls([2, 5, 1, 3]))
+```
+```output
+([0, 2, 5, 5], [5, 3, 3, 0])
+```
+`left[i]` is the tallest wall before position i, and `right[i]` the tallest after it. With both lists, a question about the two sides of a position, like "is it lower than something on both sides?", takes O(1): `heights[i] < left[i] and heights[i] < right[i]`.
+
+Running totals in a list: the sum of every stretch of k numbers.
+```python
+def window_sums(nums, k):
+    prefix = [0]
+    for x in nums:
+        prefix.append(prefix[-1] + x)
+    sums = []
+    for i in range(len(nums) - k + 1):
+        sums.append(prefix[i + k] - prefix[i])
+    return sums
+
+print(window_sums([4, 1, 3, 2, 5], 3))
+```
+```output
+[8, 6, 10]
+```
+`prefix[j]` is the total of the first j numbers, so `prefix[i + k] - prefix[i]` is the total of the k numbers from position i. Writing `sum(nums[i:i + k])` instead would be a hidden pass of k steps at every position.
+
+Searching from both ends: the first and the last position of a value.
+```python
+def first_and_last(nums, target):
+    i = 0
+    while i < len(nums) and nums[i] != target:
+        i += 1
+    if i == len(nums):
+        return [-1, -1]
+    j = len(nums) - 1
+    while nums[j] != target:
+        j -= 1
+    return [i, j]
+
+print(first_and_last([5, 7, 7, 8, 7, 9], 7))
+print(first_and_last([1, 2], 3))
+```
+```output
+[1, 4]
+[-1, -1]
+```
+The first search stops at position 1 and the second, coming from the right, at position 4. When the value isn't there, the first search reaches the end, which is the worst case: n checks.
+
+The best so far at every position: how far each price is below the highest price so far.
+```python
+def drops(prices):
+    result = []
+    best = prices[0]
+    for p in prices:
+        best = max(best, p)
+        result.append(best - p)
+    return result
+
+print(drops([3, 5, 4, 6, 2]))
+```
+```output
+[0, 0, 1, 0, 4]
+```
+`best` is the highest price up to each position, kept up to date with one `max` per price. Working it out with `max(prices[:i + 1])` would walk the list again at every position.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| the smallest input | one item, or a string of one letter | a loop that never runs, or a wrong starting value |
+| no match | the value isn't there at all | what's returned after the loop: -1, `False` or 0 |
+| everything the same | `[4, 4, 4]`, or `"aaaa"` | a run that never resets, or a count that should be n |
+| the answer at an end | the first or the last item | an off-by-one range, or a search that stops one place too early |
+| negative numbers | totals that drop below 0 | a best that starts at 0 instead of at the first item |
+| the biggest input | 100,000 items | a hidden pass inside the loop |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of your solution
+**Time.** Work it out from the code:
+
+1. A loop over the input with O(1) work per item is O(n). A loop over a fixed range, like the 26 letters, inside it doesn't change that.
+2. Loops one after another add up: three passes are 3n steps, still O(n).
+3. A hidden pass inside the loop (`sum`, `max`, `min`, `count`, `index`, `in` on a list, or a slice) makes it O(n²). Move it before the loop, or keep a running value instead.
+4. A loop that can stop early still counts its worst case: all n items.
+5. With two inputs of different sizes, n and m, one pass over each is O(n + m).
+
+**Space** is the **extra** memory the code keeps as the input grows:
+
+| The code keeps | Space |
+| --- | --- |
+| a few running values | O(1) |
+| a helper list, like running totals or the best from each side | O(n) |
+| a set or a dictionary of the items seen | O(n) |
+| the list it returns | O(n) |
+
 === keypoints
 - O(n), linear time: the steps grow in proportion to n. Doubling n doubles the steps.
 - A single pass over the input with O(1) work per item is O(n): sums, maximums, counting, building a new list.
@@ -173,6 +343,24 @@ O(n) is usually the best you can do when the answer depends on **every** item: a
 - Two or three passes one after another take 2n or 3n steps: still O(n).
 - `sum`, `max`, `x in a_list`, `count`, `index`, slicing and copying are hidden O(n) passes. Inside a loop over the input, they make the code O(n²).
 - When the answer depends on every item, O(n) is the best possible.
+- Before writing the loop, decide what it carries from one item to the next: a running value, the best so far, or a fact worked out by an earlier pass.
+- Combinations: two running values in one pass; totals first, then the pass; a list from each side; running totals in a list; searching from both ends; and the best so far at every position.
+- Space: a few running values are O(1); a helper list, a set of the items seen, or a returned list is O(n).
+
+=== patterns
+- pass | One pass over the input
+- best | Looking at every item: maximum and counting
+- search | Linear search
+- passes | Several passes are still O(n)
+- hidden | Hidden passes
+- build | Building a new list is O(n)
+combos:
+- best + pass | Two running values in one pass
+- passes + hidden | Totals first, then the pass
+- passes + build | A list from each side
+- hidden + build | Running totals in a list
+- search + passes | Searching from both ends
+- best + build | The best so far at every position
 
 === example: Two passes, still linear
 intro: Each loop looks at every item once. Doubling the list doubles each loop's work, so the total doubles too.
@@ -222,7 +410,7 @@ print(find(data, 55))
 ```
 1-6: Check the items in order and return as soon as the target is found.
 7: Only after checking every item do we know it isn't there.
-9: Ten items: 10, 20, ..., 100.
+9: Ten items: 10, 20 and onwards up to 100.
 10: Best case: the target is the first item, found after 1 check.
 11: 50 is at position 4, found after 5 checks.
 12: The last item takes all 10 checks.
@@ -256,828 +444,2062 @@ view: chart fns=n,2*n,3*n+5 labels=n,2n,3n_+_5 n=0..40 step=2
 intro: Three O(n) step counts: one pass, two passes, and three passes plus 5 extra steps. They differ in steepness, but all of them are straight lines.
 1: At n = {n}: one pass takes {n} steps, two passes {2n}, and three passes plus 5 take {3n_+_5}. Each doubles (nearly) when n doubles.
 
-=== task: predict easy
-title: One step per item
-code:
+=== task: code easy
+title: Max Consecutive Ones
+leetcode: 485 | Max Consecutive Ones | max-consecutive-ones
+patterns: best + pass
+prompt: `nums` is a list of 0s and 1s. Write `find_max_consecutive_ones(nums)` that returns the length of the longest run of 1s in a row.
+
+**Example 1:** `find_max_consecutive_ones([1, 1, 0, 1, 1, 1])` returns `3`.
+
+**Example 2:** `find_max_consecutive_ones([1, 0, 1, 1, 0, 1])` returns `2`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and each item is 0 or 1. Aim for O(n) time and O(1) extra space.
+starter:
 ```python
-def count_steps(nums):
-    steps = 0
+def find_max_consecutive_ones(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def find_max_consecutive_ones(nums):
+    best = 0
+    run = 0
     for x in nums:
-        steps += 1
-    return steps
-
-print(count_steps([5, 1, 4, 2, 2, 8]), count_steps([]))
+        if x == 1:
+            run += 1
+            best = max(best, run)
+        else:
+            run = 0
+    return best
 ```
-wrong[22 0]: The counter adds 1 per item, not the item's value: 6 items, 6 steps.
-wrong[6 1]: An empty list has no items, so the loop body never runs: 0 steps.
-wrong[1 0]: The loop runs once for **every** item, not once in total.
-hint: How many items does each list have?
-hint: The body runs once per item.
-right: One pass, one step per item: 6 steps for 6 items, and 0 for the empty list.
-wrong: The loop visits each item once: 6 steps, then 0 for an empty list.
-
-=== task: mcq easy
-title: What O(n) means
-prompt: Which sentence describes O(n) code?
-* When n doubles, the number of steps doubles too :: Right. The steps grow in proportion to n: twice the input, twice the work.
-- It always takes n seconds :: Big O describes how the steps grow, not a number of seconds.
-- The number of steps never changes :: That describes O(1), constant time.
-- When n doubles, the steps become four times as many :: That's O(n²), quadratic time.
-hint: "Linear" means the steps grow in a straight line with n.
-hint: What happens to n steps when n becomes 2n?
-right: O(n) means steps proportional to n, so doubling the input doubles the steps.
-wrong: Linear time: the steps grow in proportion to n, so doubling n doubles them.
-
-=== task: fill easy
-title: The biggest by hand
-prompt: Fill in the blank so that the loop finds the biggest number in one pass:
-
-```output
-9
-```
-code:
-```python
-nums = [7, 2, 9, 4]
-best = nums[0]
-for x in nums:
-    if x ?? best:
-        best = x
-print(best)
-```
-answer: >
-wrong[<]: With `<`, `best` would keep the **smallest** number: 2.
-wrong[==]: `best` only changes when `x` equals it, so it stays at the first item, 7.
-hint: When should `best` be replaced by `x`?
-hint: Only when `x` is bigger than the best so far.
-right: Each item is compared once with the best so far and replaces it when it's bigger. One look per item: O(n).
-wrong: Replace `best` when `x > best`. After one pass, `best` holds 9.
+tests:
+- find_max_consecutive_ones([1, 1, 0, 1, 1, 1])
+- find_max_consecutive_ones([1, 0, 1, 1, 0, 1])
+- find_max_consecutive_ones([0])
+- find_max_consecutive_ones([1, 1, 1, 1])
+- find_max_consecutive_ones([0, 0, 1, 0, 0])
+- find_max_consecutive_ones([1, 0] * 500 + [1] * 7)
+fail[2]: The runs of 1s have lengths 1, 2 and 1.
+fail[3]: There are no 1s at all, so the longest run is 0.
+fail[4]: The whole list is one run of 4, which only ends when the list does. Update the best length inside the loop, not only when a 0 arrives.
+fail[5]: A single 1 between 0s: a run of 1.
+fail[6]: 500 runs of a single 1, then a run of 7 at the very end.
+edges:
+- no 1s at all :: 1 not in nums :: find_max_consecutive_ones([0, 0])
+- every item a 1 :: 0 not in nums :: find_max_consecutive_ones([1, 1, 1])
+- the longest run at the very end :: 0 in nums and nums[-1] == 1 and nums[::-1].index(0) == find_max_consecutive_ones(nums) :: find_max_consecutive_ones([1, 0, 1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with a comparison and one or two updates for each item.
+why_space: Two numbers: the current run and the best run.
+hint: Walk through the list keeping `run`, the length of the current run of 1s.
+hint: A 1 makes the run one longer, and a 0 ends it, so `run` goes back to 0.
+hint: Keep `best`, the longest run so far: after each 1, `best = max(best, run)`.
+right: The current run and the best run are all the loop needs to carry from one item to the next, so one pass gives the answer, however long the list is.
+wrong: Keep `run` and `best`, both 0. For each `x`: if it's 1, add 1 to `run` and update `best`; otherwise set `run` to 0. Return `best`.
 
 === task: code easy
-title: Count the negatives
-prompt: Write a function `count_negatives(nums)` that returns how many numbers in the list are below 0. It should take one pass over the list: O(n).
+title: Maximum Score After Splitting a String
+leetcode: 1422 | Maximum Score After Splitting a String | maximum-score-after-splitting-a-string
+patterns: passes + hidden
+prompt: `s` is a string of 0s and 1s. Split it into two parts that aren't empty: a left part and a right part. The **score** of a split is the number of 0s in the left part plus the number of 1s in the right part. Write `max_score(s)` that returns the highest score of any split.
 
-For example, `count_negatives([3, -1, 0, -7])` returns 2.
+**Example 1:** `max_score("011101")` returns `5`: the left part `"0"` has one 0, and the right part `"11101"` has four 1s.
+
+**Example 2:** `max_score("00111")` returns `5`.
+
+**Example 3:** `max_score("1111")` returns `3`.
+
+**Constraints:** 2 ≤ `len(s)` ≤ 500, and `s` has only `"0"` and `"1"`. Aim for O(n) time: don't count each part again for every split.
 starter:
 ```python
-def count_negatives(nums):
-    count = 0
+def max_score(s):
     # your code here
-    return count
+    return 0
 ```
 solution:
 ```python
-def count_negatives(nums):
-    count = 0
-    for x in nums:
-        if x < 0:
-            count += 1
-    return count
+def max_score(s):
+    ones_right = s.count("1")
+    zeros_left = 0
+    best = 0
+    for i in range(len(s) - 1):
+        if s[i] == "0":
+            zeros_left += 1
+        else:
+            ones_right -= 1
+        best = max(best, zeros_left + ones_right)
+    return best
 ```
 tests:
-- count_negatives([3, -1, 0, -7])
-- count_negatives([])
-- count_negatives([0, 1, 2])
-- count_negatives([-5, -5, -5])
-speed: setup=nums = list(range(-n, 0)) | call=count_negatives(nums) | target=O(n)
+- max_score("011101")
+- max_score("00111")
+- max_score("1111")
+- max_score("00")
+- max_score("10")
+- max_score("01" * 250)
+fail[2]: The left part `"00"` and the right part `"111"`: 2 + 3 = 5.
+fail[3]: There are no 0s, so the left part should be as short as possible: one `"1"` on the left, and three on the right.
+fail[4]: Both parts must have something in them: `"0"` and `"0"` scores 1 + 0.
+fail[5]: The only split is `"1"` and `"0"`, which scores 0.
+fail[6]: Every 0 added to the left part comes with a 1 taken off the right, so the best is a split after the first `"0"`: 1 + 250 = 251.
+speed: setup=s = "01" * (n // 2) | call=max_score(s) | target=O(n)
 slow:
 ```python
-def count_negatives(nums):
-    count = 0
-    for i in range(len(nums)):
-        for j in range(len(nums)):
-            if i == j and nums[i] < 0:
-                count += 1
-    return count
+def max_score(s):
+    best = 0
+    for i in range(1, len(s)):
+        best = max(best, s[:i].count("0") + s[i:].count("1"))
+    return best
 ```
-fail[1]: -1 and -7 are below 0. 0 is not: it's neither positive nor negative.
-fail[4]: All three numbers are -5, and each one counts: 3.
-error[NameError]: Use the parameter `nums` inside the function.
-hint: Loop over the numbers once.
-hint: Add 1 to `count` when `x < 0`.
-right: One pass with a fixed check per number: O(n). Every number has to be looked at, so this is as fast as it gets.
-wrong: `for x in nums:` and inside it `if x < 0: count += 1`. Return `count`.
+fail[speed]: Counting the 0s on the left and the 1s on the right again for every split is a hidden pass inside the loop: O(n²). Count the 1s of the whole string once, then move the split one place at a time.
+edges:
+- no 0s :: "0" not in s :: max_score("111")
+- no 1s :: "1" not in s :: max_score("000")
+- two characters, one of each :: len(s) == 2 and "0" in s and "1" in s :: max_score("01")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: `count` makes one pass, and the loop over the splits another, with O(1) work per split.
+why_space: Three numbers.
+hint: For each split, you need the 0s on the left and the 1s on the right. Counting them with `count` at every split would put a pass inside the loop.
+hint: Count the 1s of the whole string once: before the first split, they're all on the right.
+hint: Move the split one place to the right at a time, up to `len(s) - 1`. The character that crosses over is either a 0 joining the left (add 1) or a 1 leaving the right (take 1 away). Keep the best score.
+right: One count before the loop gives the right part's 1s for the first split, and each move changes the score by one, so every split costs O(1).
+wrong: `ones_right = s.count("1")` and `zeros_left = 0`. For `i` in `range(len(s) - 1)`: if `s[i]` is `"0"`, add 1 to `zeros_left`, otherwise take 1 from `ones_right`. Keep the largest `zeros_left + ones_right`.
 
-=== task: predict easy
-title: Found at once, or never
-code:
-```python
-def find(nums, target):
-    checks = 0
-    for x in nums:
-        checks += 1
-        if x == target:
-            return checks
-    return checks
+=== task: code easy
+title: Minimum Distance to the Target Element
+leetcode: 1848 | Minimum Distance to the Target Element | minimum-distance-to-the-target-element
+patterns: best
+prompt: Write `get_min_distance(nums, target, start)` that returns the smallest value of `abs(i - start)` over all the positions `i` where `nums[i] == target`. `target` appears in `nums` at least once.
 
-data = [8, 3, 5, 1]
-print(find(data, 8), find(data, 5), find(data, 7))
-```
-wrong[1 3 0]: 7 isn't in the list, so every item is checked before the function gives up: 4 checks.
-wrong[4 4 4]: The search stops as soon as it finds the target: 8 is the first item, found after 1 check.
-wrong[0 2 4]: The counter goes up before each comparison, so the check that finds the target counts too.
-hint: Where is 8 in the list? Where is 5?
-hint: What happens when the target isn't there?
-right: 8 is found at the first check, 5 at the third, and 7 is missing, so all 4 items are checked. The worst case is n checks: O(n).
-wrong: 8 → 1 check, 5 → 3 checks, 7 → all 4 items, without finding it.
+**Example 1:** `get_min_distance([1, 2, 3, 4, 5], 5, 3)` returns `1`: 5 is at position 4, and `abs(4 - 3)` is 1.
 
-=== task: multi easy
-title: Which are O(n)?
-prompt: `nums` is a list of n numbers. Choose **every** piece of code that is O(n).
-* `for x in nums: total += x` :: Right. One pass, one step per item.
-* `sum(nums)` :: Right. A hidden pass over all n items.
-* Two loops `for x in nums:`, one after the other :: Right. n + n = 2n, which is still O(n).
-- `for x in nums:` with `for y in nums: ...` inside it :: A loop inside a loop is n × n: O(n²).
-- `nums[0] + nums[-1]` :: Two index reads: O(1).
-* `for i in range(len(nums) // 2): ...` :: Right. n / 2 steps still grow in proportion to n.
-hint: Count how the steps grow as n grows.
-hint: Four of them are O(n).
-right: One pass, `sum`, two passes and half a pass all grow linearly. The nested loops are O(n²) and the index reads are O(1).
-wrong: The O(n) ones grow in proportion to n: one loop, `sum`, two loops in a row, and `n // 2` runs. Nested loops grow like n², and two index reads don't grow at all.
+**Example 2:** `get_min_distance([1], 1, 0)` returns `0`.
 
-=== task: parsons easy
-title: Count the long words
-prompt: Arrange the lines so that the function counts, in one pass, the words longer than 3 letters, and the program prints:
-
-```output
-2
-```
-
-Not every line is needed.
-lines:
-```python
-def count_long(words):
-    count = 0
-    for w in words:
-        if len(w) > 3:
-            count += 1
-    return count
-
-print(count_long(["tree", "a", "house", "sun"]))
-```
-distractors:
-```python
-        count += len(w)
-    return count += 1
-```
-hint: Start the count at 0, then loop over the words once.
-hint: Add 1 only when the word is longer than 3 letters.
-hint: Return the count after the loop.
-right: One pass, with an O(1) check per word, counts "tree" and "house": O(n).
-wrong: `count = 0`, loop over the words, `if len(w) > 3:` with `count += 1` inside, then `return count` after the loop. Adding `len(w)` would total the letters instead of counting words.
-
-=== task: cells easy
-title: Two loops and one more step
-prompt: What does `f(n)` return for each value of n?
-code:
-```python
-def f(n):
-    steps = 1
-    for i in range(n):
-        steps += 1
-    for i in range(n):
-        steps += 1
-    return steps
-```
-labels: f(0) | f(1) | f(5) | f(100)
-answer: 1 | 3 | 11 | 201
-wrong[0 | 2 | 10 | 200]: The counter starts at 1, for the step before the loops.
-wrong[1 | 2 | 6 | 101]: There are two loops, and each adds n steps: 2n + 1 in all.
-hint: The counter starts at 1, and each loop adds n.
-hint: f(n) = 2n + 1.
-right: 1 step, plus n for each loop: 2n + 1. For n = 100 that's 201, and its growth is O(n).
-wrong: 2n + 1: 1, 3, 11 and 201.
-
-=== task: predict easy
-title: The biggest and the count
-code:
-```python
-nums = [4, 11, 7, 11, 2]
-best = nums[0]
-count = 0
-for x in nums:
-    if x > best:
-        best = x
-    if x > 5:
-        count += 1
-print(best, count)
-```
-wrong[11 2]: The second test counts every number over 5: 11, 7 and 11. That's 3.
-wrong[2 3]: `best` is replaced when a number is **bigger**, so it ends up at 11.
-wrong[11 5]: Only the numbers over 5 are counted, not all of them.
-hint: Which number is the biggest?
-hint: How many numbers are over 5?
-right: One pass does both jobs: the biggest is 11, and 11, 7 and 11 are over 5. One loop with two O(1) checks per item is O(n).
-wrong: best goes 4 → 11. The numbers over 5 are 11, 7, 11: count 3.
-
-=== task: mcq easy
-title: Searching a million names
-prompt: A program searches an unsorted list of 1,000,000 names, one by one, for a name that isn't in the list. How many names does it check?
-* 1,000,000 :: Right. To be sure the name isn't there, it must check every name: the worst case of linear search.
-- 1 :: Only a name in the first position is found after 1 check.
-- 500,000 :: Half the list is the average for names that are there. A missing name needs every check.
-- 20 :: That few checks would need a sorted list and a cleverer method. Checking one by one can't skip any.
-hint: When can the program be sure the name is missing?
-hint: Only after it has looked at every name.
-right: A missing name is linear search's worst case: all n = 1,000,000 names are checked.
-wrong: Linear search can only report "not there" after checking every one of the 1,000,000 names.
-
-=== task: code medium
-title: Linear search
-prompt: Write a function `index_of(nums, target)` that returns the position of the first item equal to `target`, or -1 if there is none. Check the items one by one, and stop as soon as you find it.
-
-For example, `index_of([5, 3, 8, 3], 3)` returns 1.
+**Constraints:** 1 ≤ `len(nums)` ≤ 1000, and 0 ≤ `start` < `len(nums)`. Aim for O(n) time.
 starter:
 ```python
-def index_of(nums, target):
+def get_min_distance(nums, target, start):
     # your code here
-    return -1
+    return 0
 ```
 solution:
 ```python
-def index_of(nums, target):
+def get_min_distance(nums, target, start):
+    best = len(nums)
     for i in range(len(nums)):
         if nums[i] == target:
-            return i
-    return -1
+            best = min(best, abs(i - start))
+    return best
 ```
 tests:
-- index_of([5, 3, 8, 3], 3)
-- index_of([5, 3, 8, 3], 9)
-- index_of([], 1)
-- index_of([7], 7)
-- index_of([1, 2, 3], 3)
-speed: setup=nums = list(range(n)) | call=index_of(nums, -1) | target=O(n)
+- get_min_distance([1, 2, 3, 4, 5], 5, 3)
+- get_min_distance([1], 1, 0)
+- get_min_distance([1] * 10, 1, 0)
+- get_min_distance([5, 3, 5], 5, 1)
+- get_min_distance([2, 9, 9, 9, 2], 2, 2)
+- get_min_distance([7] + [0] * 998 + [7], 7, 400)
+fail[2]: The only item is the target, at `start` itself: distance 0.
+fail[3]: The target is at `start` already: 0.
+fail[4]: The 5s are at positions 0 and 2, each 1 away from position 1.
+fail[5]: The 2s are at positions 0 and 4, both 2 away from position 2.
+fail[6]: The 7s are at positions 0 and 999: 400 and 599 away from position 400.
+edges:
+- the target at start :: nums[start] == target :: get_min_distance([3, 5], 3, 0)
+- the target on one side only :: nums[start] != target and (target not in nums[:start] or target not in nums[start + 1:]) :: get_min_distance([1, 2, 9], 9, 0)
+- the target on both sides :: nums[start] != target and target in nums[:start] and target in nums[start + 1:] :: get_min_distance([4, 0, 0, 4, 0], 4, 1)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass over the n positions, with a comparison at each.
+why_space: One number: the best distance so far.
+hint: The target can appear many times, and you need the copy closest to `start`.
+hint: Walk through all the positions. Whenever `nums[i] == target`, compare `abs(i - start)` with the best distance so far.
+hint: Start the best at a value bigger than any distance, like `len(nums)`.
+right: Every copy of the target is a candidate, so one pass that keeps the smallest distance so far finds the answer in O(n). Searching outwards from `start`, checking `start - d` and `start + d` for d = 0, 1, 2 and onwards, can stop early, but it's O(n) in the worst case too.
+wrong: `best = len(nums)`. For each `i`, if `nums[i] == target`, set `best = min(best, abs(i - start))`. Return `best`.
+
+=== task: code easy
+title: Two Furthest Houses With Different Colors
+leetcode: 2078 | Two Furthest Houses With Different Colors | two-furthest-houses-with-different-colors
+patterns: search + passes
+prompt: `colors[i]` is the color of house `i` in a row of `n` houses. Write `max_distance(colors)` that returns the largest distance `abs(i - j)` between two houses with different colors. At least two houses have different colors.
+
+**Example 1:** `max_distance([1, 1, 1, 6, 1, 1, 1])` returns `3`: house 0 and house 3.
+
+**Example 2:** `max_distance([1, 8, 3, 8, 3])` returns `4`: house 0 and house 4.
+
+**Example 3:** `max_distance([0, 1])` returns `1`.
+
+**Constraints:** 2 ≤ `n` ≤ 100, and 0 ≤ `colors[i]` ≤ 100. Aim for O(n) time: the furthest pair always includes the first house or the last one.
+starter:
+```python
+def max_distance(colors):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_distance(colors):
+    n = len(colors)
+    j = n - 1
+    while colors[j] == colors[0]:
+        j -= 1
+    i = 0
+    while colors[i] == colors[n - 1]:
+        i += 1
+    return max(j, n - 1 - i)
+```
+tests:
+- max_distance([1, 1, 1, 6, 1, 1, 1])
+- max_distance([1, 8, 3, 8, 3])
+- max_distance([0, 1])
+- max_distance([4, 4, 4, 2])
+- max_distance([5, 3, 3, 3, 5])
+- max_distance([7] * 500 + [8] + [7] * 499)
+fail[2]: Houses 0 and 4 have the colors 1 and 3: distance 4.
+fail[3]: Two houses, two colors: distance 1.
+fail[4]: The last house is the only one with color 2, and it's 3 away from house 0.
+fail[5]: The two end houses share color 5, so the best pair joins an end house with a 3: houses 0 and 3, or houses 1 and 4.
+fail[6]: The house with color 8 is at position 500: 500 away from house 0, and 499 from house 999.
+edges:
+- the end houses differ :: colors[0] != colors[-1] :: max_distance([2, 2, 3])
+- only one house differs :: colors[0] == colors[-1] and len([c for c in colors if c != colors[0]]) == 1 :: max_distance([5, 5, 6, 5])
+- the end houses match and several others differ :: colors[0] == colors[-1] and len([c for c in colors if c != colors[0]]) > 1 :: max_distance([1, 2, 3, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: Each search walks in from one end until it finds a different color: at most n checks each, so O(n) together.
+why_space: Two positions.
+hint: The furthest pair always includes house 0 or house `n - 1`. (Try it: take any pair of houses with different colors, and see whether an end house can replace one of the two.)
+hint: Search from the right for the first house whose color differs from house 0's: that's house 0's furthest partner.
+hint: Search from the left for the first house whose color differs from the last house's. Return the larger of the two distances.
+right: Two searches, one from each end, each stopping at its first match, find the answer without trying every pair: O(n) instead of O(n²).
+wrong: Walk `j` down from `n - 1` while `colors[j] == colors[0]`, and `i` up from 0 while `colors[i] == colors[n - 1]`. Return `max(j, n - 1 - i)`.
+
+=== task: code easy
+title: Find the Distinct Difference Array
+leetcode: 2670 | Find the Distinct Difference Array | find-the-distinct-difference-array
+patterns: passes + build
+prompt: Write `distinct_difference_array(nums)` that returns a list `diff`, as long as `nums`, where `diff[i]` is the number of different values from `nums[0]` up to `nums[i]`, minus the number of different values from `nums[i + 1]` to the end.
+
+**Example 1:** `distinct_difference_array([1, 2, 3, 4, 5])` returns `[-3, -1, 1, 3, 5]`. At position 0, the first part, `[1]`, has 1 value and the rest, `[2, 3, 4, 5]`, has 4: 1 - 4 = -3.
+
+**Example 2:** `distinct_difference_array([3, 2, 3, 4, 2])` returns `[-2, -1, 0, 2, 3]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 50, and 1 ≤ `nums[i]` ≤ 50. Aim for O(n) time: don't make a set of a slice at every position.
+starter:
+```python
+def distinct_difference_array(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def distinct_difference_array(nums):
+    n = len(nums)
+    suffix = [0] * (n + 1)
+    seen = set()
+    for i in range(n - 1, -1, -1):
+        seen.add(nums[i])
+        suffix[i] = len(seen)
+    result = []
+    seen = set()
+    for i in range(n):
+        seen.add(nums[i])
+        result.append(len(seen) - suffix[i + 1])
+    return result
+```
+tests:
+- distinct_difference_array([1, 2, 3, 4, 5])
+- distinct_difference_array([3, 2, 3, 4, 2])
+- distinct_difference_array([7])
+- distinct_difference_array([4, 4, 4])
+- distinct_difference_array([1, 2, 1, 2])
+- distinct_difference_array([i % 25 + 1 for i in range(50)])[20:30]
+fail[2]: At position 0, `[3]` has 1 value and the rest, `[2, 3, 4, 2]`, has 3: -2.
+fail[3]: One number: 1 value up to it, and nothing after it.
+fail[4]: The first part always has 1 value, and the rest has 1 value too, except at the end, where it's empty: `[0, 0, 1]`.
+fail[5]: The first parts have 1, 2, 2 and 2 values, and the rests 2, 2, 1 and 0.
+fail[6]: The values 1 to 25 appear twice. The first part gains a new value at each position up to 24, and from position 25 onwards the rest loses one value at each position.
+speed: setup=nums = [i % 50 + 1 for i in range(n)] | call=distinct_difference_array(nums) | target=O(n)
 slow:
 ```python
-def index_of(nums, target):
+def distinct_difference_array(nums):
+    result = []
     for i in range(len(nums)):
-        if target in nums[:i + 1]:
-            return i
-    return -1
+        result.append(len(set(nums[:i + 1])) - len(set(nums[i + 1:])))
+    return result
 ```
-fail[1]: The first 3 is at position 1. Return as soon as you find it, so the later 3 is never reached.
-fail[2]: 9 isn't there, so the answer is -1. Put `return -1` after the loop, not inside it.
-fail[4]: 7 is the only item, so it's also the last, at position 0. Make sure the loop checks every position, up to `len(nums) - 1`.
-fail[5]: 3 is the last item, at position 2. Make sure the loop checks every position, up to `len(nums) - 1`.
-error[IndexError]: Loop over `range(len(nums))` so the positions stay inside the list.
-forbid[.index(]: Write the search yourself instead of using `.index()`.
-hint: Loop over the positions with `for i in range(len(nums)):`.
-hint: Return `i` as soon as `nums[i] == target`.
-hint: Only after the loop has checked everything, return -1.
-right: The loop stops at the first match, and the `return -1` after the loop only runs when every item was checked. That's n checks in the worst case: O(n).
-wrong: `for i in range(len(nums)):`, `if nums[i] == target: return i`, then `return -1` after the loop.
+fail[speed]: `len(set(nums[:i + 1]))` and `len(set(nums[i + 1:]))` copy and scan the list again at every position: O(n²). Fill a list with the counts for the rest in one pass from the right, then walk from the left with a set that grows.
+edges:
+- one number :: len(nums) == 1 :: distinct_difference_array([4])
+- every number the same :: len(nums) > 1 and len(set(nums)) == 1 :: distinct_difference_array([2, 2])
+- all the numbers different :: len(nums) > 1 and len(set(nums)) == len(nums) :: distinct_difference_array([1, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: Two passes, one from each end, with O(1) set work per position.
+why_space: The list of counts for the rest, the set and the answer: each up to n long.
+hint: The count for the first part only grows as you move right: keep a set, add `nums[i]`, and its length is the count up to position `i`.
+hint: The counts for the rest need the items to the right, so fill them in a pass from the right: `suffix[i]` is the number of different values from position `i` to the end, with `suffix[n] = 0`.
+hint: Then walk from the left: `diff[i] = len(seen) - suffix[i + 1]`.
+right: Each side's counts come from a set that only ever grows, filled once from its own end, so every position costs O(1) instead of a new set of a slice.
+wrong: Fill `suffix` from the right with a growing set, with `suffix[n] = 0`. Then walk from the left with another set, appending `len(seen) - suffix[i + 1]`.
+
+=== task: code easy
+title: Minimum Operations to Make the Array Increasing
+leetcode: 1827 | Minimum Operations to Make the Array Increasing | minimum-operations-to-make-the-array-increasing
+patterns: pass
+prompt: In one operation, you can add 1 to any number of `nums`. Write `min_operations(nums)` that returns the smallest number of operations that make `nums` **strictly increasing**: each number bigger than the one before it. A list of one number counts as strictly increasing.
+
+**Example 1:** `min_operations([1, 1, 1])` returns `3`: the list becomes `[1, 2, 3]`.
+
+**Example 2:** `min_operations([1, 5, 2, 4, 1])` returns `14`: the list becomes `[1, 5, 6, 7, 8]`.
+
+**Example 3:** `min_operations([8])` returns `0`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 5000, and 1 ≤ `nums[i]` ≤ 10⁴. Aim for O(n) time: don't add the 1s one at a time.
+starter:
+```python
+def min_operations(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_operations(nums):
+    ops = 0
+    prev = 0
+    for x in nums:
+        if x <= prev:
+            ops += prev + 1 - x
+            prev += 1
+        else:
+            prev = x
+    return ops
+```
+tests:
+- min_operations([1, 1, 1])
+- min_operations([1, 5, 2, 4, 1])
+- min_operations([8])
+- min_operations([1, 2, 3])
+- min_operations([5, 4, 3])
+- min_operations([1] * 500)
+fail[2]: The list becomes 1, 5, 6, 7, 8: 4 + 3 + 7 = 14 operations.
+fail[3]: One number is already strictly increasing.
+fail[4]: Already strictly increasing: no operations.
+fail[5]: The list becomes 5, 6, 7: 2 + 4 = 6 operations.
+fail[6]: The list becomes 1, 2, 3 and onwards up to 500, which takes 0 + 1 + 2 and onwards up to 499 operations: 124,750.
+speed: setup=nums = [1] * n | call=min_operations(nums) | target=O(n)
+slow:
+```python
+def min_operations(nums):
+    nums = nums[:]
+    ops = 0
+    for i in range(1, len(nums)):
+        while nums[i] <= nums[i - 1]:
+            nums[i] += 1
+            ops += 1
+    return ops
+```
+fail[speed]: Adding 1 at a time takes as many steps as there are operations, and they can grow like n². Work out what each number needs with one subtraction: it must end up one more than the number before it.
+edges:
+- one number :: len(nums) == 1 :: min_operations([7])
+- already strictly increasing :: len(nums) > 1 and all(nums[i] < nums[i + 1] for i in range(len(nums) - 1)) :: min_operations([1, 4, 9])
+- a later number much smaller :: len(nums) > 1 and any(nums[i + 1] < nums[i] for i in range(len(nums) - 1)) :: min_operations([9, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with one comparison and at most one subtraction per number.
+why_space: Two numbers: the count and the previous value.
+hint: Go from left to right, keeping `prev`, the value the previous number ended up with.
+hint: If `x > prev`, it can stay as it is. Otherwise it has to become `prev + 1`, which takes `prev + 1 - x` operations.
+hint: Don't change the list: carry the new value in `prev`.
+right: Each number only needs to beat the one before it, and the cheapest way is to make it exactly one more. One subtraction per number gives the count, with no loop of single steps.
+wrong: `ops = 0` and `prev = 0`. For each `x`: if `x <= prev`, add `prev + 1 - x` to `ops` and add 1 to `prev`; otherwise set `prev = x`. Return `ops`.
+
+=== task: code easy
+title: Remove One Element to Make the Array Strictly Increasing
+leetcode: 1909 | Remove One Element to Make the Array Strictly Increasing | remove-one-element-to-make-the-array-strictly-increasing
+patterns: search
+prompt: Write `can_be_increasing(nums)` that returns `True` if removing exactly one number from `nums` can make it **strictly increasing** (each number bigger than the one before), and `False` otherwise. A list that's already strictly increasing counts as `True`.
+
+**Example 1:** `can_be_increasing([1, 2, 10, 5, 7])` returns `True`: removing 10 leaves `[1, 2, 5, 7]`.
+
+**Example 2:** `can_be_increasing([2, 3, 1, 2])` returns `False`.
+
+**Example 3:** `can_be_increasing([1, 1, 1])` returns `False`.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 1000, and 1 ≤ `nums[i]` ≤ 1000. Aim for O(n) time: don't try removing every number in turn.
+starter:
+```python
+def can_be_increasing(nums):
+    # your code here
+    return False
+```
+solution:
+```python
+def is_increasing(a):
+    for i in range(1, len(a)):
+        if a[i] <= a[i - 1]:
+            return False
+    return True
+
+def can_be_increasing(nums):
+    for i in range(1, len(nums)):
+        if nums[i] <= nums[i - 1]:
+            without_left = nums[:i - 1] + nums[i:]
+            without_right = nums[:i] + nums[i + 1:]
+            return is_increasing(without_left) or is_increasing(without_right)
+    return True
+```
+tests:
+- can_be_increasing([1, 2, 10, 5, 7])
+- can_be_increasing([2, 3, 1, 2])
+- can_be_increasing([1, 1, 1])
+- can_be_increasing([1, 2, 3])
+- can_be_increasing([100, 21, 100])
+- can_be_increasing(list(range(1, 500)) + [3] + list(range(500, 600)))
+fail[2]: Removing the 3 leaves 2, 1, 2, and removing the 1 leaves 2, 3, 2. No single removal works.
+fail[3]: Removing one 1 still leaves 1, 1.
+fail[4]: Already strictly increasing: removing the last number keeps it that way.
+fail[5]: Removing 21 leaves 100, 100, which isn't increasing, but removing the first 100 leaves 21, 100.
+fail[6]: The 3 after 499 is the only problem, and removing it fixes the list.
+edges:
+- already increasing :: all(nums[i] < nums[i + 1] for i in range(len(nums) - 1)) :: can_be_increasing([1, 2, 3])
+- the first number is the problem :: nums[0] >= nums[1] :: can_be_increasing([5, 1, 2])
+- two drops :: nums[0] < nums[1] and len([i for i in range(len(nums) - 1) if nums[i] >= nums[i + 1]]) >= 2 :: can_be_increasing([1, 3, 2, 4, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: The search for the first drop is one pass, and it happens once. Then there are two checks of O(n) each, and the function returns.
+why_space: The two shorter lists, each n - 1 long. (Checking them by index, without building them, would make it O(1).)
+hint: Search for the first position `i` where `nums[i] <= nums[i - 1]`. If there's none, the list is already increasing: return `True`.
+hint: The problem is either `nums[i - 1]` or `nums[i]`, so only two removals are worth trying.
+hint: Build both lists, without `nums[i - 1]` and without `nums[i]`, and check each with a helper `is_increasing`. Return whether either one works.
+right: The first drop tells you which two numbers could be removed, so instead of n removals with an O(n) check each, there are two: O(n) in all.
+wrong: Find the first `i` with `nums[i] <= nums[i - 1]`, and return `True` if there's none. Otherwise return `is_increasing(nums[:i - 1] + nums[i:]) or is_increasing(nums[:i] + nums[i + 1:])`.
+
+=== task: code easy
+title: Sum of Variable Length Subarrays
+leetcode: 3427 | Sum of Variable Length Subarrays | sum-of-variable-length-subarrays
+patterns: hidden + build
+prompt: For each position `i` of `nums`, take the stretch of numbers from position `start = max(0, i - nums[i])` up to position `i`. Write `subarray_sum(nums)` that returns the total of all the numbers in all those stretches.
+
+**Example 1:** `subarray_sum([2, 3, 1])` returns `11`: position 0 gives `[2]`, position 1 gives `[2, 3]`, and position 2 gives `[3, 1]`: 2 + 5 + 4 = 11.
+
+**Example 2:** `subarray_sum([3, 1, 1, 2])` returns `13`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, and 1 ≤ `nums[i]` ≤ 1000. Aim for O(n) time: no `sum` of a slice inside the loop.
+starter:
+```python
+def subarray_sum(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def subarray_sum(nums):
+    prefix = [0]
+    for x in nums:
+        prefix.append(prefix[-1] + x)
+    total = 0
+    for i in range(len(nums)):
+        start = max(0, i - nums[i])
+        total += prefix[i + 1] - prefix[start]
+    return total
+```
+tests:
+- subarray_sum([2, 3, 1])
+- subarray_sum([3, 1, 1, 2])
+- subarray_sum([5])
+- subarray_sum([1, 1])
+- subarray_sum([1000, 1000, 1000])
+- subarray_sum([1000] * 100)
+fail[2]: The stretches are `[3]`, `[3, 1]`, `[1, 1]` and `[1, 1, 2]`: 3 + 4 + 2 + 4 = 13.
+fail[3]: One stretch: `[5]`.
+fail[4]: The stretches are `[1]` and `[1, 1]`: 1 + 2 = 3.
+fail[5]: Every stretch starts at position 0: 1000 + 2000 + 3000.
+fail[6]: Every stretch starts at position 0, so they add up to 1000 times (1 + 2 + 3 and onwards up to 100): 5,050,000.
+speed: setup=nums = [n] * n | call=subarray_sum(nums) | target=O(n)
+slow:
+```python
+def subarray_sum(nums):
+    total = 0
+    for i in range(len(nums)):
+        start = max(0, i - nums[i])
+        total += sum(nums[start:i + 1])
+    return total
+```
+fail[speed]: `sum(nums[start:i + 1])` at each position is a hidden pass over the stretch, and a stretch can be as long as the list: O(n²). Build the running totals once, and get each stretch's sum with one subtraction.
+edges:
+- one number :: len(nums) == 1 :: subarray_sum([4])
+- every stretch reaching the start :: len(nums) > 1 and all(nums[i] >= i for i in range(len(nums))) :: subarray_sum([5, 5, 5])
+- a stretch that starts later :: any(nums[i] < i for i in range(len(nums))) :: subarray_sum([1, 1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass builds the running totals, and one more does a subtraction for each position.
+why_space: The list of n + 1 running totals.
+hint: Each position needs the sum of a stretch, and adding the stretch up with `sum` inside the loop would repeat a pass.
+hint: Build `prefix`, where `prefix[j]` is the total of the first `j` numbers: start from `[0]` and append `prefix[-1] + x` for each `x`.
+hint: The stretch from `start` to `i` adds up to `prefix[i + 1] - prefix[start]`.
+right: The running totals are built once, in O(n), and after that any stretch's sum is one subtraction, however long the stretch is.
+wrong: Build `prefix` from `[0]`. Then for each `i`, add `prefix[i + 1] - prefix[max(0, i - nums[i])]` to the total.
+
+=== task: code easy
+title: Minimum Cost to Reach Every Position
+leetcode: 3502 | Minimum Cost to Reach Every Position | minimum-cost-to-reach-every-position
+patterns: best + build
+prompt: You're at the back of a line, behind `n` people at positions 0 to `n - 1`, where position 0 is the front. You can swap places with anyone: with person `i` in front of you it costs `cost[i]`, and with anyone behind you it's free. Write `min_costs(cost)` that returns a list whose entry `i` is the smallest total cost of getting to position `i`.
+
+**Example 1:** `min_costs([5, 3, 4, 1, 3, 2])` returns `[5, 3, 3, 1, 1, 1]`. To reach position 2, swap with person 1 for 3, then swap back with person 2, who's now behind you, for free.
+
+**Example 2:** `min_costs([1, 2, 4, 6, 7])` returns `[1, 1, 1, 1, 1]`.
+
+**Constraints:** 1 ≤ `n` ≤ 100, and 1 ≤ `cost[i]` ≤ 100. Aim for O(n) time.
+starter:
+```python
+def min_costs(cost):
+    # your code here
+    return []
+```
+solution:
+```python
+def min_costs(cost):
+    result = []
+    best = cost[0]
+    for c in cost:
+        best = min(best, c)
+        result.append(best)
+    return result
+```
+tests:
+- min_costs([5, 3, 4, 1, 3, 2])
+- min_costs([1, 2, 4, 6, 7])
+- min_costs([9])
+- min_costs([3, 3])
+- min_costs([9, 8, 7])
+- sum(min_costs(list(range(100, 0, -1))))
+fail[2]: Swap with person 0 for 1, and every other position is then behind you and free to reach.
+fail[3]: One person, who costs 9.
+fail[4]: Both swaps cost 3, and reaching position 1 through position 0 costs 3 too.
+fail[5]: The costs only go down, so the cheapest way to each position is to swap with that person directly.
+fail[6]: The costs go 100, 99 and down to 1, so the answer is the same list, which adds up to 5050.
+speed: setup=cost = list(range(n, 0, -1)) | call=min_costs(cost) | target=O(n)
+slow:
+```python
+def min_costs(cost):
+    result = []
+    for i in range(len(cost)):
+        result.append(min(cost[:i + 1]))
+    return result
+```
+fail[speed]: `min(cost[:i + 1])` at every position walks the list again: O(n²). Keep the cheapest cost so far in a variable instead.
+edges:
+- one person :: len(cost) == 1 :: min_costs([4])
+- the cheapest person first :: len(cost) > 1 and cost[0] == min(cost) :: min_costs([1, 5, 3])
+- the cheapest person last :: len(cost) > 1 and cost[0] != min(cost) and cost[-1] < min(cost[:-1]) :: min_costs([5, 4, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass, with one `min` of two numbers per position.
+why_space: The list of n answers.
+hint: To reach position `i`, you can swap with any person `j` at or in front of position `i`, paying `cost[j]`, and then come back to position `i` for free.
+hint: So the answer for position `i` is the cheapest cost among positions 0 to `i`.
+hint: Keep `best`, the cheapest cost so far, and append it at every position.
+right: The cheapest cost so far only changes when a cheaper person comes along, so one variable carried through one pass fills the whole list.
+wrong: `best = cost[0]`. For each `c` in `cost`: `best = min(best, c)`, then append `best`.
+
+=== task: code easy
+title: Partition Array Into Three Parts With Equal Sum
+leetcode: 1013 | Partition Array Into Three Parts With Equal Sum | partition-array-into-three-parts-with-equal-sum
+patterns: passes
+prompt: Write `can_three_parts_equal_sum(arr)` that returns `True` if `arr` can be cut into three stretches, none of them empty, whose sums are all equal, and `False` otherwise.
+
+**Example 1:** `can_three_parts_equal_sum([0, 2, 1, -6, 6, -7, 9, 1, 2, 0, 1])` returns `True`: 0 + 2 + 1, then -6 + 6 - 7 + 9 + 1, then 2 + 0 + 1 each add up to 3.
+
+**Example 2:** `can_three_parts_equal_sum([0, 2, 1, -6, 6, 7, 9, -1, 2, 0, 1])` returns `False`.
+
+**Constraints:** 3 ≤ `len(arr)` ≤ 5 × 10⁴, and -10⁴ ≤ `arr[i]` ≤ 10⁴. Aim for O(n) time.
+starter:
+```python
+def can_three_parts_equal_sum(arr):
+    # your code here
+    return False
+```
+solution:
+```python
+def can_three_parts_equal_sum(arr):
+    total = sum(arr)
+    if total % 3 != 0:
+        return False
+    part = total // 3
+    running = 0
+    found = 0
+    for x in arr:
+        running += x
+        if running == part:
+            found += 1
+            running = 0
+    return found >= 3
+```
+tests:
+- can_three_parts_equal_sum([0, 2, 1, -6, 6, -7, 9, 1, 2, 0, 1])
+- can_three_parts_equal_sum([0, 2, 1, -6, 6, 7, 9, -1, 2, 0, 1])
+- can_three_parts_equal_sum([3, 3, 6, 5, -2, 2, 5, 1, -9, 4])
+- can_three_parts_equal_sum([1, -1, 1, -1])
+- can_three_parts_equal_sum([0, 0, 0])
+- can_three_parts_equal_sum([1] * 300)
+fail[2]: The total is 21, so each part needs 7, but no first stretch adds up to 7.
+fail[3]: The total is 18: `[3, 3]`, `[6]` and the rest each add up to 6.
+fail[4]: The total is 0, but the running sum comes back to 0 only twice, so there are only two parts.
+fail[5]: `[0]`, `[0]` and `[0]` each add up to 0.
+fail[6]: 300 ones make three parts of 100.
+edges:
+- a total that isn't a multiple of 3 :: sum(arr) % 3 != 0 :: can_three_parts_equal_sum([1, 1, 1, 1])
+- a total of 0 :: sum(arr) == 0 :: can_three_parts_equal_sum([1, -1, 0, 0])
+- a total that divides by 3 but doesn't split :: sum(arr) % 3 == 0 and sum(arr) != 0 and not can_three_parts_equal_sum(arr) :: can_three_parts_equal_sum([3, 0, 0, -3, 6])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: `sum` is one pass, and the loop that looks for the cuts another: O(n) + O(n).
+why_space: A few numbers.
+hint: If the total isn't a multiple of 3, the answer is `False`. Otherwise each part must add up to `total // 3`.
+hint: Walk through the list with a running sum. Each time it reaches `total // 3`, you've found a part: count it, and start the running sum again from 0.
+hint: The answer is `True` when you find at least 3 parts. (More than 3 can happen when the total is 0; the extra parts can join the last one.)
+right: The total, worked out first, tells you what each part must add up to, so a single walk can cut at the first chance every time.
+wrong: `total = sum(arr)`; return `False` if `total % 3 != 0`. Walk with a running sum, and each time it equals `total // 3`, add 1 to `found` and set the running sum back to 0. Return `found >= 3`.
 
 === task: code medium
-title: Smallest and biggest in one pass
-prompt: Write a function `smallest_and_biggest(nums)` that returns a tuple `(smallest, biggest)` of a non-empty list, in **one** pass and without `min()`, `max()` or sorting.
+title: Maximum Subarray
+leetcode: 53 | Maximum Subarray | maximum-subarray
+patterns: best + pass
+prompt: Write `max_sub_array(nums)` that returns the largest sum of a **subarray** of `nums`: a stretch of one or more numbers next to each other.
 
-For example, `smallest_and_biggest([4, 8, 1, 6])` returns `(1, 8)`.
+**Example 1:** `max_sub_array([-2, 1, -3, 4, -1, 2, 1, -5, 4])` returns `6`: the stretch `[4, -1, 2, 1]`.
+
+**Example 2:** `max_sub_array([1])` returns `1`.
+
+**Example 3:** `max_sub_array([5, 4, -1, 7, 8])` returns `23`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and -10⁴ ≤ `nums[i]` ≤ 10⁴. Aim for O(n) time.
 starter:
 ```python
-def smallest_and_biggest(nums):
-    lo = nums[0]
-    hi = nums[0]
+def max_sub_array(nums):
     # your code here
-    return lo, hi
+    return 0
 ```
 solution:
 ```python
-def smallest_and_biggest(nums):
-    lo = nums[0]
-    hi = nums[0]
+def max_sub_array(nums):
+    best = nums[0]
+    current = 0
     for x in nums:
-        if x < lo:
-            lo = x
-        if x > hi:
-            hi = x
-    return lo, hi
+        current = max(current + x, x)
+        best = max(best, current)
+    return best
 ```
 tests:
-- smallest_and_biggest([4, 8, 1, 6])
-- smallest_and_biggest([5])
-- smallest_and_biggest([-3, -9, -1])
-- smallest_and_biggest([2, 2, 2])
-speed: setup=nums = list(range(n)) | call=smallest_and_biggest(nums) | target=O(n)
+- max_sub_array([-2, 1, -3, 4, -1, 2, 1, -5, 4])
+- max_sub_array([1])
+- max_sub_array([5, 4, -1, 7, 8])
+- max_sub_array([-3, -1, -2])
+- max_sub_array([2, -5, 3])
+- max_sub_array([(i * 37) % 21 - 10 for i in range(500)])
+fail[2]: One number: its stretch is the only one.
+fail[3]: The whole list adds up to 23. The -1 is worth keeping, since the 5 + 4 before it make up for it.
+fail[4]: Every number is negative, so the best stretch is the single largest number, -1, not 0.
+fail[5]: `[2, -5]` adds up to less than nothing, so the best is to start again: `[3]` on its own.
+fail[6]: The best stretch of these 500 numbers adds up to 23.
+speed: setup=nums = [(i * 37) % 21 - 10 for i in range(n)] | call=max_sub_array(nums) | target=O(n)
 slow:
 ```python
-def smallest_and_biggest(nums):
-    lo = nums[0]
-    hi = nums[0]
-    for x in nums:
-        if all(x <= y for y in nums):
-            lo = x
-        if all(x >= y for y in nums):
-            hi = x
-    return lo, hi
-```
-fail[1]: The smallest is 1 and the biggest is 8. Compare each item with both `lo` and `hi`.
-fail[3]: With negative numbers the smallest is -9 and the biggest -1.
-error[NameError]: Use the parameter `nums` inside the function.
-forbid[min(]: Find the smallest yourself, with a comparison.
-forbid[max(]: Find the biggest yourself, with a comparison.
-forbid[sort]: Sorting does far more work than one pass.
-hint: Loop over the items once.
-hint: Replace `lo` when `x < lo`, and `hi` when `x > hi`.
-hint: Return `lo, hi` after the loop.
-right: Each item is compared twice, once with `lo` and once with `hi`: 2n comparisons in one pass, which is O(n).
-wrong: In one loop: `if x < lo: lo = x` and `if x > hi: hi = x`. Return the tuple after the loop.
-
-=== task: predict medium
-title: Three passes
-code:
-```python
-def work(nums):
-    steps = 0
-    for x in nums:
-        steps += 1
-    for x in nums:
-        steps += 1
-    for x in nums:
-        steps += 1
-    return steps
-
-print(work([1, 2, 3]), work(list(range(6))))
-```
-wrong[3 6]: There are three loops one after the other, and each one adds n steps: 3n.
-wrong[27 216]: The loops come one after the other, not one inside the other, so the steps add up: n + n + n, not n × n × n.
-wrong[9 9]: The second list has 6 items, so each loop takes 6 steps: 18.
-hint: How many steps does each loop take for 3 items?
-hint: Loops one after the other: add.
-right: Three passes take 3n steps: 9 for 3 items and 18 for 6. Doubling n doubles the total, so it's still O(n).
-wrong: 3 + 3 + 3 = 9, and 6 + 6 + 6 = 18.
-
-=== task: fill medium
-title: Stop when found
-prompt: Fill in the blanks so that the search returns the position of the target, or -1 if it isn't there:
-
-```output
-2
--1
-```
-code:
-```python
-def find(nums, target):
+def max_sub_array(nums):
+    best = nums[0]
     for i in range(len(nums)):
-        if nums[i] == target:
-            return ??
-    return ??
-
-print(find([4, 7, 9], 9))
-print(find([4, 7, 9], 5))
+        total = 0
+        for j in range(i, len(nums)):
+            total += nums[j]
+            best = max(best, total)
+    return best
 ```
-answer: i | -1
-wrong[target | -1]: Returning `target` gives back the value 9, but the task asks for its position, 2.
-wrong[i | 0]: 0 is a real position, the first one. "Not found" needs a value that can't be a position: -1.
-hint: The first blank returns where the target was found.
-hint: The second blank is only reached when the target is missing.
-right: `return i` stops at the first match with its position, and `return -1` after the loop runs only when every item has been checked.
-wrong: Return the position `i` inside the loop, and -1 after it.
-
-=== task: cells medium
-title: How many checks?
-prompt: Linear search looks for a target in a list of 10 different numbers. How many checks does it make in each case?
-labels: target is first | target is at position 4 | target is last | target is missing
-answer: 1 | 5 | 10 | 10
-wrong[0 | 4 | 9 | 10]: The check that finds the target counts too: position 4 is the 5th item checked.
-wrong[1 | 5 | 10 | 0]: A missing target is the worst case: all 10 items are checked before giving up.
-hint: Positions start at 0, so position 4 is the 5th item.
-hint: To know the target is missing, every item must be checked.
-right: Best case 1 check, position 4 takes 5, the last item takes 10, and a missing target also takes all 10. That worst case, n checks, is why linear search is O(n).
-wrong: First → 1. Position 4 → 5. Last → 10. Missing → all 10.
-
-=== task: order medium
-title: A search, step by step
-prompt: Linear search looks for 2 in `[5, 2, 8, 2]`. Put its steps in order.
-items:
-- Compare the item at position 0, which is 5, with 2: not equal
-- Compare the item at position 1, which is 2, with 2: equal
-- Return position 1
-hint: The search starts at position 0.
-hint: It stops at the first match.
-right: The search checks 5, then finds 2 at position 1 and returns at once. The second 2 at position 3 is never looked at.
-wrong: Position 0 (5, no), position 1 (2, yes), return 1. It stops at the first match, so 8 and the second 2 are never checked.
-
-=== task: multi medium
-title: Exactly O(n)?
-prompt: `nums` is a list and `s` a string, each of length n. Choose **every** function that is O(n): not faster, and not slower.
-* `def f(nums): return sum(nums) / len(nums)` :: Right. `sum` is one pass, and `len` is O(1).
-* `def f(nums): return [x * 2 for x in nums]` :: Right. One new item per item: n steps.
-- `def f(nums): return nums[-1]` :: One index read: O(1), faster than O(n).
-* `def f(s): return s.upper()` :: Right. Every character is converted once.
-- `def f(nums): return [x for x in nums if nums.count(x) > 1]` :: `count` is a pass over the list, done for every item: n × n, O(n²).
-- `def f(n): return n * 2` :: One multiplication: O(1).
-hint: Look for hidden passes, and for hidden passes inside loops.
-hint: Three of them are O(n).
-right: `sum`, a comprehension and `upper` each make one pass. The index read and `n * 2` are O(1), and calling `count` for every item is O(n²).
-wrong: One pass each: `sum(nums)`, the comprehension, `s.upper()`. Not O(n): `nums[-1]` and `n * 2` (O(1)), and `count` inside a comprehension (O(n²)).
-
-=== task: predict medium
-title: Stop at the first negative
-code:
-```python
-def scan(nums):
-    steps = 0
-    for x in nums:
-        steps += 1
-        if x < 0:
-            break
-    return steps
-
-print(scan([-4, 2, 3]), scan([1, 2, -3]), scan([1, 2, 3]))
-```
-wrong[3 3 3]: `break` stops the loop at the first negative number: for `[-4, 2, 3]` that's the first item, after 1 step.
-wrong[1 3 0]: With no negative number, the loop runs to the end: 3 steps.
-wrong[0 2 3]: The counter goes up before the test, so the step that finds the negative counts too.
-hint: Where is the first negative number in each list?
-hint: Without a negative number, the loop doesn't stop early.
-right: The first list stops at once (1 step), the second at its last item (3), and the third never stops early (3). The worst case is always the whole list: O(n).
-wrong: [-4, 2, 3] → 1 step. [1, 2, -3] → 3 steps. [1, 2, 3] → no break, 3 steps.
-
-=== task: mcq medium
-title: The worst case of search
-prompt: What is the Big O of linear search on a list of n items, when the target might not be there?
-* O(n), because in the worst case every item is checked :: Right. Big O usually describes the worst case, and a missing target means n checks.
-- O(1), because the target is often the first item :: The best case is 1 check, but Big O usually means the worst case.
-- O(n / 2), because on average half the list is checked :: Big O drops constant factors: n / 2 is O(n). And a missing target needs all n checks.
-- O(n²), because each item is compared :: Each item is compared once, not with every other item: n comparisons.
-hint: What's the most checks the search could ever need?
-hint: Big O usually means the worst case.
-right: The worst case, a missing target or one at the very end, takes n checks. Linear search is O(n).
-wrong: In the worst case every one of the n items is checked once: O(n).
+fail[speed]: Trying every start, and adding up the numbers after it, is a loop inside a loop: O(n²). Carry the best sum of a stretch that ends at the current number instead.
+edges:
+- every number negative :: max(nums) < 0 :: max_sub_array([-4, -2, -7])
+- no negative numbers :: min(nums) >= 0 :: max_sub_array([1, 0, 2])
+- a dip worth crossing :: min(nums) < 0 and max(nums) >= 0 and max_sub_array(nums) > max([sum(nums[i:j + 1]) for i in range(len(nums)) for j in range(i, len(nums)) if min(nums[i:j + 1]) >= 0]) :: max_sub_array([3, -1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with two `max` calls of two numbers for each item.
+why_space: Two numbers: the best sum ending here and the best overall.
+hint: Think about the best stretch that **ends** at each position. Either it's the number on its own, or it's the best stretch ending one place earlier, plus this number.
+hint: So keep `current`, the best sum of a stretch ending here: `current = max(current + x, x)`. When what came before adds up to less than 0, starting again is better.
+hint: Keep `best`, the largest `current` seen. Start it at `nums[0]`, not 0, so that a list of negative numbers works.
+right: Each step only needs the best stretch ending one place earlier, so two running values replace trying every start and every end: O(n) instead of O(n²). This is known as Kadane's algorithm.
+wrong: `best = nums[0]` and `current = 0`. For each `x`: `current = max(current + x, x)` and `best = max(best, current)`. Return `best`.
 
 === task: code medium
-title: Equal neighbours
-prompt: Write a function `has_equal_neighbours(nums)` that returns True if two items **next to each other** are equal, and False otherwise. Make one pass: O(n).
+title: Gas Station
+leetcode: 134 | Gas Station | gas-station
+patterns: pass
+prompt: There are `n` gas stations around a circular road. Station `i` has `gas[i]` units of gas, and driving from station `i` to the next one, `(i + 1) % n`, uses `cost[i]` units. Your car starts with an empty tank at one of the stations, and it takes all the gas at every station it reaches. Write `can_complete_circuit(gas, cost)` that returns the station where you can start and drive once round the whole circle, or -1 if there's none. When there's an answer, there's only one.
 
-For example, `has_equal_neighbours([1, 3, 3, 2])` returns True, and `has_equal_neighbours([1, 2, 1])` returns False.
+**Example 1:** `can_complete_circuit([1, 2, 3, 4, 5], [3, 4, 5, 1, 2])` returns `3`. Starting at station 3, the tank holds 4 - 1 = 3 on arriving at station 4, then 3 + 5 - 2 = 6 at station 0, and it never runs out on the way round.
+
+**Example 2:** `can_complete_circuit([2, 3, 4], [3, 4, 3])` returns `-1`.
+
+**Constraints:** 1 ≤ `n` ≤ 10⁵, and 0 ≤ `gas[i]`, `cost[i]` ≤ 10⁴. Aim for O(n) time: don't try each start in turn.
 starter:
 ```python
-def has_equal_neighbours(nums):
+def can_complete_circuit(gas, cost):
     # your code here
-    return False
+    return -1
 ```
 solution:
 ```python
-def has_equal_neighbours(nums):
-    for i in range(len(nums) - 1):
-        if nums[i] == nums[i + 1]:
-            return True
-    return False
+def can_complete_circuit(gas, cost):
+    if sum(gas) < sum(cost):
+        return -1
+    start = 0
+    tank = 0
+    for i in range(len(gas)):
+        tank += gas[i] - cost[i]
+        if tank < 0:
+            start = i + 1
+            tank = 0
+    return start
 ```
 tests:
-- has_equal_neighbours([1, 3, 3, 2])
-- has_equal_neighbours([1, 2, 1])
-- has_equal_neighbours([])
-- has_equal_neighbours([5])
-- has_equal_neighbours([4, 4])
-speed: setup=nums = list(range(n)) | call=has_equal_neighbours(nums) | target=O(n)
+- can_complete_circuit([1, 2, 3, 4, 5], [3, 4, 5, 1, 2])
+- can_complete_circuit([2, 3, 4], [3, 4, 3])
+- can_complete_circuit([5], [4])
+- can_complete_circuit([2], [2])
+- can_complete_circuit([3, 1, 1], [1, 2, 2])
+- can_complete_circuit([1] * 999 + [1000], [2] * 999 + [1])
+fail[2]: There are 9 units of gas in all, but the trip needs 10.
+fail[3]: One station with 5 units, and the trip back to it uses 4.
+fail[4]: Exactly enough gas: the tank reaches 0 at the end, which is fine.
+fail[5]: From station 0: 3 - 1 = 2, then 2 + 1 - 2 = 1, then 1 + 1 - 2 = 0. The tank never goes below 0.
+fail[6]: Only the last station has enough gas for the 999 short trips after it.
+speed: setup=gas = [1] * n; cost = [1] * (n - 1) + [2] | call=can_complete_circuit(gas, cost) | target=O(n)
 slow:
 ```python
-def has_equal_neighbours(nums):
-    for i in range(len(nums)):
-        for j in range(len(nums)):
-            if j == i + 1 and nums[i] == nums[j]:
-                return True
-    return False
+def can_complete_circuit(gas, cost):
+    n = len(gas)
+    for start in range(n):
+        tank = 0
+        ok = True
+        for step in range(n):
+            i = (start + step) % n
+            tank += gas[i] - cost[i]
+            if tank < 0:
+                ok = False
+                break
+        if ok:
+            return start
+    return -1
 ```
-fail[1]: The 3s at positions 1 and 2 are neighbours. Compare each item with the next one, `nums[i + 1]`.
-fail[2]: The two 1s aren't next to each other, so the answer is False. Only compare neighbours.
-error[IndexError]: The last item has no right-hand neighbour. Loop over `range(len(nums) - 1)`.
-hint: Compare each item with the one after it.
-hint: The last position to check is `len(nums) - 2`, so use `range(len(nums) - 1)`.
-hint: Return True as soon as you find a pair; return False after the loop.
-right: Each neighbouring pair is compared once: at most n - 1 comparisons, so O(n). Checking every pair of items would find more (non-neighbour) matches and take O(n²).
-wrong: `for i in range(len(nums) - 1):` with `if nums[i] == nums[i + 1]: return True`, then `return False` after the loop.
+fail[speed]: Trying each start and driving until the tank runs out can take O(n) steps per start: O(n²). If the total gas is enough, one pass that starts again after every station where the tank went below 0 finds the start.
+edges:
+- not enough gas in all :: sum(gas) < sum(cost) :: can_complete_circuit([1, 1], [1, 2])
+- one station :: len(gas) == 1 and sum(gas) >= sum(cost) :: can_complete_circuit([3], [3])
+- a start after station 0 :: len(gas) > 1 and sum(gas) >= sum(cost) and can_complete_circuit(gas, cost) > 0 :: can_complete_circuit([1, 4], [2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: Two `sum` calls and one pass over the stations.
+why_space: Two numbers: the start and the tank.
+hint: If the total gas is less than the total cost, no start works: return -1. Otherwise some start works, and it's the only one.
+hint: Drive from station 0, keeping the tank. If the tank drops below 0 after station `i`, no station from the current start up to `i` can be the start either: each of them reaches station `i` with no more gas than this start did.
+hint: So start again at station `i + 1`, with an empty tank. The last start you set is the answer.
+right: One running tank, set back to 0 whenever it goes negative, rules out a whole stretch of starts at once, so every station is passed only once. With the total checked first, the last start left must work all the way round.
+wrong: If `sum(gas) < sum(cost)`, return -1. Then `start = 0` and `tank = 0`; for each `i`, add `gas[i] - cost[i]` to `tank`, and if `tank < 0`, set `start = i + 1` and `tank = 0`. Return `start`.
 
-=== task: code hard
-title: The second largest
-prompt: Write a function `second_largest(nums)` that returns the second largest value in a list of **different** numbers with at least 2 items. Use one pass, without sorting: O(n).
+=== task: code medium
+title: Partition Array into Disjoint Intervals
+leetcode: 915 | Partition Array into Disjoint Intervals | partition-array-into-disjoint-intervals
+patterns: best + build
+prompt: Split `nums` into a left part and a right part, neither of them empty, so that every number in the left part is less than or equal to every number in the right part, and the left part is as short as possible. Write `partition_disjoint(nums)` that returns the length of the left part. Such a split always exists.
 
-For example, `second_largest([3, 9, 4, 7])` returns 7.
+**Example 1:** `partition_disjoint([5, 0, 3, 8, 6])` returns `3`: `[5, 0, 3]` and `[8, 6]`.
+
+**Example 2:** `partition_disjoint([1, 1, 1, 0, 6, 12])` returns `4`: `[1, 1, 1, 0]` and `[6, 12]`.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 10⁵, and 0 ≤ `nums[i]` ≤ 10⁶. Aim for O(n) time.
 starter:
 ```python
-def second_largest(nums):
-    first = None
-    second = None
-    # your code here
-    return second
-```
-solution:
-```python
-def second_largest(nums):
-    first = None
-    second = None
-    for x in nums:
-        if first is None or x > first:
-            second = first
-            first = x
-        elif second is None or x > second:
-            second = x
-    return second
-```
-tests:
-- second_largest([3, 9, 4, 7])
-- second_largest([5, 1])
-- second_largest([1, 5])
-- second_largest([-3, -1, -7])
-- second_largest([10, 20, 30, 40])
-speed: setup=nums = list(range(n)) | call=second_largest(nums) | target=O(n)
-slow:
-```python
-def second_largest(nums):
-    for x in nums:
-        bigger = 0
-        for y in nums:
-            if y > x:
-                bigger += 1
-        if bigger == 1:
-            return x
-```
-fail[1]: The largest is 9 and the second largest 7. When a new largest appears, the old largest becomes the second.
-fail[3]: In `[1, 5]`, 5 arrives after 1, so 1 must move down to second place: the answer is 1.
-fail[5]: In increasing order, each new number pushes the old largest down to second: 30.
-error[TypeError]: Comparing with None fails. Check `first is None` (or `second is None`) before comparing.
-forbid[sort]: Use one pass instead of sorting.
-hint: Keep the largest so far in `first` and the second largest in `second`.
-hint: If `x` beats `first`, the old `first` becomes `second`, and `x` becomes `first`.
-hint: Otherwise, if `x` beats `second`, it becomes the new `second`.
-right: Each number is compared at most twice, so one pass of O(1) work per item: O(n). Sorting first would also work, but it does more work than needed.
-wrong: In one loop: if `x` beats `first`, shift `first` down to `second` and store `x`; elif `x` beats `second`, store it in `second`.
-
-=== task: code hard
-title: The longest run
-prompt: Write a function `longest_run(nums)` that returns the length of the longest run of equal items next to each other. An empty list gives 0. Make one pass: O(n).
-
-For example, `longest_run([1, 1, 2, 2, 2, 3])` returns 3.
-starter:
-```python
-def longest_run(nums):
-    if len(nums) == 0:
-        return 0
+def partition_disjoint(nums):
     # your code here
     return 1
 ```
 solution:
 ```python
-def longest_run(nums):
-    if len(nums) == 0:
-        return 0
-    best = 1
-    current = 1
+def partition_disjoint(nums):
+    n = len(nums)
+    suffix_min = [0] * n
+    suffix_min[n - 1] = nums[n - 1]
+    for i in range(n - 2, -1, -1):
+        suffix_min[i] = min(nums[i], suffix_min[i + 1])
+    left_max = nums[0]
+    for i in range(n - 1):
+        left_max = max(left_max, nums[i])
+        if left_max <= suffix_min[i + 1]:
+            return i + 1
+    return n
+```
+tests:
+- partition_disjoint([5, 0, 3, 8, 6])
+- partition_disjoint([1, 1, 1, 0, 6, 12])
+- partition_disjoint([1, 1])
+- partition_disjoint([3, 1, 2, 4])
+- partition_disjoint([1, 2, 3])
+- partition_disjoint([5] * 500 + [1] + [9] * 499)
+fail[2]: The 0 must be on the left, since it's smaller than the 1s before it: the left part is `[1, 1, 1, 0]`.
+fail[3]: Each part gets one 1, and 1 ≤ 1.
+fail[4]: `[3]` and `[3, 1]` don't work, since 1 is smaller than 3. `[3, 1, 2]` and `[4]` do.
+fail[5]: `[1]` and `[2, 3]` already work.
+fail[6]: The 1 at position 500 is smaller than the 5s, so the left part must reach it: 501 numbers.
+speed: setup=nums = list(range(n, 0, -1)) + [n + 1] | call=partition_disjoint(nums) | target=O(n)
+slow:
+```python
+def partition_disjoint(nums):
     for i in range(1, len(nums)):
-        if nums[i] == nums[i - 1]:
-            current += 1
-        else:
-            current = 1
-        if current > best:
-            best = current
-    return best
+        if max(nums[:i]) <= min(nums[i:]):
+            return i
+    return len(nums)
 ```
-tests:
-- longest_run([1, 1, 2, 2, 2, 3])
-- longest_run([])
-- longest_run([5])
-- longest_run([1, 2, 3])
-- longest_run([4, 4, 4, 4])
-speed: setup=nums = [7] * n | call=longest_run(nums) | target=O(n)
-slow:
-```python
-def longest_run(nums):
-    if len(nums) == 0:
-        return 0
-    best = 1
-    for i in range(len(nums)):
-        j = i
-        while j + 1 < len(nums) and nums[j + 1] == nums[i]:
-            j += 1
-        if j - i + 1 > best:
-            best = j - i + 1
-    return best
-```
-fail[1]: The three 2s in a row make the longest run: 3. Keep a `current` run length and a `best` one.
-fail[4]: No two neighbours are equal, so the longest run is a single item: 1.
-fail[5]: All four items are equal: one run of 4. Update `best` inside the loop, not only when a run ends.
-error[IndexError]: Compare each item with the one **before** it, starting from position 1.
-hint: Keep `current`, the length of the run that ends at the current item, and `best`.
-hint: If an item equals the one before it, the run grows; otherwise a new run of 1 starts.
-hint: After each item, update `best` if `current` is bigger.
-right: Each item is compared once with its left neighbour, and two counters are updated: one pass, O(n). Starting a fresh scan at every position would take O(n²) on a list where every item is equal.
-wrong: Start `best` and `current` at 1. For each position from 1: if it equals the previous item, `current += 1`, else `current = 1`; then update `best`.
+fail[speed]: `max(nums[:i])` and `min(nums[i:])` at every split walk the list again: O(n²). Build the smallest value from each position to the end in one pass from the right, and carry the largest value on the left as you go.
+edges:
+- two numbers :: len(nums) == 2 :: partition_disjoint([2, 2])
+- the first number alone is enough :: len(nums) > 2 and nums[0] <= min(nums[1:]) :: partition_disjoint([1, 3, 2])
+- a small number late in the list :: len(nums) > 2 and nums[0] > min(nums[1:]) :: partition_disjoint([4, 5, 1, 6])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass from the right builds the smallest values, and one pass from the left finds the split.
+why_space: The list of n smallest values.
+hint: A split after position `i` works when the largest number up to position `i` is at most the smallest number after it.
+hint: Build `suffix_min`, where `suffix_min[i]` is the smallest number from position `i` to the end, with a pass from the right.
+hint: Then walk from the left, keeping `left_max`, the largest number so far. Return `i + 1` at the first `i` with `left_max <= suffix_min[i + 1]`.
+right: The smallest number on the right of every split is ready in a list, and the largest on the left is carried along, so each split is checked in O(1).
+wrong: Fill `suffix_min` from the right. Walk `i` from 0, updating `left_max`, and return `i + 1` as soon as `left_max <= suffix_min[i + 1]`.
 
-=== task: code hard
-title: The first character that appears once
-prompt: Write a function `first_unique(s)` that returns the first character of `s` that appears only once in the whole string, or None if there isn't one. It must be O(n): count the characters with a dictionary in one pass, then find the first one with a count of 1 in a second pass.
+=== task: code medium
+title: Find All Good Indices
+leetcode: 2420 | Find All Good Indices | find-all-good-indices
+patterns: passes + build
+prompt: Position `i` of `nums` is **good** if `k <= i < len(nums) - k`, the `k` numbers right before it never go up (each one at most the one before it), and the `k` numbers right after it never go down (each one at least the one before it). Write `good_indices(nums, k)` that returns all the good positions, in increasing order.
 
-For example, `first_unique("swiss")` returns `'w'`.
+**Example 1:** `good_indices([2, 1, 1, 1, 3, 4, 1], 2)` returns `[2, 3]`. Before position 2 come 2, 1, which never go up, and after it come 1, 3, which never go down.
+
+**Example 2:** `good_indices([2, 1, 1, 2], 2)` returns `[]`.
+
+**Constraints:** 3 ≤ `len(nums)` ≤ 10⁵, and 1 ≤ `k` ≤ `len(nums) / 2`. Aim for O(n) time: don't check the 2k neighbours of every position.
 starter:
 ```python
-def first_unique(s):
-    counts = {}
+def good_indices(nums, k):
     # your code here
-    return None
+    return []
 ```
 solution:
 ```python
-def first_unique(s):
-    counts = {}
-    for ch in s:
-        counts[ch] = counts.get(ch, 0) + 1
-    for ch in s:
-        if counts[ch] == 1:
-            return ch
-    return None
+def good_indices(nums, k):
+    n = len(nums)
+    before = [1] * n
+    for i in range(1, n):
+        if nums[i] <= nums[i - 1]:
+            before[i] = before[i - 1] + 1
+    after = [1] * n
+    for i in range(n - 2, -1, -1):
+        if nums[i] <= nums[i + 1]:
+            after[i] = after[i + 1] + 1
+    result = []
+    for i in range(k, n - k):
+        if before[i - 1] >= k and after[i + 1] >= k:
+            result.append(i)
+    return result
 ```
 tests:
-- first_unique("swiss")
-- first_unique("aabb")
-- first_unique("")
-- first_unique("abc")
-- first_unique("aAa")
-speed: setup=s = "ab" * n + "c" | call=first_unique(s) | target=O(n)
+- good_indices([2, 1, 1, 1, 3, 4, 1], 2)
+- good_indices([2, 1, 1, 2], 2)
+- good_indices([1, 1, 1], 1)
+- good_indices([5, 4, 3, 2, 1, 1, 2, 3, 4, 5], 4)
+- good_indices([3, 2, 1, 4, 5], 2)
+- len(good_indices([1] * 1000, 10))
+fail[2]: With 4 numbers and `k` = 2, no position has 2 numbers on both sides.
+fail[3]: Position 1 has one number on each side, and 1, 1 neither goes up nor down.
+fail[4]: Positions 4 and 5 sit at the bottom of the valley, each with 4 falling numbers before it and 4 rising ones after it.
+fail[5]: Before position 2 come 3, 2, falling, and after it 4, 5, rising.
+fail[6]: Equal numbers never go up or down, so every position from 10 to 989 is good: 980 of them.
+speed: setup=nums = [1] * n | call=good_indices(nums, n // 4) | target=O(n)
 slow:
 ```python
-def first_unique(s):
-    for ch in s:
-        if s.count(ch) == 1:
-            return ch
-    return None
+def good_indices(nums, k):
+    result = []
+    for i in range(k, len(nums) - k):
+        before = nums[i - k:i]
+        after = nums[i + 1:i + k + 1]
+        ok = True
+        for j in range(k - 1):
+            if before[j] < before[j + 1] or after[j] > after[j + 1]:
+                ok = False
+                break
+        if ok:
+            result.append(i)
+    return result
 ```
-fail[1]: In "swiss", s appears 3 times, and w and i once each. w comes first.
-fail[2]: Every character appears twice, so there's no answer: None.
-fail[5]: "A" and "a" are different characters. Only "A" appears once.
-error[KeyError]: The first time a character appears it has no count yet. Use `counts.get(ch, 0) + 1`.
-forbid[.count(]: `s.count(ch)` goes through the whole string every time, which makes the function O(n²). Count with a dictionary instead.
-hint: First pass: count every character with `counts.get(ch, 0) + 1`.
-hint: Second pass: go through `s` again, in order, and return the first `ch` with `counts[ch] == 1`.
-hint: If the second pass finds nothing, return None.
-right: Two passes, each with O(1) dictionary work per character, take about 2n steps: O(n). Calling `s.count(ch)` for every character would repeat a whole pass n times.
-wrong: Count with `counts[ch] = counts.get(ch, 0) + 1` in one loop, then loop over `s` again and return the first `ch` whose count is 1. Return None at the end.
+fail[speed]: Checking the `k` numbers on each side of every position is a loop inside a loop: O(n × k), and `k` can be n / 2. Build the length of the falling run that ends at each position, and of the rising run that starts at each position: one list per side.
+edges:
+- k is 1 :: k == 1 :: good_indices([3, 1, 2], 1)
+- no good positions :: k > 1 and good_indices(nums, k) == [] :: good_indices([1, 2, 3, 4, 5], 2)
+- equal neighbours :: k > 1 and good_indices(nums, k) != [] and any(nums[i] == nums[i + 1] for i in range(len(nums) - 1)) :: good_indices([2, 2, 1, 1, 1], 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: Two passes build the run lengths, and a third checks each position with two comparisons.
+why_space: Two lists of n run lengths, and the answer.
+hint: Let `before[i]` be the length of the longest stretch ending at position `i` that never goes up. If `nums[i] <= nums[i - 1]`, it's `before[i - 1] + 1`; otherwise it's 1.
+hint: Let `after[i]` be the length of the longest stretch starting at position `i` that never goes down, filled from the right in the same way.
+hint: Position `i` is good when `before[i - 1] >= k` and `after[i + 1] >= k`.
+right: Each run length is one more than its neighbour's, so one pass from each side fills both lists, and every position is then checked with two comparisons: O(n), whatever `k` is.
+wrong: Fill `before` from the left and `after` from the right, each starting at 1 and growing by 1 while the order holds. Return every `i` from `k` to `n - k - 1` with `before[i - 1] >= k and after[i + 1] >= k`.
 
-=== task: code hard
-title: Fix the search
-prompt: This program should print the position of 9 in the list, and then -1 for a number that isn't there:
+=== task: code medium
+title: Minimum Amount of Time to Collect Garbage
+leetcode: 2391 | Minimum Amount of Time to Collect Garbage | minimum-amount-of-time-to-collect-garbage
+patterns: passes
+prompt: Houses stand along a street. `garbage[i]` is a string of the bags at house `i`: `"M"` for metal, `"P"` for paper and `"G"` for glass. There are three trucks, one for each kind, and all of them start at house 0. A truck takes 1 minute to pick up each bag of its kind, and `travel[i]` minutes to drive from house `i` to house `i + 1`. Only one truck works at a time, and each one drives only as far as it needs to. Write `garbage_collection(garbage, travel)` that returns the total number of minutes.
 
-```output
-2
--1
-```
-It has three bugs. Fix them.
+**Example 1:** `garbage_collection(["G", "P", "GP", "GG"], [2, 4, 3])` returns `21`. The paper truck drives to house 2 (6 minutes) and picks up 2 bags, and the glass truck drives to house 3 (9 minutes) and picks up 4 bags.
+
+**Example 2:** `garbage_collection(["MMM", "PGM", "GP"], [3, 10])` returns `37`.
+
+**Constraints:** 2 ≤ `len(garbage)` ≤ 10⁵, each string has 1 to 10 letters, `len(travel) == len(garbage) - 1`, and 1 ≤ `travel[i]` ≤ 100. Aim for O(n) time.
 starter:
 ```python
-def find(nums, target):
-    for i in range(len(nums) - 1):
-        if nums[i] = target:
-            return i
-        else:
-            return -1
-
-print(find([4, 7, 9], 9))
-print(find([4, 7, 9], 5))
+def garbage_collection(garbage, travel):
+    # your code here
+    return 0
 ```
 solution:
 ```python
-def find(nums, target):
+def garbage_collection(garbage, travel):
+    total = 0
+    last = {"M": 0, "P": 0, "G": 0}
+    for i in range(len(garbage)):
+        total += len(garbage[i])
+        for kind in "MPG":
+            if kind in garbage[i]:
+                last[kind] = i
+    prefix = [0]
+    for t in travel:
+        prefix.append(prefix[-1] + t)
+    for kind in "MPG":
+        total += prefix[last[kind]]
+    return total
+```
+tests:
+- garbage_collection(["G", "P", "GP", "GG"], [2, 4, 3])
+- garbage_collection(["MMM", "PGM", "GP"], [3, 10])
+- garbage_collection(["M", "M"], [4])
+- garbage_collection(["G", "M"], [5])
+- garbage_collection(["P", "P", "P"], [1, 1])
+- garbage_collection(["MPG"] * 100, [1] * 99)
+fail[2]: There are 8 bags. The metal truck drives 3 minutes, to house 1, and the paper and glass trucks drive 13 minutes each, to house 2: 8 + 3 + 13 + 13 = 37.
+fail[3]: The metal truck picks up a bag at house 0, drives 4 minutes, and picks up another: 6.
+fail[4]: The glass truck stays at house 0, and the metal truck drives 5 minutes to house 1: 1 + 1 + 5 = 7.
+fail[5]: Only the paper truck moves: 3 bags, and 2 minutes of driving.
+fail[6]: All three trucks go to the last house: 300 bags, plus 3 × 99 minutes of driving.
+edges:
+- one kind of garbage only :: len(set("".join(garbage))) == 1 :: garbage_collection(["G", "GG"], [4])
+- a kind that's missing :: len(set("".join(garbage))) == 2 :: garbage_collection(["M", "P"], [3])
+- each kind ending at a different house :: len(set("".join(garbage))) == 3 and len(set([max([i for i in range(len(garbage)) if kind in garbage[i]]) for kind in "MPG"])) == 3 :: garbage_collection(["M", "P", "G"], [1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of houses. Each house has at most 10 bags, so count working through one house's string as O(1).
+why_time: One pass counts the bags and finds each kind's last house, another builds the running totals of the driving times, and three lookups finish it.
+why_space: The list of n running totals.
+hint: Every bag costs 1 minute, whichever truck picks it up, so that part is the total length of all the strings.
+hint: A truck drives from house 0 to the last house that has its kind of bag. In one pass, remember the last house for each of `"M"`, `"P"` and `"G"`.
+hint: The drive to house `j` takes `travel[0]` plus `travel[1]` and onwards up to `travel[j - 1]`. Build the running totals of `travel` once; then each truck's drive is one lookup.
+right: A first pass finds the one fact each truck needs, its last house, and the running totals turn every drive into a single lookup instead of a `sum` of a slice.
+wrong: Add up `len(garbage[i])`, and set `last[kind] = i` for each kind that appears in `garbage[i]`. Build `prefix` from `[0]` with the running totals of `travel`, and add `prefix[last[kind]]` for each kind.
+
+=== task: code medium
+title: Minimum Deletions to Make String Balanced
+leetcode: 1653 | Minimum Deletions to Make String Balanced | minimum-deletions-to-make-string-balanced
+patterns: passes + hidden
+prompt: `s` is made of the letters `"a"` and `"b"`. It's **balanced** if no `"b"` comes before an `"a"`. Write `minimum_deletions(s)` that returns the smallest number of letters you must delete to make `s` balanced.
+
+**Example 1:** `minimum_deletions("aababbab")` returns `2`: for example, delete the letters at positions 2 and 6 to get `"aaabbb"`.
+
+**Example 2:** `minimum_deletions("bbaaaaabb")` returns `2`: delete the two `"b"`s at the front.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, and `s` has only `"a"` and `"b"`. Aim for O(n) time.
+starter:
+```python
+def minimum_deletions(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def minimum_deletions(s):
+    a_right = s.count("a")
+    b_left = 0
+    best = a_right
+    for c in s:
+        if c == "a":
+            a_right -= 1
+        else:
+            b_left += 1
+        best = min(best, b_left + a_right)
+    return best
+```
+tests:
+- minimum_deletions("aababbab")
+- minimum_deletions("bbaaaaabb")
+- minimum_deletions("a")
+- minimum_deletions("ba")
+- minimum_deletions("bbbaaa")
+- minimum_deletions("ba" * 300)
+fail[2]: Delete the two `"b"`s at the front, which leaves `"aaaaabb"`.
+fail[3]: A single letter is always balanced.
+fail[4]: Delete either letter.
+fail[5]: Delete the three `"b"`s, or the three `"a"`s: either way, 3.
+fail[6]: With `"ba"` 300 times, every split leaves 300 letters to delete.
+speed: setup=s = "ba" * (n // 2) | call=minimum_deletions(s) | target=O(n)
+slow:
+```python
+def minimum_deletions(s):
+    best = len(s)
+    for i in range(len(s) + 1):
+        best = min(best, s[:i].count("b") + s[i:].count("a"))
+    return best
+```
+fail[speed]: Counting the `"b"`s before and the `"a"`s after every split with `count` is a hidden pass inside the loop: O(n²). Count the `"a"`s once, then move the split one letter at a time.
+edges:
+- already balanced with both letters :: len(set(s)) == 2 and minimum_deletions(s) == 0 :: minimum_deletions("aabb")
+- one kind of letter :: len(set(s)) == 1 :: minimum_deletions("aaa")
+- letters to delete :: minimum_deletions(s) > 0 :: minimum_deletions("bab")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: `count` makes one pass and the loop over the splits another, with O(1) work per letter.
+why_space: Three numbers.
+hint: In a balanced string, all the `"a"`s come first. So choose a split point: delete every `"b"` before it and every `"a"` after it.
+hint: At the split before the first letter, that's all the `"a"`s: `s.count("a")`.
+hint: Move the split one letter at a time. An `"a"` that crosses it no longer needs deleting (take 1 off), and a `"b"` that crosses it now does (add 1). Keep the smallest total.
+right: Counting the `"a"`s once gives the first split's cost, and each step changes it by one, so all n + 1 splits are checked in one pass.
+wrong: `a_right = s.count("a")`, `b_left = 0` and `best = a_right`. For each letter, an `"a"` takes 1 off `a_right` and a `"b"` adds 1 to `b_left`; keep `best = min(best, b_left + a_right)`.
+
+=== task: code medium
+title: Count the Hidden Sequences
+leetcode: 2145 | Count the Hidden Sequences | count-the-hidden-sequences
+patterns: best
+prompt: A hidden list of `n + 1` whole numbers changes by `differences[i]` from position `i` to position `i + 1`. Every number in it is between `lower` and `upper`, both included. Write `number_of_arrays(differences, lower, upper)` that returns how many hidden lists are possible.
+
+**Example 1:** `number_of_arrays([1, -3, 4], 1, 6)` returns `2`: `[3, 4, 1, 5]` and `[4, 5, 2, 6]`.
+
+**Example 2:** `number_of_arrays([3, -4, 5, 1, -2], -4, 5)` returns `4`.
+
+**Example 3:** `number_of_arrays([4, -7, 2], 3, 6)` returns `0`.
+
+**Constraints:** 1 ≤ `len(differences)` ≤ 10⁵, -10⁵ ≤ `differences[i]` ≤ 10⁵, and -10⁵ ≤ `lower` ≤ `upper` ≤ 10⁵. Aim for O(n) time: don't try every first number.
+starter:
+```python
+def number_of_arrays(differences, lower, upper):
+    # your code here
+    return 0
+```
+solution:
+```python
+def number_of_arrays(differences, lower, upper):
+    running = 0
+    low = 0
+    high = 0
+    for d in differences:
+        running += d
+        low = min(low, running)
+        high = max(high, running)
+    return max(0, (upper - lower) - (high - low) + 1)
+```
+tests:
+- number_of_arrays([1, -3, 4], 1, 6)
+- number_of_arrays([3, -4, 5, 1, -2], -4, 5)
+- number_of_arrays([4, -7, 2], 3, 6)
+- number_of_arrays([0], 5, 5)
+- number_of_arrays([10], 0, 5)
+- number_of_arrays([1, -1] * 500, 0, 100)
+fail[2]: From its first number, the list goes as high as 5 more and as low as 1 less: a spread of 6. Between -4 and 5 there's room for 4 different first numbers.
+fail[3]: From its first number, the list spreads over 7 (from 3 less to 4 more), but `lower` to `upper` spans only 3.
+fail[4]: A difference of 0 keeps the list at one value, and only 5 is allowed.
+fail[5]: The list rises by 10, more than the 5 between `lower` and `upper`.
+fail[6]: The list only moves between its first number and one more, so 100 first numbers fit between 0 and 100.
+edges:
+- exactly one possible list :: number_of_arrays(differences, lower, upper) == 1 :: number_of_arrays([2], 0, 2)
+- no possible list :: number_of_arrays(differences, lower, upper) == 0 :: number_of_arrays([5], 0, 4)
+- differences that cancel out :: number_of_arrays(differences, lower, upper) > 1 and sum(differences) == 0 :: number_of_arrays([3, -3], 0, 5)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass over the differences, with a running total and two comparisons each.
+why_space: Three numbers.
+hint: Start the hidden list at 0 for now: its numbers are then the running totals of `differences`, with 0 first.
+hint: Keep the lowest and the highest running total. The real list is the same shape moved up or down, so it only fits if its spread, `high - low`, fits between `lower` and `upper`.
+hint: The first number can move by `(upper - lower) - (high - low)`, so that plus 1 is the count, or 0 if it's negative.
+right: Moving the list up or down moves every number by the same amount, so only its lowest and highest points matter, and one pass finds both.
+wrong: Walk with a running total from 0, keeping `low` and `high`, both starting at 0. Return `max(0, (upper - lower) - (high - low) + 1)`.
+
+=== task: code medium
+title: Maximum Swap
+leetcode: 670 | Maximum Swap | maximum-swap
+patterns: search + passes
+prompt: Write `maximum_swap(num)` that returns the largest number you can make by swapping two digits of `num` at most once.
+
+**Example 1:** `maximum_swap(2736)` returns `7236`: swap the 2 and the 7.
+
+**Example 2:** `maximum_swap(9973)` returns `9973`: no swap makes it bigger.
+
+**Constraints:** 0 ≤ `num` ≤ 10⁸. Aim for O(n) time, where n is the number of digits.
+starter:
+```python
+def maximum_swap(num):
+    # your code here
+    return num
+```
+solution:
+```python
+def maximum_swap(num):
+    digits = list(str(num))
+    last = {}
+    for i in range(len(digits)):
+        last[digits[i]] = i
+    for i in range(len(digits)):
+        for d in "987654321":
+            if d <= digits[i]:
+                break
+            if last.get(d, -1) > i:
+                j = last[d]
+                digits[i], digits[j] = digits[j], digits[i]
+                return int("".join(digits))
+    return num
+```
+tests:
+- maximum_swap(2736)
+- maximum_swap(9973)
+- maximum_swap(0)
+- maximum_swap(1993)
+- maximum_swap(98368)
+- maximum_swap(12345678)
+fail[2]: The digits already go from the biggest to the smallest, so no swap makes the number bigger.
+fail[3]: 0 has a single digit, so there's nothing to swap.
+fail[4]: The first digit, 1, should swap with the **last** 9, which leaves the other 9 in second place: 9913.
+fail[5]: The 9 and the 8 are already in place. The 3 swaps with the last 8: 98863.
+fail[6]: Swap the first digit, 1, with the largest digit, the 8 at the end.
+edges:
+- digits that never go up :: maximum_swap(num) == num :: maximum_swap(531)
+- the largest digit twice :: maximum_swap(num) != num and str(num).count(max(str(num))) >= 2 :: maximum_swap(2992)
+- a swap after the first digit :: maximum_swap(num) != num and str(num).count(max(str(num))) < 2 and str(maximum_swap(num))[0] == str(num)[0] :: maximum_swap(9367)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of digits of `num`.
+why_time: One pass records each digit's last position, and the search from the left tries at most 9 bigger digits at each position.
+why_space: The list of n digits. The dictionary has at most 10 entries.
+hint: The swap should improve the leftmost digit it can. Search from the left for the first digit that has a bigger digit somewhere after it.
+hint: To answer "is there a bigger digit later?" quickly, first record the **last** position of every digit in a dictionary: `last[d] = i`.
+hint: At position `i`, try the digits from `"9"` downwards, stopping before you reach `digits[i]`: the first one whose last position is after `i` is the best partner. Swap and return. Using its last position matters when the digit appears twice.
+right: Recording the last positions first means the search from the left can check for a bigger digit later with at most 9 lookups per digit, instead of looking at every later digit.
+wrong: Make `digits = list(str(num))` and record `last[d]` for each digit. For each `i`, try each `d` from `"9"` downwards while `d > digits[i]`: if `last.get(d, -1) > i`, swap positions `i` and `last[d]` and return the number. Return `num` if nothing was swapped.
+
+=== task: code medium
+title: Maximize Distance to Closest Person
+leetcode: 849 | Maximize Distance to Closest Person | maximize-distance-to-closest-person
+patterns: search
+prompt: `seats` is a row of seats, where 1 is a taken seat and 0 an empty one. There's at least one of each. Alex wants to sit in an empty seat as far as possible from the closest person. Write `max_dist_to_closest(seats)` that returns that largest possible distance.
+
+**Example 1:** `max_dist_to_closest([1, 0, 0, 0, 1, 0, 1])` returns `2`: seat 2 is 2 away from both neighbours.
+
+**Example 2:** `max_dist_to_closest([1, 0, 0, 0])` returns `3`: the last seat.
+
+**Example 3:** `max_dist_to_closest([0, 1])` returns `1`.
+
+**Constraints:** 2 ≤ `len(seats)` ≤ 2 × 10⁴. Aim for O(n) time.
+starter:
+```python
+def max_dist_to_closest(seats):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_dist_to_closest(seats):
+    n = len(seats)
+    first = 0
+    while seats[first] == 0:
+        first += 1
+    last = n - 1
+    while seats[last] == 0:
+        last -= 1
+    best = max(first, n - 1 - last)
+    prev = first
+    for i in range(first + 1, last + 1):
+        if seats[i] == 1:
+            best = max(best, (i - prev) // 2)
+            prev = i
+    return best
+```
+tests:
+- max_dist_to_closest([1, 0, 0, 0, 1, 0, 1])
+- max_dist_to_closest([1, 0, 0, 0])
+- max_dist_to_closest([0, 1])
+- max_dist_to_closest([0, 0, 1, 0, 1, 0, 0, 0, 0, 1])
+- max_dist_to_closest([1, 0, 1])
+- max_dist_to_closest([1] + [0] * 998 + [1])
+fail[2]: Sitting at the end, in seat 3, puts Alex 3 seats from the only person.
+fail[3]: The only empty seat is 1 away from the person.
+fail[4]: Seat 0 is 2 away from the first person, and the gap between seats 4 and 9 gives 2 at best too.
+fail[5]: The only empty seat is between two people: 1.
+fail[6]: Two people at the ends, 999 seats apart: the middle seat is 499 from the closer one.
+edges:
+- empty seats at the start :: seats[0] == 0 :: max_dist_to_closest([0, 0, 1])
+- empty seats at the end :: seats[0] == 1 and seats[-1] == 0 :: max_dist_to_closest([1, 0, 0])
+- only gaps between people :: seats[0] == 1 and seats[-1] == 1 :: max_dist_to_closest([1, 0, 0, 0, 0, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: The two searches and the pass between them each look at a seat at most once.
+why_space: A few positions.
+hint: Empty seats before the first person: the best is seat 0, `first` seats away. After the last person: the best is the last seat, `n - 1 - last` away. Search from each end to find `first` and `last`.
+hint: Between two people at positions `a` and `b`, the best seat is in the middle: `(b - a) // 2` from the closer one.
+hint: Walk from `first` to `last`, keeping the previous person's position, and take the largest of all these distances.
+right: Two searches find the people closest to the ends, and one pass measures each gap between people: every seat is looked at a fixed number of times, so it's O(n).
+wrong: Search for `first` from the left and for `last` from the right. Start with `best = max(first, n - 1 - last)`, then for each person at position `i` after `first`, update `best` with `(i - prev) // 2` and set `prev = i`.
+
+=== task: code medium
+title: Find the Score of All Prefixes of an Array
+leetcode: 2640 | Find the Score of All Prefixes of an Array | find-the-score-of-all-prefixes-of-an-array
+patterns: hidden + build
+prompt: For a list `arr`, let `conver[i]` be `arr[i]` plus the largest of `arr[0]` up to `arr[i]`. The **score** of `arr` is the sum of all its `conver` values. Write `find_prefix_score(nums)` that returns a list whose entry `i` is the score of the first `i + 1` numbers of `nums`.
+
+**Example 1:** `find_prefix_score([2, 3, 7, 5, 10])` returns `[4, 10, 24, 36, 56]`: the `conver` values are 4, 6, 14, 12 and 20.
+
+**Example 2:** `find_prefix_score([1, 1, 2, 4, 8, 16])` returns `[2, 4, 8, 16, 32, 64]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 1 ≤ `nums[i]` ≤ 10⁹. Aim for O(n) time.
+starter:
+```python
+def find_prefix_score(nums):
+    # your code here
+    return []
+```
+solution:
+```python
+def find_prefix_score(nums):
+    result = []
+    biggest = 0
+    total = 0
+    for x in nums:
+        biggest = max(biggest, x)
+        total += x + biggest
+        result.append(total)
+    return result
+```
+tests:
+- find_prefix_score([2, 3, 7, 5, 10])
+- find_prefix_score([1, 1, 2, 4, 8, 16])
+- find_prefix_score([5])
+- find_prefix_score([3, 1])
+- find_prefix_score([1, 2])
+- find_prefix_score(list(range(1, 1001)))[-1]
+fail[2]: The `conver` values are 2, 2, 4, 8, 16 and 32, and the scores add them up as they go.
+fail[3]: One number: 5 + 5 = 10.
+fail[4]: The `conver` values are 3 + 3 = 6 and 1 + 3 = 4, so the scores are 6 and 10.
+fail[5]: The `conver` values are 2 and 4, so the scores are 2 and 6.
+fail[6]: Each `conver` value is twice its number, so the last score is 2 × (1 + 2 + 3 and onwards up to 1000) = 1,001,000.
+speed: setup=nums = list(range(1, n + 1)) | call=find_prefix_score(nums) | target=O(n)
+slow:
+```python
+def find_prefix_score(nums):
+    result = []
+    total = 0
     for i in range(len(nums)):
-        if nums[i] == target:
-            return i
-    return -1
-
-print(find([4, 7, 9], 9))
-print(find([4, 7, 9], 5))
+        total += nums[i] + max(nums[:i + 1])
+        result.append(total)
+    return result
 ```
-tests: stdout
-error[SyntaxError]: Comparing needs `==`. A single `=` stores a value, which isn't allowed in an `if`.
-hint: Is `=` the right operator inside an `if`?
-hint: Which positions does `range(len(nums) - 1)` visit? Does it reach the last item?
-hint: When can the function be sure the target is missing: after the first item, or after all of them?
-right: `==` compares, `range(len(nums))` reaches the last position, and `return -1` belongs after the loop, so the search only gives up once every item has been checked.
-wrong: Bug 1: `if nums[i] == target:`. Bug 2: `range(len(nums))`, so the last item is checked. Bug 3: move `return -1` after the loop, removing the `else`.
+fail[speed]: `max(nums[:i + 1])` at every position walks the list again: O(n²). Keep the biggest number so far and the running score in two variables.
+edges:
+- one number :: len(nums) == 1 :: find_prefix_score([3])
+- numbers that keep growing :: len(nums) > 1 and all(nums[i] < nums[i + 1] for i in range(len(nums) - 1)) :: find_prefix_score([1, 2, 3])
+- the biggest number first :: len(nums) > 1 and nums[0] == max(nums) :: find_prefix_score([5, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass, with a `max` of two numbers and an addition per position.
+why_space: The list of n scores.
+hint: Each `conver` value needs the biggest number up to its position, so keep `biggest` as you go.
+hint: Each score is the score before it plus one more `conver` value, so keep a running `total`.
+hint: At every position, update both, then append `total`.
+right: The biggest number so far and the running score are each one step away from their previous values, so the whole list is filled in one pass, with no `max` or `sum` of a slice.
+wrong: `biggest = 0` and `total = 0`. For each `x`: `biggest = max(biggest, x)`, then `total += x + biggest`, then append `total`.
 
-=== task: predict hard
-title: Two passes, one stops early
-code:
+=== task: code hard
+title: Best Time to Buy and Sell Stock III
+leetcode: 123 | Best Time to Buy and Sell Stock III | best-time-to-buy-and-sell-stock-iii
+patterns: passes + build
+prompt: `prices[i]` is the price of a stock on day `i`. You may make at most two transactions, each one buying a share and selling it on a later day, and you must sell before you buy again. Write `max_profit(prices)` that returns the largest total profit you can make.
+
+**Example 1:** `max_profit([3, 3, 5, 0, 0, 3, 1, 4])` returns `6`: buy at 0 and sell at 3, then buy at 1 and sell at 4.
+
+**Example 2:** `max_profit([1, 2, 3, 4, 5])` returns `4`: one transaction is enough.
+
+**Example 3:** `max_profit([7, 6, 4, 3, 1])` returns `0`: it's best not to trade at all.
+
+**Constraints:** 1 ≤ `len(prices)` ≤ 10⁵, and 0 ≤ `prices[i]` ≤ 10⁵. Aim for O(n) time.
+starter:
 ```python
-def work(nums):
-    steps = 0
-    for x in nums:
-        steps += 1
-    for x in nums:
-        steps += 1
-        if x < 0:
-            break
-    return steps
-
-print(work([1, 2, 3, 4]), work([-1, 2, 3, 4]), work([1, 2, -3, 4]))
+def max_profit(prices):
+    # your code here
+    return 0
 ```
-wrong[8 1 3]: The first loop always runs to the end: 4 steps before the second loop even starts.
-wrong[8 8 8]: The second loop stops at the first negative number.
-wrong[4 1 3]: Both loops add to the same counter: the first adds 4 every time.
-hint: The first loop never stops early. How many steps does it add?
-hint: Where does the second loop stop in each list?
-right: The first pass always adds 4. The second adds 4 (no negative), 1 (stops at -1) or 3 (stops at -3). Totals 8, 5 and 7. At most 2n steps: O(n).
-wrong: 4 + 4 = 8, 4 + 1 = 5, and 4 + 3 = 7.
-
-=== task: predict hard
-title: A search inside a loop
-code:
+solution:
 ```python
-def count_comparisons(nums):
-    seen = []
-    comps = 0
-    for x in nums:
-        for y in seen:
-            comps += 1
-        seen.append(x)
-    return comps
-
-print(count_comparisons([1, 2, 3, 4]), count_comparisons(list(range(10))))
-```
-wrong[4 10]: The inner loop goes through everything seen so far, and `seen` grows by one each turn: 0 + 1 + 2 + 3 comparisons.
-wrong[16 100]: `seen` starts empty and grows, so the inner loop runs 0, 1, 2, 3 times, not 4 times every turn.
-wrong[6 10]: For 10 items it's 0 + 1 + ... + 9 = 45.
-hint: How long is `seen` on each turn of the outer loop?
-hint: Add up the lengths: 0, 1, 2, 3...
-right: The inner loop runs 0, 1, 2, 3 times: 6 in all, and 45 for 10 items. That's n(n - 1) / 2: a pass inside a pass is O(n²), as with `x in seen` on a list.
-wrong: For 4 items: 0 + 1 + 2 + 3 = 6. For 10: 0 + 1 + ... + 9 = 45.
-
-=== task: cells hard
-title: A full pass and a half pass
-prompt: What does `f(n)` return for each value of n?
-code:
-```python
-def f(n):
-    steps = 0
+def max_profit(prices):
+    n = len(prices)
+    left = [0] * n
+    lowest = prices[0]
+    for i in range(1, n):
+        lowest = min(lowest, prices[i])
+        left[i] = max(left[i - 1], prices[i] - lowest)
+    right = [0] * (n + 1)
+    highest = prices[n - 1]
+    for i in range(n - 2, -1, -1):
+        highest = max(highest, prices[i])
+        right[i] = max(right[i + 1], highest - prices[i])
+    best = 0
     for i in range(n):
-        steps += 1
-    for i in range(n // 2):
-        steps += 1
-    return steps
+        best = max(best, left[i] + right[i + 1])
+    return best
 ```
-labels: f(2) | f(3) | f(10) | f(100)
-answer: 3 | 4 | 15 | 150
-wrong[3 | 5 | 15 | 150]: `n // 2` rounds down: for n = 3 the second loop runs 1 time, so the total is 3 + 1 = 4.
-wrong[2 | 3 | 10 | 100]: The second loop adds another n // 2 steps.
-hint: The first loop adds n, the second n // 2.
-hint: 3 // 2 is 1.
-right: n + n // 2: 2 + 1 = 3, 3 + 1 = 4, 10 + 5 = 15, 100 + 50 = 150. About 1.5n: still O(n).
-wrong: Add n and n // 2: 3, 4, 15 and 150.
-
-=== task: mcq hard
-title: One loop or three?
-prompt: Function A makes three separate passes over a list, doing one thing in each. Function B makes one pass, doing all three things for each item. How do their Big O compare?
-* Both are O(n): about 3n steps either way :: Right. The same work is spread over one loop or three. Either way it grows in proportion to n.
-- A is O(n³), because it has three loops :: Three loops **one after the other** add up (3n). Only loops **inside** each other multiply.
-- B is O(1), because it has only one loop :: One loop over n items still takes n steps.
-- A is O(3n), so it's slower than O(n) :: Big O drops constant factors: O(3n) is O(n).
-hint: Do the three loops sit one after the other, or inside each other?
-hint: Big O drops constant factors.
-right: Three passes of n, or one pass doing 3 things per item, both take about 3n steps. Big O drops the 3: both are O(n).
-wrong: A takes n + n + n = 3n steps and B about 3 steps per item, 3n too. Constant factors don't count: both are O(n).
-
-=== task: multi hard
-title: Linear, or hiding something?
-prompt: `nums` is a list of n numbers, `words` a list of n short strings, and `seen` a set. Choose **every** piece of code that is O(n).
-* `for x in nums:` with `if x in seen: ...` inside :: Right. `in` on a set is O(1), so the loop is n × 1.
-- `for x in nums:` with `if x in nums: ...` inside :: `in` on a list is a hidden pass: n × n, O(n²).
-* `"".join(words)` :: Right. Joining visits each word once.
-* `for i in range(len(nums)): nums[i] *= 2` :: Right. One O(1) change per position.
-- `for x in nums:` with `total = sum(nums)` inside :: `sum` is a full pass, repeated on every turn: O(n²).
-* `lo, hi = 0, len(nums) - 1` and then `while lo < hi: lo += 1` and `hi -= 1` :: Right. The two ends move towards each other, so the loop runs about n / 2 times.
-hint: For each loop, ask how much work happens inside one turn.
-hint: Four of the six are O(n).
-right: A loop with O(1) work inside is O(n): set lookups, index updates, and two ends meeting in the middle. `join` makes one pass. A list search or `sum` inside the loop makes it O(n²).
-wrong: O(n): the set check in a loop, `join`, the index loop, and the two pointers meeting. O(n²): `x in nums` and `sum(nums)` inside a loop, because each repeats a whole pass.
-
-=== task: parsons hard
-title: Smallest and biggest together
-prompt: Arrange the lines so that `min_max` finds the smallest and biggest numbers in one pass, and the program prints:
-
-```output
-(-2, 9)
-```
-
-Not every line is needed.
-lines:
+tests:
+- max_profit([3, 3, 5, 0, 0, 3, 1, 4])
+- max_profit([1, 2, 3, 4, 5])
+- max_profit([7, 6, 4, 3, 1])
+- max_profit([1])
+- max_profit([1, 5, 2, 8])
+- max_profit([i % 10 for i in range(300)])
+fail[2]: Buying on day 0 and selling on day 4 makes 4. Splitting that rise into two transactions can't make more.
+fail[3]: The price only falls, so the best is not to trade: 0.
+fail[4]: One day: there's no time for a transaction.
+fail[5]: Buy at 1 and sell at 5, then buy at 2 and sell at 8: 4 + 6 = 10.
+fail[6]: The price climbs from 0 to 9 again and again, and each of the two transactions makes 9.
+speed: setup=prices = [i % 10 for i in range(n)] | call=max_profit(prices) | target=O(n)
+slow:
 ```python
-def min_max(nums):
-    lo = nums[0]
-    hi = nums[0]
+def best_one(prices, lo, hi):
+    best = 0
+    lowest = None
+    for i in range(lo, hi):
+        if lowest is None or prices[i] < lowest:
+            lowest = prices[i]
+        best = max(best, prices[i] - lowest)
+    return best
+
+def max_profit(prices):
+    best = 0
+    for i in range(len(prices) + 1):
+        best = max(best, best_one(prices, 0, i) + best_one(prices, i, len(prices)))
+    return best
+```
+fail[speed]: Trying every day as the border between the two transactions, and working out each side from scratch, is a pass inside a loop: O(n²). Build the best single profit up to each day from the left, and from each day on from the right.
+edges:
+- one day :: len(prices) == 1 :: max_profit([5])
+- prices that never rise :: len(prices) > 1 and all(prices[i] >= prices[i + 1] for i in range(len(prices) - 1)) :: max_profit([4, 4, 2])
+- two separate rises :: len(prices) > 1 and max_profit(prices) > max([prices[j] - prices[i] for i in range(len(prices)) for j in range(i, len(prices))]) :: max_profit([1, 3, 2, 6])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: Three passes: one from the left, one from the right, and one that combines them.
+why_space: Two lists of about n best profits.
+hint: The two transactions are separated by some day: the first one ends on or before it, and the second one starts after it. For each possible border, you need the best single transaction on each side.
+hint: In a pass from the left, `left[i]` is the best profit from one transaction within days 0 to `i`. Keep the lowest price so far: `left[i] = max(left[i - 1], prices[i] - lowest)`.
+hint: In a pass from the right, `right[i]` is the best within days `i` to the end, keeping the highest price so far. Make `right` one longer, with `right[n] = 0` for no second transaction. The answer is the largest `left[i] + right[i + 1]`.
+right: Each list sums up one side of every possible border, built in one pass each, so trying all n borders is a third pass with O(1) work per day.
+wrong: Fill `left` from the left with the lowest price so far, and `right`, one longer and ending in 0, from the right with the highest price so far. Return the largest `left[i] + right[i + 1]`.
+
+=== task: code hard
+title: Maximum Sum of 3 Non-Overlapping Subarrays
+leetcode: 689 | Maximum Sum of 3 Non-Overlapping Subarrays | maximum-sum-of-3-non-overlapping-subarrays
+patterns: hidden + build
+prompt: Write `max_sum_of_three_subarrays(nums, k)` that finds three stretches of `nums`, each of exactly `k` numbers next to each other, that don't overlap and have the largest possible total. Return their starting positions as a list, in increasing order. When several choices give the same total, return the one that comes first: the smallest first position, then the smallest second, then the smallest third.
+
+**Example 1:** `max_sum_of_three_subarrays([1, 2, 1, 2, 6, 7, 5, 1], 2)` returns `[0, 3, 5]`: the stretches `[1, 2]`, `[2, 6]` and `[7, 5]` add up to 23. Starting at position 1 instead of 0 gives the same total, but 0 comes first.
+
+**Example 2:** `max_sum_of_three_subarrays([1, 2, 1, 2, 1, 2, 1, 2, 1], 2)` returns `[0, 2, 4]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 2 × 10⁴, 1 ≤ `nums[i]` < 2¹⁶, and 1 ≤ `k` ≤ `len(nums) / 3`. Aim for O(n) time.
+starter:
+```python
+def max_sum_of_three_subarrays(nums, k):
+    # your code here
+    return []
+```
+solution:
+```python
+def max_sum_of_three_subarrays(nums, k):
+    n = len(nums)
+    windows = []
+    total = 0
+    for i in range(n):
+        total += nums[i]
+        if i >= k:
+            total -= nums[i - k]
+        if i >= k - 1:
+            windows.append(total)
+    m = len(windows)
+    left = [0] * m
+    for i in range(1, m):
+        if windows[i] > windows[left[i - 1]]:
+            left[i] = i
+        else:
+            left[i] = left[i - 1]
+    right = [m - 1] * m
+    for i in range(m - 2, -1, -1):
+        if windows[i] >= windows[right[i + 1]]:
+            right[i] = i
+        else:
+            right[i] = right[i + 1]
+    best = -1
+    answer = []
+    for j in range(k, m - k):
+        a = left[j - k]
+        c = right[j + k]
+        s = windows[a] + windows[j] + windows[c]
+        if s > best:
+            best = s
+            answer = [a, j, c]
+    return answer
+```
+tests:
+- max_sum_of_three_subarrays([1, 2, 1, 2, 6, 7, 5, 1], 2)
+- max_sum_of_three_subarrays([1, 2, 1, 2, 1, 2, 1, 2, 1], 2)
+- max_sum_of_three_subarrays([1, 1, 1], 1)
+- max_sum_of_three_subarrays([4, 3, 2, 1, 1, 1], 2)
+- max_sum_of_three_subarrays([9, 1, 1, 9, 1, 1, 9], 1)
+- max_sum_of_three_subarrays([(i * 7) % 13 + 1 for i in range(1000)], 50)
+fail[2]: Every stretch of 2 adds up to 3, so the earliest choice wins: positions 0, 2 and 4.
+fail[3]: Three stretches of one number each, and there's only one way to fit them.
+fail[4]: 6 numbers and stretches of 2: only positions 0, 2 and 4 fit.
+fail[5]: The three 9s, at positions 0, 3 and 6.
+fail[6]: With these 1000 numbers and stretches of 50, the best stretches start at positions 1, 53 and 105.
+speed: setup=nums = [(i * 7) % 13 + 1 for i in range(n)] | call=max_sum_of_three_subarrays(nums, n // 10) | target=O(n)
+slow:
+```python
+def max_sum_of_three_subarrays(nums, k):
+    m = len(nums) - k + 1
+    windows = []
+    for i in range(m):
+        windows.append(sum(nums[i:i + k]))
+    left = [0] * m
+    for i in range(1, m):
+        if windows[i] > windows[left[i - 1]]:
+            left[i] = i
+        else:
+            left[i] = left[i - 1]
+    right = [m - 1] * m
+    for i in range(m - 2, -1, -1):
+        if windows[i] >= windows[right[i + 1]]:
+            right[i] = i
+        else:
+            right[i] = right[i + 1]
+    best = -1
+    answer = []
+    for j in range(k, m - k):
+        a = left[j - k]
+        c = right[j + k]
+        s = windows[a] + windows[j] + windows[c]
+        if s > best:
+            best = s
+            answer = [a, j, c]
+    return answer
+```
+fail[speed]: `sum(nums[i:i + k])` for every position is a hidden pass of `k` steps each time: O(n × k), and `k` can be n / 3. Slide the window instead: add the number that comes in, and take away the one that leaves.
+edges:
+- stretches of one number :: k == 1 :: max_sum_of_three_subarrays([3, 1, 2, 4], 1)
+- only one way to fit them :: k > 1 and len(nums) == 3 * k :: max_sum_of_three_subarrays([1, 2, 3, 4, 5, 6], 2)
+- every stretch the same :: k > 1 and len(nums) > 3 * k and len(set(nums)) == 1 :: max_sum_of_three_subarrays([2] * 7, 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass makes the window sums, two passes find the best window on each side, and one more tries every middle window.
+why_space: Three lists of about n entries.
+hint: Make `windows`, where `windows[i]` is the sum of the `k` numbers from position `i`. Keep a running total: add `nums[i]`, and take away `nums[i - k]` once the window is full.
+hint: If the middle stretch starts at position `j`, the left one must start at or before `j - k`, and the right one at or after `j + k`. Build `left[i]`, the start of the best window from 0 to `i`, with a pass from the left, and `right[i]`, the start of the best window from `i` to the end, with a pass from the right.
+hint: For ties, `left` keeps the earliest start, so only replace it on `>`. `right` keeps the earliest too, so replace it on `>=` while walking from the right. Then try every middle `j` from `k` to `len(windows) - k - 1`, keeping the first that gives the largest total.
+right: Running window sums replace a `sum` per window, and the best windows on each side are ready in lists, so each middle position costs O(1) and the whole search is O(n).
+wrong: Build `windows` with a running total, `left` (best from the left, replacing on `>`) and `right` (best from the right, replacing on `>=`). For each middle `j`, total `windows[left[j - k]] + windows[j] + windows[right[j + k]]`, and keep the first largest as `[left[j - k], j, right[j + k]]`.
+
+=== task: code hard
+title: Minimum Swaps To Make Sequences Increasing
+leetcode: 801 | Minimum Swaps To Make Sequences Increasing | minimum-swaps-to-make-sequences-increasing
+patterns: pass
+prompt: `nums1` and `nums2` have the same length. In one move, you can swap `nums1[i]` with `nums2[i]`, at any position `i`. Write `min_swap(nums1, nums2)` that returns the smallest number of moves that make both lists **strictly increasing**. The lists are such that it's always possible.
+
+**Example 1:** `min_swap([1, 3, 5, 4], [1, 2, 3, 7])` returns `1`: swapping at position 3 gives `[1, 3, 5, 7]` and `[1, 2, 3, 4]`.
+
+**Example 2:** `min_swap([0, 3, 5, 8, 9], [2, 1, 4, 6, 9])` returns `1`.
+
+**Constraints:** 2 ≤ `len(nums1)` ≤ 10⁵, and 0 ≤ `nums1[i]`, `nums2[i]` ≤ 2 × 10⁵. Aim for O(n) time.
+starter:
+```python
+def min_swap(nums1, nums2):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_swap(nums1, nums2):
+    n = len(nums1)
+    keep = 0
+    swap = 1
+    for i in range(1, n):
+        new_keep = n
+        new_swap = n
+        if nums1[i - 1] < nums1[i] and nums2[i - 1] < nums2[i]:
+            new_keep = min(new_keep, keep)
+            new_swap = min(new_swap, swap + 1)
+        if nums1[i - 1] < nums2[i] and nums2[i - 1] < nums1[i]:
+            new_keep = min(new_keep, swap)
+            new_swap = min(new_swap, keep + 1)
+        keep = new_keep
+        swap = new_swap
+    return min(keep, swap)
+```
+tests:
+- min_swap([1, 3, 5, 4], [1, 2, 3, 7])
+- min_swap([0, 3, 5, 8, 9], [2, 1, 4, 6, 9])
+- min_swap([5, 2, 7, 4], [1, 6, 3, 8])
+- min_swap([3, 2], [1, 4])
+- min_swap([1, 2, 3], [4, 5, 6])
+- min_swap([i + 1000 if i % 3 == 0 else i for i in range(1000)], [i if i % 3 == 0 else i + 1000 for i in range(1000)])
+fail[2]: Swapping at position 1 gives `[0, 1, 5, 8, 9]` and `[2, 3, 4, 6, 9]`.
+fail[3]: Swapping at positions 0 and 2 gives `[1, 2, 3, 4]` and `[5, 6, 7, 8]`. Swapping at 1 and 3 works too, but one swap isn't enough.
+fail[4]: Swapping at either position works: one move.
+fail[5]: Both lists are already strictly increasing: 0 moves.
+fail[6]: Every third position holds the big number in `nums1`. Swapping those 334 positions back costs less than swapping the other 666.
+edges:
+- already increasing :: min_swap(nums1, nums2) == 0 :: min_swap([1, 2], [3, 4])
+- one swap needed :: min_swap(nums1, nums2) == 1 :: min_swap([4, 2], [1, 5])
+- several swaps needed :: min_swap(nums1, nums2) >= 2 :: min_swap([5, 2, 7, 4], [1, 6, 3, 8])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with a few comparisons per position.
+why_space: Four numbers: the fewest moves with and without a swap, before and after each position.
+hint: Decide position by position, carrying two numbers: `keep`, the fewest moves so far if position `i - 1` is **not** swapped, and `swap`, the fewest if it **is**. Start with `keep = 0` and `swap = 1`.
+hint: If `nums1[i - 1] < nums1[i]` and `nums2[i - 1] < nums2[i]`, position `i` can do the same as position `i - 1`: keep after a keep (`keep`), or swap after a swap (`swap + 1`).
+hint: If `nums1[i - 1] < nums2[i]` and `nums2[i - 1] < nums1[i]`, it can do the opposite: swap after a keep (`keep + 1`), or keep after a swap (`swap`). Take the smallest of whatever is allowed, starting the new values at something too big, like `n`.
+right: Whether position `i` works only depends on position `i - 1` and on whether each one was swapped, so two running counts carry everything the next step needs: O(n) instead of trying 2ⁿ ways to swap.
+wrong: `keep, swap = 0, 1`. For each `i` from 1, start `new_keep` and `new_swap` at `n`. If the same choice works, `new_keep = keep` and `new_swap = swap + 1`. If the opposite works, `new_keep = min(new_keep, swap)` and `new_swap = min(new_swap, keep + 1)`. Return `min(keep, swap)` at the end.
+
+=== task: code hard
+title: Minimum Number of Taps to Open to Water a Garden
+leetcode: 1326 | Minimum Number of Taps to Open to Water a Garden | minimum-number-of-taps-to-open-to-water-a-garden
+patterns: best + build
+prompt: A garden runs along a line from 0 to `n`, with a tap at each of the points 0 to `n`. Tap `i`, when it's open, waters the stretch from `i - ranges[i]` to `i + ranges[i]`. Write `min_taps(n, ranges)` that returns the smallest number of taps that water the whole garden, or -1 if that's impossible.
+
+**Example 1:** `min_taps(5, [3, 4, 1, 1, 0, 0])` returns `1`: tap 1 waters from -3 to 5, the whole garden.
+
+**Example 2:** `min_taps(3, [0, 0, 0, 0])` returns `-1`.
+
+**Constraints:** 1 ≤ `n` ≤ 10⁴, and 0 ≤ `ranges[i]` ≤ 100. Aim for O(n) time.
+starter:
+```python
+def min_taps(n, ranges):
+    # your code here
+    return -1
+```
+solution:
+```python
+def min_taps(n, ranges):
+    reach = [0] * (n + 1)
+    for i in range(n + 1):
+        left = max(0, i - ranges[i])
+        reach[left] = max(reach[left], i + ranges[i])
+    taps = 0
+    end = 0
+    farthest = 0
+    for i in range(n):
+        farthest = max(farthest, reach[i])
+        if i == end:
+            if farthest <= i:
+                return -1
+            taps += 1
+            end = farthest
+    return taps
+```
+tests:
+- min_taps(5, [3, 4, 1, 1, 0, 0])
+- min_taps(3, [0, 0, 0, 0])
+- min_taps(1, [1, 0])
+- min_taps(4, [0, 1, 0, 1, 0])
+- min_taps(2, [0, 0, 1])
+- min_taps(1000, [i % 2 for i in range(1001)])
+fail[2]: Each tap waters only its own point, so the stretches between the points stay dry.
+fail[3]: Tap 0 waters from -1 to 1: the whole garden.
+fail[4]: Tap 1 waters 0 to 2, and tap 3 waters 2 to 4.
+fail[5]: Tap 2 waters 1 to 3, but nothing waters the stretch from 0 to 1.
+fail[6]: Each odd tap waters 2 units, so it takes 500 of them to cover 1000.
+edges:
+- one tap covers everything :: min_taps(n, ranges) == 1 :: min_taps(4, [0, 0, 2, 0, 0])
+- impossible :: min_taps(n, ranges) == -1 :: min_taps(2, [1, 0, 0])
+- several taps needed :: min_taps(n, ranges) > 1 :: min_taps(4, [1, 0, 1, 0, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass fills `reach`, and one more chooses the taps.
+why_space: The list `reach`, with n + 1 entries.
+hint: Turn each tap into the stretch it waters, cut off at 0 on the left. For every starting point, keep the furthest end of a stretch that starts there: `reach[left] = max(reach[left], i + ranges[i])`.
+hint: Now walk from 0. Keep `end`, how far the taps chosen so far water, and `farthest`, how far one more tap could reach, among the stretches that start at or before where you are.
+hint: When you reach `end` before the garden is finished, you must open another tap: count it and set `end = farthest`. If `farthest` doesn't get past where you are, return -1.
+right: Keeping only the furthest reach from each starting point, and then always choosing the tap that reaches furthest when you run out, waters the garden with the fewest taps in two passes.
+wrong: Fill `reach` from the cut-off stretches. Then for `i` in `range(n)`: `farthest = max(farthest, reach[i])`; when `i == end`, return -1 if `farthest <= i`, otherwise count a tap and set `end = farthest`. Return the count.
+
+=== task: code hard
+title: Maximum Score Of Spliced Array
+leetcode: 2321 | Maximum Score Of Spliced Array | maximum-score-of-spliced-array
+patterns: best + pass
+prompt: `nums1` and `nums2` have the same length. You may choose a stretch of positions, from `left` to `right`, and swap `nums1[left:right + 1]` with `nums2[left:right + 1]`, or you may swap nothing. The **score** is the larger of `sum(nums1)` and `sum(nums2)` afterwards. Write `maximums_spliced_array(nums1, nums2)` that returns the largest possible score.
+
+**Example 1:** `maximums_spliced_array([60, 60, 60], [10, 90, 10])` returns `210`: swapping position 1 makes `nums1` `[60, 90, 60]`.
+
+**Example 2:** `maximums_spliced_array([20, 40, 20, 70, 30], [50, 20, 50, 40, 20])` returns `220`.
+
+**Example 3:** `maximums_spliced_array([7, 11, 13], [1, 1, 1])` returns `31`: swapping nothing.
+
+**Constraints:** 1 ≤ `len(nums1)` ≤ 10⁵, and 1 ≤ `nums1[i]`, `nums2[i]` ≤ 10⁴. Aim for O(n) time.
+starter:
+```python
+def maximums_spliced_array(nums1, nums2):
+    # your code here
+    return 0
+```
+solution:
+```python
+def best_gain(a, b):
+    best = 0
+    current = 0
+    for i in range(len(a)):
+        current = max(0, current + b[i] - a[i])
+        best = max(best, current)
+    return best
+
+def maximums_spliced_array(nums1, nums2):
+    first = sum(nums1) + best_gain(nums1, nums2)
+    second = sum(nums2) + best_gain(nums2, nums1)
+    return max(first, second)
+```
+tests:
+- maximums_spliced_array([60, 60, 60], [10, 90, 10])
+- maximums_spliced_array([20, 40, 20, 70, 30], [50, 20, 50, 40, 20])
+- maximums_spliced_array([7, 11, 13], [1, 1, 1])
+- maximums_spliced_array([5], [9])
+- maximums_spliced_array([1, 9, 1], [9, 1, 9])
+- maximums_spliced_array([(i * 7) % 11 + 1 for i in range(400)], [(i * 5) % 13 + 1 for i in range(400)])
+fail[2]: Swapping positions 0 to 2 adds 30 - 20 + 30 = 40 to `nums1`'s total of 180.
+fail[3]: Any swap makes `nums1` smaller, and `nums2` can't catch up: swap nothing, 31.
+fail[4]: `nums2` already adds up to 9, and swapping would only move the 9 to `nums1`.
+fail[5]: Swapping the middle position gives `nums2` three 9s: 27.
+fail[6]: With these 400 numbers, the best swap gives 2807.
+speed: setup=a = [(i * 7) % 11 + 1 for i in range(n)]; b = [(i * 5) % 13 + 1 for i in range(n)] | call=maximums_spliced_array(a, b) | target=O(n)
+slow:
+```python
+def maximums_spliced_array(nums1, nums2):
+    s1 = sum(nums1)
+    s2 = sum(nums2)
+    best = max(s1, s2)
+    for l in range(len(nums1)):
+        gain1 = 0
+        gain2 = 0
+        for r in range(l, len(nums1)):
+            gain1 += nums2[r] - nums1[r]
+            gain2 += nums1[r] - nums2[r]
+            best = max(best, s1 + gain1, s2 + gain2)
+    return best
+```
+fail[speed]: Trying every stretch is a loop inside a loop: O(n²). Swapping a stretch changes `nums1`'s total by the sum of `nums2[i] - nums1[i]` over it, so look for the best stretch of those differences in one pass, as in Maximum Subarray.
+edges:
+- swapping nothing is best :: maximums_spliced_array(nums1, nums2) == max(sum(nums1), sum(nums2)) :: maximums_spliced_array([5, 5], [1, 1])
+- the gain goes to nums1 :: maximums_spliced_array(nums1, nums2) > max(sum(nums1), sum(nums2)) and maximums_spliced_array(nums1, nums2) == sum(nums1) + best_gain(nums1, nums2) :: maximums_spliced_array([60, 60, 60], [10, 90, 10])
+- the gain goes to nums2 :: maximums_spliced_array(nums1, nums2) > max(sum(nums1), sum(nums2)) and maximums_spliced_array(nums1, nums2) != sum(nums1) + best_gain(nums1, nums2) :: maximums_spliced_array([10, 90, 10], [60, 60, 60])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: Two `sum` calls, and two passes of Kadane's algorithm, one for each direction.
+why_space: A few numbers.
+hint: Swapping the stretch from `left` to `right` changes `sum(nums1)` by the sum of `nums2[i] - nums1[i]` over the stretch. So the best for `nums1` is its total plus the best sum of a stretch of those differences, or plus 0 for swapping nothing.
+hint: That's Maximum Subarray, on the differences: carry `current = max(0, current + b[i] - a[i])` and the best `current` seen.
+hint: Do it twice, once for `nums1` gaining from `nums2` and once the other way round, and return the larger score. A helper `best_gain(a, b)` keeps it tidy.
+right: Thinking in differences turns "which stretch should I swap?" into "which stretch of differences adds up to the most?", and one pass answers that for each list.
+wrong: Write `best_gain(a, b)` with Kadane's algorithm on `b[i] - a[i]`, never going below 0. Return `max(sum(nums1) + best_gain(nums1, nums2), sum(nums2) + best_gain(nums2, nums1))`.
+
+=== task: code hard
+title: Process String with Special Operations II
+leetcode: 3614 | Process String with Special Operations II | process-string-with-special-operations-ii
+patterns: search + passes
+prompt: Start with an empty string `result`, and go through `s` from left to right:
+
+- a lowercase letter is added to the end of `result`,
+- `"*"` removes the last character of `result`, if there is one,
+- `"#"` adds a copy of `result` to its own end,
+- `"%"` reverses `result`.
+
+Write `process_str(s, k)` that returns the character at position `k` of the final `result`, or `"."` if `result` has `k` characters or fewer.
+
+**Example 1:** `process_str("a#b%*", 1)` returns `"a"`: `result` goes `"a"`, `"aa"`, `"aab"`, `"baa"`, then `"ba"`.
+
+**Example 2:** `process_str("cd%#*#", 3)` returns `"d"`.
+
+**Example 3:** `process_str("z*#", 0)` returns `"."`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, 0 ≤ `k` ≤ 10¹⁵, and the final `result` has at most 10¹⁵ characters. Aim for O(n) time: `result` can be far too long to build.
+starter:
+```python
+def process_str(s, k):
+    # your code here
+    return "."
+```
+solution:
+```python
+def process_str(s, k):
+    lengths = []
+    size = 0
+    for c in s:
+        if c == "*":
+            size = max(0, size - 1)
+        elif c == "#":
+            size *= 2
+        elif c != "%":
+            size += 1
+        lengths.append(size)
+    if k >= size:
+        return "."
+    for i in range(len(s) - 1, -1, -1):
+        c = s[i]
+        before = 0
+        if i > 0:
+            before = lengths[i - 1]
+        if c == "#":
+            if k >= before:
+                k -= before
+        elif c == "%":
+            k = before - 1 - k
+        elif c != "*":
+            if k == before:
+                return c
+    return "."
+```
+tests:
+- process_str("a#b%*", 1)
+- process_str("cd%#*#", 3)
+- process_str("z*#", 0)
+- process_str("ab%", 0)
+- process_str("abc*", 2)
+- process_str("ab" + "#" * 30 + "%", 3 * 10 ** 8)
+fail[2]: `result` goes `"c"`, `"cd"`, `"dc"`, `"dcdc"`, `"dcd"`, then `"dcddcd"`, which has `"d"` at position 3.
+fail[3]: The `"*"` empties `result`, and copying an empty string leaves it empty, so there's no position 0.
+fail[4]: `"ab"` reversed is `"ba"`.
+fail[5]: `"abc"` loses its `"c"`, so position 2 is past the end.
+fail[6]: `"ab"` doubled 30 times has over 2 billion characters, and then it's reversed. Follow the position backwards instead of building the string.
+error[MemoryError]: `result` can have up to 10¹⁵ characters, far too many to build. Work out only the lengths, then follow position `k` backwards through the operations.
+error[TimeoutError]: `result` can have up to 10¹⁵ characters, far too many to build. Work out only the lengths, then follow position `k` backwards through the operations.
+edges:
+- k past the end :: process_str(s, k) == "." :: process_str("ab*", 1)
+- a reversal that matters :: process_str(s, k) != "." and "%" in s :: process_str("ab%", 1)
+- copies without a reversal :: process_str(s, k) != "." and "%" not in s and "#" in s :: process_str("ab#", 3)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass works out the lengths, and one pass backwards follows the position, with O(1) work per character.
+why_space: The list of n lengths. (Undoing each operation's effect on the length while going backwards would make it O(1).)
+hint: Don't build `result`. In a first pass, work out only its length after each character: a letter adds 1, `"*"` takes 1 off (not below 0), `"#"` doubles it, and `"%"` leaves it alone. Save the lengths in a list.
+hint: If `k` is at least the final length, return `"."`. Otherwise walk backwards through `s`, keeping track of where position `k` was before each operation. Let `before` be the length before the operation.
+hint: Before a `"#"`, a position in the copied half was at `k - before`. Before a `"%"`, it was at `before - 1 - k`. A `"*"` doesn't move it. At a letter, if `k == before`, that letter is the answer, since it was added at position `before`.
+right: A pass forward gives every length, and a search backwards follows one position through the operations, so a string of 10¹⁵ characters is answered in O(n) without being built.
+wrong: Save the length after each character in a forward pass, and return `"."` if `k` is too big. Then for `i` from the end, with `before` the length before `s[i]`: a `"#"` subtracts `before` from `k` when `k >= before`, a `"%"` sets `k = before - 1 - k`, and a letter is the answer when `k == before`.
+
+=== task: code hard
+title: Trionic Array II
+leetcode: 3640 | Trionic Array II | trionic-array-ii
+patterns: pass
+prompt: A stretch of `nums` from position `l` to position `r` is **trionic** if there are positions `p` and `q` with `l < p < q < r` such that the numbers from position `l` to `p` strictly increase, from `p` to `q` strictly decrease, and from `q` to `r` strictly increase. Write `max_sum_trionic(nums)` that returns the largest sum of a trionic stretch. There's always at least one.
+
+**Example 1:** `max_sum_trionic([0, -2, -1, -3, 0, 2, -1])` returns `-4`: the stretch -2, -1, -3, 0, 2 rises to -1, falls to -3 and rises to 2.
+
+**Example 2:** `max_sum_trionic([1, 4, 2, 7])` returns `14`.
+
+**Constraints:** 4 ≤ `len(nums)` ≤ 10⁵, and -10⁹ ≤ `nums[i]` ≤ 10⁹. Aim for O(n) time.
+starter:
+```python
+def max_sum_trionic(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def max_sum_trionic(nums):
+    low = -10 ** 18
+    inc = low
+    dec = low
+    tri = low
+    best = low
+    for i in range(1, len(nums)):
+        a = nums[i - 1]
+        b = nums[i]
+        if b > a:
+            tri = max(tri, dec) + b
+            inc = max(inc, a) + b
+            dec = low
+        elif b < a:
+            dec = max(dec, inc) + b
+            inc = low
+            tri = low
+        else:
+            inc = low
+            dec = low
+            tri = low
+        best = max(best, tri)
+    return best
+```
+tests:
+- max_sum_trionic([0, -2, -1, -3, 0, 2, -1])
+- max_sum_trionic([1, 4, 2, 7])
+- max_sum_trionic([1, 2, 1, 2])
+- max_sum_trionic([5, 6, 4, 5, 6, 1])
+- max_sum_trionic([1, 3, 2, 2, 3, 1, 2])
+- max_sum_trionic([(i * 7) % 10 - 5 for i in range(1000)])
+fail[2]: The whole list: 1 up to 4, down to 2, up to 7.
+fail[3]: The whole list: 1, 2 up, then 1 down, then 2 up.
+fail[4]: 5, 6 rise, 6, 4 fall and 4, 5, 6 rise: 26. The 1 at the end isn't part of a rise.
+fail[5]: Equal neighbours break every pattern, so the best is 2, 3, 1, 2 at the end: 8.
+fail[6]: With these 1000 numbers, the best trionic stretch adds up to 0.
+edges:
+- the whole list is trionic :: max_sum_trionic(nums) == sum(nums) :: max_sum_trionic([1, 3, 2, 4])
+- equal neighbours :: max_sum_trionic(nums) != sum(nums) and any(nums[i] == nums[i + 1] for i in range(len(nums) - 1)) :: max_sum_trionic([5, 5, 1, 3, 2, 4])
+- a negative start worth leaving out :: max_sum_trionic(nums) != sum(nums) and not any(nums[i] == nums[i + 1] for i in range(len(nums) - 1)) and min(nums) < 0 :: max_sum_trionic([-9, 1, 3, 2, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with a comparison and a few `max` calls per position.
+why_space: Four running values.
+hint: Walk from left to right. For each position, keep the best sum of three kinds of stretch that **end** there: `inc`, rising for at least 2 numbers; `dec`, rising then falling; and `tri`, the whole trionic shape.
+hint: When `nums[i] > nums[i - 1]`: `tri = max(tri, dec) + nums[i]` (go on rising, or start the last rise after a fall), `inc = max(inc, nums[i - 1]) + nums[i]` (go on rising, or start fresh from the number before), and `dec` becomes impossible.
+hint: When `nums[i] < nums[i - 1]`: `dec = max(dec, inc) + nums[i]`, and `inc` and `tri` become impossible. When they're equal, all three are impossible. Use a very small number, like `-10 ** 18`, to mean "impossible", and keep the best `tri`.
+right: Each kind of stretch ending at position `i` only depends on the kinds ending at `i - 1`, so three running values carry the whole search, instead of trying every `l`, `p`, `q` and `r`.
+wrong: Keep `inc`, `dec` and `tri`, all starting at `-10 ** 18`. On a rise, update `tri` from `max(tri, dec)` and `inc` from `max(inc, nums[i - 1])`, and reset `dec`. On a fall, update `dec` from `max(dec, inc)`, and reset `inc` and `tri`. On equal numbers, reset all three. Return the best `tri`.
+
+=== task: code hard
+title: Number of Stable Subsequences
+leetcode: 3686 | Number of Stable Subsequences | number-of-stable-subsequences
+patterns: pass
+prompt: A subsequence of `nums` keeps some of its numbers, in their order. It's **stable** if it never has three numbers in a row (in the subsequence) that are all even or all odd. Write `count_stable_subsequences(nums)` that returns how many stable subsequences there are, not counting the empty one, modulo `10 ** 9 + 7`. Subsequences that use different positions count as different.
+
+**Example 1:** `count_stable_subsequences([1, 3, 5])` returns `6`: every subsequence except `[1, 3, 5]` itself.
+
+**Example 2:** `count_stable_subsequences([2, 3, 4, 2])` returns `14`: all 15 except `[2, 4, 2]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 1 ≤ `nums[i]` ≤ 10⁵. Aim for O(n) time.
+starter:
+```python
+def count_stable_subsequences(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def count_stable_subsequences(nums):
+    mod = 10 ** 9 + 7
+    even1 = 0
+    even2 = 0
+    odd1 = 0
+    odd2 = 0
     for x in nums:
-        if x < lo:
-            lo = x
-        if x > hi:
-            hi = x
-    return lo, hi
+        if x % 2 == 0:
+            new1 = (1 + odd1 + odd2) % mod
+            new2 = even1
+            even1 = (even1 + new1) % mod
+            even2 = (even2 + new2) % mod
+        else:
+            new1 = (1 + even1 + even2) % mod
+            new2 = odd1
+            odd1 = (odd1 + new1) % mod
+            odd2 = (odd2 + new2) % mod
+    return (even1 + even2 + odd1 + odd2) % mod
+```
+tests:
+- count_stable_subsequences([1, 3, 5])
+- count_stable_subsequences([2, 3, 4, 2])
+- count_stable_subsequences([7])
+- count_stable_subsequences([2, 4])
+- count_stable_subsequences([1, 2, 3, 4])
+- count_stable_subsequences([i % 3 + 1 for i in range(1000)])
+fail[2]: Of the 15 subsequences, only `[2, 4, 2]` has three even numbers in a row.
+fail[3]: One number makes one subsequence.
+fail[4]: `[2]`, `[4]` and `[2, 4]`: two even numbers in a row are still fine.
+fail[5]: Two odd and two even numbers can't make three of a kind in a row, so all 15 count.
+fail[6]: With these 1000 numbers, the count modulo 10 ** 9 + 7 is 428,654,753.
+edges:
+- every number odd :: all(x % 2 == 1 for x in nums) :: count_stable_subsequences([3, 5, 7, 9])
+- every number even :: all(x % 2 == 0 for x in nums) :: count_stable_subsequences([2, 2])
+- both kinds of number :: any(x % 2 == 0 for x in nums) and any(x % 2 == 1 for x in nums) :: count_stable_subsequences([1, 2, 2, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+why_time: One pass, with a fixed number of additions per number.
+why_space: Four running counts.
+hint: What a stable subsequence can take next only depends on how it ends: whether its last number is even or odd, and whether the last one or the last two numbers share that. So there are 4 kinds: ending in one even, two evens, one odd or two odds.
+hint: Keep a count of each kind. An even number `x` can start a new subsequence, extend any subsequence ending in an odd number (the result ends in one even), or extend one ending in exactly one even (the result ends in two evens). It can't extend one ending in two evens.
+hint: Work out the new subsequences from the old counts first, then add them on, since not taking `x` keeps all the old ones. Odd numbers work the same way. Take `% (10 ** 9 + 7)` as you go.
+right: Every subsequence is one of 4 kinds, by its ending, and a new number changes the counts of the kinds with a few additions, so there's no need to list 2ⁿ subsequences.
+wrong: Keep `even1`, `even2`, `odd1` and `odd2`. For an even `x`: `new1 = 1 + odd1 + odd2` and `new2 = even1`, then add them to `even1` and `even2`. Odd numbers mirror this. Return the sum of all four, modulo `10 ** 9 + 7`.
 
-print(min_max([3, -2, 9, 4]))
-```
-distractors:
+=== task: code hard
+title: Count Substrings Divisible By Last Digit
+leetcode: 3448 | Count Substrings Divisible By Last Digit | count-substrings-divisible-by-last-digit
+patterns: pass
+prompt: `s` is a string of digits. Write `count_substrings(s)` that returns how many substrings of `s` are divisible by their own last digit, counting only those whose last digit isn't 0. A substring may start with 0s.
+
+**Example 1:** `count_substrings("12936")` returns `11`: there are 15 substrings, and only `"29"`, `"129"`, `"293"` and `"2936"` fail.
+
+**Example 2:** `count_substrings("5701283")` returns `18`.
+
+**Example 3:** `count_substrings("1010101010")` returns `25`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, and `s` has digits only. Aim for O(n) time: there are about n² / 2 substrings, too many to try.
+starter:
 ```python
-        elif x > lo:
-    return min(nums), max(nums)
+def count_substrings(s):
+    # your code here
+    return 0
 ```
-hint: Start both `lo` and `hi` at the first item.
-hint: Each item is checked against both, with two separate `if`s.
-hint: Return the pair after the loop.
-right: One loop compares each item with both the smallest and the biggest so far: one pass, O(n). `min(nums), max(nums)` would also be O(n), but it makes two passes.
-wrong: `lo` and `hi` start at `nums[0]`; in the loop, `if x < lo: lo = x` and `if x > hi: hi = x`; then `return lo, hi`. `elif x > lo` would compare with the wrong value.
+solution:
+```python
+def count_substrings(s):
+    counts = [[0] * 10 for _ in range(10)]
+    total = 0
+    for c in s:
+        d = int(c)
+        new = [[0] * 10 for _ in range(10)]
+        for m in range(1, 10):
+            for r in range(m):
+                if counts[m][r] > 0:
+                    new[m][(r * 10 + d) % m] += counts[m][r]
+            new[m][d % m] += 1
+        counts = new
+        if d > 0:
+            total += counts[d][0]
+    return total
+```
+tests:
+- count_substrings("12936")
+- count_substrings("5701283")
+- count_substrings("1010101010")
+- count_substrings("0")
+- count_substrings("7")
+- count_substrings("123456789" * 50)
+fail[2]: 12 longer substrings, like `"01"`, `"128"` and `"5701"`, plus the 6 single digits that aren't 0.
+fail[3]: Only substrings ending in 1 count, since 0 can't be a last digit, and every number is divisible by 1.
+fail[4]: The only substring ends in 0, so it doesn't count.
+fail[5]: 7 is divisible by 7.
+fail[6]: With these 450 digits, 53,025 substrings count.
+speed: setup=s = "123456789" * (n // 9) | call=count_substrings(s) | target=O(n) | sizes=200,400,800,1600
+slow:
+```python
+def count_substrings(s):
+    total = 0
+    for i in range(len(s)):
+        value = 0
+        for j in range(i, len(s)):
+            d = int(s[j])
+            value = (value * 10 + d) % 2520
+            if d > 0 and value % d == 0:
+                total += 1
+    return total
+```
+fail[speed]: Trying every substring, even with a running remainder for each start, is a loop inside a loop: O(n²). Instead, carry a table: for each divisor `m` from 1 to 9 and each remainder `r`, how many substrings ending at the previous digit leave remainder `r` when divided by `m`.
+edges:
+- a single digit :: len(s) == 1 :: count_substrings("6")
+- zeros inside :: len(s) > 1 and "0" in s :: count_substrings("102")
+- no zeros :: len(s) > 1 and "0" not in s :: count_substrings("36")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of `s`. The table has a fixed size: 9 divisors, with at most 9 remainders each.
+why_time: Each digit updates the table in about 45 steps, a fixed number, so O(n) in all.
+why_space: Two tables of 10 × 10 counts, whatever n is.
+hint: Adding a digit `d` to the end of a number with remainder `r` (when divided by `m`) gives the remainder `(r * 10 + d) % m`. So a substring's remainder follows from the substring one digit shorter.
+hint: Keep a table `counts[m][r]`: how many substrings ending at the previous digit leave remainder `r` when divided by `m`, for each `m` from 1 to 9. For the next digit `d`, each of them moves to `(r * 10 + d) % m`, and the new single-digit substring adds one at `d % m`.
+hint: After the table is updated for digit `d`, the substrings ending here that count are `counts[d][0]`, if `d` isn't 0. Add them up.
+right: Grouping the substrings that end at the same place by their remainders means one fixed-size table update per digit replaces looking at every substring: O(n).
+wrong: Keep `counts` as a 10 × 10 table of zeros. For each digit `d`, build `new` with `new[m][(r * 10 + d) % m] += counts[m][r]` for every `m` from 1 to 9 and `r` below `m`, plus 1 at `new[m][d % m]`. Then add `new[d][0]` to the total when `d > 0`.
+
+=== task: code hard
+title: Sum of Good Subsequences
+leetcode: 3351 | Sum of Good Subsequences | sum-of-good-subsequences
+patterns: pass
+prompt: A subsequence of `nums` keeps some of its numbers, in their order. It's **good** if every two numbers next to each other in it differ by exactly 1, and a single number counts as good. Write `sum_of_good_subsequences(nums)` that returns the total of all the numbers in all the good subsequences, modulo `10 ** 9 + 7`. Subsequences that use different positions count as different.
+
+**Example 1:** `sum_of_good_subsequences([1, 2, 1])` returns `14`: `[1]`, `[2]`, `[1]`, `[1, 2]`, `[2, 1]` and `[1, 2, 1]` add up to 14.
+
+**Example 2:** `sum_of_good_subsequences([3, 4, 5])` returns `40`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 10⁵, and 0 ≤ `nums[i]` ≤ 10⁵. Aim for O(n) time.
+starter:
+```python
+def sum_of_good_subsequences(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def sum_of_good_subsequences(nums):
+    mod = 10 ** 9 + 7
+    count = {}
+    total = {}
+    for x in nums:
+        c = (1 + count.get(x - 1, 0) + count.get(x + 1, 0)) % mod
+        s = (total.get(x - 1, 0) + total.get(x + 1, 0) + x * c) % mod
+        count[x] = (count.get(x, 0) + c) % mod
+        total[x] = (total.get(x, 0) + s) % mod
+    answer = 0
+    for x in total:
+        answer = (answer + total[x]) % mod
+    return answer
+```
+tests:
+- sum_of_good_subsequences([1, 2, 1])
+- sum_of_good_subsequences([3, 4, 5])
+- sum_of_good_subsequences([5])
+- sum_of_good_subsequences([0, 1])
+- sum_of_good_subsequences([2, 2])
+- sum_of_good_subsequences([i % 5 for i in range(500)])
+fail[2]: `[3]`, `[4]`, `[5]`, `[3, 4]`, `[4, 5]` and `[3, 4, 5]`: 3 + 4 + 5 + 7 + 9 + 12 = 40.
+fail[3]: One number, one subsequence: 5.
+fail[4]: `[0]`, `[1]` and `[0, 1]`: 0 + 1 + 1 = 2.
+fail[5]: The two 2s differ by 0, so only `[2]` and `[2]` are good: 4.
+fail[6]: With these 500 numbers, the total modulo 10 ** 9 + 7 is 977,218,649.
+speed: setup=nums = [i % 5 for i in range(n)] | call=sum_of_good_subsequences(nums) | target=O(n)
+slow:
+```python
+def sum_of_good_subsequences(nums):
+    mod = 10 ** 9 + 7
+    n = len(nums)
+    count = [0] * n
+    total = [0] * n
+    answer = 0
+    for i in range(n):
+        count[i] = 1
+        total[i] = nums[i]
+        for j in range(i):
+            if abs(nums[j] - nums[i]) == 1:
+                count[i] = (count[i] + count[j]) % mod
+                total[i] = (total[i] + total[j] + nums[i] * count[j]) % mod
+        answer = (answer + total[i]) % mod
+    return answer
+```
+fail[speed]: Looking back at every earlier position for each number is a loop inside a loop: O(n²). The good subsequences that `x` can extend end in `x - 1` or `x + 1`, so keep their counts and totals by **value**, in dictionaries.
+edges:
+- one number :: len(nums) == 1 :: sum_of_good_subsequences([4])
+- no two values next to each other :: len(nums) > 1 and not any(x + 1 in nums for x in nums) :: sum_of_good_subsequences([1, 3, 3])
+- values going up and down :: len(nums) > 1 and any(x + 1 in nums for x in nums) :: sum_of_good_subsequences([2, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+why_time: One pass, with a few dictionary lookups and updates per number.
+why_space: Two dictionaries, with at most one entry per different value.
+hint: For each value `v`, keep `count[v]`, how many good subsequences so far end in `v`, and `total[v]`, the sum of all their numbers.
+hint: A new number `x` can stand alone, or extend any good subsequence ending in `x - 1` or `x + 1`. That's `c = 1 + count[x - 1] + count[x + 1]` new subsequences.
+hint: Their numbers add up to `total[x - 1] + total[x + 1] + x * c`: the old numbers, plus `x` once in each new subsequence. Add `c` to `count[x]` and that sum to `total[x]`. At the end, return the sum of all the totals, modulo `10 ** 9 + 7`.
+right: The subsequences that `x` can extend are summed up by two dictionary entries, a count and a total, for each of its two neighbouring values, so each number costs O(1) instead of a look back at every earlier position.
+wrong: Keep `count` and `total` dictionaries. For each `x`: `c = 1 + count.get(x - 1, 0) + count.get(x + 1, 0)` and `s = total.get(x - 1, 0) + total.get(x + 1, 0) + x * c`. Add `c` to `count[x]` and `s` to `total[x]`. Return the sum of the totals, all modulo `10 ** 9 + 7`.
