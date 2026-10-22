@@ -142,7 +142,23 @@ function strChars(s) {
   for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c >= 0xd800 && c <= 0xdfff) return Array.from(s); }
   return s.split('');
 }
+// Strings without surrogate pairs (nearly all of them) can be indexed and measured directly, in O(1). Finding out
+// takes a pass over the string, so the answer is kept for the last few long strings checked: a loop that reads s[i]
+// over and over then pays for that pass once, not on every step.
+const BMP_STR = [null, null, null, null];
+const BMP_OK = [false, false, false, false];
+let bmpNext = 0;
+function isBmp(s) {
+  if (s.length > 64) {
+    for (let k = 0; k < 4; k++) if (BMP_STR[k] === s) return BMP_OK[k];
+  }
+  let ok = true;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c >= 0xd800 && c <= 0xdfff) { ok = false; break; } }
+  if (s.length > 64) { BMP_STR[bmpNext] = s; BMP_OK[bmpNext] = ok; bmpNext = (bmpNext + 1) & 3; }
+  return ok;
+}
 function strLen(s) {
+  if (isBmp(s)) return s.length;
   let n = s.length;
   for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c >= 0xd800 && c <= 0xdbff) n--; }
   return n;
@@ -997,12 +1013,26 @@ class Interp {
     }
     if (typeof obj === 'string') {
       if (key instanceof PySlice) {
+        if (isBmp(obj)) {
+          const [start, stop, step] = sliceIndices(key, obj.length);
+          if (step === 1) {
+            const out = start < stop ? obj.slice(start, stop) : '';
+            this.tick(out.length >> 2);
+            return out;
+          }
+        }
         const chars = strChars(obj);
         const out = sliceArr(chars, key);
         this.tick(out.length >> 2);
         return out.join('');
       }
       if (!isIntV(key)) throw pyErr('TypeError', `string indices must be integers, not '${shortTypeName(key)}'`);
+      if (isBmp(obj)) {
+        let i = Number(asInt(key));
+        if (i < 0) i += obj.length;
+        if (i < 0 || i >= obj.length) throw pyErr('IndexError', 'string index out of range');
+        return obj[i];
+      }
       const chars = strChars(obj);
       let i = Number(asInt(key));
       if (i < 0) i += chars.length;
