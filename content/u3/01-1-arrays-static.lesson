@@ -39,10 +39,12 @@ def get(slots, count, i):
     return slots[i]
 
 slots = ["Ann", "Ben", None, None, None]
-print(get(slots, 2, 1), get(slots, 2, 3), get(slots, 2, -1))
+print(get(slots, 2, 1))
+print(get(slots, 2, 3), get(slots, 2, -1))
 ```
 ```output
-Ben None None
+Ben
+None None
 ```
 Python's own lists also check the index (negative ones count back from the end) and stop with `IndexError` when it's out of range.
 
@@ -129,11 +131,14 @@ class StaticArray:
         return self.slots[i]
 
 seats = StaticArray(2)
-print(seats.append("Ann"), seats.append("Ben"), seats.append("Cal"))
+for name in ["Ann", "Ben", "Cal"]:
+    print(name, seats.append(name))
 print(seats.get(1), seats.count, seats.slots)
 ```
 ```output
-True True False
+Ann True
+Ben True
+Cal False
 Ben 2 ['Ann', 'Ben']
 ```
 `append` returns True when the item fitted and False when the array was full, so the caller knows what happened.
@@ -158,6 +163,277 @@ A static array can't grow, because the memory right after it may belong to somet
 
 Static arrays fit things whose size is known and never changes: the 7 days of a week, the 64 squares of a chess board, a fixed-size buffer in a small device. They never waste time growing, and they use exactly the memory they need.
 
+### Solving problems with static arrays
+The rest of this lesson is about solving problems with static arrays, the way the tasks do. Each of the steps above is also a pattern, plus one new one, and a clue in the question usually tells you which one you need:
+
+| Pattern | Clue in the question |
+| --- | --- |
+| Capacity and count | items written into a list from the front, "the last item added", "how many are kept" |
+| Reading and writing, with a bounds check | each item compared with its neighbours, or a rule for the first and last positions |
+| Inserting: shift right, if there's room | an item put in at the front or the middle, or moved to an earlier place |
+| Deleting: shift left and free the last slot | items, or a whole piece, removed and the rest closing up |
+| Why "full" is a problem | a fixed amount of room: chairs, rooms, servers, baskets, a watering can |
+| Splitting the array into blocks | groups of k items, or many questions about ranges of a long array |
+
+How each one turns up in a task:
+
+- **Capacity and count.** count is a write position: `slots[count] = x` and then `count += 1` adds an item, `slots[count - 1]` is the last item added, and `count -= 1` throws the last item away without moving anything.
+- **Bounds.** Reading `nums[i - 1]` or `nums[i + 1]` needs a check first, or a loop that skips the ends. Decide what a missing neighbour means: an end can't be a peak, but for "smaller than its neighbours", a missing neighbour sets no limit.
+- **Inserting.** Moving the item at index i to index j, with j < i, is an insert: the items from j to i − 1 each move one place right. That's i − j moves, the same as i − j swaps of neighbours.
+- **Deleting.** Removing an item closes the gap. Removing a whole piece, from i to j, leaves the part before i and the part after j, and the only new neighbours are `nums[i - 1]` and `nums[j + 1]`.
+- **Full.** The room you need is the most items in use at the same time: the biggest the count ever gets. When there's no free slot, the question says what happens: the item is delayed, refused or dropped, or the can is refilled.
+
+Here's the bounds check at work. Which positions are lower than every neighbour they have?
+```python
+def valleys(nums):
+    last = len(nums) - 1
+    found = []
+    for i in range(last + 1):
+        left = i == 0 or nums[i] < nums[i - 1]
+        right = i == last or nums[i] < nums[i + 1]
+        if left and right:
+            found.append(i)
+    return found
+
+print(valleys([2, 5, 1, 4, 3]))
+print(valleys([7]))
+```
+```output
+[0, 2, 4]
+[0]
+```
+Position 0 has no left neighbour, so only its right one counts. In `i == 0 or nums[i] < nums[i - 1]`, the `or` doesn't look at its right side once the left side is True, so `nums[i - 1]` is never read at position 0. That matters in Python, because `nums[-1]` isn't an error: it quietly reads the **last** item, and a missing check gives a wrong answer instead of a crash.
+
+### Splitting the array into blocks
+Some tasks cut an array into **blocks** of the same size, like 9 seats split into rows of 3. With blocks of `size` slots, slot i is in block `i // size`, at place `i % size` inside it, and block b starts at slot `b * size`. Only the last block can be shorter, when the length isn't a multiple of size.
+
+Each block can keep a **summary** of its slots, like how many there are of something, a total or the biggest value. A question about a long range can then use the summary of every whole block inside the range, and look at single slots only at the two ends:
+```python
+nums = [1, 0, 1, 1, 0, 0, 1, 0, 1]
+size = 3
+ones = [0] * 3
+for i in range(len(nums)):
+    ones[i // size] += nums[i]
+print(ones)
+
+def count_ones(lo, hi):
+    total = 0
+    i = lo
+    while i <= hi:
+        if i % size == 0 and i + size - 1 <= hi:
+            total += ones[i // size]
+            i += size
+        else:
+            total += nums[i]
+            i += 1
+    return total
+
+print(count_ones(1, 8))
+nums[4] = 1
+ones[4 // size] += 1
+print(count_ones(1, 8))
+```
+```output
+[2, 1, 2]
+4
+5
+```
+`count_ones(1, 8)` reads slots 1 and 2 one at a time, because block 0 isn't inside the range, then adds blocks 1 and 2 whole: 0 + 1 + 1 + 2 = 4. Changing a slot means changing its block's summary too, or the next answer will be wrong.
+
+A question looks at fewer than size slots at each end and at most n / size blocks: O(n / size + size). The two parts balance when size is about √n, the square root of n. With 10,000 slots and blocks of 100, a question looks at no more than about 300 things instead of 10,000. To find that size, count up until size × size reaches n:
+```python
+n = 10000
+size = 1
+while size * size < n:
+    size += 1
+print(size)
+```
+```output
+100
+```
+
+### Combining patterns
+Many tasks need two patterns at once:
+
+- **Deleting in one pass** (count + delete). To remove many items, don't shift once per item. Walk through once with a second index, a write position: each item you keep is copied to it, and the write position becomes the new count.
+- **Shifting right off the end** (insert + bounds). In a full array, an insert can push the last item out. The shift then starts at the last slot instead of at count, and stops at the insert position.
+- **Closing the gap at the edges** (delete + bounds). After removing a piece, the item before it and the item after it become neighbours, but only if both exist: at either end of the array, nothing joins.
+- **Looking for a free slot** (full + count). Once items can leave from the middle, the free slots aren't all at the end. count says in O(1) whether there's any room; finding where takes a search.
+- **Counts per block** (blocks + count). Counts kept for each block answer "how many?" over a range block by block, while single counts are kept for the two ends.
+- **Finding a block with room** (blocks + full). Each block keeps the most room any of its slots has, so a search for a slot with enough room skips a whole block whenever that number is too small.
+
+Deleting in one pass: remove every 3.
+```python
+def remove_all(slots, count, x):
+    write = 0
+    for read in range(count):
+        if slots[read] != x:
+            slots[write] = slots[read]
+            write += 1
+    for i in range(write, count):
+        slots[i] = None
+    return write
+
+slots = [3, 1, 3, 2, 3, None]
+count = remove_all(slots, 5, 3)
+print(slots, count)
+```
+```output
+[1, 2, None, None, None, None] 2
+```
+Deleting each 3 with its own shift would move everything after it, every time: O(n) per delete and O(n²) in all. Here each item is read once and each kept item is written once: O(n). `write` never gets ahead of `read`, so a write never covers an item that hasn't been read yet.
+
+Shifting right off the end: insert 15 at index 1 of a full array.
+```python
+def insert_drop(slots, i, x):
+    j = len(slots) - 1
+    while j > i:
+        slots[j] = slots[j - 1]
+        j -= 1
+    slots[i] = x
+
+slots = [10, 20, 30, 40]
+insert_drop(slots, 1, 15)
+print(slots)
+```
+```output
+[10, 15, 20, 30]
+```
+40 was in the last slot, and there's no slot after it to move into, so it's overwritten. A right shift that wraps round, with the last item moving to index 0, starts the same way.
+
+Closing the gap at the edges: the parts of nums before i and after j are each in order already. Is the whole list in order once `nums[i..j]` is removed?
+```python
+def joins_in_order(nums, i, j):
+    if i == 0 or j == len(nums) - 1:
+        return True
+    return nums[i - 1] <= nums[j + 1]
+
+nums = [1, 4, 9, 2, 6, 8]
+print(joins_in_order(nums, 2, 3))
+print(joins_in_order(nums, 2, 2))
+print(joins_in_order(nums, 0, 2))
+```
+```output
+True
+False
+True
+```
+Removing 9 and 2 makes 4 and 6 neighbours: in order. Removing only 9 makes 4 and 2 neighbours: not in order. Removing the first three leaves nothing before the gap, so there's no join to check.
+
+Looking for a free slot: four seats, and people who come and go.
+```python
+def take_seat(seats, count, name):
+    if count == len(seats):
+        print("full:", name)
+        return count
+    i = 0
+    while seats[i] is not None:
+        i += 1
+    seats[i] = name
+    return count + 1
+
+seats = ["Ann", "Ben", "Cal", "Dee"]
+count = 4
+count = take_seat(seats, count, "Eve")
+seats[1] = None
+count -= 1
+count = take_seat(seats, count, "Fay")
+print(seats, count)
+```
+```output
+full: Eve
+['Ann', 'Fay', 'Cal', 'Dee'] 4
+```
+Eve is turned away in O(1), without a search, because count equals the capacity. Ben left from the middle, so Fay's seat is found by searching from the front: O(n).
+
+Counts per block: numbers from 0 to 8 arrive, and the question is how many so far are less than x. `count[v]` counts each value, and `block[b]` adds up the counts of the values v with `v // size == b`.
+```python
+size = 3
+count = [0] * 9
+block = [0] * 3
+for x in [5, 1, 7, 2, 4]:
+    count[x] += 1
+    block[x // size] += 1
+print(block)
+
+def less_than(x):
+    b = x // size
+    total = 0
+    for i in range(b):
+        total += block[i]
+    for v in range(b * size, x):
+        total += count[v]
+    return total
+
+print(less_than(5), less_than(8))
+```
+```output
+[2, 2, 1]
+3 5
+```
+`less_than(8)` adds blocks 0 and 1 whole, 4 numbers, then the counts of 6 and 7 one at a time: 5. Each question costs O(m / size + size) for values up to m, and each new number O(1).
+
+Finding a block with room: `free[i]` is how much room slot i has left. What's the first slot with room for k?
+```python
+free = [2, 0, 1, 1, 5, 0, 3, 2, 0]
+size = 3
+best = [0] * 3
+for i in range(len(free)):
+    b = i // size
+    best[b] = max(best[b], free[i])
+print(best)
+
+def first_fit(k):
+    for b in range(len(best)):
+        if best[b] < k:
+            continue
+        end = min(len(free), (b + 1) * size)
+        for i in range(b * size, end):
+            if free[i] >= k:
+                return i
+    return -1
+
+print(first_fit(4), first_fit(6))
+```
+```output
+[2, 5, 3]
+4 -1
+```
+Block 0's best is 2, so none of its slots can hold 4, and it's skipped in one step. The first block whose best is big enough is sure to have a slot that fits, so only one block is searched slot by slot: O(n / size + size). When a slot's room changes, its block's best has to be worked out again from its slots: O(size).
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| one item | `[7]` | a neighbour that isn't there, like `nums[i + 1]` past the end |
+| the first or last position | inserting at index 0, or removing the last item | a shift that runs one step too far, or `nums[-1]` reading the last item |
+| an empty array | count of 0 | `slots[count - 1]` is `slots[-1]`: the last slot, not an error |
+| a full array | count equal to the capacity | an insert that writes past the end, or loses the last item |
+| a short last block | a length that isn't a multiple of the block size | a block that's assumed to have size slots |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of a static array solution
+**Time.** Count the slots each step reads, writes or moves:
+
+| The code | Time |
+| --- | --- |
+| reads or writes one slot, or adds and removes at the end | O(1) |
+| inserts or deletes at index i | O(n): count − i items move |
+| one pass with a write position | O(n) |
+| one question over blocks of size about √n | O(√n) |
+| searches for a free slot | O(n), or O(√n) with a summary per block |
+
+**Space.** Count the lists the code makes, besides the input:
+
+| The code keeps | Space |
+| --- | --- |
+| a few counts and positions | O(1) |
+| a fixed array with capacity c | O(c) |
+| one summary per block | O(n / size): O(√n) for size about √n |
+| a copy, or the answer list | O(n) |
+
 === keypoints
 - A static array has a fixed **capacity**, chosen when it's made; `[None] * 5` makes 5 free slots in Python.
 - The **count** says how many slots are in use: slots 0 to count − 1. The next free slot is at index count.
@@ -165,6 +441,24 @@ Static arrays fit things whose size is known and never changes: the 7 days of a 
 - Adding at the end is O(1), but only while count < capacity: a full static array can't take more.
 - Inserting shifts the used slots right from the end; deleting shifts them left and frees the last one: O(n).
 - When it's full, you can refuse, overwrite the oldest, or copy everything into a bigger array.
+- **Blocks** of about √n slots, each with a summary, answer a question about a range in O(√n) instead of O(n).
+- Patterns: use count as a write position; check the bounds before reading a neighbour; shift right to insert or move an item; close the gap after a delete; decide what happens when there's no room; and split the array into blocks.
+- Combinations: deleting in one pass; shifting right off the end; closing the gap at the edges; looking for a free slot; counts per block; and finding a block with room.
+
+=== patterns
+- count | Capacity and count
+- bounds | Reading and writing, with a bounds check
+- insert | Inserting: shift right, if there's room
+- delete | Deleting: shift left and free the last slot
+- full | Why "full" is a problem
+- blocks | Splitting the array into blocks
+combos:
+- count + delete | Deleting in one pass
+- insert + bounds | Shifting right off the end
+- delete + bounds | Closing the gap at the edges
+- full + count | Looking for a free slot
+- blocks + count | Counts per block
+- blocks + full | Finding a block with room
 
 === example: Filling a row of seats
 intro: A StaticArray with 3 seats, and 4 people trying to sit down.
@@ -281,795 +575,2402 @@ print(slots)
 8: One more slot in use.
 9: Three slots, three names. A static array never grows.
 
-=== task: predict easy
-title: Four empty slots
-code:
-```python
-slots = [None] * 4
-slots[1] = "x"
-slots[3] = "y"
-print(slots, len(slots))
-```
-wrong[['x', 'y'] 2]: `[None] * 4` makes 4 slots, and writing into two of them leaves the other two as `None`.
-wrong[[None, 'x', None, 'y'] 2]: The length counts every slot, used or free: 4.
-wrong[['x', None, 'y', None] 4]: Index 1 is the second slot and index 3 the fourth.
-hint: How many slots does `[None] * 4` make?
-hint: Writing a slot doesn't change how many there are.
-right: Four fixed slots: writing into slots 1 and 3 is O(1), and the size stays 4, like a static array.
-wrong: `slots` is `[None, 'x', None, 'y']`, and its length is still 4.
-
-=== task: mcq easy
-title: The next free slot
-prompt: A static array has a capacity of 6 and a count of 4. At which index does the next appended item go?
-- Index 5, the last slot :: Items are filled from the front, so the next free slot comes right after the used ones.
-* Index 4 :: Right. Slots 0 to 3 are in use, so the next free slot is at index count = 4.
-- Index 6 :: There is no index 6: a capacity of 6 means indexes 0 to 5.
-- Index 3 :: Slot 3 is already in use.
-hint: The used slots are 0 to count − 1.
-hint: The next free slot is at index count.
-right: The next free slot is always at index `count`, so appending is O(1): one write and `count += 1`.
-wrong: With count 4, slots 0 to 3 are used, and the next item goes into slot 4.
-
-=== task: fill easy
-title: Write into the next free slot
-prompt: Fill in the blank so that each name goes into the next free slot, and the program prints:
-
-```output
-['Ann', 'Ben', None] 2
-```
-code:
-```python
-slots = [None] * 3
-count = 0
-for name in ["Ann", "Ben"]:
-    slots[??] = name
-    count += 1
-print(slots, count)
-```
-answer: count
-wrong[0]: Every name would go into slot 0, so "Ben" would replace "Ann": `['Ben', None, None]`.
-wrong[count + 1]: The first name would skip slot 0 and land in slot 1.
-hint: Which index is the next free slot?
-hint: It's the number of slots already in use.
-right: `slots[count] = name` fills the slots from the front, one O(1) write each, and `count` keeps track of where the next one goes.
-wrong: `slots[count]`. With count 0 the first name goes into slot 0, then count becomes 1 for the next.
-
 === task: code easy
-title: Append if there's room
-prompt: Write `append_static(slots, count, x)` for a static array: if every slot is in use (`count == len(slots)`), change nothing and return `count`. Otherwise put `x` in slot `count` and return the new count. The tests call your function, then show its answer and the slots.
+title: Clear Digits
+leetcode: 3174 | Clear Digits | clear-digits
+patterns: count + delete
+prompt: s holds lowercase letters and digits. Repeat this until no digits are left: delete the first digit, together with the closest letter on its left. Write `clear_digits(s)` that returns what's left.
+
+Don't build a new string for every digit. Use a list, `chars = list(s)`, as a static array with a count: go through s once, and write each letter at `chars[count]`, then add 1 to count. The letter a digit deletes is always the last letter written, so a digit takes 1 off count. The answer is the first count slots.
+
+**Example 1:** `clear_digits("abc")` returns `"abc"`: there are no digits.
+
+**Example 2:** `clear_digits("cb34")` returns `""`: 3 deletes b, then 4 deletes c.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100, s holds only lowercase letters and digits, and every digit has a letter to delete.
 starter:
 ```python
-def append_static(slots, count, x):
+def clear_digits(s):
     # your code here
-    return count
+    return s
 ```
 solution:
 ```python
-def append_static(slots, count, x):
-    if count == len(slots):
-        return count
-    slots[count] = x
-    return count + 1
+def clear_digits(s):
+    chars = list(s)
+    count = 0
+    for c in s:
+        if c.isdigit():
+            count -= 1
+        else:
+            chars[count] = c
+            count += 1
+    return "".join(chars[:count])
 ```
 tests:
-- (lambda s: [append_static(s, 2, 9), s])([1, 2, None])
-- (lambda s: [append_static(s, 3, 9), s])([1, 2, 3])
-- (lambda s: [append_static(s, 0, "x"), s])([None])
-- (lambda s: [append_static(s, 1, "b"), s])(["a", None, None])
-fail[1]: Slot 2 is free: 9 goes there, and the count becomes 3.
-fail[2]: The array is full: nothing changes, and the count stays 3.
-fail[4]: "b" goes into slot 1, the next free slot.
-forbid[.append(]: A static array can't grow: write into the slot instead of using `append`.
-hint: First check whether `count == len(slots)`.
-hint: If not, `slots[count] = x`.
-hint: Return `count + 1` after adding, or `count` if it was full.
-right: One check and one write: O(1). A full static array has to refuse, because it can't grow.
-wrong: If full, return `count`. Otherwise `slots[count] = x` and return `count + 1`.
-
-=== task: predict easy
-title: Inside the used part?
-code:
-```python
-def get(slots, count, i):
-    if i < 0 or i >= count:
-        return None
-    return slots[i]
-
-slots = ["red", "blue", None, None]
-print(get(slots, 2, 1), get(slots, 2, 2), get(slots, 2, 5))
-```
-wrong[blue None IndexError]: The bounds check returns None for index 5 before the list is touched, so no error happens.
-wrong[red blue None]: Index 1 is the second slot, "blue". Index 2 is outside the used part (count is 2).
-wrong[blue None None None]: There are only three calls, so three values are printed.
-hint: Which indexes are in use when count is 2?
-hint: 0 and 1.
-right: Only slots 0 and 1 are in use, so index 1 gives "blue" and indexes 2 and 5 are refused with None. The check is O(1), like the read.
-wrong: Index 1 → "blue". Index 2 isn't below count (2) → None. Index 5 → None.
-
-=== task: multi easy
-title: Cheap operations on a static array
-prompt: A static array holds `count` items and still has free slots. Choose **every** operation that is O(1).
-* Reading slot i :: Right. Address arithmetic.
-* Writing slot i :: Right. The same arithmetic.
-* Appending at index `count` :: Right. One write and one addition, with nothing to move.
-- Inserting at index 0 :: Every used slot moves one place right: O(n).
-- Deleting at index 0 :: Every used slot after it moves one place left: O(n).
-- Finding a value in the unsorted slots :: The slots have to be checked one by one: O(n).
-hint: Does anything have to move, or be checked one by one?
-hint: Three of them are O(1).
-right: Reading, writing and appending touch one slot. Inserting or deleting at the front moves the others, and searching checks them.
-wrong: O(1): read, write, append at `count`. O(n): insert or delete at the front, and search.
-
-=== task: parsons easy
-title: Append until full
-prompt: Arrange the lines so that the names are appended to a static array of capacity 2, refusing the ones that don't fit, and the program prints:
-
-```output
-Cal doesn't fit
-['Ann', 'Ben']
-```
-
-Not every line is needed.
-lines:
-```python
-slots = [None] * 2
-count = 0
-for name in ["Ann", "Ben", "Cal"]:
-    if count == len(slots):
-        print(name, "doesn't fit")
-    else:
-        slots[count] = name
-        count += 1
-print(slots)
-```
-distractors:
-```python
-        slots.append(name)
-    if count > len(slots):
-```
-hint: Check for a full array before writing.
-hint: Full means `count == len(slots)`.
-right: Ann and Ben fill slots 0 and 1; then the array is full, and Cal is refused. A static array never grows, so `slots.append` doesn't belong here.
-wrong: The check `count == len(slots)` comes first; otherwise write `slots[count] = name` and add 1 to `count`.
-
-=== task: cells easy
-title: Three operations
-prompt: A static array has 4 slots, all free. These operations run in order: append 5, append 7, then insert 2 at index 0. What does each slot hold at the end?
-code:
-```python
-slots = [None] * 4
-count = 0
-slots[count] = 5
-count += 1
-slots[count] = 7
-count += 1
-slots[2] = slots[1]
-slots[1] = slots[0]
-slots[0] = 2
-count += 1
-```
-labels: slot 0 | slot 1 | slot 2 | slot 3
-answer: 2 | 5 | 7 | None
-wrong[5 | 7 | 2 | None]: The 2 is inserted at index 0, so 5 and 7 move right to make room.
-wrong[2 | 7 | 5 | None]: The items keep their order when they shift: 5 then 7.
-hint: After the two appends: [5, 7, None, None].
-hint: Inserting at 0 moves 7, then 5, one slot right.
-right: `[2, 5, 7, None]`: 2 moves were needed to insert at the front of 2 items.
-wrong: After the appends the slots are 5, 7, None, None. Shifting right gives 5, 5, 7, None, and writing 2 into slot 0 gives 2, 5, 7, None.
-
-=== task: mcq easy
-title: When it's full
-prompt: In the `StaticArray` class from the lesson, what does `append` do when every slot is in use?
-* It returns False and leaves the array unchanged :: Right. A static array can't grow, so it refuses the new item.
-- It makes the array one slot bigger :: That's what a dynamic array does. A static array's capacity is fixed.
-- It overwrites the last item :: The lesson's class refuses instead. Overwriting is a different choice, used by circular queues.
-- It stops the program with an error :: Python's own lists raise errors for bad indexes, but this `append` returns False instead.
-hint: What does the code check before writing?
-hint: `if self.count == len(self.slots): return False`.
-right: It refuses, returning False, so the code calling it knows the item didn't fit.
-wrong: The class checks for a full array first and returns False without changing anything.
-
-=== task: predict easy
-title: Two seats, four people
-code:
-```python
-slots = [None] * 2
-count = 0
-for name in ["Ann", "Ben", "Cal", "Dee"]:
-    if count < len(slots):
-        slots[count] = name
-        count += 1
-print(count, slots)
-```
-wrong[4 ['Ann', 'Ben', 'Cal', 'Dee']]: The array has only 2 slots, and nothing adds more.
-wrong[2 ['Cal', 'Dee']]: Once both slots are in use, `count < len(slots)` is False, so Cal and Dee are skipped, not written over Ann and Ben.
-wrong[4 ['Ann', 'Ben']]: `count` only goes up when a name is written: twice.
-hint: When does `count < len(slots)` stop being True?
-hint: After Ann and Ben.
-right: Ann and Ben fill the 2 slots; Cal and Dee find the array full. The count stops at the capacity.
-wrong: count goes 0 → 1 → 2, and then the check fails for Cal and Dee: `2 ['Ann', 'Ben']`.
-
-=== task: code medium
-title: Insert into a static array
-prompt: Write `insert_static(slots, count, i, x)`: if the array is full, change nothing and return `count`. Otherwise move the used slots from index `count - 1` back to `i` one place right (start at the end), put `x` in slot `i`, and return the new count. The tests call your function, then show its answer and the slots.
-starter:
-```python
-def insert_static(slots, count, i, x):
-    if count == len(slots):
-        return count
-    # your code here
-    return count + 1
-```
-solution:
-```python
-def insert_static(slots, count, i, x):
-    if count == len(slots):
-        return count
-    j = count
-    while j > i:
-        slots[j] = slots[j - 1]
-        j -= 1
-    slots[i] = x
-    return count + 1
-```
-tests:
-- (lambda s: [insert_static(s, 2, 1, 20), s])([10, 30, None])
-- (lambda s: [insert_static(s, 2, 0, 9), s])([1, 2])
-- (lambda s: [insert_static(s, 0, 0, "a"), s])([None, None])
-- (lambda s: [insert_static(s, 1, 1, 6), s])([5, None, None])
-- (lambda s: [insert_static(s, 2, 0, "a"), s])(["b", "c", None])
-fail[1]: 30 moves right to slot 2, then 20 goes into slot 1: `[10, 20, 30]`.
-fail[2]: The array is full: nothing changes.
-fail[4]: Inserting at index `count` is like appending: nothing moves.
-fail[5]: At the front, both items move right: `["a", "b", "c"]`.
-forbid[insert(]: Move the slots yourself instead of using `insert`.
-hint: Start at the first free slot: `j = count`.
-hint: While `j > i`: `slots[j] = slots[j - 1]` and `j -= 1`.
-hint: Then `slots[i] = x`.
-right: count − i moves and one write: O(n) at the front, O(1) at the end. Starting from the end means no item is overwritten before it has moved.
-wrong: From `j = count` down to `i + 1`, copy each slot from its left neighbour; then write `x` into slot `i`.
-
-=== task: code medium
-title: Delete from a static array
-prompt: Write `delete_static(slots, count, i)`: move the used slots after index `i` one place left, set the last used slot (index `count - 1`) back to `None`, and return the new count. The tests call your function, then show its answer and the slots.
-starter:
-```python
-def delete_static(slots, count, i):
-    # your code here
-    return count - 1
-```
-solution:
-```python
-def delete_static(slots, count, i):
-    j = i
-    while j < count - 1:
-        slots[j] = slots[j + 1]
-        j += 1
-    slots[count - 1] = None
-    return count - 1
-```
-tests:
-- (lambda s: [delete_static(s, 3, 1), s])([10, 20, 30, None])
-- (lambda s: [delete_static(s, 1, 0), s])([5, None])
-- (lambda s: [delete_static(s, 3, 2), s])([1, 2, 3])
-- (lambda s: [delete_static(s, 3, 0), s])([1, 2, 3])
-fail[1]: 30 moves into slot 1, and slot 2 is freed: `[10, 30, None, None]`.
-fail[2]: The only item is deleted: its slot becomes None, and the count becomes 0.
-fail[4]: 2 and 3 move left, and the last used slot is freed: `[2, 3, None]`.
-forbid[pop(]: A static array keeps all its slots: free the last one with `None` instead of removing it.
-forbid[del slots[]: A static array keeps all its slots: free the last one with `None` instead of deleting it.
-hint: Start at the gap: `j = i`. While `j < count - 1`: `slots[j] = slots[j + 1]`.
-hint: The last used slot now holds a leftover copy.
-hint: `slots[count - 1] = None`, then return `count - 1`.
-right: count − i − 1 moves and one clear: O(n) at the front, O(1) at the end. The array keeps all its slots; only the count goes down.
-wrong: Shift the slots after i one place left, set slot `count - 1` to None, and return `count - 1`.
-
-=== task: predict medium
-title: Insert at the front
-code:
-```python
-slots = [10, 20, 30, None]
-count = 3
-moves = 0
-j = count
-while j > 0:
-    slots[j] = slots[j - 1]
-    moves += 1
-    j -= 1
-slots[0] = 5
-print(slots, moves)
-```
-wrong[[5, 20, 30, None] 3]: The items move right before 5 is written, so 10 isn't lost: it moves to slot 1.
-wrong[[5, 10, 20, 30] 4]: There are 3 items to move: from slots 2, 1 and 0.
-wrong[[5, 10, 20, 30] 2]: All three used slots move, because the insert is at index 0.
-hint: j starts at 3 and stops when it reaches 0.
-hint: 30 moves first, then 20, then 10.
-right: Inserting at the front moves every used slot: 3 moves for 3 items. That's the worst case, O(n).
-wrong: 30 → slot 3, 20 → slot 2, 10 → slot 1 (3 moves), then 5 into slot 0: `[5, 10, 20, 30]`.
-
-=== task: fill medium
-title: Free the last slot
-prompt: Fill in the blank so that the delete frees the last used slot, and the program prints:
-
-```output
-['B', 'C', None, None] 2
-```
-code:
-```python
-slots = ["A", "B", "C", None]
-count = 3
-j = 0
-while j < count - 1:
-    slots[j] = slots[j + 1]
-    j += 1
-slots[count - 1] = ??
-count -= 1
-print(slots, count)
-```
-answer: None
-wrong[0]: The freed slot would hold 0, which looks like a real item. Free slots hold None.
-hint: What does a free slot hold?
-hint: The same value the free slots started with.
-right: Slot 2 held a leftover copy of "C"; setting it to None marks it free again, and the count drops to 2.
-wrong: `None`. Free slots hold None, so the leftover copy is replaced with None.
-
-=== task: cells medium
-title: Count after each step
-prompt: A static array of capacity 3 starts empty. What is the count after each operation, in order: append "a", append "b", delete index 0, append "c", append "d", append "e"?
-labels: after a | after b | after delete | after c | after d | after e
-answer: 1 | 2 | 1 | 2 | 3 | 3
-wrong[1 | 2 | 1 | 2 | 3 | 4]: The array is full after "d" (count 3 = capacity), so "e" is refused and the count stays 3.
-wrong[1 | 2 | 2 | 3 | 3 | 3]: Deleting frees a slot, so the count goes down by 1.
-hint: Delete makes the count go down; append makes it go up, unless the array is full.
-hint: Full means count = 3.
-right: 1, 2, 1, 2, 3, 3: the delete freed a slot, and "e" didn't fit. The slots end as ["b", "c", "d"].
-wrong: Appends add 1 (a: 1, b: 2), the delete takes 1 away (1), then c: 2, d: 3, and e is refused: 3.
-
-=== task: order medium
-title: Inserting, step by step
-prompt: Put the steps for inserting x at index i into a static array in order.
-items:
-- check that the array isn't full
-- start j at the first free slot, index count
-- while j is bigger than i, move slot j − 1 into slot j and step j left
-- write x into slot i, then add 1 to count
-hint: Nothing should move if there's no room.
-hint: The new item is written only after the gap is made.
-right: Check for room, shift from the end back to i, write x, and count it. Shifting from the end means no item is overwritten before it moves.
-wrong: Check for room first, then shift the items from the end down to i, then write x into the gap, then add 1 to count.
-
-=== task: predict medium
-title: The class in action
-code:
-```python
-class StaticArray:
-    def __init__(self, capacity):
-        self.slots = [None] * capacity
-        self.count = 0
-
-    def append(self, x):
-        if self.count == len(self.slots):
-            return False
-        self.slots[self.count] = x
-        self.count += 1
-        return True
-
-    def get(self, i):
-        if i < 0 or i >= self.count:
-            return None
-        return self.slots[i]
-
-a = StaticArray(2)
-print(a.append(4), a.append(8), a.append(9))
-print(a.get(0), a.get(2), a.slots)
-```
-wrong[True True True\n4 9 [4, 8, 9]]: The capacity is 2, so the third append finds the array full and returns False.
-wrong[True True False\n4 None [4, 8, None]]: `[None] * 2` makes only 2 slots: there's no third slot.
-wrong[True True False\n8 None [4, 8]]: `get(0)` reads slot 0, which holds 4.
-hint: How many slots does `StaticArray(2)` make?
-hint: Index 2 is outside the used part, so `get(2)` returns None.
-right: 4 and 8 fit, 9 doesn't. `get(0)` is 4 and `get(2)` is refused. The slots stay at exactly 2.
-wrong: append → True, True, False (full). `get(0)` → 4, `get(2)` → None, and the slots are `[4, 8]`.
-
-=== task: mcq medium
-title: Deleting the last item
-prompt: A static array holds `count` items. What does deleting the item at index `count - 1` cost?
-* O(1) :: Right. There are no items after it, so nothing moves: the slot is set to None and count goes down.
-- O(n) :: Only the items **after** the deleted one move, and there are none.
-- O(log n) :: Nothing is halved: it's one write and one subtraction.
-- It can't be done in a static array :: Deleting works; the slot is freed and can be used again.
-hint: How many items come after the last one?
-hint: None.
-right: Deleting at the end moves nothing: O(1). Deleting at the front moves count − 1 items: O(n).
-wrong: The last item has nothing after it, so it's freed in O(1).
-
-=== task: multi medium
-title: Good fits for a static array
-prompt: Choose **every** job where a static array is a good fit, because the number of items is known and doesn't change.
-* The 7 daily temperatures of one week :: Right. Always 7 values.
-* The 64 squares of a chess board :: Right. The board never changes size.
-* The seats on a plane with 180 seats :: Right. The seat count is fixed.
-- A shopping list you keep adding to :: It can keep growing, so a dynamic array fits better.
-- Every message sent in a chat today :: Nobody knows how many there will be.
-- The names of everyone who signs up for a club, with no limit :: The count is unknown and can grow.
-hint: Is the number of items known in advance and fixed?
-hint: Three of them are.
-right: Fixed counts (days, squares, seats) suit a static array. Lists that can keep growing need a dynamic array.
-wrong: Static arrays fit fixed sizes: 7 days, 64 squares, 180 seats. Growing lists don't fit.
-
-=== task: code medium
-title: A safe read
-prompt: Write `get_static(slots, count, i)` that returns the item in slot `i` if `i` is inside the used part of the array (0 ≤ i < count), and `None` otherwise, including for negative indexes.
-
-For example, `get_static(["a", "b", None], 2, 1)` returns `"b"`.
-starter:
-```python
-def get_static(slots, count, i):
-    # your code here
-    return slots[i]
-```
-solution:
-```python
-def get_static(slots, count, i):
-    if i < 0 or i >= count:
-        return None
-    return slots[i]
-```
-tests:
-- get_static(["a", "b", None], 2, 1)
-- get_static(["a", "b", "c"], 2, 2)
-- get_static(["a", "b", "c"], 3, -1)
-- get_static([7], 1, 0)
-- get_static(["x", "y"], 0, 0)
-- get_static(["a", None], 1, 5)
-fail[2]: Slot 2 still holds an old "c", but only slots 0 and 1 are in use (count is 2). Return None.
-fail[3]: In a static array, -1 is out of range, not "the last item". Return None.
-fail[5]: With count 0, no slot is in use, so every index is out of range, whatever the slots still hold.
-error[IndexError]: Check the index before reading the slot.
-hint: The index is valid when `0 <= i < count`.
-hint: Check `i < 0 or i >= count` first.
-hint: Only read `slots[i]` when the index is valid.
-right: Two comparisons and one read: O(1). The check stops a program from reading a free slot or something outside the array.
-wrong: `if i < 0 or i >= count: return None`, then `return slots[i]`.
-
-=== task: code hard
-title: A StaticArray class
-prompt: Write a class `StaticArray` with:
-- `__init__(self, capacity)`: make `self.slots`, a list of `capacity` Nones, and `self.count = 0`,
-- `append(self, x)`: return False if full; otherwise store x in the next free slot, add 1 to the count and return True,
-- `get(self, i)`: return the item at index i, or None if i is outside the used part,
-- `is_full(self)`: return True when every slot is in use.
-
-The tests make arrays and call their methods, like `(lambda a: [a.append(5), a.is_full()])(StaticArray(1))`.
-starter:
-```python
-class StaticArray:
-    def __init__(self, capacity):
-        self.slots = [None] * capacity
-        self.count = 0
-
-    # your code here
-```
-solution:
-```python
-class StaticArray:
-    def __init__(self, capacity):
-        self.slots = [None] * capacity
-        self.count = 0
-
-    def append(self, x):
-        if self.is_full():
-            return False
-        self.slots[self.count] = x
-        self.count += 1
-        return True
-
-    def get(self, i):
-        if i < 0 or i >= self.count:
-            return None
-        return self.slots[i]
-
-    def is_full(self):
-        return self.count == len(self.slots)
-```
-tests:
-- (lambda a: [a.append(5), a.append(6), a.append(7), a.get(1), a.count])(StaticArray(2))
-- (lambda a: [a.is_full(), a.append("x"), a.is_full()])(StaticArray(1))
-- (lambda a: [a.get(0), a.slots])(StaticArray(3))
-- (lambda a: [a.append(1), a.get(-1), a.get(1), a.get(0)])(StaticArray(4))
-- (lambda a: [a.is_full(), a.append(9)])(StaticArray(0))
-fail[1]: Two items fit; the third append returns False. `get(1)` is 6, and the count stays 2.
-fail[2]: An empty array of capacity 1 isn't full; after one append it is.
-fail[3]: A new array has no items in use, so `get(0)` is None, and the slots are all None.
-fail[5]: An array of capacity 0 is full from the start, so append returns False.
-error[AttributeError]: Define all three methods: `append`, `get` and `is_full`.
-hint: `is_full` returns `self.count == len(self.slots)`.
-hint: `append` can call `self.is_full()` before writing `self.slots[self.count] = x`.
-hint: `get` checks `i < 0 or i >= self.count` before reading.
-right: Every method is O(1): one check and at most one read or write. Keeping the slots and the count in one object means they always agree.
-wrong: `append`: refuse if full, else write at `self.count` and add 1; `get`: bounds check then read; `is_full`: compare `self.count` with `len(self.slots)`.
-
-=== task: code hard
-title: Insert in order
-prompt: The used slots of a static array are sorted. Write `insert_in_order(slots, count, x)` that inserts `x` so they stay sorted, and returns the new count. If the array is full, change nothing and return `count`. Start at the first free slot and move each used slot that is bigger than x one place right; then write x into the slot that's left.
-starter:
-```python
-def insert_in_order(slots, count, x):
-    if count == len(slots):
-        return count
-    j = count
-    # your code here
-    return count + 1
-```
-solution:
-```python
-def insert_in_order(slots, count, x):
-    if count == len(slots):
-        return count
-    j = count
-    while j > 0 and slots[j - 1] > x:
-        slots[j] = slots[j - 1]
-        j -= 1
-    slots[j] = x
-    return count + 1
-```
-tests:
-- (lambda s: [insert_in_order(s, 3, 4), s])([1, 3, 5, None])
-- (lambda s: [insert_in_order(s, 2, 3), s])([2, 4])
-- (lambda s: [insert_in_order(s, 0, 7), s])([None, None])
-- (lambda s: [insert_in_order(s, 2, 1), s])([2, 4, None])
-- (lambda s: [insert_in_order(s, 2, 9), s])([2, 4, None])
-fail[1]: 5 is bigger than 4, so it moves right; 3 isn't, so 4 goes into slot 2: `[1, 3, 4, 5]`.
-fail[2]: The array is full, so nothing changes.
-fail[4]: 1 is the smallest: both items move right, and 1 goes into slot 0.
-fail[5]: 9 is the biggest: nothing moves, and it goes into the first free slot.
-error[TypeError]: Stop at slot 0 (`j > 0`), so you never compare x with a free slot's None.
-hint: While `j > 0` and `slots[j - 1] > x`, move slot j − 1 into slot j and step left.
-hint: When the loop stops, slot j is where x belongs.
-hint: Write `slots[j] = x`.
-right: Up to count moves: O(n) per insert. A sorted static array is quick to search (binary search) but slow to change.
-wrong: Shift the bigger items right, starting from the first free slot, then write x where the shifting stopped.
-
-=== task: code hard
-title: Close the gaps
-prompt: Some slots of an array were cleared to None in the middle, leaving gaps. Write `compact(slots)` that moves every item that isn't None to the front, keeping their order, sets all the slots after them to None, and returns how many items there are. Make it one pass: O(n).
-
-For example, after compacting `[None, 3, None, 5, 7]`, the slots are `[3, 5, 7, None, None]` and the function returns 3.
-starter:
-```python
-def compact(slots):
-    w = 0
-    # your code here
-    return w
-```
-solution:
-```python
-def compact(slots):
-    w = 0
-    for x in slots:
-        if x is not None:
-            slots[w] = x
-            w += 1
-    for k in range(w, len(slots)):
-        slots[k] = None
-    return w
-```
-tests:
-- (lambda s: [compact(s), s])([None, 3, None, 5, 7])
-- (lambda s: [compact(s), s])([])
-- (lambda s: [compact(s), s])([None, None])
-- (lambda s: [compact(s), s])([1, 2])
-- (lambda s: [compact(s), s])(["a", None, "b"])
-speed: setup=slots = [None, 1] * n | call=compact(slots) | target=O(n)
+- clear_digits("abc")
+- clear_digits("cb34")
+- clear_digits("a1b")
+- clear_digits("ab1c2d")
+- clear_digits("xyzw321")
+- clear_digits("ab1" * 33 + "z")
+fail[2]: 3 deletes b, the closest letter on its left, and then 4 deletes c: nothing is left, `""`.
+fail[3]: 1 deletes a, and b is left.
+fail[4]: 1 deletes b, and 2 deletes c: `"ad"`.
+fail[5]: Three digits in a row delete the three letters before them, closest first: w, then z, then y. Only x is left.
+fail[6]: Each "ab1" deletes its b and keeps its a: 33 a's, then the z.
+speed: setup=s = "ab1" * (n // 3) | call=clear_digits(s) | target=O(n)
 slow:
 ```python
-def compact(slots):
-    for i in range(len(slots)):
-        for j in range(len(slots) - 1):
-            if slots[j] is None and slots[j + 1] is not None:
-                slots[j] = slots[j + 1]
-                slots[j + 1] = None
+def clear_digits(s):
+    while True:
+        i = 0
+        while i < len(s) and not s[i].isdigit():
+            i += 1
+        if i == len(s):
+            return s
+        s = s[:i - 1] + s[i + 1:]
+```
+fail[speed]: Building a new string for every digit copies the whole string each time, and searching from the start for the next digit adds more: O(n²) in all. Keep the letters in a list with a count instead, so a delete is `count -= 1`.
+edges:
+- no digits :: not any(c.isdigit() for c in s) :: clear_digits("ab")
+- every letter deleted :: any(c.isdigit() for c in s) and 2 * sum(c.isdigit() for c in s) == len(s) :: clear_digits("a1")
+- some letters left over :: any(c.isdigit() for c in s) and 2 * sum(c.isdigit() for c in s) < len(s) :: clear_digits("ab1")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass over s, with O(1) work for each character, and one join at the end.
+why_space: The list of characters has n slots.
+hint: `chars = list(s)` and `count = 0`. The letters kept so far are `chars[0]` to `chars[count - 1]`.
+hint: For each character c of s: if `c.isdigit()`, take 1 off count; otherwise set `chars[count] = c` and add 1 to count.
+hint: Return `"".join(chars[:count])`.
+right: The letter a digit deletes is always the last one written, so deleting it is `count -= 1`, and nothing ever shifts: one pass, O(n). count never gets ahead of the character being read, so a write never covers a character that hasn't been read yet.
+wrong: `chars = list(s)` and `count = 0`. For each c in s, a digit does `count -= 1`, and a letter does `chars[count] = c` and `count += 1`. Return `"".join(chars[:count])`.
+
+=== task: code easy
+title: Distribute Elements Into Two Arrays I
+leetcode: 3069 | Distribute Elements Into Two Arrays I | distribute-elements-into-two-arrays-i
+patterns: count
+prompt: nums holds n different numbers. Share them out between two lists, arr1 and arr2: `nums[0]` goes to arr1 and `nums[1]` to arr2. After that, each number goes to arr1 if the last number in arr1 is bigger than the last number in arr2, and to arr2 otherwise. Write `result_array(nums)` that returns arr1 followed by arr2.
+
+Make arr1 and arr2 static arrays, `[0] * n` each, with a count each. The last number in arr1 is `arr1[count1 - 1]`, and the next one goes in at `arr1[count1]`.
+
+**Example 1:** `result_array([2, 1, 3])` returns `[2, 3, 1]`: 2 > 1, so 3 goes to arr1.
+
+**Example 2:** `result_array([5, 4, 3, 8])` returns `[5, 3, 4, 8]`: 5 > 4, so 3 goes to arr1. Then 3 < 4, so 8 goes to arr2.
+
+**Constraints:** 3 ≤ n ≤ 50, 1 ≤ `nums[i]` ≤ 100, and the numbers are all different.
+starter:
+```python
+def result_array(nums):
+    # your code here
+    return nums
+```
+solution:
+```python
+def result_array(nums):
+    n = len(nums)
+    arr1 = [0] * n
+    arr2 = [0] * n
+    arr1[0] = nums[0]
+    arr2[0] = nums[1]
+    count1 = 1
+    count2 = 1
+    for i in range(2, n):
+        if arr1[count1 - 1] > arr2[count2 - 1]:
+            arr1[count1] = nums[i]
+            count1 += 1
+        else:
+            arr2[count2] = nums[i]
+            count2 += 1
+    return arr1[:count1] + arr2[:count2]
+```
+tests:
+- result_array([2, 1, 3])
+- result_array([5, 4, 3, 8])
+- result_array([1, 2, 3])
+- result_array([3, 2, 1])
+- result_array([10, 20, 5, 30, 1, 40, 2])
+- result_array([(i * 37) % 97 + 1 for i in range(1, 51)])
+fail[2]: 3 goes to arr1, because 5 > 4. The last numbers are then 3 and 4, so 8 goes to arr2.
+fail[3]: 1 < 2, so 3 goes to arr2, and the order stays `[1, 2, 3]`.
+fail[4]: 3 > 2, so 1 goes to arr1: `[3, 1, 2]`.
+fail[5]: arr1 ends up as [10, 30, 1] and arr2 as [20, 5, 40, 2]. Compare the two last numbers each time, not the first ones.
+fail[6]: 50 numbers: each one only needs the last number of each list.
+edges:
+- three numbers :: len(nums) == 3 :: result_array([1, 3, 2])
+- the first number is the bigger :: len(nums) > 3 and nums[0] > nums[1] :: result_array([4, 1, 2, 3])
+- the second number is the bigger :: len(nums) > 3 and nums[0] < nums[1] :: result_array([1, 4, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One comparison and one write for each number.
+why_space: arr1 and arr2 have n slots each.
+hint: `arr1 = [0] * n`, `arr1[0] = nums[0]` and `count1 = 1`, and the same for arr2 with `nums[1]`.
+hint: For i from 2 to n − 1: if `arr1[count1 - 1] > arr2[count2 - 1]`, write `nums[i]` at `arr1[count1]` and add 1 to count1; otherwise do the same with arr2.
+hint: Return `arr1[:count1] + arr2[:count2]`.
+right: count − 1 is always where the last number is, so each comparison and each add is O(1), and the lists never have to grow.
+wrong: Two lists of n slots, with counts. After the first two numbers, compare `arr1[count1 - 1]` with `arr2[count2 - 1]`, write `nums[i]` at the next free slot of arr1 if its last number is bigger, or of arr2 otherwise, and add 1 to that count. Return the used parts, arr1's first.
+
+=== task: code easy
+title: Semi-Ordered Permutation
+leetcode: 2717 | Semi-Ordered Permutation | semi-ordered-permutation
+patterns: insert
+prompt: nums holds each whole number from 1 to n once. It's **semi-ordered** when 1 is first and n is last. One move swaps two neighbours. Write `semi_ordered_permutation(nums)` that returns the fewest moves that make nums semi-ordered.
+
+Moving the item at index i to the front is an insert at index 0: the items before it each move one place right, so it takes i moves, one swap each. Find where 1 and n are and add up the moves for each. Then think about what happens when 1 starts to the right of n: on its way to the front, 1 swaps with n, and that one swap also moves n one place nearer the end.
+
+**Example 1:** `semi_ordered_permutation([2, 1, 4, 3])` returns `2`: 1 needs 1 move, and 4 needs 1 move.
+
+**Example 2:** `semi_ordered_permutation([2, 4, 1, 3])` returns `3`: 1 needs 2 moves, and the second one swaps it with 4, which then needs 1 move instead of 2.
+
+**Example 3:** `semi_ordered_permutation([1, 3, 4, 2, 5])` returns `0`.
+
+**Constraints:** 2 ≤ n ≤ 50, and nums holds each number from 1 to n once.
+starter:
+```python
+def semi_ordered_permutation(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def semi_ordered_permutation(nums):
+    n = len(nums)
+    first = nums.index(1)
+    last = nums.index(n)
+    moves = first + (n - 1 - last)
+    if first > last:
+        moves -= 1
+    return moves
+```
+tests:
+- semi_ordered_permutation([2, 1, 4, 3])
+- semi_ordered_permutation([2, 4, 1, 3])
+- semi_ordered_permutation([1, 3, 4, 2, 5])
+- semi_ordered_permutation([2, 1])
+- semi_ordered_permutation([3, 1, 2])
+- semi_ordered_permutation(list(range(50, 0, -1)))
+fail[2]: 1 moves 2 places to the front, swapping with 4 on the way, so 4 then needs only 1 move: 3.
+fail[3]: 1 is first and 5 is last already: 0.
+fail[4]: One swap puts 1 first and 2 last: 1.
+fail[5]: 1 needs 1 move, and that swap also moves 3 one place nearer the end, which leaves 1 more move: 2.
+fail[6]: 50 is first and 1 is last: 49 moves each, minus 1 for the swap they share: 97.
+edges:
+- two numbers :: len(nums) == 2 :: semi_ordered_permutation([1, 2])
+- 1 starts to the right of n :: len(nums) > 2 and nums.index(1) > nums.index(len(nums)) :: semi_ordered_permutation([3, 2, 1])
+- 1 starts to the left of n :: len(nums) > 2 and nums.index(1) < nums.index(len(nums)) :: semi_ordered_permutation([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: Finding 1 and n is one pass each, and the answer is then one formula.
+why_space: Two positions and a total.
+hint: `first = nums.index(1)` and `last = nums.index(n)`.
+hint: 1 needs `first` moves to reach the front, and n needs `n - 1 - last` to reach the end.
+hint: If `first > last`, one swap moves both of them at once: take 1 off the total.
+right: Each swap moves an item one place, so moving it to an end costs exactly its distance from the end, and there's no need to make the swaps.
+wrong: `first = nums.index(1)` and `last = nums.index(n)`. Return `first + (n - 1 - last)`, minus 1 if `first > last`.
+
+=== task: code easy
+title: Minimum Right Shifts to Sort the Array
+leetcode: 2855 | Minimum Right Shifts to Sort the Array | minimum-right-shifts-to-sort-the-array
+patterns: insert + bounds
+prompt: A **right shift** moves every item of nums one place right, and the last item, which falls off the end, goes to index 0. Write `minimum_right_shifts(nums)` that returns the fewest right shifts that sort nums from smallest to biggest, or −1 if no number of shifts can. The numbers are all different.
+
+Don't try one number of shifts after another. Go round nums once as a circle, counting the places i where `nums[i] > nums[(i + 1) % n]`: the **drops**. Shifts never change the circle, and a sorted list has exactly one drop, from its last item round to its first. So more than one drop means −1. With one drop, at index i, the smallest number is at index i + 1, and it needs n − 1 − i shifts to reach index 0.
+
+**Example 1:** `minimum_right_shifts([3, 4, 5, 1, 2])` returns `2`.
+
+**Example 2:** `minimum_right_shifts([1, 3, 5])` returns `0`.
+
+**Example 3:** `minimum_right_shifts([2, 1, 4])` returns `-1`.
+
+**Constraints:** 1 ≤ n ≤ 100, 1 ≤ `nums[i]` ≤ 100, and the numbers are all different.
+starter:
+```python
+def minimum_right_shifts(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def minimum_right_shifts(nums):
+    n = len(nums)
+    drops = 0
+    where = -1
+    for i in range(n):
+        if nums[i] > nums[(i + 1) % n]:
+            drops += 1
+            where = i
+    if drops == 0:
+        return 0
+    if drops > 1:
+        return -1
+    return n - 1 - where
+```
+tests:
+- minimum_right_shifts([3, 4, 5, 1, 2])
+- minimum_right_shifts([1, 3, 5])
+- minimum_right_shifts([2, 1, 4])
+- minimum_right_shifts([7])
+- minimum_right_shifts([2, 1])
+- minimum_right_shifts(list(range(41, 101)) + list(range(1, 41)))
+fail[2]: Already sorted: the only drop is from 5 round to 1, at the last index, so 0 shifts.
+fail[3]: There's a drop from 2 to 1 and another from 4 round to 2: two drops, so −1.
+fail[4]: One number is always sorted: 0.
+fail[5]: One drop, at index 0: 1 shift.
+fail[6]: The drop is from 100 to 1, at index 59, so 100 − 1 − 59 = 40 shifts.
+speed: setup=nums = list(range(n // 2, n)) + list(range(1, n // 2)) | call=minimum_right_shifts(nums) | target=O(n)
+slow:
+```python
+def minimum_right_shifts(nums):
+    n = len(nums)
+    current = list(nums)
+    for shifts in range(n):
+        ordered = True
+        for i in range(n - 1):
+            if current[i] > current[i + 1]:
+                ordered = False
+        if ordered:
+            return shifts
+        current = [current[-1]] + current[:-1]
+    return -1
+```
+fail[speed]: Shifting and checking again is O(n) for each of up to n shifts: O(n²) in all. Counting the drops round the circle in one pass is enough.
+edges:
+- one number :: len(nums) == 1 :: minimum_right_shifts([4])
+- already sorted :: len(nums) > 1 and nums == sorted(nums) :: minimum_right_shifts([1, 2])
+- not sorted yet :: nums != sorted(nums) :: minimum_right_shifts([2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass round the circle, with one comparison at each position.
+why_space: A count of drops and where the last one was.
+hint: The neighbour after index i, going round, is `nums[(i + 1) % n]`: for the last index, that's `nums[0]`.
+hint: Count the drops, and remember the index of the last one.
+hint: No drops can only happen with one number: return 0. More than one: return −1. Otherwise return `n - 1 - where`.
+right: Going round the circle checks the step from the last item to the first with the same `% n` as every other pair, so one pass decides everything.
+wrong: Count the i where `nums[i] > nums[(i + 1) % n]`, and remember the last such i. 0 drops gives 0, more than 1 gives −1, and otherwise the answer is n − 1 − i.
+
+=== task: code easy
+title: Find the Peaks
+leetcode: 2951 | Find the Peaks | find-the-peaks
+patterns: bounds
+prompt: A **peak** in mountain is a number that's bigger than both of its neighbours. The first and last numbers are never peaks, because they have only one neighbour. Write `find_peaks(mountain)` that returns the indexes of all the peaks, smallest first.
+
+Loop i from 1 to n − 2, so that `mountain[i - 1]` and `mountain[i + 1]` both exist, and compare.
+
+**Example 1:** `find_peaks([2, 4, 4])` returns `[]`: 4 isn't bigger than the 4 after it.
+
+**Example 2:** `find_peaks([1, 4, 3, 8, 5])` returns `[1, 3]`.
+
+**Constraints:** 3 ≤ n ≤ 100, and 1 ≤ `mountain[i]` ≤ 100.
+starter:
+```python
+def find_peaks(mountain):
+    # your code here
+    return []
+```
+solution:
+```python
+def find_peaks(mountain):
+    peaks = []
+    for i in range(1, len(mountain) - 1):
+        if mountain[i] > mountain[i - 1] and mountain[i] > mountain[i + 1]:
+            peaks.append(i)
+    return peaks
+```
+tests:
+- find_peaks([2, 4, 4])
+- find_peaks([1, 4, 3, 8, 5])
+- find_peaks([1, 2, 1])
+- find_peaks([5, 4, 3])
+- find_peaks([3, 5, 5, 6, 2, 7, 1])
+- find_peaks([(i * i) % 13 + 1 for i in range(100)])
+fail[2]: 4 and 8 are each bigger than both their neighbours: `[1, 3]`.
+fail[3]: The 2 in the middle is a peak: `[1]`.
+fail[4]: The numbers only go down, so there are no peaks.
+fail[5]: The two 5s are equal neighbours, so neither is a peak. 6 and 7 are: `[3, 5]`.
+fail[6]: 100 numbers that go up and down in a repeating pattern: 30 peaks.
+edges:
+- three numbers :: len(mountain) == 3 :: find_peaks([1, 3, 2])
+- equal neighbours :: len(mountain) > 3 and any(mountain[i] == mountain[i + 1] for i in range(len(mountain) - 1)) :: find_peaks([1, 5, 5, 2])
+- every neighbour different :: len(mountain) > 3 and all(mountain[i] != mountain[i + 1] for i in range(len(mountain) - 1)) :: find_peaks([1, 3, 2, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of mountain.
+why_time: Two comparisons at each position.
+why_space: The answer can hold up to about n / 2 indexes.
+hint: `for i in range(1, len(mountain) - 1)` leaves out both ends.
+hint: i is a peak when `mountain[i] > mountain[i - 1] and mountain[i] > mountain[i + 1]`.
+right: Starting at 1 and stopping before the last index means every neighbour that's read exists, so no other check is needed.
+wrong: For i from 1 to n − 2, add i to the answer when `mountain[i]` is bigger than both `mountain[i - 1]` and `mountain[i + 1]`.
+
+=== task: code easy
+title: Count the Number of Incremovable Subarrays I
+leetcode: 2970 | Count the Number of Incremovable Subarrays I | count-the-number-of-incremovable-subarrays-i
+patterns: delete + bounds
+prompt: A piece of nums from index i to index j, with i ≤ j, is **incremovable** if removing it leaves a list that's **strictly increasing**: each number bigger than the one before. An empty list counts as strictly increasing. Write `incremovable_subarray_count(nums)` that returns how many incremovable pieces nums has.
+
+What's left is the part before i and the part after j, so three things must hold: the part before i is strictly increasing, the part after j is strictly increasing, and where they join, when both parts exist, `nums[i - 1] < nums[j + 1]`. Work out the first two for every i and j before you start, in two lists filled from opposite ends: `left_ok[i]` says whether `nums[:i]` is strictly increasing, and `right_ok[j]` whether `nums[j:]` is. Then each piece takes O(1) to check.
+
+**Example 1:** `incremovable_subarray_count([1, 2, 3, 4])` returns `10`: every one of the 10 pieces works.
+
+**Example 2:** `incremovable_subarray_count([6, 5, 7, 8])` returns `7`.
+
+**Example 3:** `incremovable_subarray_count([8, 7, 6, 6])` returns `3`: [8, 7, 6], [7, 6, 6] and [8, 7, 6, 6].
+
+**Constraints:** 1 ≤ n ≤ 50, and 1 ≤ `nums[i]` ≤ 50.
+starter:
+```python
+def incremovable_subarray_count(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def incremovable_subarray_count(nums):
+    n = len(nums)
+    left_ok = [True] * (n + 1)
+    for i in range(2, n + 1):
+        left_ok[i] = left_ok[i - 1] and nums[i - 2] < nums[i - 1]
+    right_ok = [True] * (n + 1)
+    for j in range(n - 2, -1, -1):
+        right_ok[j] = right_ok[j + 1] and nums[j] < nums[j + 1]
     count = 0
-    for x in slots:
-        if x is not None:
+    for i in range(n):
+        if not left_ok[i]:
+            break
+        for j in range(i, n):
+            if not right_ok[j + 1]:
+                continue
+            if i > 0 and j + 1 < n and nums[i - 1] >= nums[j + 1]:
+                continue
             count += 1
     return count
 ```
-fail[1]: The items 3, 5 and 7 move to the front in order, and the last two slots become None.
-fail[3]: There are no items: the count is 0 and the slots stay None.
-fail[5]: "b" moves into slot 1, and slot 2 becomes None.
-hint: Use a write position `w`: copy each item that isn't None to `slots[w]`, then `w += 1`.
-hint: Then set every slot from `w` to the end to None.
-hint: Return `w`, the number of items.
-right: One pass to copy and one to clear: O(n). Moving items one place at a time, again and again, would be O(n²).
-wrong: Copy each non-None item to the write position and move it on; then clear the slots from `w` to the end; return `w`.
+tests:
+- incremovable_subarray_count([1, 2, 3, 4])
+- incremovable_subarray_count([6, 5, 7, 8])
+- incremovable_subarray_count([8, 7, 6, 6])
+- incremovable_subarray_count([5])
+- incremovable_subarray_count([1, 1])
+- incremovable_subarray_count(list(range(1, 21)) + [3] + list(range(15, 44)))
+fail[2]: The 7 pieces are [5], [6], [6, 5], [5, 7], [6, 5, 7], [5, 7, 8] and [6, 5, 7, 8].
+fail[3]: Only pieces that leave at most one number work: removing [8, 7, 6], [7, 6, 6] or all four.
+fail[4]: Removing the only number leaves an empty list, which counts: 1.
+fail[5]: [1, 1] isn't strictly increasing, but removing either 1, or both, fixes it: 3.
+fail[6]: 50 numbers that rise, drop once in the middle and rise again: 612 pieces work.
+speed: setup=nums = list(range(1, n + 1)) | call=incremovable_subarray_count(nums) | target=O(n²) | sizes=20,40,80,160
+slow:
+```python
+def incremovable_subarray_count(nums):
+    n = len(nums)
+    count = 0
+    for i in range(n):
+        for j in range(i, n):
+            rest = nums[:i] + nums[j + 1:]
+            ok = True
+            for t in range(len(rest) - 1):
+                if rest[t] >= rest[t + 1]:
+                    ok = False
+            if ok:
+                count += 1
+    return count
+```
+fail[speed]: Building what's left and checking it is O(n) for every piece, O(n³) in all. With `left_ok` and `right_ok` worked out first, each piece takes O(1).
+edges:
+- one number :: len(nums) == 1 :: incremovable_subarray_count([3])
+- already strictly increasing :: len(nums) > 1 and all(nums[i] < nums[i + 1] for i in range(len(nums) - 1)) :: incremovable_subarray_count([1, 2])
+- not strictly increasing :: any(nums[i] >= nums[i + 1] for i in range(len(nums) - 1)) :: incremovable_subarray_count([2, 2])
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Two passes fill the lists, then each of the n × (n + 1) / 2 pieces is checked in O(1).
+why_space: left_ok and right_ok have n + 1 slots each.
+hint: `left_ok[0]` and `left_ok[1]` are True, and for i ≥ 2, `left_ok[i] = left_ok[i - 1] and nums[i - 2] < nums[i - 1]`.
+hint: `right_ok[n]` and `right_ok[n - 1]` are True, and going down from n − 2, `right_ok[j] = right_ok[j + 1] and nums[j] < nums[j + 1]`.
+hint: Removing the piece from i to j works when `left_ok[i]` and `right_ok[j + 1]` are True and, if `i > 0 and j + 1 < n`, also `nums[i - 1] < nums[j + 1]`.
+hint: Once `left_ok[i]` is False, it stays False for every bigger i, so the outer loop can stop there.
+right: The only new neighbours after a removal are `nums[i - 1]` and `nums[j + 1]`, and only when the piece doesn't touch an end, so one comparison and the two lists decide each piece.
+wrong: Fill left_ok from the left and right_ok from the right. For each i with `left_ok[i]` True, and each j ≥ i with `right_ok[j + 1]` True, count the piece unless `i > 0`, `j + 1 < n` and `nums[i - 1] >= nums[j + 1]`.
 
-=== task: code hard
-title: Remove every copy
-prompt: Write `remove_all_static(slots, count, x)` that removes every copy of `x` from the used part of a static array in **one pass**, keeping the other items in order. Set the freed slots to None and return the new count. Calling a one-item delete again and again would shift the array each time.
+=== task: code easy
+title: Fruits Into Baskets II
+leetcode: 3477 | Fruits Into Baskets II | fruits-into-baskets-ii
+patterns: full + count
+prompt: `fruits[i]` is how much there is of fruit type i, and `baskets[j]` is how much basket j can hold. Going through the fruit types in order, put each one into the leftmost basket that's still empty and big enough: `baskets[j] >= fruits[i]`. A basket takes one fruit type at most, and a fruit type that fits no basket stays unplaced. Write `num_of_unplaced_fruits(fruits, baskets)` that returns how many fruit types are left unplaced.
+
+Keep a list `used` of booleans, one for each basket. For each fruit type, search the baskets from the left for the first one that's free and big enough.
+
+**Example 1:** `num_of_unplaced_fruits([4, 2, 5], [3, 5, 4])` returns `1`: 4 goes in basket 1, 2 in basket 0, and 5 fits none of the baskets left.
+
+**Example 2:** `num_of_unplaced_fruits([3, 6, 1], [6, 4, 7])` returns `0`.
+
+**Constraints:** 1 ≤ n ≤ 100, fruits and baskets both have n numbers, and each number is from 1 to 1000.
 starter:
 ```python
-def remove_all_static(slots, count, x):
-    w = 0
+def num_of_unplaced_fruits(fruits, baskets):
     # your code here
-    return w
+    return 0
 ```
 solution:
 ```python
-def remove_all_static(slots, count, x):
-    w = 0
-    for i in range(count):
-        if slots[i] != x:
-            slots[w] = slots[i]
-            w += 1
-    for k in range(w, count):
-        slots[k] = None
-    return w
+def num_of_unplaced_fruits(fruits, baskets):
+    used = [False] * len(baskets)
+    unplaced = 0
+    for f in fruits:
+        placed = False
+        for j in range(len(baskets)):
+            if not used[j] and baskets[j] >= f:
+                used[j] = True
+                placed = True
+                break
+        if not placed:
+            unplaced += 1
+    return unplaced
 ```
 tests:
-- (lambda s: [remove_all_static(s, 4, 3), s])([3, 1, 3, 2, None])
-- (lambda s: [remove_all_static(s, 0, 1), s])([None])
-- (lambda s: [remove_all_static(s, 2, 5), s])([5, 5])
-- (lambda s: [remove_all_static(s, 2, 9), s])([1, 2, None])
-speed: setup=slots = [0, 1] * n; count = 2 * n | call=remove_all_static(slots, count, 0) | target=O(n)
-slow:
+- num_of_unplaced_fruits([4, 2, 5], [3, 5, 4])
+- num_of_unplaced_fruits([3, 6, 1], [6, 4, 7])
+- num_of_unplaced_fruits([5], [4])
+- num_of_unplaced_fruits([1], [1])
+- num_of_unplaced_fruits([2, 2, 2], [2, 1, 2])
+- num_of_unplaced_fruits([(i * 7) % 100 * 10 + 1 for i in range(100)], [(i * 13) % 100 * 10 + 5 for i in range(100)])
+fail[2]: 3 goes in basket 0, 6 in basket 2 and 1 in basket 1: everything fits.
+fail[3]: The basket holds 4, too little for 5: 1.
+fail[4]: 1 fits a basket of 1 exactly: `baskets[j] >= fruits[i]` includes equal.
+fail[5]: The first two 2s take baskets 0 and 2, and basket 1 is too small for the third.
+fail[6]: 100 fruit types and 100 baskets: 13 are left unplaced.
+edges:
+- one fruit type :: len(fruits) == 1 :: num_of_unplaced_fruits([2], [3])
+- a fruit type too big for every basket :: len(fruits) > 1 and max(fruits) > max(baskets) :: num_of_unplaced_fruits([1, 9], [5, 5])
+- every fruit type small enough for some basket :: len(fruits) > 1 and max(fruits) <= max(baskets) :: num_of_unplaced_fruits([2, 1], [1, 2])
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the number of fruit types, which is also the number of baskets.
+why_time: For each of the n fruit types, a search through up to n baskets.
+why_space: One flag for each basket.
+hint: `used = [False] * len(baskets)`.
+hint: For each fruit f, loop j over the baskets, and stop at the first j with `not used[j] and baskets[j] >= f`: mark it used.
+hint: If the search finds nothing, add 1 to the count of unplaced fruit types.
+right: Baskets are taken from anywhere, so the free ones aren't all at one end: a search from the left finds the first free basket that fits, and a flag for each basket remembers which are taken.
+wrong: `used = [False] * n`. For each fruit, find the first j with `not used[j]` and `baskets[j] >= fruit`, and mark it, or count the fruit as unplaced if there's none.
+
+=== task: code easy
+title: Minimum Number of Chairs in a Waiting Room
+leetcode: 3168 | Minimum Number of Chairs in a Waiting Room | minimum-number-of-chairs-in-a-waiting-room
+patterns: full
+prompt: s describes a waiting room, one second at a time: `"E"` means a person enters and takes a chair, and `"L"` means a person leaves and frees one. The room starts empty. Write `minimum_chairs(s)` that returns the fewest chairs that give everyone a seat.
+
+The chairs are the room's capacity, and it needs as many as the most people that are ever inside at the same time. Keep a count of the people inside, and the biggest it has been.
+
+**Example 1:** `minimum_chairs("EEEEEEE")` returns `7`.
+
+**Example 2:** `minimum_chairs("ELELEEL")` returns `2`.
+
+**Example 3:** `minimum_chairs("ELEELEELLL")` returns `3`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 50, s holds only "E" and "L", and nobody leaves an empty room.
+starter:
 ```python
-def remove_all_static(slots, count, x):
-    i = 0
-    while i < count:
-        if slots[i] == x:
-            j = i
-            while j < count - 1:
-                slots[j] = slots[j + 1]
-                j += 1
-            slots[count - 1] = None
-            count -= 1
+def minimum_chairs(s):
+    # your code here
+    return len(s)
+```
+solution:
+```python
+def minimum_chairs(s):
+    inside = 0
+    chairs = 0
+    for c in s:
+        if c == "E":
+            inside += 1
         else:
+            inside -= 1
+        chairs = max(chairs, inside)
+    return chairs
+```
+tests:
+- minimum_chairs("EEEEEEE")
+- minimum_chairs("ELELEEL")
+- minimum_chairs("ELEELEELLL")
+- minimum_chairs("E")
+- minimum_chairs("ELELEL")
+- minimum_chairs("EEL" * 6 + "L" * 6 + "EEEL" * 4 + "L" * 8)
+fail[2]: There are never more than 2 people inside at once: 2.
+fail[3]: At its fullest, the room holds 3 people: 3.
+fail[4]: One person needs one chair.
+fail[5]: Each person leaves before the next one enters: 1 chair.
+fail[6]: The count rises and falls, and at its highest, 9 people are inside.
+edges:
+- one second :: len(s) == 1 :: minimum_chairs("E")
+- someone leaves :: len(s) > 1 and "L" in s :: minimum_chairs("EL")
+- nobody leaves :: len(s) > 1 and "L" not in s :: minimum_chairs("EE")
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s.
+why_time: One step for each second.
+why_space: Two counts.
+hint: `inside = 0` and `chairs = 0`.
+hint: For each c in s, add 1 to inside for "E" and take 1 off for "L", then `chairs = max(chairs, inside)`.
+right: The chairs are a capacity, and the capacity a room needs is the highest count of people in it at once, so one running maximum is the answer.
+wrong: Count the people inside as you go through s, and return the biggest the count gets.
+
+=== task: code easy
+title: Divide a String Into Groups of Size k
+leetcode: 2138 | Divide a String Into Groups of Size k | divide-a-string-into-groups-of-size-k
+patterns: blocks
+prompt: Write `divide_string(s, k, fill)` that splits s into groups of k characters: the first k characters, then the next k, and onwards. If the last group is shorter than k, add copies of the letter fill to its end until it has k. Return the groups in order.
+
+Group b starts at index `b * k`, so `range(0, len(s), k)` gives every start, and `s[start:start + k]` is the group.
+
+**Example 1:** `divide_string("abcdefghi", 3, "x")` returns `["abc", "def", "ghi"]`.
+
+**Example 2:** `divide_string("abcdefghij", 3, "x")` returns `["abc", "def", "ghi", "jxx"]`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 100 and 1 ≤ k ≤ 100. s holds lowercase letters, and fill is one lowercase letter.
+starter:
+```python
+def divide_string(s, k, fill):
+    # your code here
+    return [s]
+```
+solution:
+```python
+def divide_string(s, k, fill):
+    groups = []
+    for start in range(0, len(s), k):
+        piece = s[start:start + k]
+        groups.append(piece + fill * (k - len(piece)))
+    return groups
+```
+tests:
+- divide_string("abcdefghi", 3, "x")
+- divide_string("abcdefghij", 3, "x")
+- divide_string("a", 1, "z")
+- divide_string("ab", 5, "q")
+- divide_string("hello", 2, "y")
+- divide_string("ab" * 50, 7, "z")
+fail[2]: The last group holds only "j", so it gets two x's: "jxx".
+fail[3]: One letter, in groups of 1: `["a"]`.
+fail[4]: k is bigger than the whole string: one group, "ab" and then three q's.
+fail[5]: The last group, "o", gets one y.
+fail[6]: 100 characters make 14 full groups of 7 and a last group of 2, which gets five z's.
+edges:
+- one group :: len(s) <= k :: divide_string("ab", 2, "x")
+- the length a multiple of k :: len(s) > k and len(s) % k == 0 :: divide_string("abcd", 2, "x")
+- a short last group :: len(s) > k and len(s) % k != 0 :: divide_string("abc", 2, "x")
+edge_count: 2
+complexity: time=O(n + k) | space=O(n + k)
+complexity_options: O(n + k); O(n × k)
+complexity_note: n is the length of s.
+why_time: Each character is copied into one group, and the last group gets fewer than k fill letters.
+why_space: The groups hold the n characters and the fill letters.
+hint: `for start in range(0, len(s), k)` visits the first character of each group.
+hint: `piece = s[start:start + k]` is shorter than k only for the last group.
+hint: Fill it up with `fill * (k - len(piece))`.
+right: The start of each block comes from `b * k`, so there's no counting along the string, and only the last block can be short.
+wrong: For each start in `range(0, len(s), k)`, take `s[start:start + k]`, add `fill * (k - len(piece))`, and append it.
+
+=== task: code easy
+title: 1-bit and 2-bit Characters
+leetcode: 717 | 1-bit and 2-bit Characters | 1-bit-and-2-bit-characters
+patterns: bounds
+prompt: A code has two kinds of characters: a **one-bit** character, written 0, and a **two-bit** character, written 10 or 11. bits is a message in this code, and it ends with 0. Write `is_one_bit_character(bits)` that returns `True` if the last character must be a one-bit character.
+
+Read the message from the start: a 0 is a whole character of 1 bit, and a 1 starts a character of 2 bits. Jump over each character with `i += bits[i] + 1`, and stop once i reaches the last index or goes past it. The last character has one bit exactly when you land on the last index instead of jumping past it.
+
+**Example 1:** `is_one_bit_character([1, 0, 0])` returns `True`: the message is 10, then 0.
+
+**Example 2:** `is_one_bit_character([1, 1, 1, 0])` returns `False`: the message is 11, then 10.
+
+**Constraints:** 1 ≤ `len(bits)` ≤ 1000, each bit is 0 or 1, and the last bit is 0.
+starter:
+```python
+def is_one_bit_character(bits):
+    # your code here
+    return True
+```
+solution:
+```python
+def is_one_bit_character(bits):
+    i = 0
+    while i < len(bits) - 1:
+        i += bits[i] + 1
+    return i == len(bits) - 1
+```
+tests:
+- is_one_bit_character([1, 0, 0])
+- is_one_bit_character([1, 1, 1, 0])
+- is_one_bit_character([0])
+- is_one_bit_character([1, 0])
+- is_one_bit_character([0, 1, 0])
+- is_one_bit_character([1] * 999 + [0])
+fail[2]: 11, then 10: the last 0 belongs to a two-bit character.
+fail[3]: A single 0 is a one-bit character.
+fail[4]: 10 is one two-bit character.
+fail[5]: 0, then 10: the last character has two bits.
+fail[6]: 999 ones and a 0. The ones pair up as 11 until the last one, which goes with the 0 as 10: `False`.
+edges:
+- one bit :: len(bits) == 1 :: is_one_bit_character([0])
+- a 1 right before the last 0 :: len(bits) > 1 and bits[-2] == 1 :: is_one_bit_character([1, 0])
+- a 0 right before the last 0 :: len(bits) > 1 and bits[-2] == 0 :: is_one_bit_character([0, 0])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of bits.
+why_time: Each jump passes one character, and there are at most n of them.
+why_space: One position.
+hint: `i = 0`, and `while i < len(bits) - 1:` add `bits[i] + 1` to i.
+hint: Return `i == len(bits) - 1`.
+right: Only reading from the start tells you where each character begins, and the last jump either lands on the last index or goes one past it: that's the whole answer.
+wrong: Start at `i = 0`, and while `i < n - 1`, do `i += bits[i] + 1`. Return whether `i == n - 1`.
+
+=== task: code medium
+title: Design Front Middle Back Queue
+leetcode: 1670 | Design Front Middle Back Queue | design-front-middle-back-queue
+patterns: insert
+prompt: Write a class `FrontMiddleBackQueue`, a queue that adds and removes items at the front, in the middle and at the back:
+
+- `push_front(val)`, `push_middle(val)` and `push_back(val)` add val.
+- `pop_front()`, `pop_middle()` and `pop_back()` remove an item and return it, or return −1 if the queue is empty.
+
+With m items in the queue, `push_middle` inserts at index m // 2, and `pop_middle` removes the item at index (m − 1) // 2. So pushing 9 into the middle of [1, 2, 3] gives [1, 9, 2, 3], and popping the middle of [1, 2, 3, 4] removes 2.
+
+Keep the items in a static array, `[0] * 1000`, with a count: there are at most 1000 calls, so it never gets full. Every push is an insert at index 0, m // 2 or m, which shifts the items after it one place right, and every pop is a delete, which shifts them one place left.
+
+**Example:** `run(["FrontMiddleBackQueue", "push_front", "push_back", "push_middle", "push_middle", "pop_front", "pop_middle", "pop_middle", "pop_back", "pop_front"], [[], [1], [2], [3], [4], [], [], [], [], []])` returns `[None, None, None, None, None, 1, 3, 4, 2, -1]`: the queue goes [1], [1, 2], [1, 3, 2], [1, 4, 3, 2]. Then 1, 3, 4 and 2 come out, and the last pop finds it empty.
+
+**Constraints:** 1 ≤ val ≤ 10⁹, and there are at most 1000 calls.
+starter:
+```python
+class FrontMiddleBackQueue:
+    def __init__(self):
+        self.slots = [0] * 1000
+        self.count = 0
+
+    def push_front(self, val):
+        pass
+
+    def push_middle(self, val):
+        pass
+
+    def push_back(self, val):
+        pass
+
+    def pop_front(self):
+        return -1
+
+    def pop_middle(self):
+        return -1
+
+    def pop_back(self):
+        return -1
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "FrontMiddleBackQueue":
+            q = FrontMiddleBackQueue()
+            results.append(None)
+        elif command == "push_front":
+            results.append(q.push_front(args[0]))
+        elif command == "push_middle":
+            results.append(q.push_middle(args[0]))
+        elif command == "push_back":
+            results.append(q.push_back(args[0]))
+        elif command == "pop_front":
+            results.append(q.pop_front())
+        elif command == "pop_middle":
+            results.append(q.pop_middle())
+        elif command == "pop_back":
+            results.append(q.pop_back())
+    return results
+```
+solution:
+```python
+class FrontMiddleBackQueue:
+    def __init__(self):
+        self.slots = [0] * 1000
+        self.count = 0
+
+    def insert(self, i, x):
+        j = self.count
+        while j > i:
+            self.slots[j] = self.slots[j - 1]
+            j -= 1
+        self.slots[i] = x
+        self.count += 1
+
+    def delete(self, i):
+        if self.count == 0:
+            return -1
+        x = self.slots[i]
+        for j in range(i, self.count - 1):
+            self.slots[j] = self.slots[j + 1]
+        self.count -= 1
+        return x
+
+    def push_front(self, val):
+        self.insert(0, val)
+
+    def push_middle(self, val):
+        self.insert(self.count // 2, val)
+
+    def push_back(self, val):
+        self.insert(self.count, val)
+
+    def pop_front(self):
+        return self.delete(0)
+
+    def pop_middle(self):
+        return self.delete((self.count - 1) // 2)
+
+    def pop_back(self):
+        return self.delete(self.count - 1)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "FrontMiddleBackQueue":
+            q = FrontMiddleBackQueue()
+            results.append(None)
+        elif command == "push_front":
+            results.append(q.push_front(args[0]))
+        elif command == "push_middle":
+            results.append(q.push_middle(args[0]))
+        elif command == "push_back":
+            results.append(q.push_back(args[0]))
+        elif command == "pop_front":
+            results.append(q.pop_front())
+        elif command == "pop_middle":
+            results.append(q.pop_middle())
+        elif command == "pop_back":
+            results.append(q.pop_back())
+    return results
+```
+tests:
+- run(["FrontMiddleBackQueue", "push_front", "push_back", "push_middle", "push_middle", "pop_front", "pop_middle", "pop_middle", "pop_back", "pop_front"], [[], [1], [2], [3], [4], [], [], [], [], []])
+- run(["FrontMiddleBackQueue", "pop_middle", "pop_back", "pop_front"], [[], [], [], []])
+- run(["FrontMiddleBackQueue", "push_middle", "push_middle", "push_middle", "pop_front", "pop_back", "pop_middle"], [[], [5], [6], [7], [], [], []])
+- run(["FrontMiddleBackQueue", "push_back", "push_back", "push_back", "push_back", "pop_middle", "pop_middle", "push_middle", "pop_front", "pop_front", "pop_front"], [[], [1], [2], [3], [4], [], [], [9], [], [], []])
+- run(["FrontMiddleBackQueue", "push_front", "pop_back", "push_back", "pop_front", "push_middle", "pop_middle", "pop_middle"], [[], [8], [], [9], [], [10], [], []])
+- (lambda r: [r.count(None), sum(x for x in r if x is not None), r[-5:]])(run(["FrontMiddleBackQueue"] + ["push_front", "push_middle", "push_back"] * 150 + ["pop_middle", "pop_front", "pop_back", "pop_middle"] * 99 + ["push_middle", "pop_front", "pop_middle"], [[]] + [[i + 1] for i in range(450)] + [[]] * 396 + [[1000], [], []]))
+fail[2]: A pop from an empty queue returns −1, from every place.
+fail[3]: The three push_middle calls build [6, 7, 5]: the middle of 1 item is index 0, and the middle of 2 items is index 1.
+fail[4]: With 4 items, pop_middle removes index 1, the left one of the two middle items: 2. Then it removes 3 from [1, 3, 4].
+fail[5]: Items can come out of a different place from the one they went in at, and the last pop finds the queue empty.
+fail[6]: 450 pushes and 396 pops, spread across all three places.
+edges:
+- only pushes :: len(commands) > 1 and all(c.startswith("push") for c in commands[1:]) :: run(["FrontMiddleBackQueue", "push_middle"], [[], [1]])
+- a pop before any push :: len(commands) > 1 and commands[1].startswith("pop") :: run(["FrontMiddleBackQueue", "pop_front"], [[], []])
+- pushes, then pops :: len(commands) > 1 and commands[1].startswith("push") and any(c.startswith("pop") for c in commands) :: run(["FrontMiddleBackQueue", "push_back", "pop_middle"], [[], [1], []])
+edge_count: 2
+complexity: time=O(n) | space=O(q)
+complexity_options: O(q); O(n × q)
+complexity_note: Give the time of one call, with n items in the queue. q is the most calls there can be, 1000, which sets the capacity.
+why_time: A push or pop at the front or in the middle moves up to n items one place; at the back it moves none.
+why_space: The static array has a slot for every item there could ever be.
+hint: Write two helpers. `insert(i, x)` moves the slots from count − 1 down to i one place right, writes x at i and adds 1 to count. `delete(i)` keeps `slots[i]`, moves the slots from i + 1 to count − 1 one place left, and takes 1 off count.
+hint: push_front is `insert(0, val)`, push_middle is `insert(count // 2, val)` and push_back is `insert(count, val)`.
+hint: pop_front is `delete(0)`, pop_middle is `delete((count - 1) // 2)` and pop_back is `delete(count - 1)`, and each returns −1 when count is 0.
+right: All six operations are an insert or a delete at a position worked out from count, so two shifting helpers do all the work. A pop at the back moves nothing, and one at the front moves everything.
+wrong: Keep `slots = [0] * 1000` and count. Insert at i by shifting the slots from i onwards right, and delete at i by shifting the slots after i left. Use 0, count // 2 and count for the pushes, and 0, (count − 1) // 2 and count − 1 for the pops, which return −1 when the queue is empty.
+
+=== task: code medium
+title: Design Memory Allocator
+leetcode: 2502 | Design Memory Allocator | design-memory-allocator
+patterns: full + count
+prompt: A memory has n units, numbered 0 to n − 1, all free at the start. Write a class `Allocator`:
+
+- `Allocator(n)` makes the memory.
+- `allocate(size, m_id)` finds the leftmost run of size free units in a row, marks every unit of it with m_id, and returns the run's first index. If there's no such run, it returns −1 and changes nothing.
+- `free_memory(m_id)` frees every unit marked with m_id and returns how many there were. The same m_id can be used for several runs.
+
+Keep the memory as a static array, `[0] * n`, with 0 meaning free. To find a run, go through the units once with a count of the free units in a row so far: a used unit sets it back to 0, and when it reaches size, the run ends at the current unit. Don't check every possible start one at a time.
+
+**Example:** `run(["Allocator", "allocate", "allocate", "allocate", "free_memory", "allocate", "allocate", "allocate", "free_memory", "allocate", "free_memory"], [[10], [1, 1], [1, 2], [1, 3], [2], [3, 4], [1, 1], [1, 1], [1], [10, 2], [7]])` returns `[None, 0, 1, 2, 1, 3, 1, 6, 3, -1, 0]`: units 0, 1 and 2 get ids 1, 2 and 3. Freeing id 2 frees unit 1, which id 1 gets back later, and freeing id 1 then frees units 0, 1 and 6.
+
+**Constraints:** 1 ≤ n, size, m_id ≤ 1000, and there are at most 1000 calls.
+starter:
+```python
+class Allocator:
+    def __init__(self, n):
+        self.memory = [0] * n
+
+    def allocate(self, size, m_id):
+        return -1
+
+    def free_memory(self, m_id):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Allocator":
+            memory = Allocator(args[0])
+            results.append(None)
+        elif command == "allocate":
+            results.append(memory.allocate(args[0], args[1]))
+        elif command == "free_memory":
+            results.append(memory.free_memory(args[0]))
+    return results
+```
+solution:
+```python
+class Allocator:
+    def __init__(self, n):
+        self.memory = [0] * n
+
+    def allocate(self, size, m_id):
+        run = 0
+        for i in range(len(self.memory)):
+            if self.memory[i] == 0:
+                run += 1
+                if run == size:
+                    start = i - size + 1
+                    for j in range(start, i + 1):
+                        self.memory[j] = m_id
+                    return start
+            else:
+                run = 0
+        return -1
+
+    def free_memory(self, m_id):
+        freed = 0
+        for i in range(len(self.memory)):
+            if self.memory[i] == m_id:
+                self.memory[i] = 0
+                freed += 1
+        return freed
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Allocator":
+            memory = Allocator(args[0])
+            results.append(None)
+        elif command == "allocate":
+            results.append(memory.allocate(args[0], args[1]))
+        elif command == "free_memory":
+            results.append(memory.free_memory(args[0]))
+    return results
+```
+tests:
+- run(["Allocator", "allocate", "allocate", "allocate", "free_memory", "allocate", "allocate", "allocate", "free_memory", "allocate", "free_memory"], [[10], [1, 1], [1, 2], [1, 3], [2], [3, 4], [1, 1], [1, 1], [1], [10, 2], [7]])
+- run(["Allocator", "allocate", "allocate"], [[3], [4, 1], [3, 1]])
+- run(["Allocator", "allocate", "allocate", "free_memory"], [[3], [3, 5], [1, 6], [5]])
+- run(["Allocator", "allocate", "allocate", "allocate", "free_memory", "allocate", "allocate", "allocate"], [[5], [2, 1], [1, 2], [2, 3], [2], [2, 4], [1, 5], [1, 6]])
+- run(["Allocator", "allocate", "allocate", "allocate", "allocate", "free_memory", "allocate"], [[6], [1, 7], [2, 8], [1, 7], [1, 9], [7], [2, 3]])
+- run(["Allocator", "allocate", "allocate", "free_memory"] + ["allocate", "free_memory"] * 12, [[1000], [499, 1], [1, 2], [1]] + [x for i in range(12) for x in ([500 + i % 2, 3], [3])])
+fail[2]: 4 units can't fit in 3, but 3 can, starting at index 0.
+fail[3]: A memory of 3 holds one run of 3, and then it's full: −1. Freeing id 5 gives back its 3 units.
+fail[4]: After unit 2 is freed, it's the only free unit: a run of 2 doesn't fit, a run of 1 does, and then the memory is full.
+fail[5]: Id 7 has two separate units, and freeing it frees both. The free units 0, 3 and 5 aren't next to each other, so a run of 2 doesn't fit.
+fail[6]: A memory of 1,000 with a used unit at 499: runs of 500 only fit after it, and runs of 501 don't fit at all. Checking each possible start on its own takes far too many steps.
+edges:
+- one unit of memory :: inputs[0][0] == 1 :: run(["Allocator", "allocate"], [[1], [1, 1]])
+- a run bigger than the memory :: inputs[0][0] > 1 and any(c == "allocate" and a[0] > inputs[0][0] for c, a in zip(commands, inputs)) :: run(["Allocator", "allocate"], [[2], [3, 1]])
+- every run no bigger than the memory :: inputs[0][0] > 1 and all(a[0] <= inputs[0][0] for c, a in zip(commands, inputs) if c == "allocate") :: run(["Allocator", "allocate", "free_memory"], [[2], [2, 1], [1]])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: Give the time of one call; n is the size of the memory.
+why_time: allocate makes one pass to find the run and marks at most size units, and free_memory makes one pass.
+why_space: The memory has n units.
+hint: In allocate, start with `run = 0`. For each i, if `self.memory[i] == 0`, add 1 to run; otherwise set run back to 0.
+hint: When run reaches size, the run goes from `i - size + 1` to i: mark those units with m_id and return `i - size + 1`. Return −1 after the loop.
+hint: In free_memory, set every unit equal to m_id back to 0, counting them.
+right: The count of free units in a row carries on from one unit to the next, so one pass finds the leftmost run that fits. Checking every start from scratch can look at the same unit size times.
+wrong: allocate: go through the memory with a count of free units in a row, which goes back to 0 after a used unit. When it reaches size, mark the run with m_id and return its start; return −1 after the loop. free_memory: set every unit with that id to 0, and count them.
+
+=== task: code medium
+title: Exam Room
+leetcode: 855 | Exam Room | exam-room
+patterns: insert + bounds
+prompt: An exam room has n seats in a row, numbered 0 to n − 1. A student who comes in takes the seat that's as far as possible from the closest other student. On a tie, they take the lowest-numbered seat, and in an empty room, seat 0. Write a class `ExamRoom`:
+
+- `ExamRoom(n)` makes an empty room.
+- `seat()` seats a student and returns their seat number. It's only called when there's a free seat.
+- `leave(p)` makes the student in seat p leave. There's always a student there.
+
+n can be 10⁹, so don't look at every seat. Keep the taken seats in a sorted list, taken. The best seat is always one of these:
+
+- seat 0, which is `taken[0]` away from the closest student,
+- the middle of the gap between two neighbouring taken seats a and b, `a + (b - a) // 2`, which is `(b - a) // 2` away,
+- seat n − 1, which is `n - 1 - taken[-1]` away.
+
+The two end seats need their own rule because they have a student on one side only. Put the new seat into taken by shifting, as you would insert into a static array, and remove a seat for leave by shifting the other way.
+
+**Example:** `run(["ExamRoom", "seat", "seat", "seat", "seat", "leave", "seat"], [[10], [], [], [], [], [4], []])` returns `[None, 0, 9, 4, 2, None, 5]`: the first student takes seat 0 and the second seat 9. Seat 4 is the middle of 0 and 9, and seat 2 is 2 away from both 0 and 4, like seat 6, but lower. When 4 leaves, the biggest gap is between 2 and 9, and its middle is 5.
+
+**Constraints:** 1 ≤ n ≤ 10⁹, and there are at most 10⁴ calls.
+starter:
+```python
+class ExamRoom:
+    def __init__(self, n):
+        self.n = n
+        self.taken = []
+
+    def seat(self):
+        return 0
+
+    def leave(self, p):
+        pass
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ExamRoom":
+            room = ExamRoom(args[0])
+            results.append(None)
+        elif command == "seat":
+            results.append(room.seat())
+        elif command == "leave":
+            results.append(room.leave(args[0]))
+    return results
+```
+solution:
+```python
+class ExamRoom:
+    def __init__(self, n):
+        self.n = n
+        self.taken = []
+
+    def seat(self):
+        if len(self.taken) == 0:
+            self.taken.append(0)
+            return 0
+        best = self.taken[0]
+        seat = 0
+        where = 0
+        for i in range(len(self.taken) - 1):
+            a = self.taken[i]
+            b = self.taken[i + 1]
+            d = (b - a) // 2
+            if d > best:
+                best = d
+                seat = a + d
+                where = i + 1
+        last = self.taken[-1]
+        if self.n - 1 - last > best:
+            seat = self.n - 1
+            where = len(self.taken)
+        self.taken.append(0)
+        j = len(self.taken) - 1
+        while j > where:
+            self.taken[j] = self.taken[j - 1]
+            j -= 1
+        self.taken[where] = seat
+        return seat
+
+    def leave(self, p):
+        i = self.taken.index(p)
+        for j in range(i, len(self.taken) - 1):
+            self.taken[j] = self.taken[j + 1]
+        self.taken.pop()
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ExamRoom":
+            room = ExamRoom(args[0])
+            results.append(None)
+        elif command == "seat":
+            results.append(room.seat())
+        elif command == "leave":
+            results.append(room.leave(args[0]))
+    return results
+```
+tests:
+- run(["ExamRoom", "seat", "seat", "seat", "seat", "leave", "seat"], [[10], [], [], [], [], [4], []])
+- run(["ExamRoom", "seat"], [[1], []])
+- run(["ExamRoom", "seat", "seat", "leave", "seat"], [[2], [], [], [0], []])
+- run(["ExamRoom", "seat", "seat", "seat", "leave", "seat", "leave", "seat"], [[10], [], [], [], [0], [], [9], []])
+- run(["ExamRoom", "seat", "seat", "seat", "seat", "seat"], [[5], [], [], [], [], []])
+- (lambda r: [r[1:9], r[-6:]])(run(["ExamRoom"] + ["seat"] * 150 + ["leave"] * 40 + ["seat"] * 40, [[536870913]] + [[]] * 150 + [[(i * 31) % 128 * 4194304] for i in range(40)] + [[]] * 40))
+fail[2]: A room with one seat: 0.
+fail[3]: Seats 0 and 1 fill the room. When 0 leaves, it's the only free seat.
+fail[4]: After 0 leaves, seat 0 is 4 away from the student in seat 4, more than the middle of 4 and 9 gives. After 9 leaves, seat 9 is 5 away.
+fail[5]: Seats 1 and 3 are both 1 away from their neighbours, and the lower one goes first.
+fail[6]: A room of 536,870,913 seats: looking at every seat would take hundreds of millions of steps.
+edges:
+- a room with one seat :: inputs[0][0] == 1 :: run(["ExamRoom", "seat"], [[1], []])
+- a student leaves :: inputs[0][0] > 1 and "leave" in commands :: run(["ExamRoom", "seat", "leave"], [[3], [], [0]])
+- nobody leaves :: inputs[0][0] > 1 and "leave" not in commands :: run(["ExamRoom", "seat", "seat"], [[3], [], []])
+edge_count: 2
+complexity: time=O(k) | space=O(k)
+complexity_options: O(k); O(k log k)
+complexity_note: Give the time of one call, with k students in the room.
+why_time: seat looks at each gap once and shifts up to k seats to insert, and leave searches and shifts up to k seats.
+why_space: taken holds the k seats in use.
+hint: In an empty room, the answer is 0. Otherwise start with `best = taken[0]`, for seat 0.
+hint: For each neighbouring pair a, b in taken, `d = (b - a) // 2`, and if `d > best`, seat `a + d` wins. Then check seat n − 1, at distance `n - 1 - taken[-1]`. Use `>`, not `>=`, so that a tie keeps the lower seat.
+hint: Remember the index in taken where the winning seat goes, append a slot, shift the seats from that index onwards one place right, and write the seat in.
+hint: For leave, find p's index, shift the seats after it one place left, and remove the last slot.
+right: Only the k taken seats matter, not the n seats in the room: the best seat is always an end or the middle of a gap, and keeping taken sorted puts every gap between two neighbours in the list.
+wrong: Keep taken sorted. seat: compare seat 0 (`taken[0]` away), the middle of each gap (`(b - a) // 2` away) and seat n − 1 (`n - 1 - taken[-1]` away), keeping the first best, and insert it by shifting. leave: remove p by shifting the seats after it left.
+
+=== task: code medium
+title: Shortest Subarray to be Removed to Make Array Sorted
+leetcode: 1574 | Shortest Subarray to be Removed to Make Array Sorted | shortest-subarray-to-be-removed-to-make-array-sorted
+patterns: delete + bounds
+prompt: Write `find_length_of_shortest_subarray(arr)` that returns the length of the shortest piece of neighbouring numbers to remove from arr so that what's left is **non-decreasing**: each number at least the one before. The piece can be empty, if arr is non-decreasing already.
+
+What's left is a part from the start of arr and a part that runs to its end. First find `left`, the last index of the longest non-decreasing start, and `right`, the first index of the longest non-decreasing end. Removing everything after left, or everything before right, always works. To keep some of both parts, the number before the gap must be at most the number after it: for each i from 0 to left, move a second index j forward from right until `arr[i] <= arr[j]`, and then removing i + 1 to j − 1 works. As i goes up, `arr[i]` doesn't go down, so j never has to move back.
+
+**Example 1:** `find_length_of_shortest_subarray([1, 2, 3, 10, 4, 2, 3, 5])` returns `3`: remove [10, 4, 2].
+
+**Example 2:** `find_length_of_shortest_subarray([5, 4, 3, 2, 1])` returns `4`.
+
+**Example 3:** `find_length_of_shortest_subarray([1, 2, 3])` returns `0`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, and 0 ≤ `arr[i]` ≤ 10⁹.
+starter:
+```python
+def find_length_of_shortest_subarray(arr):
+    # your code here
+    return 0
+```
+solution:
+```python
+def find_length_of_shortest_subarray(arr):
+    n = len(arr)
+    left = 0
+    while left + 1 < n and arr[left] <= arr[left + 1]:
+        left += 1
+    if left == n - 1:
+        return 0
+    right = n - 1
+    while right > 0 and arr[right - 1] <= arr[right]:
+        right -= 1
+    best = min(n - left - 1, right)
+    j = right
+    for i in range(left + 1):
+        while j < n and arr[i] > arr[j]:
+            j += 1
+        best = min(best, j - i - 1)
+    return best
+```
+tests:
+- find_length_of_shortest_subarray([1, 2, 3, 10, 4, 2, 3, 5])
+- find_length_of_shortest_subarray([5, 4, 3, 2, 1])
+- find_length_of_shortest_subarray([1, 2, 3])
+- find_length_of_shortest_subarray([1])
+- find_length_of_shortest_subarray([1, 2, 3, 0])
+- find_length_of_shortest_subarray(list(range(10000)) + list(range(5000, 15000)))
+fail[2]: Only one number can stay: remove the other 4.
+fail[3]: Already non-decreasing: remove nothing.
+fail[4]: One number is non-decreasing: 0.
+fail[5]: Removing the 0 at the end leaves [1, 2, 3]: 1.
+fail[6]: 20,000 numbers. Keeping 0 to 4999 and the second half from 5000 onwards removes 4,999. Searching from right again for every i takes far too long here: move j forward only.
+edges:
+- one number :: len(arr) == 1 :: find_length_of_shortest_subarray([5])
+- already non-decreasing :: len(arr) > 1 and all(arr[i] <= arr[i + 1] for i in range(len(arr) - 1)) :: find_length_of_shortest_subarray([2, 2])
+- a drop somewhere :: any(arr[i] > arr[i + 1] for i in range(len(arr) - 1)) :: find_length_of_shortest_subarray([2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of arr.
+why_time: left only moves forward and right only moves back, and i and j each move forward at most n times.
+why_space: A few indexes.
+hint: Move left forward while `arr[left] <= arr[left + 1]`. If it reaches n − 1, return 0.
+hint: Move right back from n − 1 while `arr[right - 1] <= arr[right]`. Start with `best = min(n - left - 1, right)`.
+hint: Set `j = right`. For i from 0 to left: while `j < n and arr[i] > arr[j]`, add 1 to j. Then `best = min(best, j - i - 1)`.
+right: After a removal, the only new neighbours are the last number before the gap and the first after it, so the answer is the closest pair i, j whose join is in order, and both indexes only move forward.
+wrong: Find left and right, the ends of the non-decreasing start and end. `best = min(n - left - 1, right)`. With j starting at right, for each i up to left, move j forward until `arr[i] <= arr[j]`, and take `best = min(best, j - i - 1)`.
+
+=== task: code medium
+title: Minimum Deletions to Make Array Beautiful
+leetcode: 2216 | Minimum Deletions to Make Array Beautiful | minimum-deletions-to-make-array-beautiful
+patterns: count + delete
+prompt: A list is **beautiful** if its length is even and `nums[i] != nums[i + 1]` for every even i: the items pair up as (0, 1), (2, 3) and onwards, and the two items of each pair are different. An empty list is beautiful. Deleting an item closes the gap: the items after it move one place left. Write `min_deletion(nums)` that returns the fewest deletions that make nums beautiful.
+
+Don't delete with shifts. Go through nums once with a count of the items kept so far: the next item kept lands at index count, so when count is odd, it would complete a pair with the last kept item, and if it's equal to that item, delete it instead of keeping it. At the end, if count is odd, the last kept item has no partner and must go too.
+
+**Example 1:** `min_deletion([1, 1, 2, 3, 5])` returns `1`: deleting one 1 leaves [1, 2, 3, 5].
+
+**Example 2:** `min_deletion([1, 1, 2, 2, 3, 3])` returns `2`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, and 0 ≤ `nums[i]` ≤ 10⁵.
+starter:
+```python
+def min_deletion(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def min_deletion(nums):
+    kept = 0
+    last = 0
+    for x in nums:
+        if kept % 2 == 1 and x == last:
+            continue
+        last = x
+        kept += 1
+    if kept % 2 == 1:
+        kept -= 1
+    return len(nums) - kept
+```
+tests:
+- min_deletion([1, 1, 2, 3, 5])
+- min_deletion([1, 1, 2, 2, 3, 3])
+- min_deletion([7])
+- min_deletion([4, 4])
+- min_deletion([1, 2, 2, 2, 3])
+- min_deletion([i // 3 for i in range(20000)])
+fail[2]: One 1 goes, which leaves the pairs (1, 2) and (2, 3) and a 3 without a partner: 2.
+fail[3]: One item can't make an even length: delete it.
+fail[4]: The pair (4, 4) can't stay, and one 4 on its own is an odd length: both go.
+fail[5]: Deleting the middle 2 leaves the pairs (1, 2) and (2, 3): 1.
+fail[6]: 20,000 items in runs of three equal numbers. Deleting with real shifts moves thousands of items each time.
+edges:
+- one item :: len(nums) == 1 :: min_deletion([4])
+- equal neighbours :: len(nums) > 1 and any(nums[i] == nums[i + 1] for i in range(len(nums) - 1)) :: min_deletion([3, 3])
+- no equal neighbours :: len(nums) > 1 and all(nums[i] != nums[i + 1] for i in range(len(nums) - 1)) :: min_deletion([1, 2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One step for each item, and nothing shifts.
+why_space: The count and the last kept item.
+hint: Keep `kept = 0`, and `last`, the last item kept.
+hint: For each x: if `kept % 2 == 1 and x == last`, skip x. Otherwise set `last = x` and add 1 to kept.
+hint: If kept is odd at the end, take 1 off it. Return `len(nums) - kept`.
+right: An item's index after the deletions is the count of items kept before it, so the count's parity says whether it starts or ends a pair, and nothing ever shifts. Keeping an item when you can never hurts: deleting the first of two equal items does the same as deleting the second.
+wrong: Count the kept items. Skip x when the count is odd and x equals the last kept item; otherwise keep it. Make the count even at the end, and return n minus the count.
+
+=== task: code medium
+title: Decrease Elements To Make Array Zigzag
+leetcode: 1144 | Decrease Elements To Make Array Zigzag | decrease-elements-to-make-array-zigzag
+patterns: bounds
+prompt: A list is a **zigzag** if every item at an even index is bigger than its neighbours, or if every item at an odd index is bigger than its neighbours. One move takes 1 off any item. Write `moves_to_make_zigzag(nums)` that returns the fewest moves that make nums a zigzag.
+
+Moves only ever lower items, so for each of the two choices, lower the items that must be the smaller ones, and leave the others alone. For the items at even indexes to be the smaller ones, item i must end up below the smaller of its neighbours, `min(neighbours) - 1`, if it isn't there already. Work out the cost of both choices and return the smaller. The first and last items have only one neighbour each, so check the index before reading `nums[i - 1]` or `nums[i + 1]`.
+
+**Example 1:** `moves_to_make_zigzag([1, 2, 3])` returns `2`: lower 3 to 1, and the 2 in the middle is bigger than both its neighbours.
+
+**Example 2:** `moves_to_make_zigzag([9, 6, 1, 6, 2])` returns `4`.
+
+**Constraints:** 1 ≤ n ≤ 1000, and 1 ≤ `nums[i]` ≤ 1000.
+starter:
+```python
+def moves_to_make_zigzag(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+def moves_to_make_zigzag(nums):
+    n = len(nums)
+    cost = [0, 0]
+    for i in range(n):
+        low = 1001
+        if i > 0:
+            low = min(low, nums[i - 1])
+        if i < n - 1:
+            low = min(low, nums[i + 1])
+        if nums[i] >= low:
+            cost[i % 2] += nums[i] - low + 1
+    return min(cost[0], cost[1])
+```
+tests:
+- moves_to_make_zigzag([1, 2, 3])
+- moves_to_make_zigzag([9, 6, 1, 6, 2])
+- moves_to_make_zigzag([5])
+- moves_to_make_zigzag([3, 3])
+- moves_to_make_zigzag([2, 7, 10, 9, 8, 9])
+- moves_to_make_zigzag([(i * 37) % 1000 + 1 for i in range(1000)])
+fail[2]: Lowering 9 to 5 makes both 6s bigger than their neighbours: 4 moves. Lowering the 6s instead would take 12.
+fail[3]: One item is a zigzag already.
+fail[4]: Two equal items: lower one of them by 1.
+fail[5]: Lowering 10 to 6 makes 7 and 9 the bigger ones: 4 moves.
+fail[6]: 1,000 items. Work out both choices and keep the cheaper.
+edges:
+- one item :: len(nums) == 1 :: moves_to_make_zigzag([4])
+- two items :: len(nums) == 2 :: moves_to_make_zigzag([2, 2])
+- three or more items :: len(nums) >= 3 :: moves_to_make_zigzag([1, 1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: One pass, looking at two neighbours of each item.
+why_space: Two totals.
+hint: Keep `cost = [0, 0]`: `cost[0]` for lowering the items at even indexes, and `cost[1]` for the odd ones.
+hint: For each i, `low` is the smaller of the neighbours that exist: start it at 1001, and lower it to `nums[i - 1]` if i > 0 and to `nums[i + 1]` if i < n − 1.
+hint: If `nums[i] >= low`, add `nums[i] - low + 1` to `cost[i % 2]`. Return the smaller cost.
+right: Lowering an item only helps its neighbours be the bigger ones, so for each choice the items to lower are fixed, and each needs exactly enough moves to get below its smaller neighbour. A missing neighbour sets no limit.
+wrong: For each i, low is the smaller of `nums[i - 1]` (if i > 0) and `nums[i + 1]` (if i < n − 1). If `nums[i] >= low`, add `nums[i] - low + 1` to `cost[i % 2]`. Return the smaller of the two costs.
+
+=== task: code medium
+title: Watering Plants
+leetcode: 2079 | Watering Plants | watering-plants
+patterns: full
+prompt: n plants stand in a row at x = 0 to n − 1, and the river is at x = −1. `plants[i]` is how much water plant i needs. You start at the river with a full can, which holds capacity, and water the plants in order. If the can doesn't have enough water for the next plant, you walk back to the river, fill it up completely, and walk back. Each step moves you one unit along x. Write `watering_plants(plants, capacity)` that returns the total number of steps.
+
+Don't walk one step at a time. When the can runs short at plant i, you're at plant i − 1: the walk to the river is i steps, the walk back is i more, and 1 more step reaches plant i. Keep how much water is left in the can, and add up the steps with that formula.
+
+**Example 1:** `watering_plants([2, 2, 3, 3], 5)` returns `14`: water plants 0 and 1 (2 steps), go to the river and back (4 steps), reach plant 2 (1 step), go to the river and back again (6 steps), and reach plant 3 (1 step).
+
+**Example 2:** `watering_plants([7, 7, 7, 7, 7, 7, 7], 8)` returns `49`.
+
+**Constraints:** 1 ≤ n ≤ 1000, 1 ≤ `plants[i]` ≤ 10⁶, and the biggest plant ≤ capacity ≤ 10⁹.
+starter:
+```python
+def watering_plants(plants, capacity):
+    # your code here
+    return len(plants)
+```
+solution:
+```python
+def watering_plants(plants, capacity):
+    steps = 0
+    water = capacity
+    for i in range(len(plants)):
+        if water < plants[i]:
+            steps += 2 * i
+            water = capacity
+        steps += 1
+        water -= plants[i]
+    return steps
+```
+tests:
+- watering_plants([2, 2, 3, 3], 5)
+- watering_plants([1, 1, 1, 4, 2, 3], 4)
+- watering_plants([7, 7, 7, 7, 7, 7, 7], 8)
+- watering_plants([3], 3)
+- watering_plants([2, 3], 5)
+- watering_plants([5] * 1000, 5)
+fail[2]: The trips to the river before plants 3, 4 and 5 cost 6, 8 and 10 steps, on top of the 6 steps forward: 30.
+fail[3]: Each plant needs 7 from a can of 8, so there's a trip to the river before every plant after the first: 49.
+fail[4]: One plant: 1 step.
+fail[5]: A can of 5 waters both plants: 2 steps.
+fail[6]: 1,000 plants with a trip to the river before each one after the first: 1,000,000 steps. Walking them one at a time takes far too long.
+edges:
+- one plant :: len(plants) == 1 :: watering_plants([2], 2)
+- a trip to the river :: len(plants) > 1 and sum(plants) > capacity :: watering_plants([2, 2], 3)
+- one can is enough :: len(plants) > 1 and sum(plants) <= capacity :: watering_plants([1, 1], 3)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of plants.
+why_time: O(1) for each plant: a trip to the river is one formula.
+why_space: The water left and the total steps.
+hint: `steps = 0` and `water = capacity`.
+hint: For each i: if `water < plants[i]`, add `2 * i` to steps and fill the can back up to capacity.
+hint: Then add 1 step, and take `plants[i]` off water.
+right: Running short is the one moment that needs handling, and the trip from plant i − 1 to the river and back always costs 2 × i steps, so a formula replaces the walking.
+wrong: `water = capacity`. For each i: if `water < plants[i]`, add `2 * i` steps and refill. Then add 1 step and take `plants[i]` off water.
+
+=== task: code medium
+title: Minimum Number of Operations to Make Word K-Periodic
+leetcode: 3137 | Minimum Number of Operations to Make Word K-Periodic | minimum-number-of-operations-to-make-word-k-periodic
+patterns: blocks + count
+prompt: word's length n is a multiple of k, so word splits into n / k blocks of k letters. One operation copies one block over another. word is **k-periodic** when all its blocks are the same. Write `minimum_operations_to_make_k_periodic(word, k)` that returns the fewest operations that make word k-periodic.
+
+Every block that's different from the block they all end up as needs one operation, so choose the block that appears most often. Count each block in a dictionary as you go through the blocks once: block b is `word[b * k:b * k + k]`.
+
+**Example 1:** `minimum_operations_to_make_k_periodic("leetcodeleet", 4)` returns `1`: copy "leet" over "code".
+
+**Example 2:** `minimum_operations_to_make_k_periodic("leetcoleet", 2)` returns `3`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ k ≤ n and k divides n, and word holds lowercase letters.
+starter:
+```python
+def minimum_operations_to_make_k_periodic(word, k):
+    # your code here
+    return 0
+```
+solution:
+```python
+def minimum_operations_to_make_k_periodic(word, k):
+    count = {}
+    best = 0
+    for start in range(0, len(word), k):
+        block = word[start:start + k]
+        count[block] = count.get(block, 0) + 1
+        best = max(best, count[block])
+    return len(word) // k - best
+```
+tests:
+- minimum_operations_to_make_k_periodic("leetcodeleet", 4)
+- minimum_operations_to_make_k_periodic("leetcoleet", 2)
+- minimum_operations_to_make_k_periodic("a", 1)
+- minimum_operations_to_make_k_periodic("abab", 4)
+- minimum_operations_to_make_k_periodic("abcabdabe", 3)
+- minimum_operations_to_make_k_periodic("ab" * 10000, 1)
+fail[2]: The blocks are le, et, co, le and et. le and et appear twice each, so the other 3 blocks need an operation each.
+fail[3]: One block is k-periodic already.
+fail[4]: k is the whole length: one block, so 0 operations.
+fail[5]: abc, abd and abe are all different: 2 operations.
+fail[6]: 20,000 blocks of one letter, half of them a and half b: 10,000. Comparing every block with every other block takes far too long.
+edges:
+- one block :: len(word) == k :: minimum_operations_to_make_k_periodic("ab", 2)
+- every block the same :: len(word) > k and len(set(word[i:i + k] for i in range(0, len(word), k))) == 1 :: minimum_operations_to_make_k_periodic("abab", 2)
+- different blocks :: len(set(word[i:i + k] for i in range(0, len(word), k))) > 1 :: minimum_operations_to_make_k_periodic("abba", 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of word.
+why_time: n / k blocks, each copied and hashed in O(k).
+why_space: The dictionary holds up to n / k blocks of k letters.
+hint: `for start in range(0, len(word), k)`: the block is `word[start:start + k]`.
+hint: Count it in a dictionary, and keep the biggest count so far.
+hint: Return `len(word) // k - best`.
+right: Copying a block changes only that block, so the blocks that already match need nothing, and the best block to match is the most common one.
+wrong: Count each block `word[start:start + k]`, for start in `range(0, n, k)`, in a dictionary. Return n // k minus the biggest count.
+
+=== task: code medium
+title: Divide Array Into Arrays With Max Difference
+leetcode: 2966 | Divide Array Into Arrays With Max Difference | divide-array-into-arrays-with-max-difference
+patterns: blocks
+prompt: nums holds n numbers, and n is a multiple of 3. Split them into groups of 3, so that in every group, the biggest number minus the smallest is at most k. Write `divide_array(nums, k)` that returns the groups, or `[]` if that can't be done.
+
+Sort nums first. The groups are then blocks of 3: block b is `nums[3 * b]`, `nums[3 * b + 1]` and `nums[3 * b + 2]`, and its smallest and biggest numbers are its first and last. If any block is too spread out, no grouping works. Return the blocks of the sorted list, in order.
+
+**Example 1:** `divide_array([1, 3, 4, 8, 7, 9, 3, 5, 1], 2)` returns `[[1, 1, 3], [3, 4, 5], [7, 8, 9]]`.
+
+**Example 2:** `divide_array([2, 4, 2, 2, 5, 2], 2)` returns `[]`: sorted, the second block is [2, 4, 5], and 5 − 2 is more than 2.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ and n is a multiple of 3, 1 ≤ `nums[i]` ≤ 10⁵, and 1 ≤ k ≤ 10⁵.
+starter:
+```python
+def divide_array(nums, k):
+    # your code here
+    return []
+```
+solution:
+```python
+def divide_array(nums, k):
+    nums = sorted(nums)
+    groups = []
+    for start in range(0, len(nums), 3):
+        if nums[start + 2] - nums[start] > k:
+            return []
+        groups.append(nums[start:start + 3])
+    return groups
+```
+tests:
+- divide_array([1, 3, 4, 8, 7, 9, 3, 5, 1], 2)
+- divide_array([2, 4, 2, 2, 5, 2], 2)
+- divide_array([4, 2, 9, 8, 2, 12, 7, 12, 10, 5, 8, 5, 5, 7, 9, 2, 5, 11], 14)
+- divide_array([5, 6, 7], 1)
+- divide_array([1, 2, 3], 2)
+- (lambda g: [len(g), g[0], g[-1]])(divide_array([(i * 7919) % 18000 // 3 + 1 for i in range(18000)], 1))
+fail[2]: Sorted, nums is [2, 2, 2, 2, 4, 5], and the block [2, 4, 5] spans 3: `[]`.
+fail[3]: With k = 14, every block of the sorted list fits.
+fail[4]: 7 − 5 is 2, more than 1: `[]`.
+fail[5]: One block, and 3 − 1 = 2: `[[1, 2, 3]]`.
+fail[6]: 18,000 numbers, each value three times: 6,000 groups. Picking out the 3 smallest again and again takes far too long; sort once.
+edges:
+- one group :: len(nums) == 3 :: divide_array([1, 2, 3], 2)
+- a block too spread out :: len(nums) > 3 and any(sorted(nums)[i + 2] - sorted(nums)[i] > k for i in range(0, len(nums), 3)) :: divide_array([1, 1, 1, 5, 9, 9], 3)
+- every block close enough :: len(nums) > 3 and all(sorted(nums)[i + 2] - sorted(nums)[i] <= k for i in range(0, len(nums), 3)) :: divide_array([1, 2, 3, 4, 5, 6], 2)
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Sorting is O(n log n), and checking the blocks is one pass.
+why_space: The sorted copy and the groups hold n numbers each.
+hint: `nums = sorted(nums)`.
+hint: For start in `range(0, len(nums), 3)`: if `nums[start + 2] - nums[start] > k`, return `[]`.
+hint: Otherwise append `nums[start:start + 3]`.
+right: In sorted order, numbers that are close to each other sit side by side, so the blocks of 3 are the tightest grouping there is: if one of them is too spread out, every grouping has a group that's too spread out.
+wrong: Sort. For each block of 3, starting at 0, 3, 6 and onwards, return `[]` if its last number minus its first is more than k; otherwise add the block. Return the blocks.
+
+=== task: code medium
+title: Longest Common Prefix Between Adjacent Strings After Removals
+leetcode: 3598 | Longest Common Prefix Between Adjacent Strings After Removals | longest-common-prefix-between-adjacent-strings-after-removals
+patterns: delete + bounds
+prompt: For each index i of words, imagine removing `words[i]`: the list closes up, and each pair of neighbours in what's left has a longest common prefix, the number of letters the two words share at the start. Write `longest_common_prefix(words)` that returns a list answer, where `answer[i]` is the longest of those prefixes after removing `words[i]`, or 0 if no pairs are left.
+
+Removing `words[i]` keeps every pair that doesn't include i, and makes one new pair, `words[i - 1]` and `words[i + 1]`, but only if both exist. So first work out `pair[j]`, the prefix of `words[j]` and `words[j + 1]`, for every j. Then fill `left[i]`, the best pair that ends before i (pairs 0 to i − 2), from the left, and `right[i]`, the best pair that starts after i (pairs i + 1 to n − 2), from the right. `answer[i]` is the biggest of `left[i]`, `right[i]` and the new pair.
+
+**Example 1:** `longest_common_prefix(["jump", "run", "run", "jump", "run"])` returns `[3, 0, 0, 3, 3]`: removing index 1 or 2 breaks up the two "run"s.
+
+**Example 2:** `longest_common_prefix(["dog", "racer", "car"])` returns `[0, 0, 0]`.
+
+**Constraints:** 1 ≤ `len(words)` ≤ 10⁵, and each word has 1 to 10⁴ lowercase letters, 10⁵ at most in all.
+starter:
+```python
+def longest_common_prefix(words):
+    # your code here
+    return [0] * len(words)
+```
+solution:
+```python
+def common_prefix(a, b):
+    i = 0
+    while i < len(a) and i < len(b) and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def longest_common_prefix(words):
+    n = len(words)
+    pair = [0] * n
+    for j in range(n - 1):
+        pair[j] = common_prefix(words[j], words[j + 1])
+    left = [0] * n
+    for i in range(2, n):
+        left[i] = max(left[i - 1], pair[i - 2])
+    right = [0] * n
+    for i in range(n - 3, -1, -1):
+        right[i] = max(right[i + 1], pair[i + 1])
+    answer = [0] * n
+    for i in range(n):
+        best = max(left[i], right[i])
+        if 0 < i < n - 1:
+            best = max(best, common_prefix(words[i - 1], words[i + 1]))
+        answer[i] = best
+    return answer
+```
+tests:
+- longest_common_prefix(["jump", "run", "run", "jump", "run"])
+- longest_common_prefix(["dog", "racer", "car"])
+- longest_common_prefix(["a"])
+- longest_common_prefix(["ab", "ab"])
+- longest_common_prefix(["abc", "abd", "xyz", "abe"])
+- sum(longest_common_prefix(["ab" + "c" * (i % 4) + chr(97 + i % 5) for i in range(5000)]))
+fail[2]: No two of these words start with the same letter, whichever one is removed.
+fail[3]: One word: removing it leaves no pairs.
+fail[4]: Removing either word leaves one word on its own, with no pairs: `[0, 0]`.
+fail[5]: Removing "xyz" makes "abd" and "abe" neighbours, with a prefix of 2.
+fail[6]: 5,000 words. Building the list again without each word and checking every pair takes far too long.
+edges:
+- one word :: len(words) == 1 :: longest_common_prefix(["a"])
+- two words :: len(words) == 2 :: longest_common_prefix(["ab", "ac"])
+- three or more words :: len(words) >= 3 :: longest_common_prefix(["a", "b", "a"])
+edge_count: 2
+complexity: time=O(S) | space=O(n)
+complexity_options: O(S); O(n × S)
+complexity_note: n is the number of words, and S the total number of letters in them.
+why_time: Each prefix comparison stops at the end of the shorter word, so the pairs, old and new, cost O(S) in all.
+why_space: pair, left, right and answer have n slots each.
+hint: Write `common_prefix(a, b)`, which counts letters from the start while they match.
+hint: `left[i] = max(left[i - 1], pair[i - 2])` for i from 2 up, and `right[i] = max(right[i + 1], pair[i + 1])` for i from n − 3 down.
+hint: For each i, start with `max(left[i], right[i])`, and if `0 < i < n - 1`, compare it with `common_prefix(words[i - 1], words[i + 1])`.
+right: A removal changes the list in one place: every other word keeps its neighbours. Lists filled from both ends give the best of the untouched pairs in O(1), and only one new pair per removal needs comparing, none at the two ends.
+wrong: `pair[j]` is the common prefix of `words[j]` and `words[j + 1]`. `left[i]` is the best of pairs 0 to i − 2, and `right[i]` the best of pairs i + 1 to n − 2. `answer[i]` is the biggest of `left[i]`, `right[i]` and, when 0 < i < n − 1, the prefix of `words[i - 1]` and `words[i + 1]`.
+
+=== task: code hard
+title: Meeting Rooms III
+leetcode: 2402 | Meeting Rooms III | meeting-rooms-iii
+patterns: full + count
+prompt: There are n rooms, numbered 0 to n − 1, and a list of meetings `[start, end]`: each one takes the time from start up to, but not including, end, and no two start at the same time. Meetings get rooms in order of start time:
+
+- A meeting takes the free room with the lowest number.
+- If every room is busy, the meeting waits for the room that's free soonest (the lowest-numbered one, on a tie), and then runs for its full length, so it ends later than planned.
+
+Write `most_booked(n, meetings)` that returns the room that held the most meetings, the lowest-numbered one on a tie.
+
+Keep `free_at[r]`, the time room r is next free, and `count[r]`. For each meeting, in order of start, room r is free if `free_at[r] <= start`, so search for the first free room. If there's none, every room is full: search for the room with the smallest free_at instead. The meeting starts then, so that room's free_at grows by the meeting's length.
+
+**Example 1:** `most_booked(2, [[0, 10], [1, 5], [2, 7], [3, 4]])` returns `0`: [2, 7] waits for room 1 until 5, and [3, 4] waits until 10, when both rooms are free and it takes room 0. Rooms 0 and 1 hold two meetings each.
+
+**Example 2:** `most_booked(3, [[1, 20], [2, 10], [3, 5], [4, 9], [6, 8]])` returns `1`.
+
+**Constraints:** 1 ≤ n ≤ 100, 1 ≤ `len(meetings)` ≤ 10⁵, 0 ≤ start < end ≤ 5 × 10⁵, and every start is different.
+starter:
+```python
+def most_booked(n, meetings):
+    # your code here
+    return 0
+```
+solution:
+```python
+def most_booked(n, meetings):
+    free_at = [0] * n
+    count = [0] * n
+    for start, end in sorted(meetings):
+        room = -1
+        for r in range(n):
+            if free_at[r] <= start:
+                room = r
+                break
+        if room == -1:
+            room = 0
+            for r in range(1, n):
+                if free_at[r] < free_at[room]:
+                    room = r
+            free_at[room] += end - start
+        else:
+            free_at[room] = end
+        count[room] += 1
+    best = 0
+    for r in range(1, n):
+        if count[r] > count[best]:
+            best = r
+    return best
+```
+tests:
+- most_booked(2, [[0, 10], [1, 5], [2, 7], [3, 4]])
+- most_booked(3, [[1, 20], [2, 10], [3, 5], [4, 9], [6, 8]])
+- most_booked(1, [[0, 1]])
+- most_booked(2, [[0, 10], [1, 2], [3, 4]])
+- most_booked(2, [[0, 10], [1, 11], [2, 3], [4, 5]])
+- most_booked(30, [[i * 3, i * 3 + 400 + (i * 37) % 300] for i in range(2500)])
+fail[2]: [4, 9] waits for room 2 until 5, and [6, 8] waits until 10, when rooms 1 and 2 are both free: it takes room 1. Rooms 1 and 2 hold two meetings each, and 1 is lower.
+fail[3]: One room and one meeting: room 0.
+fail[4]: Room 1 is free again at 2, so the meeting at 3 takes it instead of waiting for room 0: room 1 holds two.
+fail[5]: [2, 3] waits for room 0 until 10. Then [4, 5] waits until 11, when both rooms are free, and takes room 0: three meetings there.
+fail[6]: 2,500 meetings in 30 rooms, with long waits. Moving a clock forward one unit at a time while a meeting waits takes far too long.
+edges:
+- one room :: n == 1 :: most_booked(1, [[0, 2], [1, 3]])
+- more meetings than rooms :: n > 1 and len(meetings) > n :: most_booked(2, [[0, 5], [1, 5], [2, 3]])
+- no more meetings than rooms :: n > 1 and len(meetings) <= n :: most_booked(2, [[0, 1]])
+edge_count: 2
+complexity: time=O(m log m + m × n) | space=O(n)
+complexity_options: O(m log m + m × n); O(m × n); O(m log m)
+complexity_note: n is the number of rooms and m the number of meetings.
+why_time: Sorting the meetings is O(m log m), and each meeting searches the n rooms at most twice.
+why_space: free_at and count have n slots each.
+hint: `free_at = [0] * n` and `count = [0] * n`, and go through `sorted(meetings)`.
+hint: Search r from 0 for the first room with `free_at[r] <= start`. If there is one, set `free_at[r] = end`.
+hint: If not, find the room with the smallest free_at, using `<` so that a tie keeps the lower room, and add `end - start` to its free_at.
+hint: Add 1 to that room's count. At the end, return the lowest room with the biggest count.
+right: A waiting meeting doesn't need a clock: it starts at the free_at of the room it gets, so it ends at that time plus its length. Searching from room 0 gives the lowest free room, and when every room is full, the search is for the smallest free_at instead.
+wrong: For each meeting in order of start, take the first room with `free_at[r] <= start` and set its free_at to end. If there's none, take the room with the smallest free_at and add the meeting's length to it. Count each room's meetings, and return the lowest room with the most.
+
+=== task: code hard
+title: Peaks in Array
+leetcode: 3187 | Peaks in Array | peaks-in-array
+patterns: blocks + count
+prompt: A **peak** is a number that's bigger than both of its neighbours. Each query is one of:
+
+- `[1, l, r]`: how many peaks are there in the piece of nums from index l to index r? The first and last numbers of the piece can't be peaks, because one of their neighbours is outside it.
+- `[2, index, val]`: set `nums[index]` to val.
+
+Write `count_of_peaks(nums, queries)` that returns the answers to the type 1 queries, in order.
+
+Counting over the whole piece for every query is too slow, so use blocks. Keep `peak[i]`, which is 1 if i is a peak of the whole list and 0 if not, and a count of the peaks in each block of size positions, with size the smallest number whose square is at least n. A type 1 query counts positions l + 1 to r − 1: whole blocks by their counts, and the positions left over at the two ends one at a time. A type 2 query can only change whether index − 1, index and index + 1 are peaks: work out those three again, and fix their blocks' counts.
+
+**Example 1:** `count_of_peaks([3, 1, 4, 2, 5], [[2, 3, 4], [1, 0, 4]])` returns `[0]`: after `nums[3]` becomes 4, nums is [3, 1, 4, 4, 5], which has no peaks.
+
+**Example 2:** `count_of_peaks([4, 1, 4, 2, 1, 5], [[2, 2, 4], [1, 0, 2], [1, 0, 4]])` returns `[0, 1]`: in [4, 1, 4, 2, 1], the 4 at index 2 is a peak.
+
+**Constraints:** 3 ≤ n ≤ 10⁵, 1 ≤ `nums[i]` ≤ 10⁵ and 1 ≤ `len(queries)` ≤ 10⁵. In a type 1 query, 0 ≤ l ≤ r ≤ n − 1, and in a type 2 query, 0 ≤ index ≤ n − 1 and 1 ≤ val ≤ 10⁵.
+starter:
+```python
+def count_of_peaks(nums, queries):
+    # your code here
+    return []
+```
+solution:
+```python
+def is_peak(nums, i):
+    if i <= 0 or i >= len(nums) - 1:
+        return 0
+    if nums[i] > nums[i - 1] and nums[i] > nums[i + 1]:
+        return 1
+    return 0
+
+
+def count_range(peak, block, size, lo, hi):
+    total = 0
+    i = lo
+    while i <= hi:
+        if i % size == 0 and i + size - 1 <= hi:
+            total += block[i // size]
+            i += size
+        else:
+            total += peak[i]
             i += 1
-    return count
-```
-fail[1]: Both 3s go; 1 and 2 move to the front, and slots 2 and 3 are freed: `[1, 2, None, None, None]`.
-fail[3]: Every item is 5, so all are removed: count 0, all slots None.
-fail[4]: There's no 9: nothing changes, and the count stays 2.
-hint: Look only at the used part: `for i in range(count):`.
-hint: Copy each item that isn't x to `slots[w]`, then `w += 1`.
-hint: Set the slots from `w` up to `count - 1` to None, and return `w`.
-right: Each used slot is read once and written at most once: O(n). Deleting the copies one at a time shifts the rest of the array for each copy: O(n²) when x is common.
-wrong: Keep a write position; copy the items that aren't x forward; clear the slots from `w` to `count - 1`; return `w`.
+    return total
 
-=== task: predict hard
-title: Insert, delete, insert
-code:
+
+def count_of_peaks(nums, queries):
+    nums = list(nums)
+    n = len(nums)
+    size = 1
+    while size * size < n:
+        size += 1
+    peak = [0] * n
+    block = [0] * (n // size + 1)
+    for i in range(n):
+        peak[i] = is_peak(nums, i)
+        block[i // size] += peak[i]
+    answer = []
+    for q in queries:
+        if q[0] == 1:
+            l = q[1]
+            r = q[2]
+            if r - l < 2:
+                answer.append(0)
+            else:
+                answer.append(count_range(peak, block, size, l + 1, r - 1))
+        else:
+            nums[q[1]] = q[2]
+            for i in (q[1] - 1, q[1], q[1] + 1):
+                if 0 <= i < n:
+                    new = is_peak(nums, i)
+                    block[i // size] += new - peak[i]
+                    peak[i] = new
+    return answer
+```
+tests:
+- count_of_peaks([3, 1, 4, 2, 5], [[2, 3, 4], [1, 0, 4]])
+- count_of_peaks([4, 1, 4, 2, 1, 5], [[2, 2, 4], [1, 0, 2], [1, 0, 4]])
+- count_of_peaks([1, 3, 1], [[1, 0, 2], [1, 1, 2]])
+- count_of_peaks([1, 2, 3, 4], [[1, 0, 3], [2, 2, 1], [1, 0, 3], [1, 1, 2]])
+- count_of_peaks([5, 1, 5, 1, 5], [[1, 0, 4], [2, 2, 1], [1, 0, 4], [2, 1, 9], [1, 0, 4], [1, 1, 3]])
+- sum(count_of_peaks([(i * 7) % 11 + 1 for i in range(2000)], [[1, i % 50, 1999 - i % 40] if i % 2 == 0 else [2, (i * 13) % 2000, (i * 5) % 9 + 1] for i in range(1000)]))
+fail[2]: Setting `nums[2]` to 4 changes nothing. [4, 1, 4] has no peak inside it, and [4, 1, 4, 2, 1] has one, at index 2.
+fail[3]: 3 is a peak in [1, 3, 1], but not in [3, 1], where it's at the edge of the piece.
+fail[4]: Setting `nums[2]` to 1 makes the 2 at index 1 a peak. In the piece from 1 to 2, it's at the edge, so it doesn't count there.
+fail[5]: [5, 1, 5, 1, 5] has one peak inside it, the middle 5. Setting `nums[2]` to 1 removes it, and setting `nums[1]` to 9 makes a new one.
+fail[6]: 2,000 numbers and 1,000 queries over nearly the whole list. Counting one position at a time takes far too long.
+edges:
+- only type 1 queries :: all(q[0] == 1 for q in queries) :: count_of_peaks([1, 2, 1], [[1, 0, 2]])
+- a change at the first or last index :: any(q[0] == 2 and q[1] in (0, len(nums) - 1) for q in queries) :: count_of_peaks([1, 2, 1], [[2, 0, 5], [1, 0, 2]])
+- changes only away from the ends :: any(q[0] == 2 for q in queries) and all(q[1] not in (0, len(nums) - 1) for q in queries if q[0] == 2) :: count_of_peaks([1, 2, 1, 2], [[2, 1, 3], [1, 0, 3]])
+edge_count: 2
+complexity: time=O(n + q × √n) | space=O(n)
+complexity_options: O(n + q × √n); O(n × q); O(q × √n)
+complexity_note: n is the length of nums and q the number of queries.
+why_time: Setting up the flags and counts is O(n). A type 1 query adds up at most √n block counts and fewer than 2√n single flags, and a type 2 query works out 3 flags again.
+why_space: The flags and the copy of nums have n slots, and the block counts about √n.
+hint: `size = 1`, then `while size * size < n: size += 1`. Position i is in block `i // size`.
+hint: Write `is_peak(nums, i)`, which gives 0 when i ≤ 0 or i ≥ n − 1, and otherwise 1 if `nums[i]` is bigger than both neighbours.
+hint: To count from lo to hi: at an i with `i % size == 0` and `i + size - 1 <= hi`, add the block's count and jump size; otherwise add `peak[i]` and step 1.
+hint: For a change, set `nums[index]`, then for each i of index − 1, index and index + 1 inside the list, work out the new flag, add `new - peak[i]` to its block's count, and store it.
+right: Whether i is a peak depends only on i and its two neighbours, so a change can only change three flags. Counts per block make a count over a range O(√n) instead of O(n).
+wrong: Flag the peaks, and count the flags in each block of about √n positions. For `[1, l, r]`, count from l + 1 to r − 1, using whole blocks where they fit. For `[2, i, v]`, set `nums[i]` and work out the flags of i − 1, i and i + 1 again, fixing their blocks' counts.
+
+=== task: code hard
+title: Booking Concert Tickets in Groups
+leetcode: 2286 | Booking Concert Tickets in Groups | booking-concert-tickets-in-groups
+patterns: blocks + full
+prompt: A concert hall has n rows, numbered 0 to n − 1, with m seats each, numbered 0 to m − 1. Write a class `BookMyShow`:
+
+- `BookMyShow(n, m)` makes the empty hall.
+- `gather(k, max_row)` seats a group of k people together, in one row: the lowest row r ≤ max_row with k free seats in a row, in its lowest free seats. It returns `[r, c]`, where c is the first of their seats, or `[]` if no row has room.
+- `scatter(k, max_row)` seats k people anywhere in rows 0 to max_row, filling the lowest rows and then the lowest seats first. If there aren't k free seats there, it seats nobody and returns `False`; otherwise it returns `True`.
+
+Seats are always taken from the front of a row, so a row only needs a count of its used seats, `used[r]`: its free seats are `m - used[r]`, and the first of them is seat `used[r]`. Split the rows into blocks, of size the smallest number whose square is at least n. Each block keeps two numbers: `most[b]`, the most free seats any of its rows has, so gather can skip a block in one step when no row in it has room for k, and `free[b]`, the total of its free seats, so scatter can add up the free seats of many rows at once. scatter fills rows from the first row that isn't full, so keep that row's number too. After a row changes, work out its block's most again.
+
+**Example:** `run(["BookMyShow", "gather", "gather", "scatter", "scatter"], [[2, 5], [4, 0], [2, 0], [5, 1], [5, 1]])` returns `[None, [0, 0], [], True, False]`: 4 people take seats 0 to 3 of row 0, so 2 more don't fit together in row 0. 5 people then take seat 4 of row 0 and seats 0 to 3 of row 1, and 5 more don't fit in the one free seat left.
+
+**Constraints:** 1 ≤ n ≤ 5 × 10⁴, 1 ≤ m, k ≤ 10⁹, 0 ≤ max_row ≤ n − 1, and there are at most 5 × 10⁴ calls.
+starter:
 ```python
-def insert(slots, count, i, x):
-    if count == len(slots):
-        return count
-    j = count
-    while j > i:
-        slots[j] = slots[j - 1]
-        j -= 1
-    slots[i] = x
-    return count + 1
+class BookMyShow:
+    def __init__(self, n, m):
+        self.n = n
+        self.m = m
 
-def delete(slots, count, i):
-    j = i
-    while j < count - 1:
-        slots[j] = slots[j + 1]
-        j += 1
-    slots[count - 1] = None
-    return count - 1
+    def gather(self, k, max_row):
+        return []
 
-slots = [None] * 3
-count = 0
-count = insert(slots, count, 0, "b")
-count = insert(slots, count, 0, "a")
-count = delete(slots, count, 1)
-count = insert(slots, count, 1, "c")
-print(slots, count)
+    def scatter(self, k, max_row):
+        return False
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "BookMyShow":
+            show = BookMyShow(args[0], args[1])
+            results.append(None)
+        elif command == "gather":
+            results.append(show.gather(args[0], args[1]))
+        elif command == "scatter":
+            results.append(show.scatter(args[0], args[1]))
+    return results
 ```
-wrong[['a', 'b', 'c'] 3]: The delete at index 1 removes "b" before "c" is inserted.
-wrong[['b', 'c', None] 2]: Inserting "a" at index 0 pushes "b" to index 1, so index 1 holds "b" when it's deleted.
-wrong[['a', 'c', 'b'] 3]: "b" was deleted, so it isn't there to move.
-hint: After the two inserts: ['a', 'b', None], count 2.
-hint: Deleting index 1 removes "b".
-right: ['a', 'b'] → delete "b" → ['a'] → insert "c" at 1 → ['a', 'c'], with one slot still free.
-wrong: insert b → [b], insert a at 0 → [a, b], delete index 1 → [a], insert c at 1 → [a, c, None], count 2.
-
-=== task: predict hard
-title: Four inserts at the front
-code:
+solution:
 ```python
-def insert(slots, count, i, x):
-    j = count
-    while j > i:
-        slots[j] = slots[j - 1]
-        j -= 1
-    slots[i] = x
-    return count + 1
+class BookMyShow:
+    def __init__(self, n, m):
+        self.n = n
+        self.m = m
+        self.size = 1
+        while self.size * self.size < n:
+            self.size += 1
+        blocks = (n + self.size - 1) // self.size
+        self.used = [0] * n
+        self.most = [m] * blocks
+        self.free = [0] * blocks
+        for b in range(blocks):
+            rows = min(n, (b + 1) * self.size) - b * self.size
+            self.free[b] = rows * m
+        self.first = 0
 
-slots = [None] * 4
-count = 0
-total = 0
-for x in [1, 2, 3, 4]:
-    total += count
-    count = insert(slots, count, 0, x)
-print(slots, total)
+    def refresh(self, b):
+        start = b * self.size
+        end = min(self.n, start + self.size)
+        best = 0
+        for r in range(start, end):
+            best = max(best, self.m - self.used[r])
+        self.most[b] = best
+
+    def gather(self, k, max_row):
+        b = 0
+        while b * self.size <= max_row:
+            if self.most[b] >= k:
+                start = b * self.size
+                end = min(self.n, start + self.size, max_row + 1)
+                for r in range(start, end):
+                    if self.m - self.used[r] >= k:
+                        seat = self.used[r]
+                        self.used[r] += k
+                        self.free[b] -= k
+                        self.refresh(b)
+                        return [r, seat]
+            b += 1
+        return []
+
+    def scatter(self, k, max_row):
+        total = 0
+        b = 0
+        while (b + 1) * self.size - 1 <= max_row:
+            total += self.free[b]
+            b += 1
+        for r in range(b * self.size, max_row + 1):
+            total += self.m - self.used[r]
+        if total < k:
+            return False
+        while k > 0:
+            r = self.first
+            take = min(k, self.m - self.used[r])
+            self.used[r] += take
+            self.free[r // self.size] -= take
+            k -= take
+            self.refresh(r // self.size)
+            if self.used[r] == self.m:
+                self.first += 1
+        return True
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "BookMyShow":
+            show = BookMyShow(args[0], args[1])
+            results.append(None)
+        elif command == "gather":
+            results.append(show.gather(args[0], args[1]))
+        elif command == "scatter":
+            results.append(show.scatter(args[0], args[1]))
+    return results
 ```
-wrong[[1, 2, 3, 4] 6]: Each new item goes in front of the others, so the last one, 4, ends up first.
-wrong[[4, 3, 2, 1] 10]: Before each insert the count is 0, 1, 2 and 3: 6 moves in all.
-wrong[[4, 3, 2, 1] 4]: Each insert at the front moves every item already there.
-hint: How many items move for each insert at index 0?
-hint: The number of items already in the array.
-right: `[4, 3, 2, 1]` after 0 + 1 + 2 + 3 = 6 moves: filling an array from the front is O(n²).
-wrong: The moves are 0, 1, 2 and 3 (the count before each insert), and every item lands in front: `[4, 3, 2, 1]`, total 6.
+tests:
+- run(["BookMyShow", "gather", "gather", "scatter", "scatter"], [[2, 5], [4, 0], [2, 0], [5, 1], [5, 1]])
+- run(["BookMyShow", "gather", "gather", "gather"], [[3, 2], [2, 0], [1, 0], [2, 1]])
+- run(["BookMyShow", "scatter", "gather", "scatter", "scatter"], [[3, 3], [4, 2], [2, 2], [5, 2], [3, 2]])
+- run(["BookMyShow", "gather", "gather", "scatter", "gather"], [[1, 5], [6, 0], [5, 0], [1, 0], [1, 0]])
+- run(["BookMyShow", "gather", "scatter", "gather", "scatter"], [[2, 1000000000], [1000000000, 0], [999999999, 1], [1, 1], [1, 1]])
+- (lambda r: [sum(1 for x in r if x == []), r.count(True), r.count(False), r[-4:]])(run(["BookMyShow"] + ["gather"] * 700 + ["scatter"] * 300 + ["gather", "scatter"] * 5, [[2500, 10]] + [[10, 2499 - i % 3] for i in range(700)] + [[7 + i % 5, 2400 + i % 100] for i in range(300)] + [x for i in range(5) for x in ([3, 650 + i], [4 + i, 699])]))
+fail[2]: Row 0 has 2 seats. After a group of 2, a group of 1 doesn't fit there, but a group of 2 fits in row 1.
+fail[3]: After 4 people are scattered, row 1 has seats 1 and 2 free, so a group of 2 gets `[1, 1]`. Then only row 2's 3 seats are free: 5 people don't fit, but 3 do.
+fail[4]: 6 people can't sit in a row of 5. Once 5 have filled it, nobody else fits, together or not.
+fail[5]: Rows of 10⁹ seats: count the seats, never list them. The last free seat of row 1 is seat 999,999,999.
+fail[6]: 2,500 rows and 1,010 calls. Checking every row on every call takes far too long.
+edges:
+- one row :: inputs[0][0] == 1 :: run(["BookMyShow", "gather"], [[1, 2], [2, 0]])
+- only gather :: inputs[0][0] > 1 and "scatter" not in commands :: run(["BookMyShow", "gather"], [[2, 2], [1, 1]])
+- a scatter :: inputs[0][0] > 1 and "scatter" in commands :: run(["BookMyShow", "scatter"], [[2, 2], [3, 1]])
+edge_count: 2
+complexity: time=O((n + q) × √n) | space=O(n)
+complexity_options: O((n + q) × √n); O(n × q); O(q × √n)
+complexity_note: Give the time of all the calls together; n is the number of rows and q the number of calls.
+why_time: Each call skips at most √n blocks, looks at fewer than 2√n single rows, and works out a block's most again in O(√n). A scatter can fill many rows in one call, but each row is filled up only once in all, which adds O(n × √n).
+why_space: used has n slots, and most and free about √n each.
+hint: In `__init__`: `used = [0] * n`, size the smallest number with size × size ≥ n, and for each block b, `most[b] = m` and `free[b]` = m times the number of rows in it. Set `first = 0`.
+hint: Write `refresh(b)`, which sets `most[b]` to the biggest `m - used[r]` over the rows r of block b.
+hint: gather: for each block b with `b * size <= max_row`, skip it if `most[b] < k`; otherwise check its rows up to max_row. At the first row with room, add k to `used[r]`, take k off `free[b]`, call `refresh(b)`, and return `[r, c]`, where c is `used[r]` from before the change.
+hint: scatter: add up `free[b]` for the whole blocks inside rows 0 to max_row, and `m - used[r]` for the rows after them. If that's less than k, return False. Otherwise fill rows from first, moving first on when a row is full, and fix free and call refresh for every row you change.
+right: Seats are always taken from the front of a row, so one number per row says everything about it. A block's most lets gather skip blocks with no room, and its free lets scatter count the room in many rows at once.
+wrong: Count the used seats in each row, and split the rows into blocks of about √n with each block's most free seats and total free seats. gather: skip the blocks with too little room, then find the row. scatter: add up the room up to max_row by blocks, return False if it's short, and otherwise fill from the first row that isn't full, keeping the blocks' numbers right.
 
-=== task: cells hard
-title: Moves for each operation
-prompt: A static array has capacity 10 and holds 6 items (count = 6). How many items move for each of these operations, each done on its own?
-labels: insert at 0 | insert at 6 | delete at 0 | delete at 5
-answer: 6 | 0 | 5 | 0
-wrong[6 | 1 | 5 | 1]: Inserting at index 6 (= count) is an append, and deleting index 5 (the last item) is the end: nothing moves.
-wrong[6 | 0 | 6 | 0]: Deleting at 0 moves the items after it: 5 of the 6.
-hint: Insert at i moves count − i items.
-hint: Delete at i moves count − i − 1 items.
-right: 6, 0, 5 and 0: the front is the worst case for both, and the end costs nothing.
-wrong: insert at 0: 6 − 0 = 6; insert at 6: 0; delete at 0: 6 − 0 − 1 = 5; delete at 5: 0.
+=== task: code hard
+title: Create Sorted Array through Instructions
+leetcode: 1649 | Create Sorted Array through Instructions | create-sorted-array-through-instructions
+patterns: blocks + count
+prompt: Start with an empty list nums, and insert the numbers of instructions into it one at a time, keeping nums sorted. Inserting x costs the smaller of how many numbers in nums are less than x and how many are greater than x: that's how many numbers would have to shift, opening the gap from the cheaper end. Write `create_sorted_array(instructions)` that returns the total cost, modulo 10⁹ + 7.
 
-=== task: mcq hard
-title: An insert anywhere
-prompt: Items are inserted into a static array holding n items, at an index chosen at random from 0 to n. About how many items move on average, and what's the Big O?
-- About 1 item, so O(1) :: Only an insert at the very end moves nothing. Most inserts move many items.
-* About n / 2 items, so O(n) :: Right. Index i moves n − i items, and on average that's about half the array.
-- About log n items, so O(log n) :: Nothing is halved: the moves are spread evenly from 0 to n.
-- About n² items, so O(n²) :: One insert moves at most n items.
-hint: Insert at index i moves n − i items, for i from 0 to n.
-hint: The average of 0, 1, ..., n is n / 2.
-right: n / 2 on average, which is still O(n): inserting into the middle of an array is a linear-time job.
-wrong: The moves range from n (at the front) down to 0 (at the end), averaging about n / 2: O(n).
+You don't need the sorted list, only counts. Keep `count[v]`, how many times v has been inserted, and a total for each block of size values, with size the smallest number whose square is bigger than the biggest value. "How many are less than x?" adds up the whole blocks of values below x's block, then the counts of the values in x's block that are below x. "Greater" is how many numbers have been inserted, minus "less", minus `count[x]`.
 
-=== task: multi hard
-title: True about static arrays
-prompt: Choose **every** true sentence.
-* The next free slot is always at index count :: Right. The used slots are 0 to count − 1.
-* A static array's capacity never changes :: Right. That's what makes it static.
-* Deleting sets the last used slot back to None, but the array keeps all its slots :: Right. Only the count goes down.
-- Appending to a full static array makes it bigger :: It can't grow: the append has to be refused (or the array copied into a bigger one).
-- Reading slot i costs more when i is large :: Every slot is found with the same address arithmetic: O(1).
-- Inserting at index count moves every item :: Index count is the first free slot: nothing moves.
-hint: Think about capacity, count, and where the free slots are.
-hint: Three of them are true.
-right: The next slot is at count, the capacity is fixed, and deleting only frees a slot. A full array can't grow, reads are O(1) everywhere, and inserting at count is an append.
-wrong: True: next slot at count, fixed capacity, deletes free a slot. False: full arrays don't grow, large indexes aren't slower, inserting at count moves nothing.
+**Example 1:** `create_sorted_array([1, 5, 6, 2])` returns `1`: inserting 2 into [1, 5, 6] costs min(1, 2) = 1, and every other insert costs 0.
 
-=== task: parsons hard
-title: The delete function
-prompt: Arrange the lines so that `delete` removes the item at index i from a static array, frees the last used slot, and returns the new count. The program prints:
+**Example 2:** `create_sorted_array([1, 2, 3, 6, 5, 4])` returns `3`.
 
-```output
-['Ben', 'Cal', None, None] 2
-```
+**Example 3:** `create_sorted_array([1, 3, 3, 3, 2, 4, 2, 1, 2])` returns `4`.
 
-Not every line is needed.
-lines:
+**Constraints:** 1 ≤ `len(instructions)` ≤ 10⁵, and 1 ≤ `instructions[i]` ≤ 10⁵.
+starter:
 ```python
-def delete(slots, count, i):
-    j = i
-    while j < count - 1:
-        slots[j] = slots[j + 1]
-        j += 1
-    slots[count - 1] = None
-    return count - 1
-
-slots = ["Ann", "Ben", "Cal", None]
-count = delete(slots, 3, 0)
-print(slots, count)
+def create_sorted_array(instructions):
+    # your code here
+    return 0
 ```
-distractors:
+solution:
 ```python
-        slots[j + 1] = slots[j]
-    slots.pop()
+def create_sorted_array(instructions):
+    top = max(instructions)
+    size = 1
+    while size * size < top + 1:
+        size += 1
+    count = [0] * (top + 1)
+    block = [0] * (top // size + 1)
+    total = 0
+    cost = 0
+    for x in instructions:
+        b = x // size
+        less = 0
+        for i in range(b):
+            less += block[i]
+        for v in range(b * size, x):
+            less += count[v]
+        greater = total - less - count[x]
+        cost += min(less, greater)
+        count[x] += 1
+        block[b] += 1
+        total += 1
+    return cost % 1000000007
 ```
-hint: The items after i move left: each slot takes the item from the slot to its right.
-hint: A static array keeps its slots, so the last used one is set to None rather than removed.
-right: Ben and Cal move left, the leftover copy of Cal becomes None, and the count drops to 2. `slots.pop()` would shrink the array, which a static array can't do.
-wrong: `j = i`; while `j < count - 1`, copy `slots[j + 1]` into `slots[j]` and step right; then `slots[count - 1] = None` and `return count - 1`.
+tests:
+- create_sorted_array([1, 5, 6, 2])
+- create_sorted_array([1, 2, 3, 6, 5, 4])
+- create_sorted_array([1, 3, 3, 3, 2, 4, 2, 1, 2])
+- create_sorted_array([7])
+- create_sorted_array([5, 5, 5])
+- create_sorted_array([(i * 7919) % 1500 + 1 for i in range(1500)])
+fail[2]: Inserting 5 costs min(3, 1) = 1, and inserting 4 costs min(3, 2) = 2.
+fail[3]: Equal numbers count as neither less nor greater, so the 3s cost nothing, and the total is 4.
+fail[4]: One number costs nothing.
+fail[5]: Equal numbers are never less or greater: 0.
+fail[6]: 1,500 numbers. Counting by checking every number inserted so far takes far too long.
+edges:
+- one number :: len(instructions) == 1 :: create_sorted_array([4])
+- a number repeated :: len(instructions) > 1 and len(set(instructions)) < len(instructions) :: create_sorted_array([2, 2])
+- all different :: len(instructions) > 1 and len(set(instructions)) == len(instructions) :: create_sorted_array([2, 1])
+edge_count: 2
+complexity: time=O(m + n × √m) | space=O(m)
+complexity_options: O(m + n × √m); O(n²); O(n × m); O(m)
+complexity_note: n is the number of instructions and m the biggest value.
+why_time: Making the count lists is O(m). Each insert adds up at most √m block totals and fewer than √m single counts, then changes two counts.
+why_space: count has m + 1 slots, and the block totals about √m.
+hint: `top = max(instructions)`, and size is the smallest number with `size * size >= top + 1`.
+hint: `count = [0] * (top + 1)` and `block = [0] * (top // size + 1)`. Value v is in block `v // size`.
+hint: less: add `block[i]` for every i below `x // size`, then `count[v]` for v from `(x // size) * size` up to x − 1. `greater = total - less - count[x]`.
+hint: Add `min(less, greater)` to the cost, then add 1 to `count[x]`, to x's block and to total. Return the cost modulo 1000000007.
+right: The cost needs only how many numbers are below and above x, not where they are, so counts by value replace the list, and block totals make "how many below x?" O(√m) instead of O(m).
+wrong: Keep `count[v]` and a total for each block of about √m values. For each x, less = the whole blocks below x's block plus the counts in its block below x, and greater = the numbers inserted − less − `count[x]`. Add min(less, greater), then count x. Return the total modulo 10⁹ + 7.
+
+=== task: code hard
+title: Maximum Segment Sum After Removals
+leetcode: 2382 | Maximum Segment Sum After Removals | maximum-segment-sum-after-removals
+patterns: delete + bounds
+prompt: nums holds positive numbers. The indexes in remove_queries take numbers out of nums one at a time, and each removal leaves a gap that splits nums into **segments**: runs of neighbouring numbers that are still there. Write `maximum_segment_sum(nums, remove_queries)` that returns a list answer, where `answer[i]` is the biggest sum of a segment after the first i + 1 removals, or 0 if nothing is left.
+
+Splits are hard to keep track of, but a join only needs the numbers on each side of the gap, so work backwards. After the last removal, nothing is left: `answer[n - 1]` is 0. Then put the numbers back in the opposite order. Putting back index i joins it to the segment that ends at i − 1 and to the one that starts at i + 1, if those exist. For each segment, keep `end_of[start]`, `start_of[end]` and `total[start]`, stored at its two ends, and keep a list `back` of the indexes put back so far. Segment sums only grow as segments join, so a running best gives the answer before each removal.
+
+**Example 1:** `maximum_segment_sum([1, 2, 5, 6, 1], [0, 3, 2, 4, 1])` returns `[14, 7, 2, 2, 0]`: after index 0 is removed, [2, 5, 6, 1] sums to 14, and after index 3, [2, 5] sums to 7.
+
+**Example 2:** `maximum_segment_sum([3, 2, 11, 1], [3, 2, 1, 0])` returns `[16, 5, 3, 0]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ `nums[i]` ≤ 10⁹, and remove_queries holds each index from 0 to n − 1 once.
+starter:
+```python
+def maximum_segment_sum(nums, remove_queries):
+    # your code here
+    return [0] * len(nums)
+```
+solution:
+```python
+def maximum_segment_sum(nums, remove_queries):
+    n = len(nums)
+    back = [False] * n
+    start_of = [0] * n
+    end_of = [0] * n
+    total = [0] * n
+    answer = [0] * n
+    best = 0
+    for q in range(n - 1, 0, -1):
+        i = remove_queries[q]
+        back[i] = True
+        start = i
+        end = i
+        s = nums[i]
+        if i > 0 and back[i - 1]:
+            start = start_of[i - 1]
+            s += total[start]
+        if i < n - 1 and back[i + 1]:
+            end = end_of[i + 1]
+            s += total[i + 1]
+        end_of[start] = end
+        start_of[end] = start
+        total[start] = s
+        best = max(best, s)
+        answer[q - 1] = best
+    return answer
+```
+tests:
+- maximum_segment_sum([1, 2, 5, 6, 1], [0, 3, 2, 4, 1])
+- maximum_segment_sum([3, 2, 11, 1], [3, 2, 1, 0])
+- maximum_segment_sum([5], [0])
+- maximum_segment_sum([4, 9], [1, 0])
+- maximum_segment_sum([2, 7, 1, 8, 2, 8], [2, 0, 5, 3, 1, 4])
+- sum(maximum_segment_sum([(i * 37) % 100 + 1 for i in range(15000)], [(i * 7919) % 15000 for i in range(15000)]))
+fail[2]: Each removal takes the number at the right end: 3 + 2 + 11 = 16, then 3 + 2, then 3.
+fail[3]: One number, removed: 0.
+fail[4]: Removing 9 leaves [4], and removing 4 leaves nothing.
+fail[5]: Removing the 1 splits nums into [2, 7] and [8, 2, 8], which sums to 18.
+fail[6]: 15,000 numbers. Adding up every segment again after each removal takes far too long.
+edges:
+- one number :: len(nums) == 1 :: maximum_segment_sum([5], [0])
+- an end removed first :: len(nums) > 1 and remove_queries[0] in (0, len(nums) - 1) :: maximum_segment_sum([1, 2], [0, 1])
+- the middle removed first :: len(nums) > 1 and remove_queries[0] not in (0, len(nums) - 1) :: maximum_segment_sum([1, 2, 3], [1, 0, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each number is put back once, with O(1) work to join it to its neighbours.
+why_space: back, start_of, end_of, total and answer have n slots each.
+hint: Loop q from n − 1 down to 1, putting back `i = remove_queries[q]`. The best after that is `answer[q - 1]`.
+hint: Start a segment from i to i with sum `nums[i]`. If `i > 0 and back[i - 1]`, its start becomes `start_of[i - 1]`, and add the total stored at that start.
+hint: If `i < n - 1 and back[i + 1]`, its end becomes `end_of[i + 1]`, and add `total[i + 1]`.
+hint: Store `end_of[start] = end`, `start_of[end] = start` and `total[start] = s`, then `best = max(best, s)`.
+right: Going backwards turns every split into a join, and a join only needs the neighbours on each side of the gap, checking that they're inside the list. Storing each segment's other end at its two ends makes a join O(1).
+wrong: Start from the empty list after the last removal, and put back `remove_queries[n - 1]` down to `remove_queries[1]`. Join each number to the segment ending at i − 1 and the one starting at i + 1, when they exist, using start_of, end_of and total stored at the ends, and record the running best as `answer[q - 1]`.
+
+=== task: code hard
+title: Handling Sum Queries After Update
+leetcode: 2569 | Handling Sum Queries After Update | handling-sum-queries-after-update
+patterns: blocks + count
+prompt: nums1 holds 0s and 1s, and nums2 holds numbers. Each query is one of:
+
+- `[1, l, r]`: flip every bit of nums1 from index l to index r, so 0 becomes 1 and 1 becomes 0.
+- `[2, p, 0]`: for every i, add `nums1[i] * p` to `nums2[i]`.
+- `[3, 0, 0]`: report the sum of nums2.
+
+Write `handle_query(nums1, nums2, queries)` that returns the reported sums, in order.
+
+A type 2 query adds p times the number of 1s in nums1 to the sum, so you never need nums2 itself, only its total and the number of 1s. Flips change the number of 1s, and flipping a long range bit by bit is too slow, so use blocks of size about √n. Each block keeps its count of 1s and a **flip flag**: flipping a whole block turns its count into size minus the count and toggles the flag, without touching its bits, so a bit's real value is its stored bit XOR its block's flag. The bits at the two ends of the range, in blocks that are only partly inside it, are flipped one at a time.
+
+**Example 1:** `handle_query([1, 0, 1], [0, 0, 0], [[1, 1, 1], [2, 1, 0], [3, 0, 0]])` returns `[3]`: the flip makes nums1 [1, 1, 1], and adding it once makes nums2 [1, 1, 1].
+
+**Example 2:** `handle_query([1], [5], [[2, 0, 0], [3, 0, 0]])` returns `[5]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, nums1 holds only 0s and 1s, 0 ≤ `nums2[i]` ≤ 10⁹ and 1 ≤ `len(queries)` ≤ 10⁵. In the queries, 0 ≤ l ≤ r ≤ n − 1 and 0 ≤ p ≤ 10⁶.
+starter:
+```python
+def handle_query(nums1, nums2, queries):
+    # your code here
+    return []
+```
+solution:
+```python
+def handle_query(nums1, nums2, queries):
+    n = len(nums1)
+    size = 1
+    while size * size < n:
+        size += 1
+    bits = list(nums1)
+    ones = [0] * ((n + size - 1) // size)
+    flip = [0] * len(ones)
+    for i in range(n):
+        ones[i // size] += bits[i]
+    all_ones = sum(bits)
+    total = sum(nums2)
+    answer = []
+    for kind, a, b in queries:
+        if kind == 1:
+            i = a
+            while i <= b:
+                blk = i // size
+                if i % size == 0 and i + size - 1 <= b:
+                    all_ones += size - 2 * ones[blk]
+                    ones[blk] = size - ones[blk]
+                    flip[blk] ^= 1
+                    i += size
+                else:
+                    if bits[i] ^ flip[blk] == 1:
+                        ones[blk] -= 1
+                        all_ones -= 1
+                    else:
+                        ones[blk] += 1
+                        all_ones += 1
+                    bits[i] ^= 1
+                    i += 1
+        elif kind == 2:
+            total += a * all_ones
+        else:
+            answer.append(total)
+    return answer
+```
+tests:
+- handle_query([1, 0, 1], [0, 0, 0], [[1, 1, 1], [2, 1, 0], [3, 0, 0]])
+- handle_query([1], [5], [[2, 0, 0], [3, 0, 0]])
+- handle_query([0, 0], [1, 2], [[2, 5, 0], [3, 0, 0], [1, 0, 1], [2, 5, 0], [3, 0, 0]])
+- handle_query([1, 0, 1, 0], [0, 0, 0, 0], [[1, 0, 3], [1, 0, 3], [2, 1, 0], [3, 0, 0]])
+- handle_query([0, 1, 1, 0, 1], [3, 1, 4, 1, 5], [[1, 1, 3], [2, 2, 0], [3, 0, 0], [1, 0, 4], [2, 1000000, 0], [3, 0, 0]])
+- handle_query([i % 2 for i in range(2000)], [i for i in range(2000)], [[1, i % 40, 1999 - i % 30] if i % 3 != 2 else [2, i + 1, 0] for i in range(700)] + [[3, 0, 0]])
+fail[2]: p = 0 adds nothing: the sum stays 5.
+fail[3]: nums1 is all 0s, so the first type 2 query adds nothing and the sum is 3. After both bits flip, adding 5 twice makes 13.
+fail[4]: Flipping the same range twice puts nums1 back as it was: two 1s, so the sum is 2.
+fail[5]: After the first flip, nums1 is [0, 0, 0, 1, 1]: adding 2 twice gives 14 + 4 = 18. After the second, it's [1, 1, 1, 0, 0]: adding 10⁶ three times gives 3,000,018.
+fail[6]: 2,000 bits and 700 queries, most of them flipping nearly every bit. Flipping one bit at a time takes far too long.
+edges:
+- one bit :: len(nums1) == 1 :: handle_query([0], [1], [[3, 0, 0]])
+- a flip :: len(nums1) > 1 and any(q[0] == 1 for q in queries) :: handle_query([0, 1], [0, 0], [[1, 0, 0], [3, 0, 0]])
+- no flips :: len(nums1) > 1 and all(q[0] != 1 for q in queries) :: handle_query([0, 1], [0, 0], [[2, 3, 0], [3, 0, 0]])
+edge_count: 2
+complexity: time=O(n + q × √n) | space=O(n)
+complexity_options: O(n + q × √n); O(n × q); O(q × √n)
+complexity_note: n is the length of nums1 and q the number of queries.
+why_time: Setting up is O(n). A flip covers at most √n whole blocks and fewer than 2√n single bits, and the other queries are O(1).
+why_space: The copy of the bits, and two numbers for each block.
+hint: Use blocks of size, the smallest number with size × size ≥ n. `ones[b]` counts the real 1s in block b, `flip[b]` is 0 or 1, and `all_ones` and `total` are the totals.
+hint: For a flip from a to b: at an i with `i % size == 0` and `i + size - 1 <= b`, add `size - 2 * ones[blk]` to all_ones, set `ones[blk] = size - ones[blk]`, toggle `flip[blk]` and jump size.
+hint: Otherwise flip one bit. Its real value is `bits[i] ^ flip[blk]`: if that's 1, take 1 off `ones[blk]` and all_ones, and if it's 0, add 1 to both. Then `bits[i] ^= 1`.
+hint: Type 2 adds `p * all_ones` to total, and type 3 appends total.
+right: The answers need only two numbers, the sum of nums2 and the count of 1s, and a flag per block lets a flip of a whole block change its count in O(1) without touching its bits.
+wrong: Keep `total = sum(nums2)`, and for each block of about √n bits, a count of its real 1s and a flip flag. Flip whole blocks with the flag and the ends bit by bit, where the real bit is the stored bit XOR the flag, keeping all_ones right. Type 2: `total += p * all_ones`. Type 3: report total.
+
+=== task: code hard
+title: Find Building Where Alice and Bob Can Meet
+leetcode: 2940 | Find Building Where Alice and Bob Can Meet | find-building-where-alice-and-bob-can-meet
+patterns: blocks
+prompt: `heights[i]` is the height of building i, in a row. From building i, a person can move to any building j with `i < j` and `heights[i] < heights[j]`. Each query `[a, b]` puts Alice in building a and Bob in building b: find the leftmost building both can get to, where staying put counts. Write `leftmost_building_queries(heights, queries)` that returns the answers in order, with −1 where there's no such building.
+
+Let lo and hi be the smaller and bigger of a and b. If `lo == hi`, or `heights[lo] < heights[hi]`, the answer is hi: the person at lo moves there in one go. Otherwise both must move to a building after hi that's taller than both of theirs: the first j > hi with `heights[j] > max(heights[a], heights[b])`. Searching one building at a time can be slow, so split the buildings into blocks of size about √n, each with its tallest height: a block whose tallest building isn't tall enough is skipped in one step.
+
+**Example 1:** `leftmost_building_queries([6, 4, 8, 5, 2, 7], [[0, 1], [0, 3], [2, 4], [3, 4], [2, 2]])` returns `[2, 5, -1, 5, 2]`.
+
+**Example 2:** `leftmost_building_queries([5, 3, 8, 2, 6, 1, 4, 6], [[0, 7], [3, 5], [5, 2], [3, 0], [1, 6]])` returns `[7, 6, -1, 4, 6]`.
+
+**Constraints:** 1 ≤ n ≤ 5 × 10⁴, 1 ≤ `heights[i]` ≤ 10⁹, 1 ≤ `len(queries)` ≤ 5 × 10⁴, and 0 ≤ a, b ≤ n − 1.
+starter:
+```python
+def leftmost_building_queries(heights, queries):
+    # your code here
+    return [-1] * len(queries)
+```
+solution:
+```python
+def leftmost_building_queries(heights, queries):
+    n = len(heights)
+    size = 1
+    while size * size < n:
+        size += 1
+    top = [0] * ((n + size - 1) // size)
+    for i in range(n):
+        top[i // size] = max(top[i // size], heights[i])
+    answer = []
+    for a, b in queries:
+        lo = min(a, b)
+        hi = max(a, b)
+        if lo == hi or heights[lo] < heights[hi]:
+            answer.append(hi)
+            continue
+        need = max(heights[a], heights[b])
+        j = hi + 1
+        found = -1
+        while j < n:
+            if j % size == 0 and top[j // size] <= need:
+                j += size
+            elif heights[j] > need:
+                found = j
+                break
+            else:
+                j += 1
+        answer.append(found)
+    return answer
+```
+tests:
+- leftmost_building_queries([6, 4, 8, 5, 2, 7], [[0, 1], [0, 3], [2, 4], [3, 4], [2, 2]])
+- leftmost_building_queries([5, 3, 8, 2, 6, 1, 4, 6], [[0, 7], [3, 5], [5, 2], [3, 0], [1, 6]])
+- leftmost_building_queries([1], [[0, 0]])
+- leftmost_building_queries([3, 3, 3], [[0, 1], [1, 0]])
+- leftmost_building_queries([2, 1, 3], [[1, 0], [0, 2], [2, 1]])
+- sum(leftmost_building_queries([3000 - i for i in range(2999)] + [5000], [[i % 50, 50 + i % 40] for i in range(600)]))
+fail[2]: In [3, 5], building 3 is taller than building 5, so both move on: building 6 is the first after 5 that's taller than 2.
+fail[3]: Both start in the same building: 0.
+fail[4]: Equal heights can't move to each other, and nothing taller comes later: −1 both times.
+fail[5]: The order inside a query doesn't matter: [1, 0] is the same meeting as [0, 1].
+fail[6]: 3,000 buildings that get shorter, with one tall building at the end, and 600 queries that all have to reach it. Searching one building at a time takes far too long.
+edges:
+- the same building :: any(a == b for a, b in queries) :: leftmost_building_queries([1, 2], [[1, 1]])
+- the one on the left is shorter :: all(a != b for a, b in queries) and any(heights[min(a, b)] < heights[max(a, b)] for a, b in queries) :: leftmost_building_queries([1, 2], [[0, 1]])
+- the one on the left is at least as tall :: all(a != b and heights[min(a, b)] >= heights[max(a, b)] for a, b in queries) :: leftmost_building_queries([2, 1, 3], [[0, 1]])
+edge_count: 2
+complexity: time=O(n + q × √n) | space=O(q + √n)
+complexity_options: O(n + q × √n); O(n × q); O(q × √n); O(q + √n)
+complexity_note: n is the number of buildings and q the number of queries.
+why_time: The tallest height of each block takes O(n) to find. Each query skips at most √n blocks and looks at fewer than 2√n single buildings.
+why_space: The tallest height of each block, about √n numbers, and the q answers.
+hint: Use blocks of size, the smallest number with size × size ≥ n, with `top[b]` the tallest building in block b.
+hint: `lo = min(a, b)` and `hi = max(a, b)`. If `lo == hi or heights[lo] < heights[hi]`, the answer is hi.
+hint: Otherwise `need = max(heights[a], heights[b])`, and search from `j = hi + 1`: at a j with `j % size == 0` and `top[j // size] <= need`, jump size; else if `heights[j] > need`, that's the answer; else step 1.
+right: All that matters is the first building after hi that's taller than need, and a block's tallest height says whether any building in it can be the one, so most of the search goes a block at a time.
+wrong: Find the tallest height in each block. For each query, the answer is hi when both are in the same building or the left one is shorter. Otherwise search to the right of hi for the first height above `max(heights[a], heights[b])`, skipping whole blocks whose tallest isn't above it.
+
+=== task: code hard
+title: Distribute Elements Into Two Arrays II
+leetcode: 3072 | Distribute Elements Into Two Arrays II | distribute-elements-into-two-arrays-ii
+patterns: blocks + count
+prompt: Share the numbers of nums out between two lists: `nums[0]` goes to arr1 and `nums[1]` to arr2. Each later number x goes to the list with more numbers greater than x. On a tie, it goes to the list with fewer numbers, and if that's a tie too, to arr1. Write `result_array(nums)` that returns arr1 followed by arr2.
+
+Counting the greater numbers by looking through the lists is too slow. Keep counts by value for each list instead. The values go up to 10⁹, so first replace each value with its **rank**, its position among the different values when they're sorted: the ranks go from 0 to m − 1, in the same order as the values. Then for each list, keep `count[r]` for each rank and a total for each block of ranks. "How many are at most rank r?" adds up whole blocks and then single counts, and the number greater than x is the list's length minus that.
+
+**Example 1:** `result_array([2, 1, 3, 3])` returns `[2, 3, 1, 3]`: the first 3 has no greater numbers in either list, and the lists are the same length, so it goes to arr1. The second 3 then goes to the shorter arr2.
+
+**Example 2:** `result_array([5, 14, 3, 1, 2])` returns `[5, 3, 1, 2, 14]`.
+
+**Constraints:** 3 ≤ n ≤ 10⁵, and 1 ≤ `nums[i]` ≤ 10⁹.
+starter:
+```python
+def result_array(nums):
+    # your code here
+    return nums
+```
+solution:
+```python
+def at_most(count, block, size, r):
+    b = r // size
+    total = 0
+    for i in range(b):
+        total += block[i]
+    for i in range(b * size, r + 1):
+        total += count[i]
+    return total
+
+
+def result_array(nums):
+    values = sorted(set(nums))
+    rank = {}
+    for i in range(len(values)):
+        rank[values[i]] = i
+    m = len(values)
+    size = 1
+    while size * size < m:
+        size += 1
+    count1 = [0] * m
+    count2 = [0] * m
+    block1 = [0] * (m // size + 1)
+    block2 = [0] * (m // size + 1)
+    arr1 = [nums[0]]
+    arr2 = [nums[1]]
+    count1[rank[nums[0]]] += 1
+    block1[rank[nums[0]] // size] += 1
+    count2[rank[nums[1]]] += 1
+    block2[rank[nums[1]] // size] += 1
+    for i in range(2, len(nums)):
+        x = nums[i]
+        r = rank[x]
+        g1 = len(arr1) - at_most(count1, block1, size, r)
+        g2 = len(arr2) - at_most(count2, block2, size, r)
+        if g1 > g2 or (g1 == g2 and len(arr1) <= len(arr2)):
+            arr1.append(x)
+            count1[r] += 1
+            block1[r // size] += 1
+        else:
+            arr2.append(x)
+            count2[r] += 1
+            block2[r // size] += 1
+    return arr1 + arr2
+```
+tests:
+- result_array([2, 1, 3, 3])
+- result_array([5, 14, 3, 1, 2])
+- result_array([3, 3, 3, 3])
+- result_array([1, 2, 3])
+- result_array([1000000000, 1, 999999999, 2, 1000000000])
+- sum(i * x for i, x in enumerate(result_array([(i * 7919) % 1300 + 1 for i in range(1300)])))
+fail[2]: Each later number has at least as many greater numbers in arr1 as in arr2, and arr1 is never longer on a tie, so arr2 keeps only 14.
+fail[3]: Equal numbers are never greater, so each 3 goes to the shorter list, and to arr1 when they're the same length.
+fail[4]: 3 has no greater numbers anywhere, and the lists are the same length: arr1.
+fail[5]: Values up to 10⁹: ranks keep the count lists short.
+fail[6]: 1,300 numbers. Counting the greater numbers by looking through both lists every time takes far too long.
+edges:
+- three numbers :: len(nums) == 3 :: result_array([1, 2, 3])
+- repeated values :: len(nums) > 3 and len(set(nums)) < len(nums) :: result_array([2, 2, 2, 2])
+- all different :: len(nums) > 3 and len(set(nums)) == len(nums) :: result_array([4, 3, 2, 1])
+edge_count: 2
+complexity: time=O(n × √n) | space=O(n)
+complexity_options: O(n × √n); O(n²); O(n log n)
+complexity_note: n is the length of nums.
+why_time: Sorting the values for the ranks is O(n log n). Each number then asks two "at most" questions, each adding up at most √n block totals and fewer than √n single counts: O(n × √n) in all, the bigger part.
+why_space: The ranks, two count lists and their block totals.
+hint: `values = sorted(set(nums))`, and a dictionary rank from each value to its index in values.
+hint: Write `at_most(count, block, size, r)`: the whole blocks below `r // size`, then the single counts from the start of r's block up to r.
+hint: For each later x: `g1 = len(arr1) - at_most(count1, block1, size, rank[x])`, and the same for arr2.
+hint: Append to arr1 if `g1 > g2`, or if `g1 == g2 and len(arr1) <= len(arr2)`; otherwise append to arr2. Then add 1 to that list's count and block for x's rank.
+right: Ranks turn values up to 10⁹ into positions 0 to m − 1 in the same order, so counts by rank with block totals answer "how many are greater?" in O(√n) instead of a look through a whole list.
+wrong: Rank the values. For each list, keep counts by rank and a total for each block of ranks. For each x, the greater count in each list is its length minus at_most(rank of x); apply the rules to choose a list, and count x there. Return arr1 + arr2.
+
+=== task: code hard
+title: Stretch and Shrink In Place
+patterns: insert + bounds
+prompt: arr holds numbers from 0 to 3. **Stretch** it in place: each number v is written v times in a row, keeping their order, so a 0 disappears, a 1 stays once, a 2 is doubled and a 3 is tripled. arr keeps its length n: numbers that would go past the end are dropped, and if the result is shorter than n, the rest of arr is filled with 0s. Write `stretch(arr)` that changes arr this way and returns it, using O(1) extra memory: no second list.
+
+Shifting everything right for every extra copy would be O(n²). Instead, use three passes:
+
+1. Move the numbers that aren't 0 to the front, keeping their order, with a write position, as you'd delete in one pass. Say there are count of them.
+2. Find how far the result reaches: add up the numbers from the front into total, until total reaches n or the numbers run out. The last number added, at index last, is the last one that appears, and if total went past n, only `v - (total - n)` of its copies fit.
+3. Set the slots from `min(total, n)` to the end to 0. Then write the copies from the back: a write position starts at `min(total, n) - 1`, and a read position goes down from last to 0. Every number fills at least one slot, so the write position never goes below the read position, and nothing is overwritten before it's read.
+
+**Example 1:** `stretch([2, 0, 1, 3, 0, 0])` returns `[2, 2, 1, 3, 3, 3]`.
+
+**Example 2:** `stretch([0, 3, 0, 0, 1, 0])` returns `[3, 3, 3, 1, 0, 0]`.
+
+**Example 3:** `stretch([3, 3, 1])` returns `[3, 3, 3]`: the first 3 fills the whole list.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, and 0 ≤ `arr[i]` ≤ 3.
+starter:
+```python
+def stretch(arr):
+    # your code here
+    return arr
+```
+solution:
+```python
+def stretch(arr):
+    n = len(arr)
+    count = 0
+    for i in range(n):
+        if arr[i] != 0:
+            arr[count] = arr[i]
+            count += 1
+    total = 0
+    last = -1
+    while last + 1 < count and total < n:
+        last += 1
+        total += arr[last]
+    for i in range(min(total, n), n):
+        arr[i] = 0
+    over = max(0, total - n)
+    w = min(total, n) - 1
+    for i in range(last, -1, -1):
+        v = arr[i]
+        copies = v
+        if i == last:
+            copies = v - over
+        for t in range(copies):
+            arr[w] = v
+            w -= 1
+    return arr
+```
+tests:
+- stretch([2, 0, 1, 3, 0, 0])
+- stretch([0, 3, 0, 0, 1, 0])
+- stretch([3, 3, 1])
+- stretch([0])
+- stretch([1, 2, 0, 3])
+- (lambda a: [a[:6], a.count(0), a[-4:]])(stretch([(i * 7) % 4 if i % 5 else 0 for i in range(20000)]))
+fail[2]: The 3 and the 1 move to the front, the 3 is tripled, and the two slots left over become 0.
+fail[3]: The first 3 fills all three slots, so the second 3 and the 1 are dropped.
+fail[4]: A 0 disappears, and its slot is filled with 0 again.
+fail[5]: 1, then 2 twice, and then only one copy of the 3 fits.
+fail[6]: 20,000 numbers. Shifting for every copy moves thousands of items each time.
+edges:
+- one number :: len(arr) == 1 :: stretch([2])
+- not every copy fits :: len(arr) > 1 and sum(arr) > len(arr) :: stretch([2, 1])
+- every copy fits :: len(arr) > 1 and sum(arr) <= len(arr) :: stretch([1, 0])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of arr.
+why_time: Three passes, to move the numbers to the front, to find the reach and to write from the back, each O(n).
+why_space: A few positions and counts: arr is changed in place.
+hint: Pass 1: `count = 0`, and for each i, if `arr[i] != 0`, set `arr[count] = arr[i]` and add 1 to count.
+hint: Pass 2: `total = 0` and `last = -1`. While `last + 1 < count and total < n`, add 1 to last and `arr[last]` to total. Then `over = max(0, total - n)`.
+hint: Pass 3: set `arr[i] = 0` for i from `min(total, n)` to n − 1. With `w = min(total, n) - 1`, for i from last down to 0, write `v = arr[i]` into w, w − 1 and onwards, v times, or `v - over` times when i is last.
+hint: Read `v = arr[i]` before writing anything: the first write can land on slot i itself.
+right: Working from the back puts every copy straight into its final slot, and because each number takes at least one slot, the writes stay at or ahead of the reads: O(n), with no second list.
+wrong: Move the numbers that aren't 0 to the front. Add them up from the front until the total reaches n, to find the last number that appears and how many of its copies are cut off. Set the tail to 0, then write the copies from the back, reading from last down to 0.
+
+=== task: code hard
+title: Find Servers That Handled Most Number of Requests
+leetcode: 1606 | Find Servers That Handled Most Number of Requests | find-servers-that-handled-most-number-of-requests
+patterns: blocks + full
+prompt: k servers, numbered 0 to k − 1, handle requests, one at a time each. Request i arrives at time `arrival[i]` and takes `load[i]` to finish, so it keeps its server busy until `arrival[i] + load[i]`, when the server is free again. Requests get servers like this:
+
+- If server i % k is free, it takes the request.
+- Otherwise, the next free server after it does: i % k + 1, i % k + 2 and onwards, going round from k − 1 to 0.
+- If every server is busy, the request is dropped.
+
+Write `busiest_servers(k, arrival, load)` that returns the servers that handled the most requests, smallest first.
+
+Keep `free_at[s]`, the time server s is next free: it's free at time t if `free_at[s] <= t`. Searching every server for each request is too slow, so split the servers into blocks of size about √k, each with `soonest[b]`, the smallest free_at in the block. A block whose soonest is after t has no free server, so it's skipped in one step. Search from i % k to the end, then from 0 up to i % k, and after a server takes a request, work out its block's soonest again.
+
+**Example 1:** `busiest_servers(3, [1, 2, 3, 4, 5], [5, 2, 3, 3, 3])` returns `[1]`: request 3 finds server 0 busy and goes to server 1, and request 4 finds every server busy and is dropped.
+
+**Example 2:** `busiest_servers(3, [1, 2, 3, 4], [1, 2, 1, 2])` returns `[0]`.
+
+**Example 3:** `busiest_servers(3, [1, 2, 3], [10, 12, 11])` returns `[0, 1, 2]`.
+
+**Constraints:** 1 ≤ k ≤ 10⁵, arrival and load both have 1 to 10⁵ numbers, each from 1 to 10⁹, and arrival is strictly increasing.
+starter:
+```python
+def busiest_servers(k, arrival, load):
+    # your code here
+    return []
+```
+solution:
+```python
+def first_free(free_at, soonest, size, lo, hi, t):
+    j = lo
+    while j < hi:
+        if j % size == 0 and soonest[j // size] > t:
+            j += size
+        elif free_at[j] <= t:
+            return j
+        else:
+            j += 1
+    return -1
+
+
+def busiest_servers(k, arrival, load):
+    size = 1
+    while size * size < k:
+        size += 1
+    free_at = [0] * k
+    soonest = [0] * ((k + size - 1) // size)
+    handled = [0] * k
+    for i in range(len(arrival)):
+        t = arrival[i]
+        server = first_free(free_at, soonest, size, i % k, k, t)
+        if server == -1:
+            server = first_free(free_at, soonest, size, 0, i % k, t)
+        if server == -1:
+            continue
+        free_at[server] = t + load[i]
+        handled[server] += 1
+        b = server // size
+        soonest[b] = min(free_at[b * size:(b + 1) * size])
+    most = max(handled)
+    busiest = []
+    for s in range(k):
+        if handled[s] == most:
+            busiest.append(s)
+    return busiest
+```
+tests:
+- busiest_servers(3, [1, 2, 3, 4, 5], [5, 2, 3, 3, 3])
+- busiest_servers(3, [1, 2, 3, 4], [1, 2, 1, 2])
+- busiest_servers(3, [1, 2, 3], [10, 12, 11])
+- busiest_servers(1, [1, 2, 3], [1, 1, 1])
+- busiest_servers(3, [1, 2, 3, 4, 5, 6], [1, 100, 100, 1, 100, 100])
+- busiest_servers(2000, list(range(1, 2431)), [10 ** 9] * 1950 + [1 + i % 3 for i in range(480)])
+fail[2]: Server 0 is free again at time 2, so request 3 takes it: two requests.
+fail[3]: Each server handles one request, so all three tie.
+fail[4]: One server, free again each time a request arrives: it handles all three.
+fail[5]: Request 4 finds servers 1 and 2 busy and goes round to server 0, which was free again at time 5, the moment the request arrived.
+fail[6]: 2,000 servers, nearly all of them busy for good. Checking one server after another for each request takes far too long.
+edges:
+- one server :: k == 1 :: busiest_servers(1, [1], [1])
+- more requests than servers :: k > 1 and len(arrival) > k :: busiest_servers(2, [1, 2, 3], [1, 1, 1])
+- no more requests than servers :: k > 1 and len(arrival) <= k :: busiest_servers(2, [1], [5])
+edge_count: 2
+complexity: time=O(k + n × √k) | space=O(k)
+complexity_options: O(k + n × √k); O(n × k); O(n × √k); O(k)
+complexity_note: k is the number of servers and n the number of requests.
+why_time: The lists take O(k). Each request's two searches skip at most √k blocks and look at fewer than 4√k single servers, and working out one block's soonest again is O(√k).
+why_space: free_at and the counts of requests have k slots each, and soonest about √k.
+hint: Write `first_free(free_at, soonest, size, lo, hi, t)`, which returns the first j from lo up to hi − 1 with `free_at[j] <= t`, or −1. At a j with `j % size == 0` and `soonest[j // size] > t`, jump size.
+hint: For request i, try `first_free(free_at, soonest, size, i % k, k, t)`, and if that's −1, `first_free(free_at, soonest, size, 0, i % k, t)`. If both are −1, drop the request.
+hint: Set `free_at[s] = t + load[i]`, add 1 to `handled[s]`, and set `soonest[b]` to the smallest free_at in block `b = s // size`.
+hint: Return every s with `handled[s] == max(handled)`, in order.
+right: A block's smallest free time says whether any server in it is free, so the search for the next free server skips full blocks in one step, and a second search from 0 does the going round.
+wrong: Split the servers into blocks of about √k, with each block's earliest free time. For each request, search from i % k to k − 1, then from 0 to i % k − 1, for a server with `free_at[s] <= arrival[i]`, skipping blocks whose earliest is later. Give it the request and work out its block's earliest again. Return the servers with the most requests.
