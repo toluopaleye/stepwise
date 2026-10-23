@@ -28,7 +28,7 @@ print(head.next.next.next)
 17 42 8
 None
 ```
-Python makes `Node(8)` first (the innermost call), then `Node(42, ...)` linking to it, then `Node(17, ...)`. `head` is the first node, and every other node is reached from it.
+Python makes `Node(8)` first (the innermost call), then the node holding 42, which links to it, then the node holding 17. `head` is the first node, and every other node is reached from it.
 
 ### Walking the list
 There's no formula for where item i is, because the nodes aren't evenly spaced. The only way to reach a node is to start at the head and follow the links, one at a time:
@@ -77,7 +77,7 @@ print(head.val, head.next.val, head.next.next.val)
 ```output
 17 42 8
 ```
-`Node(17, head)` makes a node that links to the old first node, 42. Then `head = ...` moves the head to the new node. That's the same two steps however long the list is: O(1). Removing the first node is O(1) too: `head = head.next` moves the head past it.
+`Node(17, head)` makes a node that links to the old first node, 42. Then the assignment to `head` moves the head to the new node. That's the same two steps however long the list is: O(1). Removing the first node is O(1) too: `head = head.next` moves the head past it.
 
 ### Inserting and deleting after a node: O(1)
 When you're already holding a node, you can insert a new node right after it by changing two links. Nothing else moves:
@@ -200,13 +200,431 @@ An array is the better choice when you:
 
 In Python, `list` is an array, and you'll rarely need a hand-made linked list for everyday programs. But linked nodes are the building block of the stacks, queues, hash maps, trees and graphs in the rest of this unit, and Python's `collections.deque`, coming up in the Queues lesson, is built from linked blocks.
 
+### Solving problems with linked lists
+The rest of this lesson is about solving problems with linked lists, the way the tasks do. Five patterns cover the tasks, and a clue in the question usually tells you which one you need:
+
+| Pattern | Clue in the question |
+| --- | --- |
+| Walking with a pointer | counting, adding up, searching, or comparing each node with its neighbour |
+| Building at the front | an answer that comes out backwards, like the digits of a number |
+| Changing the links after a node | removing, inserting or splicing nodes in the middle of a list |
+| Building in order with a tail | a new list built from the start to the end, or nodes sorted into several lists |
+| Copying the values into a list | item i, its mirror n − 1 − i, or going backwards |
+
+After the patterns come the combinations that need two of them, and then two steps for the second part of every task: edge cases, and time and space.
+
+In the tasks, the starter code has the `Node` class and two helpers: `from_list(values)` builds a linked list from a Python list and returns its head, and `to_list(head)` walks a linked list and returns its values as a Python list. Each task also has a function `run` that the tests call: it builds the linked lists your function needs, calls it, and turns the answer back into a Python list. So `run([1, 1, 2])` means "your function gets the list 1 → 1 → 2". Keep `run` and the helpers as they are.
+
+### Walking with a pointer
+Almost every linked list task starts with a walk: a pointer, `node`, starts at the head and moves along with `node = node.next` until it's None. While it walks, keep whatever the task needs: a count, a total, the best so far, or the position, which goes up by 1 at each step. Reading a number whose digits are the nodes works the same way: each step multiplies what you have by the base and adds the new digit.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(0, Node(1, Node(1))))
+count = 0
+number = 0
+node = head
+while node is not None:
+    count += 1
+    number = number * 2 + node.val
+    node = node.next
+print(count, number)
+```
+```output
+4 11
+```
+The bits 1, 0, 1, 1 make the binary number 1011, which is 11.
+
+To compare each node with the one before it, keep a second pointer, `prev`, one step behind. (To look at the node after it instead, walk while `node.next` is not None as well, so that `node.next.val` is always there to read.)
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(4, Node(9, Node(9, Node(2))))
+prev = head
+node = head.next
+while node is not None:
+    if node.val == prev.val:
+        print("repeat:", node.val)
+    prev = node
+    node = node.next
+```
+```output
+repeat: 9
+```
+Two lists can be walked side by side, too: give each its own pointer, and move a pointer on only when its node has been used. And when you need to know whether two pointers are at the **same node**, compare them with `is`: two different nodes can hold the same value, and `==` on their values can't tell them apart.
+
+### Building at the front
+`head = Node(x, head)` adds x in front of everything, in O(1). Adding items one by one at the front leaves them in the reverse of the order they came in. That's what you want when the answer comes out backwards: the digits of a number come out last digit first, with `% 10` (or `% 2` for bits), so inserting each at the front leaves them in the right order.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+n = 13
+head = Node(n % 2)
+n //= 2
+while n > 0:
+    head = Node(n % 2, head)
+    n //= 2
+
+bits = []
+node = head
+while node is not None:
+    bits.append(node.val)
+    node = node.next
+print(bits)
+```
+```output
+[1, 1, 0, 1]
+```
+13 % 2 is 1, the last bit, which goes in first and ends up last.
+
+Building at the front never changes the nodes that are already there, so the old head still leads to the same list as before. Two lists can even share their nodes from some point on: after `a = Node(1, rest)` and `b = Node(2, rest)`, both lists carry on with rest. That's safe as long as nothing changes the shared nodes, and it lets a new version of a list cost O(1) instead of a copy.
+
+### Changing the links after a node
+Inserting after a node is `node.next = Node(x, node.next)`, and deleting the node after it is `node.next = node.next.next`, both O(1). While walking, decide at each node whether to change the link after it. After a delete, **stay** where you are: the node that is now next hasn't been checked yet. After an insert, step over the new node, or you'd go on to check the node you made.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(1, Node(2, Node(2, Node(2)))))
+node = head
+while node is not None and node.next is not None:
+    if node.next.val == node.val:
+        node.next = node.next.next
+    else:
+        node = node.next
+
+values = []
+node = head
+while node is not None:
+    values.append(node.val)
+    node = node.next
+print(values)
+```
+```output
+[1, 2]
+```
+Cutting a list in two is the same kind of change: remember `node.next`, which starts the second part, then `node.next = None` ends the first part at node. Splicing a whole list into a gap takes two links: the node before the gap links to the new list's head, and the new list's last node links to the node after the gap.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def values(head):
+    out = []
+    while head is not None:
+        out.append(head.val)
+        head = head.next
+    return out
+
+head = Node(1, Node(2, Node(3, Node(4))))
+node = head.next
+second = node.next
+node.next = None
+print(values(head), values(second))
+```
+```output
+[1, 2] [3, 4]
+```
+
+### Building in order with a tail
+To build a list in order, keep two pointers: head, the first node, and tail, the last. Adding x is `tail.next = Node(x)`, then `tail = tail.next`: O(1), with no walk to the end. The first node is the special case, because there's no tail yet to link from, so check `if tail is None:` and make the new node both head and tail.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = None
+tail = None
+for x in [5, 7, 9]:
+    node = Node(x)
+    if tail is None:
+        head = node
+    else:
+        tail.next = node
+    tail = node
+
+values = []
+node = head
+while node is not None:
+    values.append(node.val)
+    node = node.next
+print(values)
+```
+```output
+[5, 7, 9]
+```
+Building a list doesn't need new nodes: you can move the nodes you already have onto the end of a new list. That's how merging and splitting work without extra space. Keep a head and a tail for each list you build, and before moving a node, remember the node after it and set its `next` to None: otherwise its old link would drag the rest of the old list along with it.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+def values(head):
+    out = []
+    while head is not None:
+        out.append(head.val)
+        head = head.next
+    return out
+
+heads = [None, None]
+tails = [None, None]
+node = Node(1, Node(4, Node(3, Node(2))))
+while node is not None:
+    nxt = node.next
+    node.next = None
+    side = node.val % 2
+    if tails[side] is None:
+        heads[side] = node
+    else:
+        tails[side].next = node
+    tails[side] = node
+    node = nxt
+print(values(heads[0]), values(heads[1]))
+```
+```output
+[4, 2] [1, 3]
+```
+The even values went to list 0 and the odd ones to list 1, each in its original order. Joining them is one more link: `tails[0].next = heads[1]`.
+
+### Copying the values into a list
+A walk only goes forwards. When a task needs item i straight away, the item n − 1 − i that mirrors it, or the list read backwards, copy the values into a Python list first, in one O(n) walk. After that, indexes work as usual. The price is O(n) extra space.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(3, Node(5, Node(5, Node(3))))
+values = []
+node = head
+while node is not None:
+    values.append(node.val)
+    node = node.next
+n = len(values)
+ends = values[0] + values[n - 1]
+print(ends, values == values[::-1])
+```
+```output
+6 True
+```
+With many questions about positions, copying once pays off: each question is then O(1), where walking from the head every time would be O(n) per question.
+
+### Combining patterns
+Many tasks need two patterns at once:
+
+- **Changing links as you walk** (walk + after). Walk the list, and at each node decide whether to delete, insert or cut after it. Stay put after a delete, and step over a node you've inserted.
+- **Building a new list as you walk** (walk + tail). Walk one or more lists, and add each piece of the answer to the end of a new list with a tail, like the sums of the parts between markers, or the smaller of two front nodes when merging.
+- **Building backwards as you walk** (walk + front). Walk a list and insert each value at the front of a new list: the new list comes out reversed, and the old one is left as it was.
+- **Reading backwards from a copy** (array + front). Copy the values into a Python list, read them from the end, and build the answer at the front, so it comes out in the right order. Adding numbers whose digits start with the biggest works this way.
+- **Relinking nodes onto tails** (tail + after). Move each node onto the tail of one of several new lists, cutting its old link as it goes, then link the lists one after another.
+
+Changing links as you walk: insert a 0 between every two neighbouring nodes.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+node = head
+while node.next is not None:
+    node.next = Node(0, node.next)
+    node = node.next.next
+
+values = []
+node = head
+while node is not None:
+    values.append(node.val)
+    node = node.next
+print(values)
+```
+```output
+[1, 0, 2, 0, 3]
+```
+`node = node.next.next` steps over the new 0, straight to the old next node.
+
+Building a new list as you walk: the sums of the parts between the 0s.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = None
+for x in reversed([0, 3, 1, 0, 4, 0]):
+    head = Node(x, head)
+result = None
+tail = None
+total = 0
+node = head.next
+while node is not None:
+    if node.val == 0:
+        new = Node(total)
+        if tail is None:
+            result = new
+        else:
+            tail.next = new
+        tail = new
+        total = 0
+    else:
+        total += node.val
+    node = node.next
+print(result.val, result.next.val)
+```
+```output
+4 4
+```
+Each 0 closes a part: 3 + 1 = 4, then 4.
+
+Building backwards as you walk: a reversed copy.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))
+copy = None
+node = head
+while node is not None:
+    copy = Node(node.val, copy)
+    node = node.next
+print(copy.val, copy.next.val, copy.next.next.val)
+print(head.val, head.next.val, head.next.next.val)
+```
+```output
+3 2 1
+1 2 3
+```
+The copy has new nodes, so the original list doesn't change.
+
+Reading backwards from a copy: 99 + 5 with the digits biggest first, where the adding has to start from the last digit.
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+a = [9, 9]
+b = [5]
+head = None
+carry = 0
+i = len(a) - 1
+j = len(b) - 1
+while i >= 0 or j >= 0 or carry > 0:
+    total = carry
+    if i >= 0:
+        total += a[i]
+        i -= 1
+    if j >= 0:
+        total += b[j]
+        j -= 1
+    head = Node(total % 10, head)
+    carry = total // 10
+print(head.val, head.next.val, head.next.next.val)
+```
+```output
+1 0 4
+```
+The digits come out last first (4, 0, 1) and each goes in at the front, so the list reads 1, 0, 4.
+
+Relinking nodes onto tails: the last example of the tail step sorted nodes onto two lists without making a single new node. One more link joins them:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+small_head = Node(1, Node(2))
+small_tail = small_head.next
+big_head = Node(5, Node(4))
+small_tail.next = big_head
+
+values = []
+node = small_head
+while node is not None:
+    values.append(node.val)
+    node = node.next
+print(values)
+```
+```output
+[1, 2, 5, 4]
+```
+If the first list could be empty, check for that: then the answer is the second list's head.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| an empty list | `run([])` | reading `head.val` when head is None raises `AttributeError` |
+| one node | `run([7])` | a loop that needs `node.next` never runs, or runs off the end |
+| the head changes | deleting or inserting before the first node | returning the old head, which is no longer first |
+| the last node | a change at the very end | forgetting to end the list with None, or to link to the new last node |
+| all values the same | `run([2, 2, 2])` | moving on after a delete and skipping a node |
+| a carry at the end | 99 + 1 | the answer has one more digit than either number |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of a linked list solution
+**Time.** Count the links your code follows, and the links it changes:
+
+| The code | Time |
+| --- | --- |
+| one walk through the list | O(n) |
+| walking to position i | O(i) |
+| inserting or deleting after a node you hold | O(1) |
+| inserting at the front | O(1) |
+| adding at the end, with a tail | O(1) |
+| adding at the end, without a tail | O(n), to walk there |
+| walking to position i for each of q questions | O(n × q); copying the values first makes it O(n + q) |
+
+**Space.** Count what the code keeps, besides the list it was given:
+
+| The code keeps | Space |
+| --- | --- |
+| a few pointers, while it changes links in place | O(1) |
+| a copy of the values in a Python list | O(n) |
+| new nodes for the answer | one per node of the answer |
+
 === keypoints
 - A linked list keeps each item in its own **node**, with a link to the next node. The list keeps the **head**; the last node's `next` is None.
 - Reaching item i means following i links from the head: O(i), and O(n) at worst. There's no address formula, so no binary search.
 - Inserting or deleting at the front is O(1): `head = Node(x, head)` and `head = head.next`.
 - Holding a node, inserting after it (`new = Node(x, node.next)`, then `node.next = new`) or deleting after it (`node.next = node.next.next`) is O(1). Getting to the node is the slow part.
+- While walking, stay on a node after deleting the one after it, and step over a node you've inserted. Compare nodes with `is`, not by their values.
+- A tail pointer makes adding at the end O(1); without one, every append walks the whole list.
 - Singly linked nodes have `next`; doubly linked nodes have `prev` and `next`, so they can walk backwards and delete a node they hold in O(1); a circular list's last node links back to the first.
 - Choose a linked list for lots of inserts and deletes at the front or at a place you hold. Choose an array for access by index, binary search and fast walking.
+- Patterns: walk with a pointer; build at the front when the answer comes out backwards; change the links after a node; build in order with a tail; and copy the values into a list when you need indexes.
+- Combinations: changing links as you walk; building a new list as you walk; building backwards as you walk; reading backwards from a copy; and relinking nodes onto tails.
+
+=== patterns
+- walk | Walking with a pointer
+- front | Building at the front
+- after | Changing the links after a node
+- tail | Building in order with a tail
+- array | Copying the values into a list
+combos:
+- walk + after | Changing links as you walk
+- walk + tail | Building a new list as you walk
+- walk + front | Building backwards as you walk
+- array + front | Reading backwards from a copy
+- tail + after | Relinking nodes onto tails
 
 === example: Counting the links
 intro: A list built by inserting at the front, then three items fetched by walking, counting the links followed for each one.
@@ -265,7 +683,7 @@ for n in [10, 100, 1000]:
 ```
 6-12: Each insert at the front of an array shifts every item that's already there: `len(arr)` moves.
 14-19: Each insert at the front of a linked list makes one node and moves the head: one change, whatever the length.
-21-22: The array makes 0 + 1 + ... + (n − 1) = n(n − 1) / 2 moves, O(n²) in all. The linked list makes n changes, O(n).
+21-22: The array makes 0 + 1 + 2 and onwards up to n − 1 moves, which is n(n − 1) / 2, O(n²) in all. The linked list makes n changes, O(n).
 
 === animation: Walking to item 3
 view: linked head ptr=node
@@ -318,69 +736,127 @@ print(head.val, head.next.val, head.next.next.val, head.next.next.next.val)
 10: Step 2: 42 links to the new node. Now 99 is in the list.
 11: Two links changed and nothing moved: O(1).
 
-=== task: predict easy
-title: Following the links
-code:
+=== task: code easy
+title: Convert Binary Number in a Linked List to Integer
+leetcode: 1290 | Convert Binary Number in a Linked List to Integer | convert-binary-number-in-a-linked-list-to-integer
+patterns: walk
+prompt: Each node of a linked list holds a bit, 0 or 1, and the list read from the head is a binary number, most significant bit first. Write `get_decimal_value(head)` that returns the number's value.
+
+Walk the list once, keeping value, the number read so far. Each new bit shifts everything read so far one place to the left, which doubles it, and adds the bit: `value = value * 2 + node.val`.
+
+**Example 1:** `run([1, 0, 1])` returns 5: your function gets the list 1 → 0 → 1, and binary 101 is 5.
+
+**Example 2:** `run([0])` returns 0.
+
+**Constraints:** the list has 1 to 30 nodes, and every value is 0 or 1.
+starter:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-head = Node(4, Node(9, Node(2)))
-print(head.val, head.next.val)
-print(head.next.next.next)
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def get_decimal_value(head):
+    value = 0
+    # your code here
+    return value
+
+
+def run(bits):
+    return get_decimal_value(from_list(bits))
 ```
-wrong[4 9\n2]: `head.next.next` is the node with 2. One more `.next` reads that node's link, which is None: the end of the list.
-wrong[9 2\nNone]: `head` is the first node, which holds 4. `head.next` is the second node, 9.
-hint: `head` holds 4, and each `.next` moves one node along.
-hint: The last node, 2, links to None.
-right: `head` is 4 and `head.next` is 9. Three `.next`s go past the last node (2) to its link: None.
-wrong: `head` → 4, `head.next` → 9, `head.next.next` → 2, and `head.next.next.next` is the last node's link: None.
-
-=== task: mcq easy
-title: Why O(i)?
-prompt: Why does reading item i of a linked list take O(i) steps, when an array takes O(1)?
-* The nodes can be anywhere in memory, so the only way to reach node i is to follow i links from the head :: Right. There's no address formula, because the nodes aren't evenly spaced.
-- Each node holds a big object, which is slow to read :: The size of the item doesn't matter: reading one node is O(1). Getting to it is the slow part.
-- The list has to be sorted first :: Nothing gets sorted. The walk is needed in a sorted list too.
-- Python checks every node to make sure the list isn't broken :: Python doesn't check anything. Following the links is the only way to find node i.
-hint: How does an array find item i?
-hint: Is there a formula for where node i is?
-right: An array works out where item i is with one multiplication. A linked list's nodes are scattered, so it has to follow the links one by one.
-wrong: The nodes aren't side by side, so no formula gives node i's address. Starting at the head, it takes i links to get there.
-
-=== task: fill easy
-title: A new head
-prompt: Fill in the blank so that 17 is added at the front of the list, and the program prints:
-
-```output
-17 42 8
-```
-code:
+solution:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-head = Node(42, Node(8))
-head = Node(17, ??)
-print(head.val, head.next.val, head.next.next.val)
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def get_decimal_value(head):
+    value = 0
+    node = head
+    while node is not None:
+        value = value * 2 + node.val
+        node = node.next
+    return value
+
+
+def run(bits):
+    return get_decimal_value(from_list(bits))
 ```
-answer: head
-wrong[head.next]: `head.next` is the node with 8, so 17 would skip the 42: the list would be 17, 8.
-wrong[None]: That makes 17 a list on its own: its link is None, and the old nodes are lost.
-hint: The new node should link to the node that's first right now.
-hint: Which name holds the first node?
-right: `Node(17, head)` links the new node to the old first node, then `head = ...` makes it the first node: O(1), and nothing moves.
-wrong: The new node must link to the old head, so the blank is `head`. The list becomes 17, 42, 8.
+tests:
+- run([1, 0, 1])
+- run([0])
+- run([1])
+- run([0, 0, 1])
+- run([1] * 30)
+- run([1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1])
+fail[2]: A single 0 is the number 0.
+fail[3]: A single 1 is the number 1.
+fail[4]: Leading 0s don't change the value: 001 is 1.
+fail[5]: Thirty 1s make 2³⁰ − 1, which is 1,073,741,823.
+fail[6]: A 30-bit number with a mix of 0s and 1s.
+edges:
+- one bit :: len(bits) == 1 :: run([1])
+- a leading 0 :: len(bits) > 1 and bits[0] == 0 :: run([0, 1])
+- starts with 1, more bits :: len(bits) > 1 and bits[0] == 1 :: run([1, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes.
+why_time: One walk, with one multiplication and one addition per node.
+why_space: Only value and the pointer are kept.
+hint: Start with `node = head`.
+hint: While node isn't None, set `value = value * 2 + node.val`, then move to `node.next`.
+right: Reading the most significant bit first, each step doubles what's been read and adds the new bit, so one walk gives the number without counting the bits first.
+wrong: Walk from the head, setting `value = value * 2 + node.val` at each node, and return value.
 
 === task: code easy
-title: Count the nodes
-prompt: Write `length(head)` that returns how many nodes a linked list has. An empty list has head None and length 0. The starter includes the `Node` class.
+title: Intersection of Two Linked Lists
+leetcode: 160 | Intersection of Two Linked Lists | intersection-of-two-linked-lists
+patterns: walk
+prompt: Two linked lists, starting at head_a and head_b, may **share** their nodes from some point on: from there, both lists carry on through the very same nodes to the end. Write `get_intersection_node(head_a, head_b)` that returns the first shared node, or None if the lists share none.
 
-For example, `length(Node(1, Node(2, Node(3))))` returns 3.
+Compare nodes, not values: two different nodes can hold the same value, so check `a is b`. Shared nodes are always at the end of both lists, so line the two lists up from the end. Count both lengths, move the pointer on the longer list forward by the difference, then move both pointers together until they meet. If they never meet, they both reach None at the same moment, and `a is b` stops the loop there too.
+
+In the tests, `run(only_a, only_b, shared)` builds list A from the values only_a followed by the nodes of shared, and list B from only_b followed by the **same** nodes of shared, then returns the value of the node your function finds, or None.
+
+**Example 1:** `run([4, 1], [5, 6, 1], [8, 4, 5])` returns 8: A is 4 → 1 → 8 → 4 → 5 and B is 5 → 6 → 1 → 8 → 4 → 5, sharing the last three nodes. Both lists hold a 1 as well, but in two different nodes.
+
+**Example 2:** `run([2, 6, 4], [1, 5], [])` returns None: the lists share no nodes.
+
+**Constraints:** each list has 1 to 3 × 10⁴ nodes, and 1 ≤ every value ≤ 10⁵.
 starter:
 ```python
 class Node:
@@ -388,176 +864,53 @@ class Node:
         self.val = val
         self.next = next
 
-def length(head):
-    count = 0
-    # your code here
-    return count
-```
-solution:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
 
 def length(head):
     count = 0
-    node = head
-    while node is not None:
+    while head is not None:
         count += 1
-        node = node.next
+        head = head.next
     return count
-```
-tests:
-- length(Node(1, Node(2, Node(3))))
-- length(None)
-- length(Node("a"))
-- length(Node(5, Node(5, Node(5, Node(5)))))
-fail[1]: Three nodes: 1, 2 and 3. Walk from the head and add 1 for every node until you reach None.
-fail[3]: One node, whose link is None: length 1.
-error[AttributeError]: You went past the end of the list. Stop when `node` is None: `while node is not None:`.
-hint: Start with `node = head`.
-hint: `while node is not None:`, add 1, then move on with `node = node.next`.
-right: Every node is visited once: O(n). A Python list stores its length, so `len` is O(1), but a plain linked list has to count.
-wrong: Walk from the head: while `node` is not None, add 1 and move to `node.next`. Return the count.
 
-=== task: predict easy
-title: Three inserts at the front
-code:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
 
-head = None
-for x in [1, 2, 3]:
-    head = Node(x, head)
-print(head.val, head.next.val, head.next.next.val)
-```
-wrong[1 2 3]: Each new node goes in front of the others, so the last one inserted, 3, ends up first.
-wrong[3 1 2]: 2 went in front of 1, and then 3 went in front of 2: 3, 2, 1.
-hint: After the first insert, the list holds only 1.
-hint: Then 2 goes in front of 1, and 3 in front of 2.
-right: 3, 2, 1: inserting at the front reverses the order. Each insert is O(1).
-wrong: The list goes 1, then 2 → 1, then 3 → 2 → 1. The head is the last node made.
+def get_intersection_node(head_a, head_b):
+    # your code here
+    return None
 
-=== task: multi easy
-title: O(1) with only a head
-prompt: A singly linked list keeps only its `head`. Choose **every** operation that is O(1).
-* Insert at the front :: Right. Make a node that links to the head, and make it the head.
-* Delete the first node :: Right. `head = head.next`.
-* Read the first item :: Right. `head.val`.
-* Insert after a node you're holding :: Right. Two links change.
-- Read item i :: That means following i links from the head: O(i).
-- Add at the end :: Without a `tail`, you walk the whole list to find the last node: O(n).
-hint: Does it need to walk along the list?
-hint: Four of them don't.
-right: Anything at the head, or next to a node you hold, is O(1). Anything that has to find a place first needs a walk: O(n).
-wrong: O(1): insert at the front, delete the first node, read the first item, insert after a held node. Reading item i and adding at the end need a walk.
 
-=== task: parsons easy
-title: Add up the values
-prompt: Arrange the lines so that `total` adds up the values in a linked list, and the program prints:
-
-```output
-15
-```
-
-Not every line is needed.
-lines:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
-
-def total(head):
-    result = 0
+def attach(head, rest):
+    if head is None:
+        return rest
     node = head
-    while node is not None:
-        result += node.val
-        node = node.next
-    return result
-
-print(total(Node(5, Node(8, Node(2)))))
-```
-distractors:
-```python
     while node.next is not None:
-        result = node.val
-```
-hint: Start at the head, and stop when `node` is None.
-hint: Add `node.val`, then move on with `node = node.next`.
-right: 5 + 8 + 2 = 15: every node is visited once, O(n). `while node.next is not None` would stop one node early and miss the 2.
-wrong: Set `result = 0` and `node = head`; while `node is not None`, add `node.val` and move to `node.next`; then return the result.
+        node = node.next
+    node.next = rest
+    return head
 
-=== task: cells easy
-title: Follow the addresses
-prompt: Each row is a node in memory: its address, its value, and the address of the next node. The head is at address 500. What are the items, in list order?
 
-| Address | Value | Next |
-| --- | --- | --- |
-| 120 | 6 | None |
-| 300 | 1 | 120 |
-| 500 | 3 | 840 |
-| 840 | 9 | 300 |
-labels: item 0 | item 1 | item 2 | item 3
-answer: 3 | 9 | 1 | 6
-wrong[6 | 1 | 3 | 9]: That's the order of the addresses. A linked list's order comes from its links: start at the head, 500, and follow Next.
-wrong[3 | 9 | 6 | 1]: Node 840 links to 300, which holds 1. The node at 120 comes last: its Next is None.
-hint: Item 0 is at the head, address 500.
-hint: Node 500 links to 840, and node 840 links to 300.
-right: 500 → 840 → 300 → 120 gives 3, 9, 1, 6: scattered in memory, in order through the links.
-wrong: Start at 500 (3), go to 840 (9), then 300 (1), then 120 (6), whose Next is None.
-
-=== task: mcq easy
-title: On repeat
-prompt: A music app plays a playlist on repeat: after the last song, the first one plays again. Which kind of linked list fits this best?
-* A circular linked list :: Right. The last node links back to the first, so the songs come round again by themselves.
-- A singly linked list :: Its last node's `next` is None, so the playlist would stop after the last song.
-- A doubly linked list :: It can walk backwards, which helps a "previous song" button, but on its own it still ends after the last song.
-- An array sorted by title :: Sorting doesn't make it repeat, and nothing here needs the songs in order of title.
-hint: What should come after the last song?
-hint: Which kind has no end?
-right: In a circular list the last node links to the first, so "next song" always has an answer. A circular doubly linked list would give "previous song" too.
-wrong: Repeating means the last song links back to the first: that's a circular linked list.
-
-=== task: predict easy
-title: Removing the head
-code:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
-
-head = Node(5, Node(6, Node(7)))
-head = head.next
-print(head.val, head.next.val)
-```
-wrong[5 6]: `head = head.next` moves the head to the second node, so the list is now 6, 7.
-wrong[7 None]: `head = head.next` moves the head one node, not two: it's on 6, and `head.next` is 7.
-hint: What does `head.next` hold before the change?
-hint: After `head = head.next`, the first node is 6.
-right: The head moves past 5, and nothing links to the 5 any more: deleting the first node is O(1).
-wrong: `head.next` is the node with 6, so after `head = head.next` the list is 6, 7.
-
-=== task: code medium
-title: Where is it?
-prompt: Write `index_of(head, x)` that returns the index of the first node whose value is x (the head is index 0), or -1 if no node holds x.
-
-For example, `index_of(Node(7, Node(3, Node(9))), 9)` returns 2.
-starter:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
-
-def index_of(head, x):
-    # your code here
-    return -1
+def run(only_a, only_b, shared):
+    common = from_list(shared)
+    head_a = attach(from_list(only_a), common)
+    head_b = attach(from_list(only_b), common)
+    node = get_intersection_node(head_a, head_b)
+    if node is None:
+        return None
+    return node.val
 ```
 solution:
 ```python
@@ -566,38 +919,220 @@ class Node:
         self.val = val
         self.next = next
 
-def index_of(head, x):
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def length(head):
+    count = 0
+    while head is not None:
+        count += 1
+        head = head.next
+    return count
+
+
+def get_intersection_node(head_a, head_b):
+    len_a = length(head_a)
+    len_b = length(head_b)
+    a = head_a
+    b = head_b
+    while len_a > len_b:
+        a = a.next
+        len_a -= 1
+    while len_b > len_a:
+        b = b.next
+        len_b -= 1
+    while a is not b:
+        a = a.next
+        b = b.next
+    return a
+
+
+def attach(head, rest):
+    if head is None:
+        return rest
     node = head
+    while node.next is not None:
+        node = node.next
+    node.next = rest
+    return head
+
+
+def run(only_a, only_b, shared):
+    common = from_list(shared)
+    head_a = attach(from_list(only_a), common)
+    head_b = attach(from_list(only_b), common)
+    node = get_intersection_node(head_a, head_b)
+    if node is None:
+        return None
+    return node.val
+```
+tests:
+- run([4, 1], [5, 6, 1], [8, 4, 5])
+- run([1, 9, 1], [3], [2, 4])
+- run([2, 6, 4], [1, 5], [])
+- run([], [], [3, 7])
+- run([1, 2], [], [5])
+- run(list(range(1, 8001)), list(range(30001, 34001)), [7] + list(range(50001, 54000)))
+fail[2]: A has 5 nodes and B has 3, so skip 2 nodes of A first; then the two pointers meet at the shared 2.
+fail[3]: The lists share no nodes: return None.
+fail[4]: Both lists are only the shared nodes, so the pointers meet straight away, at the first node.
+fail[5]: B is only the shared node 5, which is also the end of A.
+fail[6]: Lists of 12,000 and 8,000 nodes. Checking every node of A against every node of B is far too slow; line them up by length first.
+edges:
+- no shared nodes :: len(shared) == 0 :: run([1, 2], [3], [])
+- one list is all shared :: len(shared) > 0 and (len(only_a) == 0 or len(only_b) == 0) :: run([1], [], [2, 3])
+- different starts, a shared end :: len(shared) > 0 and len(only_a) > 0 and len(only_b) > 0 :: run([1], [5, 6], [2])
+edge_count: 2
+complexity: time=O(m + n) | space=O(1)
+complexity_options: O(m + n); O(m × n); O((m + n) log(m + n))
+complexity_note: m and n are the lengths of the two lists.
+why_time: Counting walks each list once, and the lined-up walk passes each node at most once more.
+why_space: Only two counts and two pointers are kept.
+hint: Find `len_a = length(head_a)` and `len_b = length(head_b)`, and start `a = head_a` and `b = head_b`.
+hint: While len_a is bigger than len_b, move a on and take 1 from len_a; then do the same for b.
+hint: Then, while `a is not b`, move both on. Return a.
+right: Shared nodes can only be at the ends, so lining the lists up by length makes the two pointers reach the first shared node at the same moment, and `is` checks that it's the same node, not only the same value.
+wrong: Count both lists, move the pointer on the longer list forward by the difference, then move both pointers together until `a is b`, and return a, which is None if they never meet.
+
+=== task: code easy
+title: Palindrome Linked List
+leetcode: 234 | Palindrome Linked List | palindrome-linked-list
+patterns: array
+prompt: Write `is_palindrome(head)` that returns True if the values of the linked list read the same from both ends, and False if they don't.
+
+A singly linked list can't be walked backwards, so copy its values into a Python list in one walk. Then compare from both ends with two indexes, i from the start and j from the end, moving them towards each other until they meet.
+
+**Example 1:** `run([1, 2, 2, 1])` returns True.
+
+**Example 2:** `run([1, 2])` returns False.
+
+**Constraints:** the list has 1 to 10⁵ nodes, and 0 ≤ every value ≤ 9.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def is_palindrome(head):
+    values = []
+    # your code here
+    return True
+
+
+def run(values):
+    return is_palindrome(from_list(values))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def is_palindrome(head):
+    values = []
+    node = head
+    while node is not None:
+        values.append(node.val)
+        node = node.next
     i = 0
-    while node is not None:
-        if node.val == x:
-            return i
-        node = node.next
+    j = len(values) - 1
+    while i < j:
+        if values[i] != values[j]:
+            return False
         i += 1
-    return -1
+        j -= 1
+    return True
+
+
+def run(values):
+    return is_palindrome(from_list(values))
 ```
 tests:
-- index_of(Node(7, Node(3, Node(9))), 9)
-- index_of(Node(7, Node(3, Node(9))), 7)
-- index_of(Node(7, Node(3, Node(9))), 4)
-- index_of(None, 1)
-- index_of(Node(5, Node(8, Node(5))), 5)
-- index_of(Node(5, Node(8, Node(5))), 8)
-fail[1]: 9 is the third node: index 2. Count the nodes you pass, starting from 0 at the head.
-fail[2]: The head itself holds 7: index 0.
-fail[5]: Return the first match: the 5 at the head, index 0.
-error[AttributeError]: Stop at the end of the list: loop `while node is not None:`.
-hint: Walk from the head with a counter `i` that starts at 0.
-hint: If `node.val == x`, return `i`; otherwise move on and add 1 to `i`.
-hint: If the walk reaches None, x isn't in the list: return -1.
-right: A search walks node by node: O(n). It stays O(n) even in a sorted linked list, because there's no jumping to the middle.
-wrong: Walk from the head, counting from 0. Return the count at the first node holding x, or -1 after the last node.
+- run([1, 2, 2, 1])
+- run([1, 2])
+- run([7])
+- run([1, 2, 1])
+- run([1, 2, 3, 2, 2])
+- run([i % 10 for i in range(10000)] + [5] + [i % 10 for i in range(9999, -1, -1)])
+fail[2]: 1 and 2 are different, so the list doesn't read the same backwards.
+fail[3]: One node always reads the same both ways.
+fail[4]: With an odd length, the middle value has nothing to match: 1, 2, 1 reads the same both ways.
+fail[5]: The 1 and the 2 at the two ends already differ.
+fail[6]: 20,001 values, mirrored around a 5 in the middle.
+edges:
+- one node :: len(values) == 1 :: run([4])
+- an even length :: len(values) % 2 == 0 :: run([4, 4])
+- an odd length above 1 :: len(values) % 2 == 1 and len(values) > 1 :: run([4, 1, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk to copy, then at most n / 2 comparisons.
+why_space: The copy holds all n values.
+hint: Walk the list, appending each value to values.
+hint: Set `i = 0` and `j = len(values) - 1`. While i < j, return False if `values[i] != values[j]`; then add 1 to i and take 1 from j.
+right: Copying the values gives back what a singly linked list doesn't have, the last item and a way to walk backwards, at the cost of O(n) space.
+wrong: Copy the values into a Python list, then compare `values[i]` with `values[j]` from both ends towards the middle, returning False at the first difference.
 
-=== task: code medium
-title: Insert at an index
-prompt: Write `insert_at(head, i, x)` that inserts a new node holding x so that it ends up at index i, and returns the head of the list (a new node, when i is 0). Assume 0 ≤ i ≤ the length of the list. The starter includes `to_list`, which the tests use to show the result.
+=== task: code easy
+title: Remove Duplicates from Sorted List
+leetcode: 83 | Remove Duplicates from Sorted List | remove-duplicates-from-sorted-list
+patterns: walk + after
+prompt: The values of the linked list are sorted, so equal values sit next to each other. Write `delete_duplicates(head)` that deletes nodes so that every value appears once, and returns the head.
 
-For example, `to_list(insert_at(Node(17, Node(42, Node(8))), 2, 99))` gives `[17, 42, 99, 8]`.
+Walk with node, and look at the node after it. If `node.next` holds the same value, delete it with `node.next = node.next.next`, and **stay** on node: the new next node may be another copy. Only move on when the next value is different.
+
+**Example 1:** `run([1, 1, 2])` returns `[1, 2]`.
+
+**Example 2:** `run([1, 1, 2, 3, 3])` returns `[1, 2, 3]`.
+
+**Constraints:** the list has 0 to 300 nodes, −100 ≤ every value ≤ 100, and the values are sorted.
 starter:
 ```python
 class Node:
@@ -605,17 +1140,30 @@ class Node:
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def insert_at(head, i, x):
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def delete_duplicates(head):
+    node = head
     # your code here
     return head
+
+
+def run(values):
+    return to_list(delete_duplicates(from_list(values)))
 ```
 solution:
 ```python
@@ -624,190 +1172,74 @@ class Node:
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def insert_at(head, i, x):
-    if i == 0:
-        return Node(x, head)
-    node = head
-    for step in range(i - 1):
-        node = node.next
-    node.next = Node(x, node.next)
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
     return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def delete_duplicates(head):
+    node = head
+    while node is not None and node.next is not None:
+        if node.next.val == node.val:
+            node.next = node.next.next
+        else:
+            node = node.next
+    return head
+
+
+def run(values):
+    return to_list(delete_duplicates(from_list(values)))
 ```
 tests:
-- to_list(insert_at(Node(17, Node(42, Node(8))), 2, 99))
-- to_list(insert_at(Node(17, Node(42, Node(8))), 0, 99))
-- to_list(insert_at(Node(17, Node(42, Node(8))), 3, 99))
-- to_list(insert_at(None, 0, "a"))
-- to_list(insert_at(Node(1), 1, 2))
-fail[1]: Index 2 means two nodes come before it: walk to the node at index 1 (42), then link the new node in after it.
-fail[2]: At index 0 the new node becomes the head: return `Node(x, head)`.
-fail[3]: Index 3 is the end of a 3-node list: link the new node in after the last node, 8.
-fail[4]: Inserting at index 0 of an empty list makes a list of one node.
-error[AttributeError]: Walk i − 1 links, not i: you need the node **before** index i, so that you can change its `next`.
-error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
-hint: If i is 0, the new node becomes the head: `return Node(x, head)`.
-hint: Otherwise walk i − 1 links from the head, to the node before index i.
-hint: Link the new node in with `node.next = Node(x, node.next)`, then return `head`.
-right: The walk is O(i) and the linking is O(1). Unlike in an array, nothing after index i moves.
-wrong: For i = 0, return a new node that links to the old head. Otherwise walk i − 1 links, set `node.next = Node(x, node.next)`, and return the head.
+- run([1, 1, 2])
+- run([1, 1, 2, 3, 3])
+- run([])
+- run([5])
+- run([2, 2, 2, 2])
+- run([i // 3 - 50 for i in range(300)])
+fail[2]: The 1s and the 3s each lose a copy.
+fail[3]: An empty list has nothing to delete: check that node isn't None before reading `node.next`.
+fail[4]: One node has no duplicates.
+fail[5]: Four 2s become one. Moving on after each delete would skip a copy and leave [2, 2].
+fail[6]: 300 values from −50 to 49, each three times.
+edges:
+- an empty list :: len(values) == 0 :: run([])
+- a run of three or more :: any(values[i] == values[i + 1] == values[i + 2] for i in range(len(values) - 2)) :: run([3, 3, 3])
+- no runs of three :: len(values) > 0 and not any(values[i] == values[i + 1] == values[i + 2] for i in range(len(values) - 2)) :: run([3, 3, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes.
+why_time: Each step either deletes a node or moves on, so there are at most n steps.
+why_space: Nodes are unlinked in place; only the pointer is kept.
+hint: Loop `while node is not None and node.next is not None:`.
+hint: If `node.next.val == node.val`, set `node.next = node.next.next`; otherwise move on with `node = node.next`.
+right: Sorted copies are neighbours, so each node only needs to look at the one after it, and staying put after a delete catches a whole run of copies.
+wrong: Walk with node: while the next node holds the same value, link past it; when it doesn't, move on. Return head.
 
-=== task: predict medium
-title: Deleting from the middle
-code:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
+=== task: code easy
+title: Merge Two Sorted Lists
+leetcode: 21 | Merge Two Sorted Lists | merge-two-sorted-lists
+patterns: walk + tail
+prompt: list1 and list2 are linked lists sorted from smallest to biggest. Write `merge_two_lists(list1, list2)` that links all their nodes into one sorted list and returns its head, using the nodes you have instead of making new ones.
 
-head = Node(1, Node(2, Node(3, Node(4))))
-node = head.next
-node.next = node.next.next
-node = head
-while node is not None:
-    print(node.val, end=" ")
-    node = node.next
-```
-wrong[1 3 4]: `node` is the second node, 2. Linking around `node.next` removes the node **after** it: 3.
-wrong[1 2 3 4]: `node.next = node.next.next` makes 2 link straight to 4, so nothing links to 3 any more.
-wrong[1 2]: `node.next.next` is the node with 4, so 2 links to 4, and 4 still links to None.
-hint: `node` is the node with 2. What is `node.next.next`?
-hint: After the change, 2 links straight to 4.
-right: 1 2 4: one link changed, and the node with 3 is skipped. Deleting next to a node you hold is O(1).
-wrong: `node` holds 2; `node.next` is 3 and `node.next.next` is 4. Pointing `node.next` at 4 skips 3, so the walk prints 1, 2, 4.
+Walk both lists at once. At each step, take whichever front node is smaller (list1's on a tie), move that list's pointer on, and link the node onto the end of the answer with a tail. When one list runs out, the rest of the other is already sorted: link it on in one step.
 
-=== task: fill medium
-title: Skip a node
-prompt: Fill in the blank so that the node after `node` is deleted, and the program prints:
+**Example 1:** `run([1, 2, 4], [1, 3, 4])` returns `[1, 1, 2, 3, 4, 4]`.
 
-```output
-['A', 'C']
-```
-code:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
+**Example 2:** `run([], [0])` returns `[0]`.
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
-
-head = Node("A", Node("B", Node("C")))
-node = head
-node.next = ??
-print(to_list(head))
-```
-answer: node.next.next
-wrong[node.next]: That links `node` to the node it already links to: nothing changes, and B stays.
-wrong[None]: That cuts the list after A, so C is lost too: `['A']`.
-hint: `node` holds A. Which node should A link to now?
-hint: The node after B is `node.next.next`.
-right: A links straight to C, skipping B: one link change, O(1).
-wrong: To delete B, A must link to the node after B: `node.next.next`, which is C.
-
-=== task: cells medium
-title: Array or linked list?
-prompt: What does each operation cost on an array (a Python `list`) and on a singly linked list that keeps only its head? Write O(1) or O(n).
-labels: read the last item, array | read the last item, linked list | insert at the front, array | insert at the front, linked list
-answer: O(1) | O(n) | O(n) | O(1)
-wrong[O(1) | O(1) | O(n) | O(1)]: To read the last node of a linked list, you walk the whole list from the head: O(n).
-wrong[O(1) | O(n) | O(1) | O(1)]: Inserting at the front of an array shifts every item one place right: O(n).
-wrong[O(n) | O(n) | O(n) | O(1)]: An array finds any index with one multiplication, the last one too: O(1).
-hint: An array reaches any index directly; a linked list starts from the head.
-hint: At the front, which one has to move its items?
-right: The array wins at reaching items (O(1) against O(n)); the linked list wins at the front (O(1) against O(n)).
-wrong: Array: the last item is O(1), and a front insert is O(n). Linked list: the last item is O(n) (a walk), and a front insert is O(1) (a new head).
-
-=== task: order medium
-title: Inserting at index i
-prompt: Put the steps of inserting a new node at index i (where i is at least 1) of a singly linked list in order.
-items:
-- Start at the head
-- Follow i − 1 links, to the node right before index i
-- Make the new node, linking it to that node's `next`
-- Change that node's `next` to the new node
-hint: You need the node **before** the new position.
-hint: The new node has to copy the old link before it's overwritten.
-right: Walk to the node before index i (O(i)), then make two link changes (O(1)), in that order, so that the rest of the list isn't lost.
-wrong: Start at the head, walk i − 1 links, make the new node pointing at the next node, then point the node before it at the new one.
-
-=== task: predict medium
-title: Walking backwards
-code:
-```python
-class DNode:
-    def __init__(self, val):
-        self.val = val
-        self.prev = None
-        self.next = None
-
-a = DNode("A")
-b = DNode("B")
-c = DNode("C")
-a.next = b
-b.prev = a
-b.next = c
-c.prev = b
-node = c
-while node is not None:
-    print(node.val, end=" ")
-    node = node.prev
-```
-wrong[A B C]: The walk starts at c and follows `prev`, so it goes backwards: C, B, A.
-wrong[C B]: a's `prev` is None, but the loop prints A before it moves to a's `prev`.
-wrong[C]: `c.prev` is b, set by `c.prev = b`, so the walk goes on to B and then A.
-hint: Each node's `prev` is the node before it.
-hint: Start at C and follow `prev` until None.
-right: C B A: a doubly linked list can walk backwards along `prev`. A singly linked list can't, because its nodes only know the next one.
-wrong: node starts at c (C); `c.prev` is b (B); `b.prev` is a (A); `a.prev` is None, so the loop stops.
-
-=== task: mcq medium
-title: Binary search on a linked list
-prompt: A sorted linked list holds a million numbers. Why can't binary search find a number in O(log n) steps?
-* Reaching the middle node already takes half a million link steps, so even the first halving is O(n) :: Right. Binary search needs O(1) access to any index, which only arrays have.
-- Binary search only works on lists of strings :: It works on any sorted data that can be reached by index.
-- A linked list can't be sorted :: It can: its values can be in order along the links.
-- It can: binary search is O(log n) on any sorted list :: Only if reaching the middle is O(1). In a linked list it's O(n).
-hint: What's the first thing binary search does?
-hint: How long does it take to reach the middle node?
-right: Binary search depends on jumping to the middle in O(1). A linked list has to walk there, so searching it stays O(n).
-wrong: Binary search starts by looking at the middle item. A linked list reaches it by walking n / 2 links: O(n) before any halving happens.
-
-=== task: multi medium
-title: True about linked lists
-prompt: Choose **every** true sentence about linked lists.
-* The nodes can be anywhere in memory :: Right. The links connect them, not their positions.
-* Inserting at the front never moves the other items :: Right. Only the head changes.
-* A doubly linked node holds two links :: Right. `prev` and `next`.
-* A circular list's last node links back to the first :: Right. There's no None at the end.
-- Reading item i is O(1) :: It means following i links: O(i).
-- A linked list uses less memory than an array of the same items :: Every node also stores a link (or two), so it uses more.
-hint: Think about memory, links and the front of the list.
-hint: Four of them are true.
-right: Scattered nodes joined by links: cheap changes at the front, two links in a doubly linked node, no end in a circular list. Access by index is slow, and the links cost memory.
-wrong: True: scattered nodes, nothing moves at the front, two links in a doubly linked node, the circular last node. False: reading item i is O(i), and the links take extra memory.
-
-=== task: code medium
-title: From a Python list
-prompt: Write `from_list(items)` that builds a linked list holding the items of the Python list `items`, in the same order, and returns its head (None for an empty list).
-
-It must be O(n). Walking to the end of the list for every new item would make it O(n²). Keep a `tail` variable that holds the last node so far, and link each new node after it.
-
-For example, `to_list(from_list([1, 2, 3]))` gives `[1, 2, 3]`.
+**Constraints:** each list has 0 to 50 nodes, −100 ≤ every value ≤ 100, and both lists are sorted.
 starter:
 ```python
 class Node:
@@ -815,19 +1247,31 @@ class Node:
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def from_list(items):
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def merge_two_lists(list1, list2):
     head = None
     tail = None
     # your code here
     return head
+
+
+def run(values1, values2):
+    return to_list(merge_two_lists(from_list(values1), from_list(values2)))
 ```
 solution:
 ```python
@@ -836,93 +1280,1133 @@ class Node:
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def from_list(items):
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def merge_two_lists(list1, list2):
     head = None
     tail = None
-    for x in items:
-        node = Node(x)
-        if head is None:
+    while list1 is not None and list2 is not None:
+        if list1.val <= list2.val:
+            node = list1
+            list1 = list1.next
+        else:
+            node = list2
+            list2 = list2.next
+        if tail is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    rest = list1 if list1 is not None else list2
+    if tail is None:
+        return rest
+    tail.next = rest
+    return head
+
+
+def run(values1, values2):
+    return to_list(merge_two_lists(from_list(values1), from_list(values2)))
+```
+tests:
+- run([1, 2, 4], [1, 3, 4])
+- run([], [])
+- run([], [0])
+- run([5], [1, 2, 3])
+- run([2, 2], [2])
+- run([i * 4 - 100 for i in range(50)], [i * 3 - 50 for i in range(50)])
+fail[2]: Two empty lists merge into an empty list.
+fail[3]: list1 is empty, so the answer is all of list2. Check for an empty answer (tail None) before linking on the rest.
+fail[4]: The 5 is left over at the end, after list2 runs out.
+fail[5]: Equal values from both lists all stay: three 2s.
+fail[6]: Two lists of 50 values each, with some values in both.
+edges:
+- an empty list :: len(values1) == 0 or len(values2) == 0 :: run([], [1])
+- one list all before the other :: len(values1) > 0 and len(values2) > 0 and (max(values1) < min(values2) or max(values2) < min(values1)) :: run([1, 2], [5])
+- the lists interleave :: len(values1) > 0 and len(values2) > 0 and max(values1) >= min(values2) and max(values2) >= min(values1) :: run([1, 3], [2])
+edge_count: 2
+complexity: time=O(m + n) | space=O(1)
+complexity_options: O(m + n); O(m × n); O((m + n) log(m + n))
+complexity_note: m and n are the lengths of the two lists.
+why_time: Each step moves one node onto the answer, and the leftovers are linked on in one step.
+why_space: The nodes are relinked; only head, tail and the two pointers are kept.
+hint: While both lists have nodes, pick the smaller front node, `node`, and move that list's pointer to its next node.
+hint: Link node on: `head = node` if tail is None, else `tail.next = node`; then `tail = node`.
+hint: After the loop, take whichever list is left: if tail is None, return it; otherwise set `tail.next` to it and return head.
+right: The smallest node left is always at the front of one of the two lists, so comparing two nodes per step builds the merged list in one pass, and the leftover part is already sorted.
+wrong: While both lists have nodes, move the smaller front node onto the end of the answer with a tail. Then link on whatever is left of the other list, and return the head.
+
+=== task: code easy
+title: Number to Binary List
+patterns: front
+prompt: Write `binary_list(n)` that returns a linked list of the binary digits of n, from the most significant digit to the least, with no leading zeros (0 itself is a single 0).
+
+`n % 2` is the last bit, and `n // 2` drops it, so the bits come out last bit first. Insert each one at the front, `head = Node(n % 2, head)`, and the list ends up in the right order without being reversed. The starter makes the first node before the loop, so that 0 still gets its one node.
+
+**Example 1:** `run(5)` returns `[1, 0, 1]`.
+
+**Example 2:** `run(8)` returns `[1, 0, 0, 0]`.
+
+**Constraints:** 0 ≤ n ≤ 10¹⁸.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def binary_list(n):
+    head = Node(n % 2)
+    n //= 2
+    # your code here
+    return head
+
+
+def run(n):
+    return to_list(binary_list(n))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def binary_list(n):
+    head = Node(n % 2)
+    n //= 2
+    while n > 0:
+        head = Node(n % 2, head)
+        n //= 2
+    return head
+
+
+def run(n):
+    return to_list(binary_list(n))
+```
+tests:
+- run(5)
+- run(0)
+- run(1)
+- run(8)
+- run(255)
+- run(10 ** 18)
+fail[2]: 0 is a single 0.
+fail[3]: 1 is a single 1.
+fail[4]: 8 is 1000: the 1 comes out last and goes in front of the three 0s.
+fail[5]: 255 is eight 1s.
+fail[6]: 10¹⁸ has 60 bits.
+edges:
+- zero :: n == 0 :: run(0)
+- an odd number :: n % 2 == 1 :: run(3)
+- an even number above 0 :: n > 0 and n % 2 == 0 :: run(6)
+edge_count: 2
+complexity: time=O(log n) | space=O(log n)
+complexity_note: n is the number; it has about log₂ n bits.
+why_time: Each step halves n.
+why_space: The list has one node per bit.
+hint: The node made before the loop holds the last bit; every node made in the loop goes in front of it.
+hint: Loop `while n > 0:`, setting `head = Node(n % 2, head)` and then `n //= 2`.
+right: The bits come out in reverse, and inserting at the front reverses them again, so the list is in order with no extra pass.
+wrong: Start with a node for `n % 2` and halve n. While n is above 0, insert `n % 2` at the front and halve n again.
+
+=== task: code easy
+title: Expand the Runs
+patterns: tail
+prompt: pairs is a list of `[value, count]` pairs. Write `expand_runs(pairs)` that returns a linked list in which each value appears count times in a row, in the order of the pairs.
+
+Build the list from the start to the end with a tail: make each node, link it after tail (or make it the head if there's no tail yet), and move tail to it. Walking to the end of the list for every new node would make the whole thing O(n²).
+
+**Example 1:** `run([[3, 2], [5, 1]])` returns `[3, 3, 5]`.
+
+**Example 2:** `run([])` returns `[]`.
+
+**Constraints:** at most 1000 pairs, 1 ≤ every count, the counts add up to at most 10⁴, and −10⁹ ≤ every value ≤ 10⁹.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def expand_runs(pairs):
+    head = None
+    tail = None
+    # your code here
+    return head
+
+
+def run(pairs):
+    return to_list(expand_runs(pairs))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def expand_runs(pairs):
+    head = None
+    tail = None
+    for value, count in pairs:
+        for _ in range(count):
+            node = Node(value)
+            if tail is None:
+                head = node
+            else:
+                tail.next = node
+            tail = node
+    return head
+
+
+def run(pairs):
+    return to_list(expand_runs(pairs))
+```
+tests:
+- run([[3, 2], [5, 1]])
+- run([])
+- run([[7, 1]])
+- run([[1, 3], [1, 2]])
+- run([[-2, 2], [0, 1], [4, 2]])
+- (lambda t: [len(t), t[:6], t[-6:], sum(t)])(run([[i, i % 5 + 1] for i in range(1000)]))
+fail[2]: No pairs: an empty list, with head None.
+fail[3]: One value, once.
+fail[4]: Two runs of the same value make one long run of five 1s.
+fail[5]: −2 twice, 0 once, then 4 twice.
+fail[6]: 1,000 pairs making 3,000 nodes. Walking to the end for each new node is far too slow; keep a tail.
+edges:
+- no pairs :: len(pairs) == 0 :: run([])
+- every count 1 :: len(pairs) > 0 and all(c == 1 for v, c in pairs) :: run([[4, 1], [2, 1]])
+- a count above 1 :: any(c > 1 for v, c in pairs) :: run([[4, 2]])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes made, the total of the counts.
+why_time: Each node is made and linked in O(1).
+why_space: The answer has n nodes.
+hint: Loop `for value, count in pairs:` and, inside it, `for _ in range(count):`.
+hint: Make `node = Node(value)`. If tail is None, set head to it, else `tail.next = node`; then `tail = node`.
+right: The tail is always the last node, so each new node is linked in one step, and the list is built in order in O(n).
+wrong: For each pair, make count nodes. Link each one after the tail (or make it the head if there's no tail yet), and move the tail to it.
+
+=== task: code easy
+title: Look Up Many Indexes
+patterns: array
+prompt: Write `values_at(head, indexes)` that returns a list of the values at the given indexes of the linked list, in the order of indexes. Index 0 is the head, and every index is inside the list.
+
+Walking from the head for each index costs O(i) per index, which adds up when there are thousands of them. Copy the values into a Python list in one walk instead; then each index is a single O(1) read.
+
+**Example 1:** `run([5, 8, 2], [2, 0])` returns `[2, 5]`.
+
+**Example 2:** `run([7], [0, 0, 0])` returns `[7, 7, 7]`.
+
+**Constraints:** the list has 1 to 10⁴ nodes, and there are at most 10⁴ indexes.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def values_at(head, indexes):
+    values = []
+    # your code here
+    return []
+
+
+def run(values, indexes):
+    return values_at(from_list(values), indexes)
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def values_at(head, indexes):
+    values = []
+    node = head
+    while node is not None:
+        values.append(node.val)
+        node = node.next
+    return [values[i] for i in indexes]
+
+
+def run(values, indexes):
+    return values_at(from_list(values), indexes)
+```
+tests:
+- run([5, 8, 2], [2, 0])
+- run([7], [0, 0, 0])
+- run([1, 2, 3, 4], [])
+- run([4, 4, 9], [1, 2])
+- run([10, 20, 30, 40, 50], [4, 3, 2, 1, 0])
+- (lambda t: [len(t), t[:6], sum(t)])(run(list(range(5000)), [i * 7 % 5000 for i in range(5000)]))
+fail[2]: The same index three times.
+fail[3]: No indexes: an empty answer.
+fail[4]: Index 1 is the second 4, and index 2 is the 9.
+fail[5]: All five indexes, backwards.
+fail[6]: 5,000 nodes and 5,000 indexes. Walking from the head for each index is far too slow; copy the values once.
+edges:
+- no indexes :: len(indexes) == 0 :: run([1, 2], [])
+- an index more than once :: len(set(indexes)) < len(indexes) :: run([1, 2], [1, 1])
+- every index once :: len(indexes) > 0 and len(set(indexes)) == len(indexes) :: run([1, 2], [1, 0])
+edge_count: 2
+complexity: time=O(n + q) | space=O(n)
+complexity_options: O(n + q); O(n × q); O(q)
+complexity_note: n is the number of nodes and q the number of indexes.
+why_time: One walk to copy, then O(1) per index.
+why_space: The copy holds all n values.
+hint: Walk the list, appending each value to values.
+hint: Return `[values[i] for i in indexes]`.
+right: The copy turns "walk i links" into "read item i", so the cost of the walk is paid once instead of for every index.
+wrong: Copy the values into a Python list in one walk, then read `values[i]` for each index.
+
+=== task: code easy
+title: Remove Every Second Node
+patterns: walk + after
+prompt: Write `remove_every_second(head)` that deletes the 2nd node, the 4th, the 6th and onwards (the nodes at the odd indexes 1, 3, 5 and onwards), keeps the others, and returns the head.
+
+Walk with node on the nodes you keep. Delete the node after it with `node.next = node.next.next`, then move on to the node that is now next, which is the next one to keep. Stop when node, or the node after it, is None.
+
+**Example 1:** `run([1, 2, 3, 4, 5])` returns `[1, 3, 5]`.
+
+**Example 2:** `run([1, 2, 3, 4])` returns `[1, 3]`.
+
+**Constraints:** the list has 0 to 10⁴ nodes.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def remove_every_second(head):
+    node = head
+    # your code here
+    return head
+
+
+def run(values):
+    return to_list(remove_every_second(from_list(values)))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def remove_every_second(head):
+    node = head
+    while node is not None and node.next is not None:
+        node.next = node.next.next
+        node = node.next
+    return head
+
+
+def run(values):
+    return to_list(remove_every_second(from_list(values)))
+```
+tests:
+- run([1, 2, 3, 4, 5])
+- run([1, 2, 3, 4])
+- run([])
+- run([9])
+- run([4, 4])
+- (lambda t: [len(t), t[:6], t[-3:], sum(t)])(run(list(range(10000))))
+fail[2]: After deleting the 4, node moves on to None: check `node is not None` before reading `node.next`.
+fail[3]: An empty list has nothing to delete.
+fail[4]: One node: nothing comes second.
+fail[5]: The second 4 still goes: what counts is the position, not the value.
+fail[6]: 10,000 nodes become 5,000.
+edges:
+- an empty list :: len(values) == 0 :: run([])
+- an odd length :: len(values) % 2 == 1 :: run([1, 2, 3])
+- an even length above 0 :: len(values) > 0 and len(values) % 2 == 0 :: run([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes.
+why_time: Each step deletes one node and moves past one: about n / 2 steps.
+why_space: Nodes are unlinked in place.
+hint: Loop `while node is not None and node.next is not None:`.
+hint: Inside: `node.next = node.next.next`, then `node = node.next`.
+right: Deleting after the current node and then stepping once lands on the next node to keep, so one walk removes every second node.
+wrong: Walk the nodes you keep: link each one past the node after it, then move on to its new next node, until there's no node after it.
+
+=== task: code easy
+title: Reversed Copy
+patterns: walk + front
+prompt: Write `reversed_copy(head)` that returns a **new** linked list with the same values in reverse order, leaving the original list unchanged.
+
+Walk the original from the head, and insert a new node with each value at the front of the copy: `copy = Node(node.val, copy)`. The first value ends up last, and the last value first. Making new nodes keeps the original as it was.
+
+In the tests, `run(values)` returns two lists: the copy, then the original after your function ran.
+
+**Example 1:** `run([1, 2, 3])` returns `[[3, 2, 1], [1, 2, 3]]`.
+
+**Example 2:** `run([])` returns `[[], []]`.
+
+**Constraints:** the list has 0 to 10⁴ nodes.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def reversed_copy(head):
+    copy = None
+    # your code here
+    return copy
+
+
+def run(values):
+    head = from_list(values)
+    copy = reversed_copy(head)
+    return [to_list(copy), to_list(head)]
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def reversed_copy(head):
+    copy = None
+    node = head
+    while node is not None:
+        copy = Node(node.val, copy)
+        node = node.next
+    return copy
+
+
+def run(values):
+    head = from_list(values)
+    copy = reversed_copy(head)
+    return [to_list(copy), to_list(head)]
+```
+tests:
+- run([1, 2, 3])
+- run([])
+- run([5])
+- run([1, 1, 2])
+- run([3, 2, 1, 0])
+- (lambda r: [len(r[0]), r[0][:5], r[1][:5]])(run(list(range(5000))))
+fail[2]: An empty list's copy is empty too.
+fail[3]: One node: the copy is the same, and the original stays [5].
+fail[4]: Reversed, 1, 1, 2 is 2, 1, 1. The original must still read 1, 1, 2: make new nodes instead of relinking the old ones.
+fail[5]: 3, 2, 1, 0 reversed is 0, 1, 2, 3.
+fail[6]: 5,000 nodes. Walking to the last node, then to the second to last and onwards, is far too slow; one walk with front inserts is enough.
+edges:
+- an empty list :: len(values) == 0 :: run([])
+- one node :: len(values) == 1 :: run([4])
+- more nodes :: len(values) > 1 :: run([4, 5])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk, with one front insert per node.
+why_space: The copy has n new nodes.
+hint: Start with `node = head`.
+hint: While node isn't None: `copy = Node(node.val, copy)`, then `node = node.next`.
+right: Inserting at the front reverses the order of insertion, so one walk forwards through the original builds the copy backwards.
+wrong: Walk the original and insert a new node with each value at the front of the copy, then return the copy.
+
+=== task: code medium
+title: Find the Minimum and Maximum Number of Nodes Between Critical Points
+leetcode: 2058 | Find the Minimum and Maximum Number of Nodes Between Critical Points | find-the-minimum-and-maximum-number-of-nodes-between-critical-points
+patterns: walk
+prompt: A node is a **critical point** if it has a node before it and a node after it, and its value is strictly bigger than both (a local maximum) or strictly smaller than both (a local minimum). Write `nodes_between_critical_points(head)` that returns `[min_distance, max_distance]`: the smallest and the biggest distance between two different critical points, counted in positions. If there are fewer than two critical points, return `[-1, -1]`.
+
+Walk with three nodes in a row, prev, node and the node after it, keeping node's position. The biggest distance is between the first and the last critical points, and the smallest is always between two critical points that come one after the other, so you only need to remember the first, the last and the smallest gap so far.
+
+**Example 1:** `run([5, 3, 1, 2, 5, 1, 2])` returns `[1, 3]`: the critical points are at positions 2 (the 1), 4 (the 5) and 5 (the 1).
+
+**Example 2:** `run([3, 1])` returns `[-1, -1]`: no node has a neighbour on both sides.
+
+**Constraints:** the list has 2 to 10⁵ nodes, and 1 ≤ every value ≤ 10⁵.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def nodes_between_critical_points(head):
+    first = -1
+    last = -1
+    closest = -1
+    index = 1
+    prev = head
+    node = head.next
+    # your code here
+    return [-1, -1]
+
+
+def run(values):
+    return nodes_between_critical_points(from_list(values))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def nodes_between_critical_points(head):
+    first = -1
+    last = -1
+    closest = -1
+    index = 1
+    prev = head
+    node = head.next
+    while node is not None and node.next is not None:
+        nxt = node.next
+        peak = node.val > prev.val and node.val > nxt.val
+        valley = node.val < prev.val and node.val < nxt.val
+        if peak or valley:
+            if first == -1:
+                first = index
+            elif closest == -1 or index - last < closest:
+                closest = index - last
+            last = index
+        prev = node
+        node = nxt
+        index += 1
+    if closest == -1:
+        return [-1, -1]
+    return [closest, last - first]
+
+
+def run(values):
+    return nodes_between_critical_points(from_list(values))
+```
+tests:
+- run([3, 1])
+- run([5, 3, 1, 2, 5, 1, 2])
+- run([1, 3, 2, 2, 3, 2, 2, 2, 7])
+- run([2, 3, 3, 2])
+- run([1, 5, 1])
+- run([i * 7919 % 100 + 1 for i in range(10000)])
+fail[2]: The critical points are at positions 2, 4 and 5: the closest are 4 and 5, and the farthest apart are 2 and 5.
+fail[3]: Only positions 1 and 4 are critical: a value equal to a neighbour is neither bigger nor smaller than it. Both distances are 3.
+fail[4]: Each 3 has an equal neighbour, so there are no critical points.
+fail[5]: The 5 is the only critical point, and a distance needs two.
+fail[6]: 10,000 nodes with thousands of critical points. Comparing every pair of critical points is far too slow; keep the first, the last and the smallest gap.
+edges:
+- two nodes :: len(values) == 2 :: run([4, 1])
+- equal neighbours :: len(values) > 2 and any(values[i] == values[i + 1] for i in range(len(values) - 1)) :: run([1, 3, 3, 1])
+- no equal neighbours :: len(values) > 2 and all(values[i] != values[i + 1] for i in range(len(values) - 1)) :: run([1, 3, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes.
+why_time: One walk, with O(1) work per node.
+why_space: Only the pointers, the position and three numbers are kept.
+hint: While node and `node.next` aren't None, let `nxt = node.next`, and check whether node.val is bigger than both prev.val and nxt.val, or smaller than both.
+hint: At a critical point: if first is −1, set first to index; otherwise update closest with `index - last` if that's smaller (or closest is still −1). Then set last to index.
+hint: Move on with `prev = node`, `node = nxt` and `index += 1`. At the end, return `[-1, -1]` if closest is still −1, and `[closest, last - first]` otherwise.
+right: The farthest pair is always the first and the last critical points, and the closest pair always come one after the other, so three numbers carried along one walk are enough.
+wrong: Walk with prev, node and the node after it, counting positions. At each critical point, record the first, update the smallest gap from the last one, and make it the last. Return [−1, −1] if there were fewer than two, and otherwise the smallest gap and last − first.
+
+=== task: code medium
+title: Delete Node in a Linked List
+leetcode: 237 | Delete Node in a Linked List | delete-node-in-a-linked-list
+patterns: after
+prompt: Write `delete_node(node)` that deletes node from its linked list. You're given only the node itself, not the head, so you can't reach the node before it. node is never the last node, and all the values are different.
+
+Deleting a node normally changes the link of the node **before** it, which you can't reach. But you can change what comes after node: copy the next node's value into node, then delete the next node with `node.next = node.next.next`. The list then reads as if node itself had gone.
+
+In the tests, `run(values, index)` builds the list, calls your function on the node at that index, and returns the whole list.
+
+**Example 1:** `run([4, 5, 1, 9], 1)` returns `[4, 1, 9]`: the node holding 5 takes the 1, and the node that held the 1 is unlinked.
+
+**Example 2:** `run([4, 5, 1, 9], 2)` returns `[4, 5, 9]`.
+
+**Constraints:** the list has 2 to 1000 nodes with different values, −1000 ≤ every value ≤ 1000, and node is not the last node.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def delete_node(node):
+    # your code here
+    pass
+
+
+def run(values, index):
+    head = from_list(values)
+    node = head
+    for _ in range(index):
+        node = node.next
+    delete_node(node)
+    return to_list(head)
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def delete_node(node):
+    node.val = node.next.val
+    node.next = node.next.next
+
+
+def run(values, index):
+    head = from_list(values)
+    node = head
+    for _ in range(index):
+        node = node.next
+    delete_node(node)
+    return to_list(head)
+```
+tests:
+- run([4, 5, 1, 9], 1)
+- run([4, 5, 1, 9], 2)
+- run([1, 2], 0)
+- run([-3, 5, -99], 0)
+- run([1, 2, 3, 4, 5, 6], 4)
+- (lambda t: [len(t), t[:3], t[-3:]])(run(list(range(1000)), 998))
+fail[2]: The 1 goes: its node takes the 9, and the old 9 node is unlinked.
+fail[3]: Deleting the head of a 2-node list leaves the second value.
+fail[4]: The head takes the 5, and the old 5 node is unlinked.
+fail[5]: The node at index 4 takes the 6.
+fail[6]: The second-to-last node of a 1,000-node list.
+edges:
+- the head :: index == 0 :: run([1, 2, 3], 0)
+- second to last :: index == len(values) - 2 and index > 0 :: run([1, 2, 3], 1)
+- in the middle :: 0 < index < len(values) - 2 :: run([1, 2, 3, 4], 1)
+edge_count: 2
+complexity: time=O(1) | space=O(1)
+complexity_note: Give the time of delete_node itself.
+why_time: One value copied and one link changed.
+why_space: Nothing new is kept.
+hint: `node.val = node.next.val`.
+hint: Then `node.next = node.next.next`.
+right: Without the node before it, node can't be unlinked, but its value can be replaced, so copying the next value in and unlinking the next node gives the same list.
+wrong: Copy the next node's value into node, then link node past its next node.
+
+=== task: code medium
+title: Maximum Twin Sum of a Linked List
+leetcode: 2130 | Maximum Twin Sum of a Linked List | maximum-twin-sum-of-a-linked-list
+patterns: array
+prompt: A linked list has an even number of nodes, n. Node i and node n − 1 − i are **twins**: the first and the last, the second and the second to last, and onwards. A twin sum is the total of two twins' values. Write `pair_sum(head)` that returns the biggest twin sum.
+
+A twin is n − 1 − i links from the head, and walking there for every i would be O(n²). Copy the values into a Python list in one walk; then each twin sum is `values[i] + values[n - 1 - i]`, for i in the first half.
+
+**Example 1:** `run([5, 4, 2, 1])` returns 6: the twin sums are 5 + 1 and 4 + 2.
+
+**Example 2:** `run([4, 2, 2, 3])` returns 7.
+
+**Constraints:** the list has an even number of nodes, from 2 to 10⁵, and 1 ≤ every value ≤ 10⁵.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def pair_sum(head):
+    values = []
+    # your code here
+    return 0
+
+
+def run(values):
+    return pair_sum(from_list(values))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def pair_sum(head):
+    values = []
+    node = head
+    while node is not None:
+        values.append(node.val)
+        node = node.next
+    n = len(values)
+    best = 0
+    for i in range(n // 2):
+        best = max(best, values[i] + values[n - 1 - i])
+    return best
+
+
+def run(values):
+    return pair_sum(from_list(values))
+```
+tests:
+- run([5, 4, 2, 1])
+- run([4, 2, 2, 3])
+- run([1, 100000])
+- run([1, 1])
+- run([3, 9, 9, 3])
+- run([i * 7919 % 100000 + 1 for i in range(10000)])
+fail[2]: 4 + 3 = 7 beats 2 + 2.
+fail[3]: Two nodes are each other's twins: 100,001.
+fail[4]: One pair: 1 + 1.
+fail[5]: The middle pair, 9 + 9, is the best.
+fail[6]: 10,000 nodes. Walking to each twin from the head is far too slow; copy the values once.
+edges:
+- two nodes :: len(values) == 2 :: run([1, 2])
+- the best pair in the middle :: len(values) > 2 and values[len(values) // 2 - 1] + values[len(values) // 2] == max(values[i] + values[len(values) - 1 - i] for i in range(len(values) // 2)) :: run([1, 5, 5, 1])
+- the best pair elsewhere :: len(values) > 2 and values[len(values) // 2 - 1] + values[len(values) // 2] < max(values[i] + values[len(values) - 1 - i] for i in range(len(values) // 2)) :: run([5, 1, 1, 5])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk to copy, and n / 2 sums.
+why_space: The copy holds n values.
+hint: Copy the values into `values`, and let `n = len(values)`.
+hint: Return the biggest `values[i] + values[n - 1 - i]` for i in `range(n // 2)`.
+right: A twin is at a fixed index from the end, which a singly linked list can only reach by walking, while a copied list reaches it in O(1).
+wrong: Copy the values into a Python list, then return the biggest `values[i] + values[n - 1 - i]` over the first half.
+
+=== task: code medium
+title: Add Two Numbers
+leetcode: 2 | Add Two Numbers | add-two-numbers
+patterns: walk + tail
+prompt: Two numbers are stored as linked lists of digits in **reverse** order: the head is the ones digit, then the tens digit, and onwards. Write `add_two_numbers(l1, l2)` that returns their sum as a linked list in the same reverse order.
+
+The ones digits come first, which is the order long addition works in. Walk both lists together with a carry: add the two digits (0 for a list that has run out) and the carry, put `total % 10` in a new node at the end of the answer, and carry `total // 10` on. Keep going while either list has digits **or** the carry isn't 0.
+
+**Example 1:** `run([2, 4, 3], [5, 6, 4])` returns `[7, 0, 8]`: 342 + 465 = 807.
+
+**Example 2:** `run([9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 9])` returns `[8, 9, 9, 9, 0, 0, 0, 1]`.
+
+**Constraints:** each list has 1 to 100 nodes, each holding a digit from 0 to 9, and neither number has leading zeros, except the number 0.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_two_numbers(l1, l2):
+    head = None
+    tail = None
+    carry = 0
+    # your code here
+    return head
+
+
+def run(digits1, digits2):
+    return to_list(add_two_numbers(from_list(digits1), from_list(digits2)))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_two_numbers(l1, l2):
+    head = None
+    tail = None
+    carry = 0
+    while l1 is not None or l2 is not None or carry > 0:
+        total = carry
+        if l1 is not None:
+            total += l1.val
+            l1 = l1.next
+        if l2 is not None:
+            total += l2.val
+            l2 = l2.next
+        node = Node(total % 10)
+        carry = total // 10
+        if tail is None:
             head = node
         else:
             tail.next = node
         tail = node
     return head
+
+
+def run(digits1, digits2):
+    return to_list(add_two_numbers(from_list(digits1), from_list(digits2)))
 ```
 tests:
-- to_list(from_list([1, 2, 3]))
-- from_list([])
-- to_list(from_list(["a"]))
-- to_list(from_list([5, 5, 2]))
-- from_list([7, 8]).next.val
-speed: setup=items = list(range(n)) | call=from_list(items) | target=O(n)
-slow:
+- run([2, 4, 3], [5, 6, 4])
+- run([0], [0])
+- run([9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 9])
+- run([1], [9, 9])
+- run([5], [5])
+- run([i * 7 % 10 for i in range(99)] + [9], [i * 3 % 10 for i in range(99)] + [8])
+fail[2]: 0 + 0 = 0.
+fail[3]: 9,999,999 + 9,999 = 10,009,998: the last carry makes one more digit.
+fail[4]: 1 + 99 = 100: the shorter list runs out, and the carry keeps going.
+fail[5]: 5 + 5 = 10: when both lists are done, a carry of 1 still needs its own node.
+fail[6]: Two 100-digit numbers.
+edges:
+- the number 0 :: digits1 == [0] or digits2 == [0] :: run([0], [7])
+- different lengths, no 0 :: digits1 != [0] and digits2 != [0] and len(digits1) != len(digits2) :: run([1], [2, 3])
+- the same length, no 0 :: digits1 != [0] and digits2 != [0] and len(digits1) == len(digits2) :: run([5], [5])
+edge_count: 2
+complexity: time=O(max(m, n)) | space=O(max(m, n))
+complexity_options: O(max(m, n)); O(m × n); O(1)
+complexity_note: m and n are the numbers of digits.
+why_time: One step per digit of the longer number, plus one for a last carry.
+why_space: The answer has max(m, n) digits, or one more.
+hint: Loop `while l1 is not None or l2 is not None or carry > 0:` with `total = carry`.
+hint: If l1 isn't None, add `l1.val` and move l1 on; do the same for l2.
+hint: Make `Node(total % 10)`, link it after the tail (or make it the head), and set `carry = total // 10`.
+right: Digits stored ones first come out in the order long addition needs, so one walk over both lists with a carry builds the sum, and the tail adds each new digit in O(1).
+wrong: Walk both lists at once with a carry. At each step, add the digits that are there and the carry, append `total % 10` with a tail, and carry `total // 10`. Keep going until both lists end and the carry is 0.
+
+=== task: code medium
+title: Merge Nodes in Between Zeros
+leetcode: 2181 | Merge Nodes in Between Zeros | merge-nodes-in-between-zeros
+patterns: walk + tail
+prompt: The linked list starts and ends with a 0, and has more 0s in between, never two in a row. Write `merge_nodes(head)` that returns a new linked list with one node for each stretch between two 0s, holding the total of that stretch, and no 0s.
+
+Walk from the node after the first 0, adding the values to a total. Each 0 closes a stretch: add a node holding the total to the end of the answer with a tail, and start the total again from 0.
+
+**Example 1:** `run([0, 3, 1, 0, 4, 5, 2, 0])` returns `[4, 11]`.
+
+**Example 2:** `run([0, 1, 0, 3, 0, 2, 2, 0])` returns `[1, 3, 4]`.
+
+**Constraints:** the list has 3 to 2 × 10⁵ nodes, 0 ≤ every value ≤ 1000, it starts and ends with 0, and no two 0s are next to each other.
+starter:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def from_list(items):
+def from_list(values):
     head = None
-    for x in items:
-        if head is None:
-            head = Node(x)
-        else:
-            node = head
-            while node.next is not None:
-                node = node.next
-            node.next = Node(x)
+    for x in reversed(values):
+        head = Node(x, head)
     return head
-```
-fail[1]: The list must keep the order 1, 2, 3. Inserting each item at the front would give 3, 2, 1.
-fail[2]: An empty Python list makes an empty linked list: return None.
-error[AttributeError]: The first item has no node before it: make it the head, and only link later nodes after `tail`.
-error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
-hint: `head` is the first node and `tail` the last node so far.
-hint: For each item, make a node. If the list is empty, it becomes the head; otherwise `tail.next = node`.
-hint: Either way, the new node becomes the tail: `tail = node`.
-right: Each item costs O(1): one new node and one link, thanks to `tail`. Walking to the end every time would cost 0 + 1 + ... + (n − 1) steps: O(n²).
-wrong: For each item, make a node; link it after `tail` (or make it the head if the list is still empty); then make it the tail.
 
-=== task: code hard
-title: Insert in order
-prompt: The values of a linked list are in increasing order. Write `insert_sorted(head, x)` that inserts a new node holding x so that the list stays in order, and returns the head (a new node, if x goes first). The starter includes `to_list` for the tests.
-
-For example, `to_list(insert_sorted(Node(1, Node(4, Node(9))), 5))` gives `[1, 4, 5, 9]`.
-starter:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
 
 def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
 
-def insert_sorted(head, x):
+
+def merge_nodes(head):
+    result = None
+    tail = None
+    total = 0
     # your code here
-    return head
+    return result
+
+
+def run(values):
+    return to_list(merge_nodes(from_list(values)))
 ```
 solution:
 ```python
@@ -931,50 +2415,196 @@ class Node:
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def insert_sorted(head, x):
-    if head is None or x < head.val:
-        return Node(x, head)
-    node = head
-    while node.next is not None and node.next.val <= x:
-        node = node.next
-    node.next = Node(x, node.next)
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
     return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def merge_nodes(head):
+    result = None
+    tail = None
+    total = 0
+    node = head.next
+    while node is not None:
+        if node.val == 0:
+            new = Node(total)
+            if tail is None:
+                result = new
+            else:
+                tail.next = new
+            tail = new
+            total = 0
+        else:
+            total += node.val
+        node = node.next
+    return result
+
+
+def run(values):
+    return to_list(merge_nodes(from_list(values)))
 ```
 tests:
-- to_list(insert_sorted(Node(1, Node(4, Node(9))), 5))
-- to_list(insert_sorted(Node(1, Node(4, Node(9))), 0))
-- to_list(insert_sorted(Node(1, Node(4, Node(9))), 12))
-- to_list(insert_sorted(None, 3))
-- to_list(insert_sorted(Node(2, Node(2)), 2))
-- to_list(insert_sorted(Node(1, Node(3)), 2))
-fail[1]: 5 goes between 4 and 9: walk while the next value is smaller, then link the new node in.
-fail[2]: 0 is smaller than the head's 1, so the new node becomes the head: return it.
-fail[3]: 12 is bigger than everything, so it goes after the last node.
-fail[4]: An empty list becomes a list of one node.
-error[AttributeError]: Check `node.next is not None` before reading `node.next.val`, and handle an empty list (head None) first.
-error[NameError]: Keep the `to_list` helper from the starter: the tests use it.
-hint: If the list is empty, or x is smaller than the head's value, the new node becomes the head.
-hint: Otherwise walk while `node.next is not None and node.next.val <= x`.
-hint: Then link in after `node`: `node.next = Node(x, node.next)`.
-right: The walk is O(n) at worst, but the insert itself is O(1): nothing shifts, which an insert into a sorted array can't avoid.
-wrong: Handle the new-head case first. Otherwise stop at the last node whose value is at most x, and link the new node in right after it.
+- run([0, 3, 1, 0, 4, 5, 2, 0])
+- run([0, 1, 0, 3, 0, 2, 2, 0])
+- run([0, 5, 0])
+- run([0, 1, 1, 1, 1, 0])
+- run([0, 1000, 0, 1000, 1000, 0])
+- (lambda t: [len(t), t[:6], t[-6:], sum(t)])(run([0] + [x for i in range(2000) for x in [i % 9 + 1] * (i % 5 + 1) + [0]]))
+fail[2]: Three stretches: 1, then 3, then 2 + 2.
+fail[3]: One stretch of one node.
+fail[4]: One stretch of four 1s.
+fail[5]: 1000, then 1000 + 1000.
+fail[6]: 2,000 stretches, nearly 8,000 nodes.
+edges:
+- one stretch :: values.count(0) == 2 :: run([0, 4, 0])
+- several stretches of one node :: values.count(0) > 2 and len(values) == 2 * values.count(0) - 1 :: run([0, 4, 0, 5, 0])
+- several stretches, one longer :: values.count(0) > 2 and len(values) > 2 * values.count(0) - 1 :: run([0, 4, 1, 0, 5, 0])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk, with O(1) work per node.
+why_space: The answer has one node per stretch, at most about n / 2.
+hint: Start at `node = head.next`, and add each value that isn't 0 to total.
+hint: At a 0, make `Node(total)`, link it on with the tail, and set total back to 0.
+right: Each 0 marks the end of a stretch, so a running total and a tail build the answer in one walk.
+wrong: Walk from the node after the first 0, adding to a total. At each 0, append a node holding the total with a tail, and set the total back to 0.
 
-=== task: code hard
-title: A list with a tail
-prompt: Write a class `LinkedList` that keeps both `self.head` and `self.tail` (the last node), both None while the list is empty, with these methods:
-- `push_front(self, x)`: add x at the front,
-- `push_back(self, x)`: add x at the end, in O(1), using `self.tail`,
-- `pop_front(self)`: remove the first node and return its value (assume the list isn't empty).
+=== task: code medium
+title: Insert Greatest Common Divisors in Linked List
+leetcode: 2807 | Insert Greatest Common Divisors in Linked List | insert-greatest-common-divisors-in-linked-list
+patterns: walk + after
+prompt: Between every two neighbouring nodes of the linked list, insert a new node holding the **greatest common divisor** of their values: the biggest number that divides both. Write `insert_greatest_common_divisors(head)` that returns the head. `gcd`, from the math module, works it out.
 
-Keep `tail` right: the first node added to an empty list is both the head and the tail, and when the last node is popped, both become None. The starter includes `Node` and `to_list`, and the tests call your methods.
+Walk with node, and while it has a next node, insert after it: `node.next = Node(gcd(node.val, node.next.val), node.next)`. Then step over the new node to the old next node, `node = node.next.next`; otherwise the next step would pair the new node with its neighbour, inserting forever.
+
+**Example 1:** `run([18, 6, 10, 3])` returns `[18, 6, 6, 2, 10, 1, 3]`.
+
+**Example 2:** `run([7])` returns `[7]`.
+
+**Constraints:** the list has 1 to 5000 nodes, and 1 ≤ every value ≤ 1000.
+starter:
+```python
+from math import gcd
+
+
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def insert_greatest_common_divisors(head):
+    node = head
+    # your code here
+    return head
+
+
+def run(values):
+    return to_list(insert_greatest_common_divisors(from_list(values)))
+```
+solution:
+```python
+from math import gcd
+
+
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def insert_greatest_common_divisors(head):
+    node = head
+    while node.next is not None:
+        node.next = Node(gcd(node.val, node.next.val), node.next)
+        node = node.next.next
+    return head
+
+
+def run(values):
+    return to_list(insert_greatest_common_divisors(from_list(values)))
+```
+tests:
+- run([18, 6, 10, 3])
+- run([7])
+- run([4, 4])
+- run([1, 1000])
+- run([12, 18, 24])
+- (lambda t: [len(t), t[:7], sum(t)])(run([i * 37 % 1000 + 1 for i in range(5000)]))
+fail[2]: One node has no neighbours: there's nothing to insert.
+fail[3]: gcd(4, 4) is 4.
+fail[4]: gcd(1, 1000) is 1.
+fail[5]: gcd(12, 18) and gcd(18, 24) are both 6.
+fail[6]: 5,000 nodes become 9,999.
+edges:
+- one node :: len(values) == 1 :: run([5])
+- equal neighbours :: len(values) > 1 and any(values[i] == values[i + 1] for i in range(len(values) - 1)) :: run([6, 6])
+- no equal neighbours :: len(values) > 1 and all(values[i] != values[i + 1] for i in range(len(values) - 1)) :: run([6, 4])
+edge_count: 2
+complexity: time=O(n log M) | space=O(n)
+complexity_options: O(n log M); O(n²); O(n × M)
+complexity_note: n is the number of nodes and M the biggest value; gcd takes O(log M) steps.
+why_time: n − 1 inserts, each with one gcd.
+why_space: n − 1 new nodes.
+hint: Loop `while node.next is not None:`.
+hint: Set `node.next = Node(gcd(node.val, node.next.val), node.next)`, then `node = node.next.next`.
+right: Inserting after the current node is O(1), and stepping over the new node moves on to the next pair of original nodes.
+wrong: Walk the list. For each node with a next node, insert a node holding the gcd of the two values after it, and jump over the new node.
+
+=== task: code medium
+title: Merge In Between Linked Lists
+leetcode: 1669 | Merge In Between Linked Lists | merge-in-between-linked-lists
+patterns: walk + after
+prompt: Remove the nodes of list1 at indexes a to b, ends included, and put the whole of list2 in their place. Write `merge_in_between(list1, a, b, list2)` that returns list1's head.
+
+Walk to two nodes of list1: before, at index a − 1, and after, at index b + 1. Then splice with two links: `before.next = list2`, and list2's last node links to after. Walk list2 to find its last node.
+
+**Example 1:** `run([10, 1, 13, 6, 9, 5], 3, 4, [1000000, 1000001, 1000002])` returns `[10, 1, 13, 1000000, 1000001, 1000002, 5]`.
+
+**Example 2:** `run([0, 1, 2, 3, 4, 5, 6], 2, 5, [1000000, 1000001, 1000002, 1000003, 1000004])` returns `[0, 1, 1000000, 1000001, 1000002, 1000003, 1000004, 6]`.
+
+**Constraints:** list1 has 3 to 10⁴ nodes, 1 ≤ a ≤ b < the length of list1 − 1, and list2 has 1 to 10⁴ nodes.
 starter:
 ```python
 class Node:
@@ -982,20 +2612,30 @@ class Node:
         self.val = val
         self.next = next
 
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
 def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
 
-class LinkedList:
-    def __init__(self):
-        self.head = None
-        self.tail = None
 
+def merge_in_between(list1, a, b, list2):
+    before = list1
     # your code here
+    return list1
+
+
+def run(values1, a, b, values2):
+    return to_list(merge_in_between(from_list(values1), a, b, from_list(values2)))
 ```
 solution:
 ```python
@@ -1004,106 +2644,1164 @@ class Node:
         self.val = val
         self.next = next
 
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
 def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
 
-class LinkedList:
-    def __init__(self):
-        self.head = None
-        self.tail = None
 
-    def push_front(self, x):
-        self.head = Node(x, self.head)
-        if self.tail is None:
-            self.tail = self.head
+def merge_in_between(list1, a, b, list2):
+    before = list1
+    for _ in range(a - 1):
+        before = before.next
+    after = before
+    for _ in range(b - a + 2):
+        after = after.next
+    before.next = list2
+    tail = list2
+    while tail.next is not None:
+        tail = tail.next
+    tail.next = after
+    return list1
 
-    def push_back(self, x):
-        node = Node(x)
-        if self.tail is None:
-            self.head = node
-        else:
-            self.tail.next = node
-        self.tail = node
 
-    def pop_front(self):
-        node = self.head
-        self.head = node.next
-        if self.head is None:
-            self.tail = None
-        return node.val
+def run(values1, a, b, values2):
+    return to_list(merge_in_between(from_list(values1), a, b, from_list(values2)))
 ```
 tests:
-- (lambda q: [q.push_back(1), q.push_back(2), q.push_front(0), to_list(q.head), q.tail.val][3:])(LinkedList())
-- (lambda q: [q.push_front(5), q.head.val, q.tail.val][1:])(LinkedList())
-- (lambda q: [q.push_back(1), q.push_back(2), q.pop_front(), q.pop_front(), q.head, q.tail][2:])(LinkedList())
-- (lambda q: [q.push_back(1), q.pop_front(), q.push_back(7), to_list(q.head), q.tail.val][3:])(LinkedList())
-- (lambda q: [q.push_front(3), q.push_back(4), q.push_front(2), to_list(q.head), q.head.val, q.tail.val][3:])(LinkedList())
-speed: setup=q = LinkedList() | call=[q.push_back(i) for i in range(n)] | target=O(n)
-slow:
+- run([10, 1, 13, 6, 9, 5], 3, 4, [1000000, 1000001, 1000002])
+- run([0, 1, 2, 3, 4, 5, 6], 2, 5, [1000000, 1000001, 1000002, 1000003, 1000004])
+- run([1, 2, 3], 1, 1, [9])
+- run([1, 2, 3, 4, 5], 1, 3, [7, 8])
+- run([5, 6, 7, 8], 2, 2, [0])
+- (lambda t: [len(t), t[:4], t[-4:]])(run(list(range(10000)), 2, 9997, list(range(10000, 20000))))
+fail[2]: Indexes 2 to 5 go, and list2's five nodes take their place between the 1 and the 6.
+fail[3]: One node, the 2, is replaced by the 9.
+fail[4]: Indexes 1 to 3 go: before is the 1 at index 0, and after is the 5 at index 4.
+fail[5]: a equals b, so only the 7 is replaced.
+fail[6]: Almost all of a 10,000-node list is replaced by 10,000 other nodes.
+edges:
+- one node removed :: a == b :: run([1, 2, 3], 1, 1, [9])
+- several removed, list2 of one node :: a < b and len(values2) == 1 :: run([1, 2, 3, 4], 1, 2, [9])
+- several removed, a longer list2 :: a < b and len(values2) > 1 :: run([1, 2, 3, 4], 1, 2, [8, 9])
+edge_count: 2
+complexity: time=O(m + n) | space=O(1)
+complexity_options: O(m + n); O(m × n); O(b − a)
+complexity_note: m is the length of list1 and n the length of list2.
+why_time: The walks go as far as index b + 1 of list1 and the end of list2; the splice itself is two links.
+why_space: Only a few pointers are kept.
+hint: Move before a − 1 steps from list1, then after b − a + 2 steps from before.
+hint: Set `before.next = list2`, walk to list2's last node, and set its next to after.
+right: Only the two nodes at the edges of the gap matter: everything between them is dropped by changing two links.
+wrong: Find the node before index a and the node after index b. Link the first to list2's head, and list2's last node to the second.
+
+=== task: code medium
+title: Add Two Numbers II
+leetcode: 445 | Add Two Numbers II | add-two-numbers-ii
+patterns: array + front
+prompt: Two numbers are stored as linked lists of digits, **most significant digit first**. Write `add_two_numbers(l1, l2)` that returns their sum as a linked list, also most significant digit first.
+
+Adding starts from the ones digits, which are at the far ends of the lists. Copy each list's digits into a Python list, then add from the ends of those, with a carry. The digits of the sum come out ones digit first, so insert each one at the **front** of the answer, `head = Node(total % 10, head)`: then the answer is in the right order without being reversed.
+
+**Example 1:** `run([7, 2, 4, 3], [5, 6, 4])` returns `[7, 8, 0, 7]`: 7243 + 564 = 7807.
+
+**Example 2:** `run([0], [0])` returns `[0]`.
+
+**Constraints:** each list has 1 to 100 nodes, each holding a digit from 0 to 9, and neither number has leading zeros, except the number 0.
+starter:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
 def to_list(head):
-    items = []
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_two_numbers(l1, l2):
+    a = []
+    b = []
+    head = None
+    carry = 0
+    # your code here
+    return head
+
+
+def run(digits1, digits2):
+    return to_list(add_two_numbers(from_list(digits1), from_list(digits2)))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_two_numbers(l1, l2):
+    a = []
+    while l1 is not None:
+        a.append(l1.val)
+        l1 = l1.next
+    b = []
+    while l2 is not None:
+        b.append(l2.val)
+        l2 = l2.next
+    head = None
+    carry = 0
+    i = len(a) - 1
+    j = len(b) - 1
+    while i >= 0 or j >= 0 or carry > 0:
+        total = carry
+        if i >= 0:
+            total += a[i]
+            i -= 1
+        if j >= 0:
+            total += b[j]
+            j -= 1
+        head = Node(total % 10, head)
+        carry = total // 10
+    return head
+
+
+def run(digits1, digits2):
+    return to_list(add_two_numbers(from_list(digits1), from_list(digits2)))
+```
+tests:
+- run([7, 2, 4, 3], [5, 6, 4])
+- run([2, 4, 3], [5, 6, 4])
+- run([0], [0])
+- run([9, 9], [1])
+- run([5], [5])
+- run([9] + [i * 7 % 10 for i in range(99)], [8] + [i * 3 % 10 for i in range(99)])
+fail[2]: 243 + 564 = 807.
+fail[3]: 0 + 0 = 0.
+fail[4]: 99 + 1 = 100: the last carry makes a new first digit.
+fail[5]: 5 + 5 = 10.
+fail[6]: Two 100-digit numbers.
+edges:
+- the number 0 :: digits1 == [0] or digits2 == [0] :: run([0], [7])
+- different lengths, no 0 :: digits1 != [0] and digits2 != [0] and len(digits1) != len(digits2) :: run([1], [2, 3])
+- the same length, no 0 :: digits1 != [0] and digits2 != [0] and len(digits1) == len(digits2) :: run([5], [5])
+edge_count: 2
+complexity: time=O(m + n) | space=O(m + n)
+complexity_options: O(m + n); O(m × n); O(1)
+complexity_note: m and n are the numbers of digits.
+why_time: Two walks to copy, then one step per digit of the longer number.
+why_space: The two copies and the answer hold O(m + n) digits.
+hint: Copy l1's digits into a and l2's into b, and start `i = len(a) - 1` and `j = len(b) - 1`.
+hint: Loop while `i >= 0 or j >= 0 or carry > 0`, adding `a[i]` and `b[j]` when they exist and moving i and j down.
+hint: `head = Node(total % 10, head)` and `carry = total // 10`.
+right: The copies give the ones digits that a forward-only list keeps at its far end, and inserting at the front turns the ones-first digits of the sum back into most-significant-first order.
+wrong: Copy both lists' digits into Python lists, add them from the end with a carry, and insert each digit of the sum at the front of the answer.
+
+=== task: code medium
+title: Double a Number Represented as a Linked List
+leetcode: 2816 | Double a Number Represented as a Linked List | double-a-number-represented-as-a-linked-list
+patterns: walk + front
+prompt: A number is stored as a linked list of digits, most significant first, with no leading zeros. Write `double_it(head)` that doubles the number in place and returns the head.
+
+Doubling a digit gives at most 18, so the carry into a digit is 1 exactly when the **next** digit is 5 or more. So walk forwards: each digit becomes `node.val * 2 % 10`, plus 1 if the next digit is 5 or more. The only carry that can leave the number is out of the first digit: if the head is 5 or more, the answer is one digit longer, so first insert a 0 at the front, `head = Node(0, head)`, which the walk then turns into a 1.
+
+**Example 1:** `run([1, 8, 9])` returns `[3, 7, 8]`: 189 × 2 = 378.
+
+**Example 2:** `run([9, 9, 9])` returns `[1, 9, 9, 8]`.
+
+**Constraints:** the list has 1 to 10⁴ nodes, each a digit from 0 to 9, with no leading zeros, except the number 0.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def double_it(head):
+    # your code here
+    return head
+
+
+def run(digits):
+    return to_list(double_it(from_list(digits)))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def double_it(head):
+    if head.val >= 5:
+        head = Node(0, head)
     node = head
     while node is not None:
-        items.append(node.val)
+        node.val = node.val * 2 % 10
+        if node.next is not None and node.next.val >= 5:
+            node.val += 1
         node = node.next
-    return items
+    return head
 
-class LinkedList:
+
+def run(digits):
+    return to_list(double_it(from_list(digits)))
+```
+tests:
+- run([1, 8, 9])
+- run([9, 9, 9])
+- run([0])
+- run([5])
+- run([4, 9])
+- (lambda t: [len(t), t[:6], t[-6:], sum(t)])(run([7] + [i * 7 % 10 for i in range(9999)]))
+fail[2]: 999 × 2 = 1998: the head 9 is 5 or more, so a new front node holds the 1.
+fail[3]: 0 × 2 = 0.
+fail[4]: 5 × 2 = 10: one digit becomes two.
+fail[5]: 49 × 2 = 98: the 4 becomes 8, plus 1 because the 9 after it is 5 or more.
+fail[6]: A 10,000-digit number that starts with a 7, so the answer has 10,001 digits.
+edges:
+- one digit :: len(digits) == 1 :: run([3])
+- a longer number, head 5 or more :: len(digits) > 1 and digits[0] >= 5 :: run([6, 1])
+- a longer number, head under 5 :: len(digits) > 1 and digits[0] < 5 :: run([2, 7])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of digits; at most one new node is made.
+why_time: One walk, O(1) per digit.
+why_space: The digits change in place, and at most one node is added.
+hint: If `head.val >= 5`, set `head = Node(0, head)`.
+hint: Walk with node: `node.val = node.val * 2 % 10`, then add 1 if `node.next` isn't None and `node.next.val >= 5`.
+right: Whether a digit gets a carry depends only on the digit after it, so one forward walk can finish each digit, and a node inserted at the front makes room for the only carry that can leave the number.
+wrong: If the first digit is 5 or more, insert a 0 at the front. Then walk the list, setting each digit to twice itself mod 10, plus 1 if the next digit is 5 or more.
+
+=== task: code medium
+title: Partition List
+leetcode: 86 | Partition List | partition-list
+patterns: tail + after
+prompt: Write `partition(head, x)` that relinks the nodes of the linked list so that every node with a value under x comes before every node with a value of x or more, keeping the order within each group. Return the new head.
+
+Build two lists at once, each with its own head and tail: one for the values under x, and one for the rest. Walk the original, and move each node onto the tail of its list, after saving `node.next` and cutting it with `node.next = None`. At the end, link the first list's tail to the second list's head. If the first list is empty, the answer is the second list.
+
+**Example 1:** `run([1, 4, 3, 2, 5, 2], 3)` returns `[1, 2, 2, 4, 3, 5]`.
+
+**Example 2:** `run([2, 1], 2)` returns `[1, 2]`.
+
+**Constraints:** the list has 0 to 200 nodes, −100 ≤ every value ≤ 100, and −200 ≤ x ≤ 200.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def partition(head, x):
+    small_head = None
+    small_tail = None
+    big_head = None
+    big_tail = None
+    # your code here
+    return head
+
+
+def run(values, x):
+    return to_list(partition(from_list(values), x))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def partition(head, x):
+    small_head = None
+    small_tail = None
+    big_head = None
+    big_tail = None
+    node = head
+    while node is not None:
+        nxt = node.next
+        node.next = None
+        if node.val < x:
+            if small_tail is None:
+                small_head = node
+            else:
+                small_tail.next = node
+            small_tail = node
+        else:
+            if big_tail is None:
+                big_head = node
+            else:
+                big_tail.next = node
+            big_tail = node
+        node = nxt
+    if small_tail is None:
+        return big_head
+    small_tail.next = big_head
+    return small_head
+
+
+def run(values, x):
+    return to_list(partition(from_list(values), x))
+```
+tests:
+- run([1, 4, 3, 2, 5, 2], 3)
+- run([2, 1], 2)
+- run([], 0)
+- run([5, 6], 1)
+- run([1, 2], 5)
+- run([i * 37 % 201 - 100 for i in range(200)], 0)
+fail[2]: The 1 comes first, then the 2, which is not under 2.
+fail[3]: An empty list stays empty.
+fail[4]: Nothing is under 1, so the first list is empty: return the second list's head.
+fail[5]: Everything is under 5, so the second list is empty, and the first list's tail links to None.
+fail[6]: 200 values from −100 to 100, split at 0.
+edges:
+- an empty group :: all(v < x for v in values) or all(v >= x for v in values) :: run([1, 2], 5)
+- both groups, already in order :: any(v < x for v in values) and any(v >= x for v in values) and values == [v for v in values if v < x] + [v for v in values if v >= x] :: run([1, 5], 3)
+- both groups, mixed up :: values != [v for v in values if v < x] + [v for v in values if v >= x] :: run([5, 1], 3)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes; the nodes are relinked, not copied.
+why_time: Each node is moved once.
+why_space: Only the four ends and a pointer are kept.
+hint: Save `nxt = node.next` and set `node.next = None` before moving node.
+hint: If `node.val < x`, link it after small_tail (or make it small_head); otherwise do the same with the big list. Then `node = nxt`.
+hint: At the end, return big_head if small_tail is None; otherwise set `small_tail.next = big_head` and return small_head.
+right: Each node goes onto the end of its own list, so both groups keep their order, and one link at the end joins them, with no new nodes.
+wrong: Walk the list, cutting each node loose and moving it onto the tail of the "under x" list or the "x or more" list. Link the first list to the second, or return the second if the first is empty.
+
+=== task: code hard
+title: Merge k Sorted Lists
+leetcode: 23 | Merge k Sorted Lists | merge-k-sorted-lists
+patterns: walk + tail
+prompt: lists holds k linked lists, each sorted from smallest to biggest. Write `merge_k_lists(lists)` that merges them all into one sorted linked list and returns its head.
+
+Merging the lists one at a time into a growing answer moves the early nodes over and over: O(N × k) for N nodes in all. Merge them in **pairs** instead, like the rounds of a knockout tournament: list 0 with list 1, list 2 with list 3, and onwards, which halves the number of lists; then repeat until one is left. Each round moves every node once, and there are about log₂ k rounds. Write `merge_two(a, b)` for two sorted lists with a tail, as in Merge Two Sorted Lists.
+
+**Example 1:** `run([[1, 4, 5], [1, 3, 4], [2, 6]])` returns `[1, 1, 2, 3, 4, 4, 5, 6]`.
+
+**Example 2:** `run([])` returns `[]`: there are no lists at all.
+
+**Constraints:** 0 ≤ k ≤ 10⁴, each list has 0 to 500 nodes, there are at most 10⁴ nodes in all, and −10⁴ ≤ every value ≤ 10⁴.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def merge_two(a, b):
+    head = None
+    tail = None
+    # your code here
+    return head
+
+
+def merge_k_lists(lists):
+    if len(lists) == 0:
+        return None
+    # your code here
+    return lists[0]
+
+
+def run(lists):
+    return to_list(merge_k_lists([from_list(values) for values in lists]))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def merge_two(a, b):
+    head = None
+    tail = None
+    while a is not None and b is not None:
+        if a.val <= b.val:
+            node = a
+            a = a.next
+        else:
+            node = b
+            b = b.next
+        if tail is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    rest = a if a is not None else b
+    if tail is None:
+        return rest
+    tail.next = rest
+    return head
+
+
+def merge_k_lists(lists):
+    if len(lists) == 0:
+        return None
+    while len(lists) > 1:
+        merged = []
+        for i in range(0, len(lists), 2):
+            if i + 1 < len(lists):
+                merged.append(merge_two(lists[i], lists[i + 1]))
+            else:
+                merged.append(lists[i])
+        lists = merged
+    return lists[0]
+
+
+def run(lists):
+    return to_list(merge_k_lists([from_list(values) for values in lists]))
+```
+tests:
+- run([[1, 4, 5], [1, 3, 4], [2, 6]])
+- run([])
+- run([[]])
+- run([[], [1], []])
+- run([[5], [1], [3], [2], [4]])
+- (lambda t: [len(t), t[:6], t[-6:], sum(t)])(run([sorted((i * 7 + j * 1009) % 20001 - 10000 for j in range(7)) for i in range(300)]))
+fail[2]: No lists: return None, which reads as an empty list.
+fail[3]: One empty list: the answer is empty too.
+fail[4]: Two of the three lists are empty; the 1 is all there is.
+fail[5]: Five lists of one node each.
+fail[6]: 300 lists of 7 nodes. Merging one list at a time into the answer is far too slow; merge in pairs.
+edges:
+- no lists :: len(lists) == 0 :: run([])
+- an empty list among them :: any(len(l) == 0 for l in lists) :: run([[1], []])
+- no empty lists :: len(lists) > 0 and all(len(l) > 0 for l in lists) :: run([[2], [1]])
+edge_count: 2
+complexity: time=O(N log k) | space=O(k)
+complexity_options: O(N log k); O(N × k); O(N log N); O(k)
+complexity_note: N is the total number of nodes and k the number of lists.
+why_time: Each round of pairs moves every node once, and the number of lists halves every round, so there are about log₂ k rounds.
+why_space: Each round keeps a Python list of up to k / 2 heads; the nodes themselves are relinked.
+hint: merge_two: while both lists have nodes, move the smaller front node onto the tail; then link on what's left.
+hint: merge_k_lists: while there's more than one list, build merged by merging `lists[i]` with `lists[i + 1]` for i = 0, 2, 4 and onwards, keeping a last unpaired list as it is; then set lists to merged.
+right: Merging in pairs keeps the lists that are merged about the same size, so no node moves more than about log₂ k times, while merging one list at a time moves the early nodes about k times.
+wrong: Merge the lists two at a time, list 0 with 1, 2 with 3 and onwards, then repeat on the merged lists until only one is left, and return it.
+
+=== task: code hard
+title: Design Skiplist
+leetcode: 1206 | Design Skiplist | design-skiplist
+patterns: walk + after
+prompt: A **skiplist** keeps numbers sorted in linked lists stacked on top of each other. The bottom level is an ordinary sorted linked list of every number, and each level above it skips over some of the nodes below, like an express lane. Each node has a list `next`, with one link for each level it's on. Write a class `Skiplist`:
+
+- `Skiplist()` starts empty.
+- `search(target)` returns True if target is in the skiplist.
+- `add(num)` adds num, even if it's already there.
+- `erase(num)` removes one copy of num and returns True, or returns False if num isn't there.
+
+The skiplist has a starting node, head, which is on every level and comes before every number. Write `before(target)`: from the top level down, move along each level while the next node's value is less than target, and record the last node reached on that level, so that a search drops down a level whenever the next node would go too far. Every operation starts with it:
+
+- search looks at the node after the recorded node on the bottom level.
+- add gives the new node a number of levels, then, on each of its levels, inserts it after the recorded node, as in any linked list.
+- erase checks that the bottom level's next node holds num, then unlinks it after the recorded node on each of its levels.
+
+A new node goes on 1 level, and on 2 levels half as often, on 3 levels a quarter as often, and onwards, which keeps each level about half the size of the one below. The starter counts the adds and gives a new node one more level each time the count divides by 2; using `random` works too.
+
+**Example:** `run(["Skiplist", "add", "add", "add", "search", "add", "search", "erase", "erase", "search"], [[], [1], [2], [3], [0], [4], [1], [0], [1], [1]])` returns `[None, None, None, None, False, None, True, False, True, False]`.
+
+**Constraints:** 0 ≤ every number ≤ 2 × 10⁴, and there are at most 5 × 10⁴ calls.
+starter:
+```python
+class SkipNode:
+    def __init__(self, val, levels):
+        self.val = val
+        self.next = [None] * levels
+
+
+class Skiplist:
+    LEVELS = 16
+
     def __init__(self):
-        self.head = None
-        self.tail = None
+        self.head = SkipNode(-1, self.LEVELS)
+        self.count = 0
 
-    def push_front(self, x):
-        self.head = Node(x, self.head)
-        if self.tail is None:
-            self.tail = self.head
+    def new_levels(self):
+        self.count += 1
+        levels = 1
+        c = self.count
+        while c % 2 == 0 and levels < self.LEVELS:
+            c //= 2
+            levels += 1
+        return levels
 
-    def push_back(self, x):
-        if self.head is None:
-            self.head = Node(x)
-            self.tail = self.head
-            return
+    def before(self, target):
+        found = [None] * self.LEVELS
+        # your code here
+        return found
+
+    def search(self, target):
+        return False
+
+    def add(self, num):
+        pass
+
+    def erase(self, num):
+        return False
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Skiplist":
+            skiplist = Skiplist()
+            results.append(None)
+        elif command == "search":
+            results.append(skiplist.search(args[0]))
+        elif command == "add":
+            results.append(skiplist.add(args[0]))
+        elif command == "erase":
+            results.append(skiplist.erase(args[0]))
+    return results
+```
+solution:
+```python
+class SkipNode:
+    def __init__(self, val, levels):
+        self.val = val
+        self.next = [None] * levels
+
+
+class Skiplist:
+    LEVELS = 16
+
+    def __init__(self):
+        self.head = SkipNode(-1, self.LEVELS)
+        self.count = 0
+
+    def new_levels(self):
+        self.count += 1
+        levels = 1
+        c = self.count
+        while c % 2 == 0 and levels < self.LEVELS:
+            c //= 2
+            levels += 1
+        return levels
+
+    def before(self, target):
+        found = [None] * self.LEVELS
         node = self.head
-        while node.next is not None:
+        for level in range(self.LEVELS - 1, -1, -1):
+            while node.next[level] is not None and node.next[level].val < target:
+                node = node.next[level]
+            found[level] = node
+        return found
+
+    def search(self, target):
+        node = self.before(target)[0].next[0]
+        return node is not None and node.val == target
+
+    def add(self, num):
+        found = self.before(num)
+        new = SkipNode(num, self.new_levels())
+        for level in range(len(new.next)):
+            new.next[level] = found[level].next[level]
+            found[level].next[level] = new
+
+    def erase(self, num):
+        found = self.before(num)
+        node = found[0].next[0]
+        if node is None or node.val != num:
+            return False
+        for level in range(len(node.next)):
+            found[level].next[level] = node.next[level]
+        return True
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Skiplist":
+            skiplist = Skiplist()
+            results.append(None)
+        elif command == "search":
+            results.append(skiplist.search(args[0]))
+        elif command == "add":
+            results.append(skiplist.add(args[0]))
+        elif command == "erase":
+            results.append(skiplist.erase(args[0]))
+    return results
+```
+tests:
+- run(["Skiplist", "add", "add", "add", "search", "add", "search", "erase", "erase", "search"], [[], [1], [2], [3], [0], [4], [1], [0], [1], [1]])
+- run(["Skiplist", "search", "erase"], [[], [5], [5]])
+- run(["Skiplist", "add", "add", "erase", "search", "erase", "search"], [[], [5], [5], [5], [5], [5], [5]])
+- run(["Skiplist", "add", "add", "add", "erase", "search", "search", "search"], [[], [9], [0], [4], [4], [0], [4], [9]])
+- run(["Skiplist", "add", "add", "add", "add", "search", "erase", "search", "add", "search"], [[], [20000], [0], [10000], [0], [0], [0], [0], [7], [7]])
+- sum(1 for x in run(["Skiplist"] + [("add", "add", "search", "erase")[i % 4] for i in range(3000)], [[]] + [[i * 7919 % 2003] for i in range(3000)]) if x is True)
+fail[2]: Searching or erasing in an empty skiplist finds nothing.
+fail[3]: Two 5s: the first erase removes one, so 5 is still found; the second erase removes the other.
+fail[4]: After the 4 is erased, the 0 and the 9 are still there.
+fail[5]: Two 0s: erasing one leaves the other, and 10,000 still sits between 0 and 20,000.
+fail[6]: 3,000 calls on numbers up to 2,002; the check counts the True results.
+edges:
+- no adds :: "add" not in commands :: run(["Skiplist", "search"], [[], [3]])
+- a number added twice :: any(commands[i] == "add" and commands[j] == "add" and inputs[i] == inputs[j] for i in range(len(commands)) for j in range(i + 1, len(commands))) :: run(["Skiplist", "add", "add", "erase", "search"], [[], [3], [3], [3], [3]])
+- adds of different numbers :: "add" in commands and not any(commands[i] == "add" and commands[j] == "add" and inputs[i] == inputs[j] for i in range(len(commands)) for j in range(i + 1, len(commands))) :: run(["Skiplist", "add", "search"], [[], [3], [3]])
+edge_count: 2
+complexity: time=O(log n) | space=O(n)
+complexity_note: Give the expected time of one call, with n numbers stored.
+why_time: Each level is about half the size of the one below, so there are about log₂ n levels, and a search passes about 2 nodes on each.
+why_space: A node is on 2 levels on average, so all the links together are O(n).
+hint: In before: start at `node = self.head`. For level from `self.LEVELS - 1` down to 0, move while `node.next[level]` isn't None and its val is less than target, then set `found[level] = node`.
+hint: add: `new = SkipNode(num, self.new_levels())`; on each of its levels, set `new.next[level] = found[level].next[level]` and then `found[level].next[level] = new`.
+hint: erase: `node = found[0].next[0]`. If it's None or doesn't hold num, return False; otherwise set `found[level].next[level] = node.next[level]` on each of node's levels, and return True.
+right: Every level is a sorted linked list, so inserting and deleting are the usual O(1) link changes after the right node, and the levels above let the search skip most of the bottom list on the way there.
+wrong: Keep a head node on every level. To find a number, go along the top level while the next value is smaller, drop down, and repeat, recording the last node on each level; insert or unlink the node after those recorded nodes, on each of its levels.
+
+=== task: code hard
+title: Shared Tails
+patterns: front
+prompt: Write a class `Versions` that keeps every version of a stack ever made:
+
+- `Versions()` starts with version 0, an empty stack.
+- `push(v, x)` makes a new version: version v with x added on top. It returns the new version's number.
+- `pop(v)` makes a new version: version v without its top item. It returns the new version's number. Version v is never empty.
+- `top(v)` returns the top item of version v, or −1 if it's empty.
+- `size(v)` returns how many items version v holds.
+
+New versions are numbered 1, 2, 3 and onwards, in the order they're made, and making one never changes the old ones.
+
+Copying a stack for every new version costs O(size) per call. Instead, store each version as the **head** of a linked list, top item first. push is `Node(x, heads[v])`: a front insert, which leaves version v's nodes untouched, so the new version shares all of them. pop is `heads[v].next`: version v's second node, again shared. No node is ever changed after it's made, so sharing is safe. Keep each version's size in a second list, next to its head.
+
+**Example:** `run(["Versions", "push", "push", "top", "pop", "top", "size", "top", "size"], [[], [0, 5], [1, 7], [2], [2], [3], [3], [0], [2]])` returns `[None, 1, 2, 7, 3, 5, 1, -1, 2]`: version 2 is 7 on top of 5, and popping it makes version 3, which is 5 on its own, while version 2 keeps both.
+
+**Constraints:** at most 10⁴ calls, and every version number used already exists.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+class Versions:
+    def __init__(self):
+        self.heads = [None]
+        self.sizes = [0]
+
+    def push(self, v, x):
+        return 0
+
+    def pop(self, v):
+        return 0
+
+    def top(self, v):
+        return -1
+
+    def size(self, v):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Versions":
+            versions = Versions()
+            results.append(None)
+        elif command == "push":
+            results.append(versions.push(args[0], args[1]))
+        elif command == "pop":
+            results.append(versions.pop(args[0]))
+        elif command == "top":
+            results.append(versions.top(args[0]))
+        elif command == "size":
+            results.append(versions.size(args[0]))
+    return results
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+class Versions:
+    def __init__(self):
+        self.heads = [None]
+        self.sizes = [0]
+
+    def push(self, v, x):
+        self.heads.append(Node(x, self.heads[v]))
+        self.sizes.append(self.sizes[v] + 1)
+        return len(self.heads) - 1
+
+    def pop(self, v):
+        self.heads.append(self.heads[v].next)
+        self.sizes.append(self.sizes[v] - 1)
+        return len(self.heads) - 1
+
+    def top(self, v):
+        if self.heads[v] is None:
+            return -1
+        return self.heads[v].val
+
+    def size(self, v):
+        return self.sizes[v]
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "Versions":
+            versions = Versions()
+            results.append(None)
+        elif command == "push":
+            results.append(versions.push(args[0], args[1]))
+        elif command == "pop":
+            results.append(versions.pop(args[0]))
+        elif command == "top":
+            results.append(versions.top(args[0]))
+        elif command == "size":
+            results.append(versions.size(args[0]))
+    return results
+```
+tests:
+- run(["Versions", "push", "push", "top", "pop", "top", "size", "top", "size"], [[], [0, 5], [1, 7], [2], [2], [3], [3], [0], [2]])
+- run(["Versions", "top", "size"], [[], [0], [0]])
+- run(["Versions", "push", "push", "push", "top", "top", "size", "size"], [[], [0, 1], [1, 2], [1, 3], [2], [3], [2], [3]])
+- run(["Versions", "push", "pop", "pop", "push", "top", "top", "size"], [[], [0, 4], [1], [1], [0, 8], [3], [4], [2]])
+- run(["Versions", "push", "push", "pop", "push", "top", "top", "top", "size"], [[], [0, 1], [1, 2], [2], [3, 9], [4], [2], [3], [4]])
+- sum(x for x in run(["Versions"] + [("push", "push", "top", "pop", "size")[i % 5] for i in range(6000)], [[]] + [[i // 5 * 3, i] if i % 5 == 0 else [i // 5 * 3 + 1, i] if i % 5 == 1 else [i // 5 * 3 + 2] if i % 5 in (2, 3) else [i // 5 * 3 + 3] for i in range(6000)]) if x is not None)
+fail[2]: Version 0 is empty: top is −1 and size is 0.
+fail[3]: Versions 2 and 3 both build on version 1, which holds 1: they share its node, with 2 or 3 on top.
+fail[4]: Popping version 1 twice makes two empty versions, and pushing onto version 0 doesn't change version 3.
+fail[5]: Version 2 still has 2 on top after version 3 pops it and version 4 pushes 9: old versions never change.
+fail[6]: 6,000 calls that build a stack of 1,200 items. Copying a stack for every new version is far too slow; share nodes instead.
+edges:
+- only version 0 :: all(c not in ("push", "pop") for c in commands) :: run(["Versions", "size"], [[], [0]])
+- a version built on twice :: len([i[0] for c, i in zip(commands, inputs) if c in ("push", "pop")]) > len(set(i[0] for c, i in zip(commands, inputs) if c in ("push", "pop"))) :: run(["Versions", "push", "push", "top"], [[], [0, 1], [0, 2], [1]])
+- each version built on once :: any(c in ("push", "pop") for c in commands) and len([i[0] for c, i in zip(commands, inputs) if c in ("push", "pop")]) == len(set(i[0] for c, i in zip(commands, inputs) if c in ("push", "pop"))) :: run(["Versions", "push", "push", "top"], [[], [0, 1], [1, 2], [2]])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one call; n is the number of calls.
+why_time: push makes one node, pop reads one link, and top and size read one entry.
+why_space: Each push makes one node, and each version keeps a head and a size.
+hint: push: `self.heads.append(Node(x, self.heads[v]))` and `self.sizes.append(self.sizes[v] + 1)`, then return `len(self.heads) - 1`.
+hint: pop: append `self.heads[v].next` and `self.sizes[v] - 1` in the same way.
+hint: top: return −1 if `self.heads[v]` is None, and its val otherwise.
+right: Inserting at the front never changes the nodes after it, so every version can share the nodes of the version it came from, and a new version costs O(1) instead of a copy.
+wrong: Store each version as a head node and a size. push makes a new node in front of version v's head; pop uses the node after version v's head; both append the new head and size, and return the new index.
+
+=== task: code hard
+title: Group by Remainder
+patterns: tail + after
+prompt: Write `group_by_remainder(head, k)` that relinks the nodes so that the values with remainder 0 when divided by k come first, then the values with remainder 1, and onwards up to remainder k − 1, keeping the original order inside each group. Return the new head, and use the nodes you have instead of making new ones.
+
+Going through the list once for each remainder costs O(n × k). Build k lists at once instead, with `heads = [None] * k` and `tails = [None] * k`. Walk the original, cutting each node loose (save `node.next`, then set it to None) and linking it onto the tail of list `node.val % k`. Then link the lists that aren't empty one after another, in order of remainder.
+
+**Example 1:** `run([1, 2, 3, 4, 5, 6], 3)` returns `[3, 6, 1, 4, 2, 5]`.
+
+**Example 2:** `run([5, 10, 15], 5)` returns `[5, 10, 15]`: every value has remainder 0.
+
+**Constraints:** the list has 0 to 10⁴ nodes, 0 ≤ every value ≤ 10⁹, and 1 ≤ k ≤ 1000.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def group_by_remainder(head, k):
+    heads = [None] * k
+    tails = [None] * k
+    # your code here
+    return head
+
+
+def run(values, k):
+    return to_list(group_by_remainder(from_list(values), k))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def group_by_remainder(head, k):
+    heads = [None] * k
+    tails = [None] * k
+    node = head
+    while node is not None:
+        nxt = node.next
+        node.next = None
+        r = node.val % k
+        if tails[r] is None:
+            heads[r] = node
+        else:
+            tails[r].next = node
+        tails[r] = node
+        node = nxt
+    result = None
+    last = None
+    for r in range(k):
+        if heads[r] is None:
+            continue
+        if last is None:
+            result = heads[r]
+        else:
+            last.next = heads[r]
+        last = tails[r]
+    return result
+
+
+def run(values, k):
+    return to_list(group_by_remainder(from_list(values), k))
+```
+tests:
+- run([1, 2, 3, 4, 5, 6], 3)
+- run([5, 10, 15], 5)
+- run([], 4)
+- run([7], 1)
+- run([4, 1, 3, 0, 2], 2)
+- (lambda t: [len(t), t[:6], t[-6:]])(run([i * 7919 % 100003 for i in range(10000)], 1000))
+fail[2]: One group holds everything, in its original order.
+fail[3]: An empty list stays empty.
+fail[4]: With k = 1, every value has remainder 0.
+fail[5]: The even values 4, 0 and 2 come first, in that order, then the odd 1 and 3.
+fail[6]: 10,000 values and k = 1000. Walking the list once for each remainder is far too slow; fill all the groups in one walk.
+edges:
+- k = 1 :: k == 1 :: run([3, 1], 1)
+- a remainder with no values :: k > 1 and any(r not in [v % k for v in values] for r in range(k)) :: run([0, 2], 2)
+- every remainder present :: k > 1 and all(r in [v % k for v in values] for r in range(k)) :: run([1, 0], 2)
+edge_count: 2
+complexity: time=O(n + k) | space=O(k)
+complexity_options: O(n + k); O(n × k); O(n log n); O(k)
+complexity_note: n is the number of nodes.
+why_time: One walk moves each node once, and joining the groups looks at k heads.
+why_space: heads and tails hold k pointers each; the nodes are relinked, not copied.
+hint: For each node: `nxt = node.next`, `node.next = None`, `r = node.val % k`; link it onto `tails[r]` (or make it `heads[r]`), and then `node = nxt`.
+hint: To join, keep result and last. For each r whose list isn't empty, set `last.next = heads[r]` (or result, if last is None), then `last = tails[r]`.
+right: k tails let every node go straight onto the end of its group in O(1), so one walk sorts the whole list into groups, and each group keeps its order because nodes only ever go on at the end.
+wrong: Keep a head and a tail for each remainder. Walk the list once, cutting each node loose and appending it to its remainder's list. Then link the lists that aren't empty together in order, and return the first head.
+
+=== task: code hard
+title: Bulk Sorted Insert
+patterns: walk + after
+prompt: head is a linked list sorted from smallest to biggest, and values is a sorted Python list. Write `insert_all(head, values)` that inserts a node for every value so that the list stays sorted, and returns the head.
+
+Inserting each value on its own walks from the head every time: O(n) per value. But the values are sorted, so each one belongs at or after the place of the one before it, and a single walk can insert them all. First, the values smaller than the head go in front of it: insert those at the front, from the last of them back to the first, so that they end up in order. Then walk with node: for each remaining value, move node on while `node.next` holds a value no bigger than it, insert after node, and stay on the new node for the next value.
+
+**Example 1:** `run([1, 4, 9], [0, 5, 10])` returns `[0, 1, 4, 5, 9, 10]`.
+
+**Example 2:** `run([], [2, 3])` returns `[2, 3]`.
+
+**Constraints:** the list and values each have 0 to 10⁴ items, and both are sorted.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def insert_all(head, values):
+    n = len(values)
+    i = 0
+    # your code here
+    return head
+
+
+def run(sorted_values, values):
+    return to_list(insert_all(from_list(sorted_values), values))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def insert_all(head, values):
+    n = len(values)
+    i = 0
+    while i < n and (head is None or values[i] < head.val):
+        i += 1
+    for j in range(i - 1, -1, -1):
+        head = Node(values[j], head)
+    node = head
+    while i < n:
+        while node.next is not None and node.next.val <= values[i]:
             node = node.next
-        node.next = Node(x)
-        self.tail = node.next
+        node.next = Node(values[i], node.next)
+        node = node.next
+        i += 1
+    return head
 
-    def pop_front(self):
-        node = self.head
-        self.head = node.next
-        if self.head is None:
-            self.tail = None
-        return node.val
+
+def run(sorted_values, values):
+    return to_list(insert_all(from_list(sorted_values), values))
 ```
-fail[1]: After `push_back(1)`, `push_back(2)` and `push_front(0)`, the list is 0, 1, 2, and the tail is the node with 2.
-fail[2]: The first node added to an empty list is both the head and the tail.
-fail[3]: Popping returns the values in order, 1 and then 2, and the empty list has head and tail both None.
-fail[4]: When the last node is popped, set `tail` to None too. Otherwise the next `push_back` links the new node to a node that's no longer in the list.
-error[AttributeError]: An empty list's `tail` is None. When you push into an empty list, set both `head` and `tail` to the new node instead of using `self.tail.next`.
-error[NameError]: Keep the `Node` class and the `to_list` helper from the starter: the tests use them.
-hint: `push_back`: make the node; if the list is empty, it's the head, otherwise `self.tail.next = node`; then `self.tail = node`.
-hint: `push_front`: `self.head = Node(x, self.head)`, and if the tail is None, the new node is the tail too.
-hint: `pop_front`: move the head to `self.head.next`; if that makes the head None, set the tail to None.
-right: All three methods are O(1): `tail` turns adding at the end from an O(n) walk into one link change. A queue can be built exactly like this.
-wrong: Keep `head` and `tail` in step: the first node added becomes both, `push_back` links after the tail and moves it, and popping the last node sets both back to None.
+tests:
+- run([1, 4, 9], [0, 5, 10])
+- run([], [2, 3])
+- run([2, 3], [])
+- run([5, 5], [5, 5])
+- run([10, 20], [1, 2, 3])
+- (lambda t: [len(t), t[:6], t[-6:], sum(t)])(run(list(range(0, 12000, 2)), list(range(1, 12000, 2))))
+fail[2]: The list is empty, so every value goes in front: the 3 first, then the 2 in front of it.
+fail[3]: Nothing to insert.
+fail[4]: Equal values all stay: four 5s.
+fail[5]: All three values are smaller than the head, 10, and must end up in the order 1, 2, 3.
+fail[6]: 6,000 sorted nodes and 6,000 values that go between them. Walking from the head for each value is far too slow.
+edges:
+- an empty list :: len(sorted_values) == 0 :: run([], [1])
+- a value before the head :: len(sorted_values) > 0 and len(values) > 0 and values[0] < sorted_values[0] :: run([5], [1])
+- no value before the head :: len(sorted_values) > 0 and (len(values) == 0 or values[0] >= sorted_values[0]) :: run([5], [6])
+edge_count: 2
+complexity: time=O(n + m) | space=O(m)
+complexity_options: O(n + m); O(n × m); O(m log n); O(m)
+complexity_note: n is the length of the list and m the number of values.
+why_time: node only ever moves forward, at most n + m times in all, and each insert is O(1).
+why_space: m new nodes.
+hint: Move i past the values smaller than the head (all of them, if head is None), then insert `values[j]` at the front for j from i − 1 down to 0.
+hint: Set `node = head`. For each remaining value, move node on while `node.next is not None and node.next.val <= value`.
+hint: Then `node.next = Node(value, node.next)` and `node = node.next`.
+right: The values are sorted, so the place for each one is never before the place of the one before it: one pointer moving forward finds every place in a single walk.
+wrong: Put the values smaller than the head in front, last one first. Then walk the list once, moving forward to the right place for each value in turn and inserting it after the current node.
 
 === task: code hard
-title: The k-th from the end
-prompt: Write `kth_from_end(head, k)` that returns the value k nodes from the end of a list: k = 1 is the last node, and k = 2 the one before it. Assume 1 ≤ k ≤ the length. A singly linked list can't walk backwards, so first count the nodes, then walk forwards to the right one.
+title: Pairs That Add Up
+patterns: array
+prompt: head is a linked list sorted from smallest to biggest, and its values can repeat. Write `count_pairs(head, target)` that returns how many pairs of nodes, one before the other, have values that add up to target.
 
-For example, `kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 2)` returns 15.
+Checking every pair is O(n²). On a sorted Python list, two indexes find the pairs in one pass: i from the start and j from the end. If the two values add up to less than target, i moves right; if more, j moves left. A singly linked list can't move j backwards, so copy the values into a Python list first.
+
+When the sum is right, count every pair that the runs of equal values make. If the two values are the same, every pair from i to j works: with size = j − i + 1 nodes, that's `size * (size - 1) // 2` pairs, and you're done. Otherwise, count how many copies of the value at i sit next to each other (left), and how many of the value at j (right): that's left × right pairs, and both indexes skip past their runs.
+
+**Example 1:** `run([1, 2, 3, 4, 5], 6)` returns 2: 1 + 5 and 2 + 4.
+
+**Example 2:** `run([1, 1, 1], 2)` returns 3: every pair of the three 1s.
+
+**Constraints:** the list has 0 to 2 × 10⁴ nodes, −10⁹ ≤ every value ≤ 10⁹, and −2 × 10⁹ ≤ target ≤ 2 × 10⁹.
 starter:
 ```python
 class Node:
@@ -1111,9 +3809,30 @@ class Node:
         self.val = val
         self.next = next
 
-def kth_from_end(head, k):
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def count_pairs(head, target):
+    values = []
     # your code here
-    return None
+    return 0
+
+
+def run(values, target):
+    return count_pairs(from_list(values), target)
 ```
 solution:
 ```python
@@ -1122,70 +3841,293 @@ class Node:
         self.val = val
         self.next = next
 
-def kth_from_end(head, k):
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def count_pairs(head, target):
+    values = []
+    node = head
+    while node is not None:
+        values.append(node.val)
+        node = node.next
+    i = 0
+    j = len(values) - 1
+    pairs = 0
+    while i < j:
+        total = values[i] + values[j]
+        if total < target:
+            i += 1
+        elif total > target:
+            j -= 1
+        elif values[i] == values[j]:
+            size = j - i + 1
+            pairs += size * (size - 1) // 2
+            break
+        else:
+            left = 1
+            while values[i + left] == values[i]:
+                left += 1
+            right = 1
+            while values[j - right] == values[j]:
+                right += 1
+            pairs += left * right
+            i += left
+            j -= right
+    return pairs
+
+
+def run(values, target):
+    return count_pairs(from_list(values), target)
+```
+tests:
+- run([1, 2, 3, 4, 5], 6)
+- run([1, 1, 1], 2)
+- run([4], 8)
+- run([1, 1, 2, 3, 3, 3], 4)
+- run([-3, 0, 3, 3], 0)
+- run(sorted(i * 7919 % 1000 for i in range(12000)), 999)
+fail[2]: All three 1s pair with each other: 3 pairs.
+fail[3]: One node can't make a pair with itself.
+fail[4]: Each of the two 1s pairs with each of the three 3s: 6 pairs. The single 2 would need another 2.
+fail[5]: −3 pairs with both 3s: 2. The 0 would need another 0.
+fail[6]: 12,000 sorted values from 0 to 999. Checking every pair is far too slow.
+edges:
+- fewer than two nodes :: len(values) < 2 :: run([4], 8)
+- equal values that pair up :: len(values) >= 2 and any(values[i] == values[j] and 2 * values[i] == target for i in range(len(values)) for j in range(i + 1, len(values))) :: run([2, 2], 4)
+- no equal values pair up :: len(values) >= 2 and not any(values[i] == values[j] and 2 * values[i] == target for i in range(len(values)) for j in range(i + 1, len(values))) :: run([1, 3], 4)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk to copy, then each step of the two indexes moves at least one of them inwards.
+why_space: The copy holds n values.
+hint: Copy the values, set `i = 0`, `j = len(values) - 1` and `pairs = 0`, and loop while i < j.
+hint: If the sum is too small, add 1 to i; if it's too big, take 1 from j.
+hint: If it's right and `values[i] == values[j]`, add `size * (size - 1) // 2` and stop. Otherwise count the run of `values[i]` from i and of `values[j]` back from j, add their product, and move i and j past the runs.
+right: The copy lets the second index move backwards, and on a sorted list two indexes moving inwards meet every pair that could add up to target; runs of equal values are counted by multiplying, not one pair at a time.
+wrong: Copy the values into a Python list and move two indexes inwards from both ends. When a pair adds up to target, add the product of the two runs of equal values, or, if both values are the same, the number of pairs between the two indexes.
+
+=== task: code hard
+title: Merge Runs in Pairs
+patterns: walk + tail
+prompt: A **run** is a longest stretch of a list in which the values never go down. Write `merge_runs(head)` that splits the linked list into its runs, merges the 1st run with the 2nd, the 3rd with the 4th, and onwards (a last run without a partner stays as it is), and returns the head of the merged parts, in order. Use the nodes you have, not new ones.
+
+Walk the list, cutting off one run at a time: from a run's first node, move on while the next value isn't smaller, then remember the node after the run and cut there with `next = None`. Cut two runs, merge them with a tail as in Merge Two Sorted Lists, and link the result onto the end of the answer. Then walk to the end of what you've built, so that the next merged part can link on.
+
+**Example 1:** `run([3, 5, 1, 4, 2, 2, 6, 0])` returns `[1, 3, 4, 5, 0, 2, 2, 6]`: the runs are 3, 5, then 1, 4, then 2, 2, 6, then 0. The first two merge into 1, 3, 4, 5, and the last two into 0, 2, 2, 6.
+
+**Example 2:** `run([3, 2, 1])` returns `[2, 3, 1]`: the runs are 3, then 2, then 1, and the 1 has no partner.
+
+**Constraints:** the list has 0 to 10⁴ nodes.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def cut_run(node):
+    start = node
+    # your code here
+    return start, None
+
+
+def merge_two(a, b):
+    head = None
+    tail = None
+    # your code here
+    return head
+
+
+def merge_runs(head):
+    result = None
+    tail = None
+    rest = head
+    # your code here
+    return result
+
+
+def run(values):
+    return to_list(merge_runs(from_list(values)))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def cut_run(node):
+    start = node
+    while node.next is not None and node.next.val >= node.val:
+        node = node.next
+    rest = node.next
+    node.next = None
+    return start, rest
+
+
+def merge_two(a, b):
+    head = None
+    tail = None
+    while a is not None and b is not None:
+        if a.val <= b.val:
+            node = a
+            a = a.next
+        else:
+            node = b
+            b = b.next
+        if tail is None:
+            head = node
+        else:
+            tail.next = node
+        tail = node
+    rest = a if a is not None else b
+    if tail is None:
+        return rest
+    tail.next = rest
+    return head
+
+
+def merge_runs(head):
+    result = None
+    tail = None
+    rest = head
+    while rest is not None:
+        a, rest = cut_run(rest)
+        b = None
+        if rest is not None:
+            b, rest = cut_run(rest)
+        merged = merge_two(a, b)
+        if tail is None:
+            result = merged
+        else:
+            tail.next = merged
+        tail = merged
+        while tail.next is not None:
+            tail = tail.next
+    return result
+
+
+def run(values):
+    return to_list(merge_runs(from_list(values)))
+```
+tests:
+- run([3, 5, 1, 4, 2, 2, 6, 0])
+- run([])
+- run([1, 2, 3])
+- run([3, 2, 1])
+- run([2, 2, 1, 1])
+- (lambda t: [len(t), t[:8], t[-8:], sum(t)])(run([i * 7919 % 1000 for i in range(10000)]))
+fail[2]: An empty list has no runs.
+fail[3]: One run, with no partner: it stays as it is.
+fail[4]: Three runs of one node: 3 and 2 merge into 2, 3, and the 1 stays last.
+fail[5]: Two runs, 2, 2 and 1, 1, merge into 1, 1, 2, 2.
+fail[6]: 10,000 values in about 5,000 runs.
+edges:
+- one run :: all(values[i] <= values[i + 1] for i in range(len(values) - 1)) :: run([1, 2])
+- an odd number of runs above 1 :: any(values[i] > values[i + 1] for i in range(len(values) - 1)) and (1 + sum(1 for i in range(len(values) - 1) if values[i] > values[i + 1])) % 2 == 1 :: run([3, 2, 1])
+- an even number of runs :: (1 + sum(1 for i in range(len(values) - 1) if values[i] > values[i + 1])) % 2 == 0 :: run([2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes; the nodes are relinked, not copied.
+why_time: Cutting the runs, merging each pair and walking to the end of each merged part each pass every node a fixed number of times.
+why_space: Only a few pointers are kept.
+hint: cut_run: move node on while `node.next` isn't None and `node.next.val >= node.val`; then `rest = node.next`, `node.next = None`, and return `start, rest`.
+hint: merge_runs: while rest isn't None, cut a run a, and a run b if anything is left; merge them, link the merged part after tail (or make it the result), and move tail to its last node.
+right: A run is already sorted, so pairing the runs and merging each pair with a tail does one round of a merge sort in O(n), and cutting each run off stops a merge from running on into the next run.
+wrong: Cut off runs two at a time, merge each pair into one sorted part with a tail, and link the parts one after another, walking to the end of each part before linking the next.
+
+=== task: code hard
+title: Swap the Ends
+patterns: walk + after
+prompt: Write `swap_ends(head, k)` that swaps the first k nodes and the last k nodes, as two blocks: the last k nodes come first, in their order, then the middle of the list, unchanged, then the first k nodes, in their order. 2k is at most the length of the list. Relink the nodes instead of copying values, and return the new head.
+
+Count the nodes first, n. Then find four nodes: a_end, the last node of the first block (k − 1 steps from the head); before_b, the node right before the last block (n − 2k steps further on); b_start, the node after it; and b_end, the last node. Cut the first block off with `a_end.next = None`. If there's a middle (before_b isn't a_end), link the last block to it and the middle to the first block: `b_end.next = middle` and `before_b.next = head`. If there's no middle, the last block links straight to the first. The new head is b_start.
+
+**Example 1:** `run([1, 2, 3, 4, 5, 6, 7], 2)` returns `[6, 7, 3, 4, 5, 1, 2]`.
+
+**Example 2:** `run([1, 2, 3, 4], 2)` returns `[3, 4, 1, 2]`: there's no middle.
+
+**Constraints:** the list has 2 to 10⁴ nodes, and k ≥ 1 with 2k at most the number of nodes.
+starter:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def swap_ends(head, k):
     n = 0
     node = head
     while node is not None:
         n += 1
         node = node.next
-    node = head
-    for step in range(n - k):
-        node = node.next
-    return node.val
-```
-tests:
-- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 2)
-- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 1)
-- kth_from_end(Node(4, Node(8, Node(15, Node(16)))), 4)
-- kth_from_end(Node(9), 1)
-- kth_from_end(Node(1, Node(2, Node(3, Node(4, Node(5))))), 3)
-fail[1]: In a list of 4, the 2nd from the end is at index 4 − 2 = 2: the 15.
-fail[2]: k = 1 is the last node: walk n − 1 links.
-fail[3]: k = 4 in a list of 4 is the head itself: walk 0 links.
-error[AttributeError]: Walk n − k links from the head, where n is the number of nodes.
-hint: First walk the whole list to count its nodes: n.
-hint: The k-th node from the end is at index n − k.
-hint: Walk n − k links from the head and return that node's value.
-right: Two walks: O(n). In a doubly linked list with a tail, you could walk k − 1 links back along `prev` instead.
-wrong: Count the nodes (n), then start again at the head and follow n − k links. That node's value is the answer.
-
-=== task: code hard
-title: Remove every copy
-prompt: Write `remove_all(head, x)` that removes every node holding x and returns the head of what's left (None if nothing is left).
-
-It must be O(n): one walk, unlinking each match as you pass it. Starting a new search from the head for every match would make it O(n²). The starter includes `to_list` and `from_list` for the tests.
-
-For example, `to_list(remove_all(from_list([1, 2, 1, 3, 1]), 1))` gives `[2, 3]`.
-starter:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
-
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
-
-def from_list(items):
-    head = None
-    tail = None
-    for x in items:
-        node = Node(x)
-        if head is None:
-            head = node
-        else:
-            tail.next = node
-        tail = node
-    return head
-
-def remove_all(head, x):
     # your code here
     return head
+
+
+def run(values, k):
+    return to_list(swap_ends(from_list(values), k))
 ```
 solution:
 ```python
@@ -1194,247 +4136,323 @@ class Node:
         self.val = val
         self.next = next
 
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
 def to_list(head):
-    items = []
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def swap_ends(head, k):
+    n = 0
     node = head
     while node is not None:
-        items.append(node.val)
+        n += 1
         node = node.next
-    return items
+    a_end = head
+    for _ in range(k - 1):
+        a_end = a_end.next
+    middle = a_end.next
+    before_b = a_end
+    for _ in range(n - 2 * k):
+        before_b = before_b.next
+    b_start = before_b.next
+    b_end = b_start
+    while b_end.next is not None:
+        b_end = b_end.next
+    a_end.next = None
+    if before_b is a_end:
+        b_end.next = head
+    else:
+        before_b.next = head
+        b_end.next = middle
+    return b_start
 
-def from_list(items):
-    head = None
-    tail = None
-    for x in items:
-        node = Node(x)
-        if head is None:
-            head = node
-        else:
-            tail.next = node
-        tail = node
-    return head
 
-def remove_all(head, x):
-    while head is not None and head.val == x:
-        head = head.next
-    node = head
-    while node is not None and node.next is not None:
-        if node.next.val == x:
-            node.next = node.next.next
-        else:
-            node = node.next
-    return head
+def run(values, k):
+    return to_list(swap_ends(from_list(values), k))
 ```
 tests:
-- to_list(remove_all(from_list([1, 2, 1, 3, 1]), 1))
-- to_list(remove_all(from_list([4, 5, 6]), 7))
-- remove_all(from_list([2, 2, 2]), 2)
-- to_list(remove_all(from_list([3, 3, 5, 3, 3, 6]), 3))
-- remove_all(None, 1)
-- to_list(remove_all(from_list([8, 9, 9]), 9))
-speed: setup=head = from_list([i % 2 for i in range(n)]) | call=remove_all(head, 1) | target=O(n)
-slow:
+- run([1, 2, 3, 4, 5, 6, 7], 2)
+- run([1, 2, 3, 4], 2)
+- run([1, 2], 1)
+- run([1, 2, 3], 1)
+- run([9, 8, 7, 6, 5], 1)
+- (lambda t: [len(t), t[:3], t[2498:2502], t[-3:]])(run(list(range(10000)), 2500))
+fail[2]: The two halves change places, with no middle between them: the last block links straight to the first.
+fail[3]: Two nodes swap.
+fail[4]: The 3 and the 1 swap around the 2 in the middle.
+fail[5]: The first and the last node swap, and the three in the middle stay.
+fail[6]: 10,000 nodes with k = 2,500; the check looks at both ends and at the place where the middle meets the first block.
+edges:
+- no middle :: 2 * k == len(values) :: run([1, 2], 1)
+- a middle of one node :: len(values) - 2 * k == 1 :: run([1, 2, 3], 1)
+- a longer middle :: len(values) - 2 * k > 1 :: run([1, 2, 3, 4], 1)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the number of nodes.
+why_time: Counting and finding the four nodes each walk at most n links; the relinking is O(1).
+why_space: Only a few pointers are kept.
+hint: a_end is k − 1 steps from head, and middle is `a_end.next`. before_b is n − 2k steps on from a_end, b_start is `before_b.next`, and walking from b_start to the last node gives b_end.
+hint: Set `a_end.next = None`. If before_b is a_end, set `b_end.next = head`; otherwise set `before_b.next = head` and `b_end.next = middle`.
+hint: Return b_start.
+right: Moving blocks only changes the links where the blocks meet, so after the walks to find the few nodes at their edges, relinking moves any number of nodes in O(1).
+wrong: Count the nodes, then find the end of the first block, the node before the last block, the last block's first node and the last node. Cut the first block off, link the last block to the middle (or straight to the first block) and the middle to the first block, and return the last block's first node.
+
+=== task: code hard
+title: Add Many Numbers
+patterns: array + front
+prompt: Each linked list in heads holds a number's digits, most significant first, with no leading zeros. Write `add_all(heads)` that returns the total of all the numbers as a linked list of digits, most significant first.
+
+Copy each list's digits into a Python list. Then add up each column: `column[p]` is the total of the digits worth 10ᵖ, and the digit worth 10ᵖ is p places from the end of its number. Finally, go up from p = 0 with a carry, inserting `total % 10` at the front of the answer each time, and once the columns run out, keep inserting the rest of the carry at the front.
+
+**Example 1:** `run([[1, 2], [3, 4]])` returns `[4, 6]`: 12 + 34 = 46.
+
+**Example 2:** `run([[9, 9], [1]])` returns `[1, 0, 0]`.
+
+**Constraints:** 1 to 1000 numbers, each with 1 to 10⁴ digits, at most 10⁴ digits in all, and no leading zeros, except the number 0.
+starter:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-def to_list(head):
-    items = []
-    node = head
-    while node is not None:
-        items.append(node.val)
-        node = node.next
-    return items
 
-def from_list(items):
+def from_list(values):
     head = None
-    tail = None
-    for x in items:
-        node = Node(x)
-        if head is None:
-            head = node
-        else:
-            tail.next = node
-        tail = node
+    for x in reversed(values):
+        head = Node(x, head)
     return head
 
-def remove_all(head, x):
-    while True:
-        prev = None
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_all(heads):
+    numbers = []
+    # your code here
+    return None
+
+
+def run(numbers):
+    return to_list(add_all([from_list(digits) for digits in numbers]))
+```
+solution:
+```python
+class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def add_all(heads):
+    numbers = []
+    for head in heads:
+        digits = []
         node = head
-        while node is not None and node.val != x:
-            prev = node
+        while node is not None:
+            digits.append(node.val)
             node = node.next
-        if node is None:
-            return head
-        if prev is None:
-            head = node.next
-        else:
-            prev.next = node.next
-```
-fail[1]: Every 1 goes, including the one at the head and the one at the end: `[2, 3]`.
-fail[2]: There's nothing to remove, so the list stays the same.
-fail[3]: If every node holds x, nothing is left: return None.
-fail[4]: Two matches in a row: after unlinking one, check the new `node.next` again before moving on.
-fail[6]: The last two nodes both hold 9. After unlinking the first, the second becomes `node.next` and has to be checked too.
-error[AttributeError]: Check `node.next is not None` before reading `node.next.val`, and stop when the list runs out.
-error[NameError]: Keep `to_list` and `from_list` from the starter: the tests use them.
-hint: First move the head past any matches at the front: `while head is not None and head.val == x:`.
-hint: Then walk with `node`: if `node.next.val == x`, unlink it with `node.next = node.next.next` and stay where you are; otherwise move on.
-hint: Stay where you are after unlinking, because the new `node.next` might be a match too.
-right: One walk, unlinking each match in O(1): O(n) in all. In an array, deleting each match would shift the items after it: O(n²) when there are many matches.
-wrong: Skip the matches at the head first. Then walk: when the next node matches, link around it and stay put; otherwise step forward. Return the head.
+        numbers.append(digits)
+    longest = max(len(digits) for digits in numbers)
+    column = [0] * longest
+    for digits in numbers:
+        for p in range(len(digits)):
+            column[p] += digits[len(digits) - 1 - p]
+    result = None
+    carry = 0
+    for p in range(longest):
+        total = column[p] + carry
+        result = Node(total % 10, result)
+        carry = total // 10
+    while carry > 0:
+        result = Node(carry % 10, result)
+        carry //= 10
+    return result
 
-=== task: predict hard
-title: The wrong order
-code:
+
+def run(numbers):
+    return to_list(add_all([from_list(digits) for digits in numbers]))
+```
+tests:
+- run([[1, 2], [3, 4]])
+- run([[9, 9], [1]])
+- run([[0]])
+- run([[5], [5], [5], [5]])
+- run([[1, 0, 0, 0], [9, 9, 9]])
+- (lambda t: [len(t), t[:8], t[-8:]])(run([[i % 9 + 1] + [(i * j) % 10 for j in range(i % 12)] for i in range(1000)]))
+fail[2]: 99 + 1 = 100: the carry goes past the longest number.
+fail[3]: One number, 0.
+fail[4]: Four 5s make 20: a column's total can carry more than 1.
+fail[5]: 1000 + 999 = 1999.
+fail[6]: 1,000 numbers of up to 12 digits.
+edges:
+- one number :: len(numbers) == 1 :: run([[4, 2]])
+- a carry past the longest :: len(numbers) > 1 and len(str(sum(int("".join(map(str, d))) for d in numbers))) > max(len(d) for d in numbers) :: run([[9], [1]])
+- no carry past the longest :: len(numbers) > 1 and len(str(sum(int("".join(map(str, d))) for d in numbers))) == max(len(d) for d in numbers) :: run([[4], [1]])
+edge_count: 2
+complexity: time=O(D) | space=O(D)
+complexity_options: O(D); O(D × k); O(k)
+complexity_note: D is the total number of digits and k the number of numbers.
+why_time: Copying and adding into the columns touch each digit once, and there are no more columns than digits in the longest number.
+why_space: The copies, the column totals and the answer each hold O(D) numbers.
+hint: Copy each list's digits into a Python list, and let longest be the most digits any number has.
+hint: `column = [0] * longest`; for each number, add `digits[len(digits) - 1 - p]` to `column[p]`.
+hint: For p from 0 to longest − 1: `total = column[p] + carry`, `result = Node(total % 10, result)` and `carry = total // 10`. Then, while carry is above 0, insert `carry % 10` at the front and set `carry //= 10`.
+right: The copies let the digits be read from the ones place up, and inserting each digit of the answer at the front turns that ones-first order back into most-significant-first.
+wrong: Copy every number's digits, add up each column from the ones place, then go up the columns with a carry, inserting each digit of the total at the front of the answer, and finish with any carry that's left.
+
+=== task: code hard
+title: Long Division
+patterns: walk + tail
+prompt: head is a linked list of a number's digits, most significant first. Write `long_division(head, d)` that divides the number by d and returns two things: the quotient, as a linked list of digits, most significant first, with no leading zeros (0 as a single 0), and the remainder, a number.
+
+Long division goes from the first digit to the last, which is the order the list is in. Walk the list with a running remainder: `remainder = remainder * 10 + node.val`; the next digit of the quotient is `remainder // d`, and the remainder becomes `remainder % d`. Add each quotient digit to the end of the answer with a tail, but skip the 0s at the start; if every digit was a 0, the quotient is a single 0.
+
+In the tests, `run(digits, d)` returns `[quotient digits, remainder]`.
+
+**Example 1:** `run([1, 2, 3, 4], 5)` returns `[[2, 4, 6], 4]`: 1234 = 5 × 246 + 4.
+
+**Example 2:** `run([7], 9)` returns `[[0], 7]`.
+
+**Constraints:** the number has 1 to 10⁴ digits, with no leading zeros, except the number 0, and 1 ≤ d ≤ 10⁹.
+starter:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-head = Node(1, Node(2, Node(3)))
-node = head
-new = Node(9)
-node.next = new
-new.next = node.next
-print(head.val, head.next.val, head.next.next.val, head.next.next.next.val)
-```
-wrong[1 9 2 3]: That's what the right order would give. Here `node.next = new` runs first, so `node.next` is already the new node when `new.next = node.next` copies it.
-wrong[1 9 None]: `new.next` isn't None: `new.next = node.next` makes it the new node itself.
-wrong[1 2 3 9]: The 9 goes after the head, not at the end, and nothing links to 2 any more.
-hint: After `node.next = new`, what is `node.next`?
-hint: `new.next = node.next` makes the new node link to itself.
-right: 1 9 9 9: the new node links to itself, and the nodes 2 and 3 are lost, because nothing links to them any more. Copy the old link into the new node **before** overwriting it.
-wrong: `node.next = new` overwrites the link to 2. Then `new.next = node.next` copies that same link, so 9 points at itself, and every further `.next` lands on 9 again.
 
-=== task: predict hard
-title: Once round
-code:
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def long_division(head, d):
+    result = None
+    tail = None
+    remainder = 0
+    # your code here
+    return result, remainder
+
+
+def run(digits, d):
+    quotient, remainder = long_division(from_list(digits), d)
+    return [to_list(quotient), remainder]
+```
+solution:
 ```python
 class Node:
     def __init__(self, val, next=None):
         self.val = val
         self.next = next
 
-a = Node(1)
-b = Node(2)
-c = Node(3)
-d = Node(4)
-a.next = b
-b.next = c
-c.next = d
-d.next = a
-start = c
-node = start
-visited = []
-while True:
-    visited.append(node.val)
-    node = node.next
-    if node is start:
-        break
-print(visited)
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = Node(x, head)
+    return head
+
+
+def to_list(head):
+    values = []
+    while head is not None:
+        values.append(head.val)
+        head = head.next
+    return values
+
+
+def long_division(head, d):
+    result = None
+    tail = None
+    remainder = 0
+    node = head
+    while node is not None:
+        remainder = remainder * 10 + node.val
+        digit = remainder // d
+        remainder %= d
+        if digit > 0 or result is not None:
+            new = Node(digit)
+            if tail is None:
+                result = new
+            else:
+                tail.next = new
+            tail = new
+        node = node.next
+    if result is None:
+        result = Node(0)
+    return result, remainder
+
+
+def run(digits, d):
+    quotient, remainder = long_division(from_list(digits), d)
+    return [to_list(quotient), remainder]
 ```
-wrong[[1, 2, 3, 4]]: The walk starts at c, not at a: 3 and 4, then round to 1 and 2.
-wrong[[3, 4]]: d links back to a, so the walk carries on past the 4. It stops only when it gets back to c.
-wrong[[3, 4, 1, 2, 3]]: The check comes right after each move. Once `node` is c again, the loop stops before adding 3 a second time.
-hint: The links go a → b → c → d → a.
-hint: Start at c, and stop when the walk is back at c.
-right: `[3, 4, 1, 2]`: once round, starting from c. `node is start` stops the walk at the very node it began from; without it, a walk round a circular list never ends.
-wrong: From c the walk visits 3, then d (4), then a (1), then b (2). The next move lands on c, which is `start`, so the loop stops.
-
-=== task: cells hard
-title: The list after each step
-prompt: What does the list hold after each step? Write the values from the head onwards, separated by commas, like `5, 6`.
-code:
-```python
-class Node:
-    def __init__(self, val, next=None):
-        self.val = val
-        self.next = next
-
-head = Node(1)
-head = Node(2, head)             # step 1
-head.next = Node(3, head.next)   # step 2
-head = head.next                 # step 3
-head.next.next = Node(4)         # step 4
-```
-labels: after step 1 | after step 2 | after step 3 | after step 4
-answer: 2, 1 | 2, 3, 1 | 3, 1 | 3, 1, 4
-wrong[2, 1 | 3, 2, 1 | 2, 1 | 2, 1, 4]: Step 2 links 3 in after the head (2), not in front of it: 2, 3, 1.
-wrong[2, 1 | 2, 3, 1 | 3, 1 | 3, 4]: In step 4, `head` is 3 and `head.next` is 1, so it's the 1 that now links to 4. The link from 3 to 1 stays.
-wrong[2, 1 | 2, 3, 1 | 2, 3, 1 | 2, 3, 4]: Step 3 moves the head one node along, to 3: nothing links to the 2 any more.
-hint: Step 2 changes the link of the head, 2: the new node goes right after it.
-hint: Step 3 moves the head to the second node.
-right: 2, 1 → 2, 3, 1 → 3, 1 → 3, 1, 4. Every step changes one link (or the head), and nothing ever moves in memory.
-wrong: Step 1 puts 2 in front: 2, 1. Step 2 puts 3 after 2: 2, 3, 1. Step 3 moves the head to 3: 3, 1. Step 4 links 4 after the 1: 3, 1, 4.
-
-=== task: mcq hard
-title: A text editor
-prompt: A text editor keeps its text as a linked list of characters, and holds the node where the cursor is. Typing a character inserts it right after the cursor's node and moves the cursor onto the new node. What does typing k characters cost, in a document of n characters?
-* O(k): each insert next to the held node is O(1) :: Right. The editor never walks: it's already at the cursor.
-- O(k × n): each insert shifts the rest of the document :: That's what an array would do. A linked list only changes two links.
-- O(n + k): the editor walks to the cursor first :: It's holding the cursor's node already, so there's no walk.
-- O(n): the whole document is rebuilt after typing :: Nothing is rebuilt; only links change.
-hint: Does inserting after a node you hold move anything?
-hint: Does the editor need to walk to find the cursor?
-right: k inserts at O(1) each: O(k), however long the document is. An array would shift everything after the cursor on every keystroke.
-wrong: Holding the cursor's node, each new character is two link changes: O(1). k characters cost O(k).
-
-=== task: multi hard
-title: Where linked lists win
-prompt: Choose **every** job where a linked list does better than an array.
-* Removing the song that's playing from a playlist, holding its node in a doubly linked list :: Right. O(1): its `prev` and `next` are both known, and nothing shifts.
-* A stack that pushes and pops at the front, millions of times :: Right. O(1) at the front of a linked list, where an array would shift every item. (An array stack works at its end instead.)
-* Typing characters at a cursor in a long document :: Right. O(1) per character, next to the held node.
-- Reading the 500th score from a table of results :: An array reaches it in O(1); a linked list walks 500 links.
-- Binary search through a sorted phone book :: Binary search needs O(1) access to the middle, which only an array has.
-- Adding up a million numbers as fast as possible :: Both are O(n), but an array's items sit side by side, which is faster to read.
-hint: Is the change at the front, or at a place you're already holding?
-hint: Three of them are.
-right: Linked lists win when changes happen at the front or at a place you're holding. Arrays win at access by index, binary search and fast walks.
-wrong: Linked list: the playing song, the stack at the front, the cursor. Array: the 500th score, binary search, the fast sum.
-
-=== task: parsons hard
-title: Unlinking a node
-prompt: In a doubly linked list, a node you hold is deleted with two link changes: its two neighbours link to each other. Arrange the lines so that `unlink` removes node b from A ⇄ B ⇄ C, and the program prints:
-
-```output
-C A
-```
-
-Not every line is needed.
-lines:
-```python
-class DNode:
-    def __init__(self, val):
-        self.val = val
-        self.prev = None
-        self.next = None
-
-def unlink(node):
-    node.prev.next = node.next
-    node.next.prev = node.prev
-
-a = DNode("A")
-b = DNode("B")
-c = DNode("C")
-a.next = b
-b.prev = a
-b.next = c
-c.prev = b
-unlink(b)
-print(a.next.val, c.prev.val)
-```
-distractors:
-```python
-    node.prev.next = node.next.next
-    node.next = node.prev
-```
-hint: The node before b must now link forward to the node after b.
-hint: The node after b must now link back to the node before b.
-right: A's `next` skips to C and C's `prev` skips back to A: B is out, in O(1). A singly linked list would have to walk from the head to find the node before B.
-wrong: In `unlink`, set `node.prev.next = node.next` and `node.next.prev = node.prev`. Build A, B, C with both links, unlink b, then print.
+tests:
+- run([1, 2, 3, 4], 5)
+- run([7], 9)
+- run([0], 3)
+- run([1, 0, 0], 4)
+- run([9, 9, 9], 1)
+- (lambda r: [len(r[0]), r[0][:6], r[0][-6:], r[1]])(run([9] + [i * 7 % 10 for i in range(9999)], 987654321))
+fail[2]: 7 is less than 9, so the quotient is 0 and the remainder is 7. Every quotient digit was a 0, so make a single 0 node.
+fail[3]: 0 divided by anything is 0, with remainder 0.
+fail[4]: 100 = 4 × 25: the first quotient digit, 1 // 4, is a leading 0 and must be skipped.
+fail[5]: Dividing by 1 gives the number back.
+fail[6]: A 10,000-digit number divided by 987,654,321.
+edges:
+- d = 1 :: d == 1 :: run([4, 2], 1)
+- a quotient of 0 :: d > 1 and int("".join(map(str, digits))) < d :: run([4], 9)
+- a quotient above 0 :: d > 1 and int("".join(map(str, digits))) >= d :: run([4, 2], 9)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of digits; d has a fixed number of digits.
+why_time: One walk, with one division per digit.
+why_space: The quotient has up to n digits.
+hint: For each node: `remainder = remainder * 10 + node.val`, `digit = remainder // d` and `remainder %= d`.
+hint: Append the digit with a tail, unless it's 0 and nothing has been appended yet.
+hint: After the walk, if result is still None, set it to `Node(0)`.
+right: Long division needs the digits most significant first, which is the order a walk gives them, and each quotient digit is known as soon as its digit is read, so a tail builds the answer in the same walk.
+wrong: Walk the digits with a running remainder: multiply it by 10 and add the digit, append remainder // d to the answer unless it's a leading 0, and keep remainder % d. Return the answer (or a single 0) and the remainder.
