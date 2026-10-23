@@ -44,7 +44,7 @@ print(slots, len(slots))
 That one append costs O(n): every item is copied. Animation 1 shows the copy. Every other append writes into a free slot: O(1).
 
 ### Counting the copies
-With doubling, a copy happens on each append that finds the size at a power of 2 (1, 2, 4, 8, 16, ...), and it copies that many items:
+With doubling, a copy happens on each append that finds the size at a power of 2 (1, 2, 4, 8, 16 and onwards), and it copies that many items:
 ```python
 def copies_for(n):
     capacity = 1
@@ -66,7 +66,7 @@ for n in [5, 9, 16, 1000]:
 16 15
 1000 1023
 ```
-For 1,000 appends the copies add up to 1 + 2 + 4 + ... + 512 = 1,023. Each block holds the copies of all the blocks before it, so the total is always **less than 2n**. Animation 2 counts them step by step.
+For 1,000 appends the copies add up to 1 + 2 + 4 + 8 + 16 + 32 + 64 + 128 + 256 + 512 = 1,023. Each block holds the copies of all the blocks before it, so the total is always **less than 2n**. Animation 2 counts them step by step.
 
 ### Amortized O(1)
 Add the n writes and the fewer than 2n copies: n appends cost fewer than 3n steps. So **on average** each append costs fewer than 3 steps, whatever n is. That's called **amortized O(1)**: a few appends are expensive (O(n)), but they're rare enough that the average stays constant. It's like a bus pass: one big payment now and then, spread over many cheap rides.
@@ -86,7 +86,7 @@ Growing by one slot each time would copy every item on **every** append once the
 | 16 | 120 | 15 |
 | 1,000 | 499,500 | 1,023 |
 
-Adding one slot copies 1 + 2 + ... + (n − 1) items: n(n − 1) / 2, O(n²). Adding any fixed number of slots, like 10, has the same problem, only ten times later. Growing by a **factor** (×2, or even ×1.5) keeps the total copies O(n). CPython grows lists by about an eighth each time, plus a few slots: a smaller factor, but the same idea.
+Adding one slot copies 1 + 2 + 3 and onwards, up to n − 1 items: n(n − 1) / 2 in all, O(n²). Adding any fixed number of slots, like 10, has the same problem, only ten times later. Growing by a **factor** (×2, or even ×1.5) keeps the total copies O(n). CPython grows lists by about an eighth each time, plus a few slots: a smaller factor, but the same idea.
 
 ### A DynamicArray class
 ```python
@@ -129,13 +129,338 @@ The capacity is `len(self.slots)`. Three appends grew the array twice (1 → 2 �
 
 Some dynamic arrays also **shrink** when most of their slots are empty, to give memory back. A common scheme shrinks only when the array is a quarter full, not half full, so that alternating appends and pops can't make it grow and shrink over and over.
 
+### Solving problems with dynamic arrays
+The rest of this lesson is about solving problems with dynamic arrays, the way the tasks do. Python's `list` is a dynamic array, so these are really ways to use lists well. Five patterns cover the tasks, and a clue in the question usually tells you which one you need:
+
+| Pattern | Clue in the question |
+| --- | --- |
+| Building a list with append | an answer whose length you don't know in advance, built up piece by piece |
+| A list for each key | items to sort into groups, or the positions of every value to remember |
+| Lengths that double | something that doubles or repeats at each step, often far too long to build |
+| Lists that grow in order | records that arrive in time order, and questions like "the last one at or before t" |
+| Adding up the work of every step | a step that's sometimes slow, like a pointer that only moves forward |
+
+After the patterns come the combinations that need two of them, and then two steps for the second part of every task: edge cases, and time and space.
+
+### Building a list with append
+When you can't tell how long the answer will be, start with an empty list and `append` each piece as you find it. Each append is O(1) amortized, so n appends cost O(n) in all. The end of the list is the cheap end for everything else too: `items[-1]` reads the last item, `items[-k]` the k-th from the end, and `items.pop()` removes the last item, all in O(1).
+
+The front is the expensive end. `items.insert(0, x)` and `items.pop(0)` move every other item, O(n) each. So keep the newest items at the end, and if you need them newest first, read them backwards or reverse the list once at the end:
+```python
+visits = []
+for page in ["home", "news", "shop", "news"]:
+    visits.append(page)
+print(visits[-1], visits[-2])
+print(visits[::-1])
+```
+```output
+news shop
+['news', 'shop', 'news', 'home']
+```
+Inserting each page at the front instead would be O(n) per page and O(n²) in all, for the same list.
+
+Two more ways to copy by accident: `items = items + [x]` builds a whole new list each time (O(n) per item), while `items.append(x)` doesn't. And to build a long string, collect the pieces in a list and join them once with `"".join(pieces)`, instead of adding to a string over and over.
+
+### A list for each key
+To sort items into groups, keep a list for each group, and append each item to its own list. Every list grows on its own, so you don't need to know any group's size in advance. When the keys are small whole numbers, a list of lists works, indexed by the key:
+```python
+words = ["apple", "bee", "avocado", "cat", "bun"]
+groups = [[] for _ in range(26)]
+for w in words:
+    groups[ord(w[0]) - 97].append(w)
+print(groups[0], groups[1], groups[2])
+```
+```output
+['apple', 'avocado'] ['bee', 'bun'] ['cat']
+```
+`ord(w[0]) - 97` turns "a" into 0, "b" into 1 and onwards to "z", 25. For keys that aren't small whole numbers, like values up to 10⁹ or strings, use a dictionary of lists instead: `if x not in groups: groups[x] = []`, then `groups[x].append(item)`.
+
+Make the lists with `[[] for _ in range(26)]`. `[[]] * 26` looks the same, but it's 26 names for **one** list:
+```python
+shared = [[]] * 3
+shared[0].append("x")
+print(shared)
+```
+```output
+[['x'], ['x'], ['x']]
+```
+Sorting n items into k lists costs O(n + k) time and space: O(k) to make the empty lists, and O(1) for each append.
+
+### Lengths that double
+When a list doubles at every step, it reaches n items after only about log₂ n steps: 10 doublings take 1 item past 1,000, and 50 take it past 10¹⁵:
+```python
+size = 1
+steps = 0
+while size < 1000:
+    size *= 2
+    steps += 1
+print(steps, size)
+```
+```output
+10 1024
+```
+Building a doubling list costs less than twice its final length in all, for the same reason the copies of a dynamic array add up to less than 2n: 1 + 2 + 4 and onwards to n is less than 2n. A list that **halves** at each step costs less than 2n in all the same way.
+
+Some lists are far too long to build, like one that's doubled 50 times. Then keep only the lengths. If each step appends a copy of the whole list, the item at position i of the doubled list is the same as the item at position i − old length of the list before, whenever i is in the second half:
+```python
+def item_at(base, steps, i):
+    size = len(base) * 2 ** steps
+    while size > len(base):
+        size //= 2
+        if i >= size:
+            i -= size
+    return base[i]
+
+print(item_at(["a", "b", "c"], 3, 13))
+```
+```output
+b
+```
+Three doublings of ["a", "b", "c"] make 24 items. Position 13 is in the second half of 24, so it's position 13 − 12 = 1 of the first 12, then in the first half of 12 and of 6: position 1 of the base, "b". Each step halves the size, so this takes O(steps) instead of building all 24 items.
+
+### Lists that grow in order
+When records arrive in time order, appending them keeps the list **sorted** for free: times only go up. A sorted list can be searched with binary search instead of a scan, and Python's `bisect` module does the searching:
+
+- `bisect_left(items, x)` is the first index whose item is at least x,
+- `bisect_right(items, x)` is the first index whose item is more than x.
+
+Both are O(log n). Together they answer the usual questions about a sorted list:
+```python
+from bisect import bisect_left, bisect_right
+
+times = []
+prices = []
+for t, p in [(2, 10), (5, 12), (9, 11)]:
+    times.append(t)
+    prices.append(p)
+
+i = bisect_right(times, 6) - 1
+print(prices[i])
+hi = bisect_right(times, 9)
+lo = bisect_left(times, 3)
+print(hi - lo)
+```
+```output
+12
+2
+```
+`bisect_right(times, 6)` is 2, the index of the first time after 6, so index 1 is the last record at or before time 6: the price was 12 then. `hi - lo` counts the times from 3 to 9: 5 and 9.
+
+Watch the edge: if every time is after t, `bisect_right(times, t) - 1` is −1, and `prices[-1]` quietly reads the **last** price. Check `i >= 0` first.
+
+A list can also be kept sorted when items don't arrive in order: `insort(items, x)` puts x in its place. Finding the place is O(log n), but making room shifts the items after it: O(n), like any insert.
+
+### Adding up the work of every step
+A dynamic array's append is sometimes slow, when it grows, but the slow appends are rare, so all n appends together cost O(n). The same way of counting works for other code: when one step can be slow, add up the work over **all** the steps.
+
+The most common case is a position that only moves forward. Taking items from the front of a list with `pop(0)` costs O(n) each time, because every other item moves:
+```python
+nums = [4, 7, 1, 8, 2, 6]
+moves = 0
+while len(nums) > 0:
+    moves += len(nums) - 1
+    nums.pop(0)
+print(moves)
+```
+```output
+15
+```
+5 + 4 + 3 + 2 + 1 + 0 = 15 moves for 6 items: n(n − 1) / 2, O(n²). Keeping a `front` index instead, and adding 1 to it to take the next item, moves nothing: each item is passed once, O(n) in all.
+
+When a loop inside another loop moves a position that never goes back, the inner loop can't run more than n times **in all**, however the steps share it out. A step can be O(n) on its own, while all the steps together are still O(n): O(1) each, on average.
+
+### Combining patterns
+Many tasks need two patterns at once:
+
+- **Building by doubling** (doubling + append). Each round appends a changed copy of everything so far, so the list doubles: all the rounds together cost less than twice the final length.
+- **Totals of doubling steps** (doubling + total). When the work of a round is its size, and the size doubles or halves each round, the total is less than twice the biggest round.
+- **Moving forward through a sorted list** (ordered + total). In a list that grows in order, the items to skip or merge are next to each other, so a position walks forward over them, and each item is passed or removed once in all.
+- **Sorted lists in buckets** (buckets + ordered). Each bucket gets its items in order, like the positions of one value, so each bucket is sorted and can be binary searched.
+- **Buckets that empty as you go** (buckets + total). A bucket holds the items waiting for something. When it comes, take the whole bucket, and move each item to the bucket it waits for next: each item moves once per step it makes.
+- **Tails that stay sorted** (append + ordered). A list that changes only by appending a bigger item, or by replacing an item with a smaller one in its sorted place, stays sorted, so binary search finds the place.
+- **Searching the lengths** (doubling + ordered). The lengths of a list that keeps growing only go up, so a list of the lengths after every step is sorted: binary search finds the step that made position k.
+
+Building by doubling: all the subset sums of [3, 5, 9].
+```python
+sums = [0]
+for x in [3, 5, 9]:
+    sums += [s + x for s in sums]
+print(sums)
+```
+```output
+[0, 3, 5, 8, 9, 12, 14, 17]
+```
+Each round adds x to every sum so far, and appends the new sums: 1, then 2, 4 and 8 sums. Every subset either leaves x out (the first half) or puts it in (the second half).
+
+Totals of doubling steps: a knockout tournament, where each round keeps the winner of each pair.
+```python
+scores = [4, 8, 1, 3, 5, 2, 7, 6]
+work = 0
+while len(scores) > 1:
+    work += len(scores)
+    scores = [max(scores[i], scores[i + 1])
+              for i in range(0, len(scores), 2)]
+print(scores, work)
+```
+```output
+[8] 14
+```
+The rounds look at 8, then 4, then 2 scores: 14, less than 2 × 8. A list that halves each round costs O(n) in all, not O(n log n).
+
+Moving forward through a sorted list: events and questions both come in time order. How many events happened by each question's time?
+```python
+events = [1, 4, 4, 7, 9]
+asks = [0, 4, 8, 10]
+answers = []
+i = 0
+for t in asks:
+    while i < len(events) and events[i] <= t:
+        i += 1
+    answers.append(i)
+print(answers)
+```
+```output
+[0, 3, 4, 5]
+```
+The inner `while` can pass many events for one question, but i never moves back, so over all the questions it moves at most 5 times: O(n + q) in all, instead of O(n × q) for counting from the start each time.
+
+Sorted lists in buckets: the positions of each letter of "banana". Where is the first "a" after position 3?
+```python
+from bisect import bisect_right
+
+s = "banana"
+where = [[] for _ in range(26)]
+for i in range(len(s)):
+    where[ord(s[i]) - 97].append(i)
+pos = where[0]
+print(pos, pos[bisect_right(pos, 3)])
+```
+```output
+[1, 3, 5] 5
+```
+Positions are appended from left to right, so each letter's list is sorted, and `bisect_right` finds the first position after 3 in O(log n).
+
+Buckets that empty as you go: each person waits for a list of signals, in order, and is done after the last one.
+```python
+needs = {"Ann": [0, 2], "Bo": [2], "Cy": [1, 2]}
+waiting = [[] for _ in range(3)]
+for name in needs:
+    waiting[needs[name][0]].append((name, 1))
+done = []
+for signal in [2, 0, 1, 2]:
+    ready = waiting[signal]
+    waiting[signal] = []
+    for name, k in ready:
+        if k == len(needs[name]):
+            done.append(name)
+        else:
+            nxt = needs[name][k]
+            waiting[nxt].append((name, k + 1))
+print(done)
+```
+```output
+['Bo', 'Ann', 'Cy']
+```
+Signal 2 finishes Bo. Signal 0 moves Ann into the bucket for signal 2, and signal 1 moves Cy there too, so the last signal finishes both. The bucket is swapped for an empty one **before** anyone moves, so a person who needs the same signal twice in a row goes into the new bucket and stays there until that signal comes again. Each person moves once per signal they need.
+
+Tails that stay sorted: how long is the longest rising run you can pick out of a list, keeping the order? `tails[k]` is the smallest last item of any rising run of length k + 1 found so far.
+```python
+from bisect import bisect_left
+
+tails = []
+for x in [3, 1, 4, 1, 5, 9, 2, 6]:
+    k = bisect_left(tails, x)
+    if k == len(tails):
+        tails.append(x)
+    else:
+        tails[k] = x
+print(tails, len(tails))
+```
+```output
+[1, 2, 5, 6] 4
+```
+x either extends the longest run so far, when it's bigger than every tail, or it gives a shorter run a smaller last item. Both keep tails sorted, so each x costs O(log n). The answer is the length, 4, as in 1, 4, 5, 9. The list itself isn't a run: 2 came after 5.
+
+Searching the lengths: a tape of letters where a digit d repeats the whole tape so far, d times in all. Which step of "ab3c2" made position 9?
+```python
+from bisect import bisect_left
+
+s = "ab3c2"
+lengths = []
+size = 0
+for ch in s:
+    if ch.isdigit():
+        size *= int(ch)
+    else:
+        size += 1
+    lengths.append(size)
+print(lengths, bisect_left(lengths, 9))
+```
+```output
+[1, 2, 6, 7, 14] 4
+```
+The tape is "abababc", 7 letters, and the 2 at index 4 doubles it to 14. Position 9 is in the second copy, so it's position 9 − 7 = 2 of the tape before the 2: "b".
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| nothing added yet | a question before the first record | `items[-1]` raises `IndexError` on an empty list |
+| one item | `[7]` | a loop that compares each item with the one before it never runs |
+| a key with no items | a letter that never appears | an empty bucket, or a missing dictionary key |
+| a time before every record | t smaller than the first time | `bisect_right(times, t) - 1` is −1, which reads the **last** item |
+| equal items | `[2, 2, 2]` | `bisect_left` where you needed `bisect_right`, or the other way round |
+| a huge length | a list doubled 50 times | building it takes far too long, so work with the lengths |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of a dynamic array solution
+**Time.** Count the steps for each operation, and add up anything that moves only forward over all the steps:
+
+| The code | Time |
+| --- | --- |
+| `append`, `pop()`, `items[-1]` | O(1), amortized for `append` |
+| `insert(0, x)`, `pop(0)`, `items = items + [x]` | O(n) |
+| `bisect_left`, `bisect_right` | O(log n) |
+| `insort` | O(log n) to find the place, O(n) to shift |
+| n appends, or a position that only moves forward | O(n) in all |
+| a list that doubles or halves each round | O(final length) in all |
+
+**Space.** Count the lists the code makes, besides the input:
+
+| The code keeps | Space |
+| --- | --- |
+| the answer, built with append | its length |
+| k buckets holding n items in all | O(n + k) |
+| one length per step | O(number of steps) |
+| a few running values | O(1) |
+
 === keypoints
 - A dynamic array grows by moving to a bigger block and copying every item. Python's `list` is one.
 - **Size** is how many items it holds; **capacity** is how many slots its block has. Capacity ≥ size.
 - Growing copies all n items: that one append is O(n). The others write into a free slot: O(1).
 - With doubling, n appends make fewer than 2n copies in total, so append is **amortized O(1)**.
 - Growing by one slot makes n(n − 1) / 2 copies, and growing by any fixed number of slots is still O(n²). Grow by a factor instead.
-- Get, set and pop from the end are O(1); insert and delete in the middle are O(n).
+- Get, set, append and pop from the end are O(1); insert and delete at the front or in the middle are O(n).
+- A list that only ever gets bigger items appended stays sorted, so `bisect_left` and `bisect_right` search it in O(log n).
+- Patterns: build a list with append; keep a list for each key; work with lengths when something doubles; binary search lists that grow in order; and add up the work of every step.
+- Combinations: building by doubling; totals of doubling steps; moving forward through a sorted list; sorted lists in buckets; buckets that empty as you go; tails that stay sorted; and searching the lengths.
+
+=== patterns
+- append | Building a list with append
+- buckets | A list for each key
+- doubling | Lengths that double
+- ordered | Lists that grow in order
+- total | Adding up the work of every step
+combos:
+- doubling + append | Building by doubling
+- doubling + total | Totals of doubling steps
+- ordered + total | Moving forward through a sorted list
+- buckets + ordered | Sorted lists in buckets
+- buckets + total | Buckets that empty as you go
+- append + ordered | Tails that stay sorted
+- doubling + ordered | Searching the lengths
 
 === example: Watching the capacity
 intro: Nine appends to a DynamicArray, printing the size and the capacity after each one.
@@ -231,257 +556,286 @@ print(copies)
 8: Write the item: size {size + 1}.
 9: 9 appends cost 1 + 2 + 4 + 8 = {copies} copies: less than 2 × 9.
 
-=== task: predict easy
-title: Capacities as it fills
-code:
+=== task: code easy
+title: Separate the Digits in an Array
+leetcode: 2553 | Separate the Digits in an Array | separate-the-digits-in-an-array
+patterns: append
+prompt: Write `separate_digits(nums)` that returns a list of the digits of every number in nums, in order: the digits of `nums[0]` first, from its first digit to its last, then those of `nums[1]`, and onwards.
+
+How long the answer is depends on how many digits each number has, so build it with `append`: for each number x, go through `str(x)` and append each digit as an int.
+
+**Example 1:** `separate_digits([13, 25, 83, 77])` returns `[1, 3, 2, 5, 8, 3, 7, 7]`.
+
+**Example 2:** `separate_digits([7, 1, 3, 9])` returns `[7, 1, 3, 9]`.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 1000, and 1 ≤ `nums[i]` ≤ 10⁵.
+starter:
 ```python
-capacity = 1
-size = 0
-caps = []
-for i in range(5):
-    if size == capacity:
-        capacity *= 2
-    size += 1
-    caps.append(capacity)
-print(caps)
+def separate_digits(nums):
+    # your code here
+    return nums
 ```
-wrong[[1, 2, 3, 4, 5]]: The capacity doesn't grow by one: it doubles, and only when the array is full.
-wrong[[2, 4, 8, 16, 32]]: The first append fits into the starting slot, and the capacity only grows when size equals capacity.
-wrong[[1, 2, 4, 8, 8]]: After the 3rd append the capacity is 4, and the 4th append still fits: no growth.
-hint: Grow only when `size == capacity`.
-hint: The 2nd, 3rd and 5th appends find the array full.
-right: 1, 2, 4, 4, 8: the array grows at sizes 1, 2 and 4, and the 4th append uses a free slot.
-wrong: Append 1 fits (1). Append 2: full, grow to 2. Append 3: full, grow to 4. Append 4 fits (4). Append 5: full, grow to 8.
-
-=== task: mcq easy
-title: Full, then one more
-prompt: A dynamic array is full, and you append one more item. What happens?
-* It makes a new block (usually twice as big), copies every item into it, then adds the new item :: Right. That append costs O(n) because of the copying.
-- It refuses the item :: That's a static array. A dynamic array always makes room.
-- It adds one slot right after the old block :: The memory after the block may belong to something else, so it can't stretch in place.
-- It overwrites the oldest item :: That's a circular queue. A dynamic array keeps every item.
-hint: A dynamic array never refuses an append.
-hint: Where does the extra room come from?
-right: Grow, copy, then write: a new block twice as big, so the next appends are cheap again.
-wrong: The array moves to a bigger block: every item is copied across, then the new one is added.
-
-=== task: fill easy
-title: Twice as big
-prompt: Fill in the blank so that the array's new capacity is double the old one, and the program prints:
-
-```output
-8
-```
-code:
+solution:
 ```python
-capacity = 4
-new_capacity = capacity ?? 2
-print(new_capacity)
+def separate_digits(nums):
+    answer = []
+    for x in nums:
+        for ch in str(x):
+            answer.append(int(ch))
+    return answer
 ```
-answer: *
-wrong[+]: That adds 2 slots instead of doubling: 6. Growing by a fixed amount makes appends O(n) on average.
-wrong[**]: That squares the capacity: 16.
-hint: Doubling means multiplying by 2.
-hint: Use `*`.
-right: Doubling, `capacity * 2`, is what keeps append amortized O(1): the copies stay under 2n in total.
-wrong: `capacity * 2` gives 8.
+tests:
+- separate_digits([13, 25, 83, 77])
+- separate_digits([7, 1, 3, 9])
+- separate_digits([5])
+- separate_digits([100000])
+- separate_digits([10, 2, 304])
+- (lambda a: [len(a), a[:6], sum(a)])(separate_digits([(i * 7919) % 100000 + 1 for i in range(1000)]))
+fail[2]: One-digit numbers stay as they are.
+fail[3]: One number with one digit: `[5]`.
+fail[4]: 100000 has six digits: a 1 and five 0s.
+fail[5]: The 0 in 10 and the 0 in 304 are digits too: `[1, 0, 2, 3, 0, 4]`.
+fail[6]: 1,000 numbers make 4,883 digits. `answer = answer + [d]` builds a whole new list for every digit; `append` doesn't.
+edges:
+- one number :: len(nums) == 1 :: separate_digits([42])
+- numbers with a 0 digit :: len(nums) > 1 and any("0" in str(x) for x in nums) :: separate_digits([10, 3])
+- no 0 digits :: len(nums) > 1 and all("0" not in str(x) for x in nums) :: separate_digits([12, 3])
+edge_count: 2
+complexity: time=O(d) | space=O(d)
+complexity_options: O(d); O(d²)
+complexity_note: d is the total number of digits in nums.
+why_time: One append for each digit, O(1) each on average.
+why_space: The answer holds d digits.
+hint: Start with `answer = []`.
+hint: For each x in nums, loop `for ch in str(x):` and append `int(ch)`.
+right: append adds each digit in O(1) amortized, so a list whose length you can't know in advance costs no more to build than its length.
+wrong: `answer = []`. For each number, for each character of `str(x)`, `answer.append(int(ch))`. Return answer.
 
 === task: code easy
-title: The next capacity
-prompt: Write `next_capacity(capacity)` that returns the capacity a dynamic array grows to when it's full: double the old capacity, but at least 1 (an array with capacity 0 grows to 1).
+title: Last Visited Integers
+leetcode: 2899 | Last Visited Integers | last-visited-integers
+patterns: append
+prompt: nums holds positive numbers and −1s. Go through it from the left, keeping a list `seen` of the positive numbers so far. Each −1 asks for a number from seen, counting back from the newest: if it's the k-th −1 in a row (since the last positive number), it asks for the k-th newest number. Write `last_visited_integers(nums)` that returns the answers to the −1s, in order, with −1 for any −1 that asks for more numbers than seen holds.
 
-For example, `next_capacity(4)` returns 8.
+Don't put each new number at the front of seen: `insert(0, x)` is O(n) per number. Append it at the end, and read the k-th newest as `seen[-k]`.
+
+**Example 1:** `last_visited_integers([1, 2, -1, -1, -1])` returns `[2, 1, -1]`: the three −1s ask for the newest, the second newest and the third newest number, and only two numbers have arrived.
+
+**Example 2:** `last_visited_integers([1, -1, 2, -1, -1])` returns `[1, 2, 1]`: the 2 between the −1s starts a new run, so k goes back to 1.
+
+**Constraints:** 1 ≤ `len(nums)` ≤ 100, and each `nums[i]` is −1 or from 1 to 100.
 starter:
 ```python
-def next_capacity(capacity):
+def last_visited_integers(nums):
     # your code here
-    return capacity
+    return []
 ```
 solution:
 ```python
-def next_capacity(capacity):
-    if capacity == 0:
-        return 1
-    return capacity * 2
+def last_visited_integers(nums):
+    seen = []
+    answer = []
+    k = 0
+    for x in nums:
+        if x == -1:
+            k += 1
+            if k <= len(seen):
+                answer.append(seen[-k])
+            else:
+                answer.append(-1)
+        else:
+            seen.append(x)
+            k = 0
+    return answer
 ```
 tests:
-- next_capacity(4)
-- next_capacity(1)
-- next_capacity(0)
-- next_capacity(100)
-fail[1]: Doubling 4 gives 8.
-fail[3]: 0 × 2 is still 0, which would never make room. Start at 1.
-hint: Double the capacity with `* 2`.
-hint: Handle 0 on its own.
-right: Doubling makes the array grow fast enough that the copies average out: amortized O(1) appends.
-wrong: Return 1 for a capacity of 0; otherwise `capacity * 2`.
-
-=== task: predict easy
-title: Three appends
-code:
+- last_visited_integers([1, 2, -1, -1, -1])
+- last_visited_integers([1, -1, 2, -1, -1])
+- last_visited_integers([-1])
+- last_visited_integers([5])
+- last_visited_integers([3, -1, -1, 4, -1, -1, -1])
+- last_visited_integers([i % 9 + 1 if i % 4 else -1 for i in range(50)] + [-1] * 50)
+fail[2]: After the 2 arrives, the next −1 starts a new run: the newest number, 2, then the second newest, 1.
+fail[3]: Nothing has arrived yet: −1.
+fail[4]: There are no −1s, so there are no answers: `[]`.
+fail[5]: The second −1 in a row asks for 2 numbers back when only one has arrived: −1. After the 4, the count starts again.
+fail[6]: 50 numbers and −1s, then 50 −1s in a row, which count back through everything seen and then past it.
+speed: setup=nums = [-1 if i % 3 == 0 else i % 100 + 1 for i in range(n)] | call=last_visited_integers(nums) | target=O(n)
+slow:
 ```python
-capacity = 1
-size = 0
-for x in [5, 6, 7]:
-    if size == capacity:
+def last_visited_integers(nums):
+    seen = []
+    answer = []
+    k = 0
+    for x in nums:
+        if x == -1:
+            k += 1
+            if k <= len(seen):
+                answer.append(seen[k - 1])
+            else:
+                answer.append(-1)
+        else:
+            seen.insert(0, x)
+            k = 0
+    return answer
+```
+fail[speed]: `seen.insert(0, x)` moves every number already in seen, so the inserts add up to O(n²). Append instead, and count back from the end with `seen[-k]`.
+edges:
+- only −1s :: all(x == -1 for x in nums) :: last_visited_integers([-1, -1])
+- no −1s :: all(x != -1 for x in nums) :: last_visited_integers([3, 4])
+- numbers and −1s :: -1 in nums and any(x != -1 for x in nums) :: last_visited_integers([3, -1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One step for each item: an append, or one read from the end.
+why_space: seen and the answer hold at most n numbers between them.
+hint: Keep `seen = []`, `answer = []` and `k = 0`.
+hint: For a positive x, append it to seen and set k back to 0.
+hint: For a −1, add 1 to k, then append `seen[-k]` if `k <= len(seen)`, and −1 otherwise.
+right: The newest number is at the end, so counting back is a negative index, O(1), and nothing is ever inserted at the front.
+wrong: Append each positive number to seen and set k to 0. For each −1, add 1 to k and append `seen[-k]` if `k <= len(seen)`, otherwise −1.
+
+=== task: code easy
+title: Find Resultant Array After Removing Anagrams
+leetcode: 2273 | Find Resultant Array After Removing Anagrams | find-resultant-array-after-removing-anagrams
+patterns: append
+prompt: Two words are **anagrams** if the letters of one can be rearranged into the other, like "dacb" and "abdc". Repeat this while you can: if a word is an anagram of the word right before it, delete it. Write `remove_anagrams(words)` that returns the words that are left, in order. The result is the same whatever order the deletions happen in.
+
+Don't delete from the list. Build the answer with append instead: keep a word when it isn't an anagram of the last word kept, `kept[-1]`. Two words are anagrams when `sorted(a) == sorted(b)`, so keep the sorted letters of the last kept word as well.
+
+**Example 1:** `remove_anagrams(["abba", "baba", "bbaa", "cd", "cd"])` returns `["abba", "cd"]`.
+
+**Example 2:** `remove_anagrams(["a", "b", "c", "d", "e"])` returns `["a", "b", "c", "d", "e"]`.
+
+**Constraints:** 1 ≤ `len(words)` ≤ 100, and each word has 1 to 10 lowercase letters.
+starter:
+```python
+def remove_anagrams(words):
+    # your code here
+    return words
+```
+solution:
+```python
+def remove_anagrams(words):
+    kept = [words[0]]
+    last = sorted(words[0])
+    for w in words[1:]:
+        key = sorted(w)
+        if key != last:
+            kept.append(w)
+            last = key
+    return kept
+```
+tests:
+- remove_anagrams(["abba", "baba", "bbaa", "cd", "cd"])
+- remove_anagrams(["a", "b", "c", "d", "e"])
+- remove_anagrams(["ab"])
+- remove_anagrams(["ab", "ba", "ab"])
+- remove_anagrams(["ab", "cd", "ba", "dc"])
+- remove_anagrams(["ab" * (i % 3 + 1) if i % 4 else "ba" * (i % 3 + 1) for i in range(100)])
+fail[2]: No word is an anagram of the one before it, so nothing is deleted.
+fail[3]: One word stays.
+fail[4]: "ba", and then "ab", are both anagrams of the "ab" kept before them.
+fail[5]: "ba" is an anagram of "ab", but they aren't neighbours: "cd" is between them, so all four stay.
+fail[6]: 100 words in runs: each run of anagrams keeps only its first word.
+edges:
+- one word :: len(words) == 1 :: remove_anagrams(["ab"])
+- an anagram right after a word :: len(words) > 1 and any(sorted(words[i]) == sorted(words[i + 1]) for i in range(len(words) - 1)) :: remove_anagrams(["ab", "ba"])
+- no neighbouring anagrams :: len(words) > 1 and all(sorted(words[i]) != sorted(words[i + 1]) for i in range(len(words) - 1)) :: remove_anagrams(["ab", "bc"])
+edge_count: 2
+complexity: time=O(n × m log m) | space=O(n)
+complexity_options: O(n × m log m); O(n² × m log m)
+complexity_note: n is the number of words and m the length of the longest word.
+why_time: Each word is sorted once, O(m log m), and compared with one other sorted word.
+why_space: The answer holds up to n words, and one sorted copy of a word is kept.
+hint: Start with `kept = [words[0]]` and `last = sorted(words[0])`.
+hint: For each next word w, compare `sorted(w)` with last.
+hint: If they're different, append w and set last to `sorted(w)`.
+right: After a deletion, the next word's neighbour is the last word kept, so comparing with `kept[-1]` gives the same result as deleting, without moving anything.
+wrong: Keep the first word. For each next word, append it if its sorted letters are different from those of the last kept word, and remember its sorted letters.
+
+=== task: code easy
+title: Counting Bits
+leetcode: 338 | Counting Bits | counting-bits
+patterns: doubling + append
+prompt: Write `count_bits(n)` that returns a list bits of length n + 1, where `bits[i]` is the number of 1s in the binary form of i.
+
+Build the list by doubling. The numbers from 2ᵏ to 2ᵏ⁺¹ − 1 are the numbers from 0 to 2ᵏ − 1 with one more 1 bit in front: 2 and 3 are 10 and 11, which are 0 and 1 with a 1 in front. So start with `bits = [0]`, and while it's too short, append `bits[i] + 1` for every i already in the list: its length goes 1, 2, 4, 8 and onwards. At the end, return the first n + 1 counts.
+
+**Example 1:** `count_bits(2)` returns `[0, 1, 1]`.
+
+**Example 2:** `count_bits(5)` returns `[0, 1, 1, 2, 1, 2]`.
+
+**Constraints:** 0 ≤ n ≤ 10⁵.
+starter:
+```python
+def count_bits(n):
+    # your code here
+    return [0] * (n + 1)
+```
+solution:
+```python
+def count_bits(n):
+    bits = [0]
+    while len(bits) <= n:
+        size = len(bits)
+        for i in range(size):
+            bits.append(bits[i] + 1)
+    return bits[:n + 1]
+```
+tests:
+- count_bits(2)
+- count_bits(5)
+- count_bits(0)
+- count_bits(1)
+- count_bits(8)
+- (lambda a: [len(a), sum(a), a[-5:]])(count_bits(50000))
+fail[2]: 3 is 11 in binary, two 1s, and 5 is 101, also two.
+fail[3]: 0 has no 1 bits: `[0]`.
+fail[4]: `[0, 1]`.
+fail[5]: 7 is 111, three 1s, and 8 is 1000, one.
+fail[6]: 50,001 counts. Counting the bits of each number by dividing by 2 again and again takes O(log n) for every number; the doubling makes each count with one addition.
+edges:
+- n is 0 :: n == 0 :: count_bits(0)
+- n one less than a power of 2 :: n > 0 and (n + 1) & n == 0 :: count_bits(3)
+- any other n :: n > 0 and (n + 1) & n != 0 :: count_bits(4)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: The answer has n + 1 counts.
+why_time: The list doubles until it passes n + 1 items, so it never reaches 2n + 2: every count is one append.
+why_space: The list holds fewer than 2n + 2 counts.
+hint: `bits = [0]`.
+hint: While `len(bits) <= n`: set `size = len(bits)`, and for i in `range(size)`, append `bits[i] + 1`.
+hint: Return `bits[:n + 1]`.
+right: Each round copies the whole list with 1 added, which is exactly the counts of the next block of numbers, and all the rounds together cost less than twice the final length.
+wrong: Start with `[0]`. While it has n + 1 items or fewer, append `bits[i] + 1` for each i in the current list. Return the first n + 1.
+
+=== task: code easy
+title: How Many Copies
+patterns: doubling + total
+prompt: A dynamic array starts empty with capacity 1. Each append that finds it full doubles the capacity, and copies every item already in it into the new block. Write `copies_for(n)` that returns the total number of items copied by n appends.
+
+n can be 10¹⁵, so don't make the appends one at a time. The copies happen when the size reaches 1, 2, 4, 8 and onwards: each power of 2 that's less than n copies that many items. So loop over the capacities instead of the appends: start at 1, and while the capacity is less than n, add it to the total and double it.
+
+**Example 1:** `copies_for(5)` returns `7`: the array copies 1 item at the 2nd append, 2 at the 3rd and 4 at the 5th.
+
+**Example 2:** `copies_for(1)` returns `0`: one item fits in the first slot.
+
+**Constraints:** 0 ≤ n ≤ 10¹⁸.
+starter:
+```python
+def copies_for(n):
+    # your code here
+    return 0
+```
+solution:
+```python
+def copies_for(n):
+    copies = 0
+    capacity = 1
+    while capacity < n:
+        copies += capacity
         capacity *= 2
-    size += 1
-print(size, capacity)
-```
-wrong[3 3]: The capacity doubles when the array is full: 1 → 2 → 4, so it skips 3.
-wrong[3 8]: The 3rd append finds size 2 and capacity 2, so it grows to 4. Nothing grows it again.
-wrong[4 4]: There are 3 appends, so the size is 3.
-hint: Track size and capacity after each append.
-hint: Append 1: (1, 1). Append 2: grow to 2. Append 3: grow to 4.
-right: Size 3 and capacity 4: one free slot is ready for the next append.
-wrong: (1, 1), then (2, 2), then (3, 4).
-
-=== task: multi easy
-title: Cheap on a dynamic array
-prompt: Choose **every** operation on a dynamic array that is O(1), or O(1) amortized.
-* Reading item i :: Right. Address arithmetic, as in any array.
-* Writing item i :: Right. O(1).
-* Appending at the end :: Right. O(1) amortized: growing is rare enough to average out.
-* Removing the last item :: Right. Nothing has to move.
-- Inserting at index 0 :: Every item shifts right: O(n).
-- Searching for a value in an unsorted array :: O(n): the items are checked one by one.
-hint: Which ones work at one slot, or at the end?
-hint: Four of them are.
-right: Reads, writes, appends and pops from the end are cheap. Inserting at the front and searching touch every item.
-wrong: O(1): read, write, append (amortized), pop from the end. O(n): insert at the front and search.
-
-=== task: parsons easy
-title: Grow and copy
-prompt: Arrange the lines so that `grow` returns a block twice as big with the items copied into it, and the program prints:
-
-```output
-[7, 3, None, None]
-```
-
-Not every line is needed.
-lines:
-```python
-def grow(slots):
-    new = [None] * (2 * len(slots))
-    for i in range(len(slots)):
-        new[i] = slots[i]
-    return new
-
-print(grow([7, 3]))
-```
-distractors:
-```python
-    new = [None] * (len(slots) + 1)
-        slots[i] = new[i]
-```
-hint: The new block has twice as many slots.
-hint: Copy from the old block into the new one.
-right: Two copies into a block of 4: growing costs O(n), but doubling makes it rare. Growing by one slot would make it happen on every append.
-wrong: `new = [None] * (2 * len(slots))`, then copy `new[i] = slots[i]` for every i, then `return new`.
-
-=== task: cells easy
-title: Capacity after n appends
-prompt: A dynamic array starts with capacity 1 and doubles when it's full. What is its capacity after each number of appends?
-labels: 1 append | 2 appends | 3 appends | 9 appends
-answer: 1 | 2 | 4 | 16
-wrong[1 | 2 | 3 | 9]: The capacity doubles; it doesn't grow by one.
-wrong[2 | 4 | 8 | 18]: The first append fits into the starting slot, so the capacity is still 1.
-hint: Grow only when full: at sizes 1, 2, 4 and 8.
-hint: After 9 appends: 1 → 2 → 4 → 8 → 16.
-right: 1, 2, 4 and 16. The capacity is always the smallest power of 2 that's at least the size.
-wrong: 1 append: 1. 2 appends: 2. 3 appends: 4. 9 appends: 16.
-
-=== task: mcq easy
-title: What "amortized" means
-prompt: Append on a dynamic array is "O(1) amortized". What does that mean?
-* Over many appends, the average cost per append is O(1), even though a few appends cost O(n) :: Right. The rare expensive copies are spread over all the cheap appends.
-- Every single append takes O(1) :: The appends that make the array grow copy every item: O(n).
-- Appends are O(1) only for small arrays :: The average stays constant for any size.
-- Appends are O(1) only if you never append twice :: The more you append, the more the copies average out.
-hint: Some appends copy the whole array. How often?
-hint: Total work divided by the number of appends.
-right: n appends cost under 3n steps in total, so the average is under 3 per append: O(1) amortized, O(n) in the worst single case.
-wrong: Amortized means averaged over many operations: the occasional O(n) copy is paid for by all the O(1) appends.
-
-=== task: predict easy
-title: One growth
-code:
-```python
-slots = [10, 20, 30, 40]
-new = [None] * (2 * len(slots))
-copies = 0
-for i in range(len(slots)):
-    new[i] = slots[i]
-    copies += 1
-print(len(new), copies)
-```
-wrong[5 4]: The new block is twice as big: 8 slots, not one more.
-wrong[8 8]: Only the 4 items are copied; the other 4 slots stay None.
-wrong[4 4]: `new` has `2 * 4` = 8 slots.
-hint: How many slots does `[None] * 8` make?
-hint: How many items are copied?
-right: 8 slots and 4 copies: this append costs O(n), but its item fills one of the 4 free slots, and the next 3 appends need no copying.
-wrong: `new` has 8 slots, and the loop copies the 4 items.
-
-=== task: code medium
-title: Grow
-prompt: Write `grow(slots)` that returns a new list twice as long as `slots`, with the items copied to the same positions and None in the new slots. Copy the items with a loop.
-
-For example, `grow([7, 3])` returns `[7, 3, None, None]`.
-starter:
-```python
-def grow(slots):
-    new = [None] * (2 * len(slots))
-    # your code here
-    return new
-```
-solution:
-```python
-def grow(slots):
-    new = [None] * (2 * len(slots))
-    for i in range(len(slots)):
-        new[i] = slots[i]
-    return new
-```
-tests:
-- grow([7, 3])
-- grow([1])
-- grow(["a", "b", "c"])
-- len(grow([0, 0, 0, 0]))
-fail[1]: Both items are copied, and two empty slots follow: `[7, 3, None, None]`.
-fail[3]: Three items, then three None slots.
-forbid[+ [None]]: Copy into the new block with a loop, the way an array has to.
-hint: Loop over the positions of the old list.
-hint: `new[i] = slots[i]`.
-hint: Return `new`.
-right: n copies into a block of 2n slots: O(n) for this append, but after it the next n − 1 appends are O(1).
-wrong: `for i in range(len(slots)): new[i] = slots[i]`, then `return new`.
-
-=== task: code medium
-title: How many copies?
-prompt: Write `copies_for(n)` that returns how many items get copied in total when n items are appended, one by one, to a dynamic array that starts with capacity 1, is empty, and doubles when it's full. Simulate it: keep `capacity`, `size` and `copies`, and when an append finds `size == capacity`, add `size` to the copies and double the capacity.
-
-For example, `copies_for(5)` returns 7: 1 + 2 + 4.
-starter:
-```python
-def copies_for(n):
-    capacity = 1
-    size = 0
-    copies = 0
-    # your code here
-    return copies
-```
-solution:
-```python
-def copies_for(n):
-    capacity = 1
-    size = 0
-    copies = 0
-    for i in range(n):
-        if size == capacity:
-            copies += size
-            capacity *= 2
-        size += 1
     return copies
 ```
 tests:
@@ -490,499 +844,2091 @@ tests:
 - copies_for(1)
 - copies_for(2)
 - copies_for(9)
-- copies_for(1000)
-fail[1]: The array grows at sizes 1, 2 and 4, copying 1 + 2 + 4 = 7 items.
+- copies_for(10 ** 15)
+fail[2]: No appends, no copies.
 fail[3]: One append fits into the starting slot: 0 copies.
 fail[4]: The second append finds the array full and copies 1 item.
-fail[6]: 1 + 2 + 4 + ... + 512 = 1,023: less than 2 × 1,000.
-hint: Loop n times, once per append.
-hint: When `size == capacity`, the append copies `size` items and the capacity doubles.
-hint: Every append then adds 1 to `size`.
-right: The total is always under 2n, so n appends cost O(n) altogether: O(1) each, amortized.
-wrong: For each append: if `size == capacity`, add `size` to `copies` and double `capacity`; then `size += 1`.
+fail[5]: 1 + 2 + 4 + 8 = 15 copies for 9 appends.
+fail[6]: n = 10¹⁵: the copies add up to 2⁵⁰ − 1. One step per append would take 10¹⁵ steps; one step per doubling takes 50.
+edges:
+- no appends :: n == 0 :: copies_for(0)
+- n a power of 2 :: n > 0 and n & (n - 1) == 0 :: copies_for(4)
+- n not a power of 2 :: n > 0 and n & (n - 1) != 0 :: copies_for(6)
+edge_count: 2
+complexity: time=O(log n) | space=O(1)
+complexity_note: n is the number of appends.
+why_time: The capacity doubles each time round the loop, so it passes n after about log₂ n rounds.
+why_space: Two numbers: the capacity and the total.
+hint: `copies = 0` and `capacity = 1`.
+hint: While `capacity < n`: add capacity to copies, then double capacity.
+right: The copies are 1 + 2 + 4 and onwards, one term per doubling, so jumping from one doubling to the next costs O(log n), and the sum shows why it's always less than 2n.
+wrong: While the capacity is less than n, add it to the total and double it. Return the total.
 
-=== task: predict medium
-title: Nine appends
-code:
-```python
-capacity = 1
-size = 0
-copies = 0
-for i in range(9):
-    if size == capacity:
-        copies += size
-        capacity *= 2
-    size += 1
-print(copies, capacity)
-```
-wrong[8 16]: The copies are 1 + 2 + 4 + 8 = 15, one for each item in the block at each growth.
-wrong[15 9]: The capacity doubles, so it jumps from 8 to 16, not to 9.
-wrong[36 9]: That's growing by one slot at a time. Doubling copies far less: 15.
-hint: The array grows at sizes 1, 2, 4 and 8.
-hint: Each growth copies that many items.
-right: 15 copies and a capacity of 16. Fewer than 2 × 9 copies, as always with doubling.
-wrong: Growths at sizes 1, 2, 4 and 8 copy 1 + 2 + 4 + 8 = 15 items, and the capacity ends at 16.
+=== task: code easy
+title: Number of Recent Calls
+leetcode: 933 | Number of Recent Calls | number-of-recent-calls
+patterns: ordered + total
+prompt: Write a class `RecentCounter` that counts recent requests:
 
-=== task: fill medium
-title: Copy from the old block
-prompt: Fill in the blank so that the items are copied from the old block into the new one, and the program prints:
+- `RecentCounter()` starts with no requests.
+- `ping(t)` adds a request at time t, in milliseconds, and returns how many requests there have been from t − 3000 to t, both included, counting this one.
 
-```output
-['a', 'b', 'c', None, None, None]
-```
-code:
-```python
-slots = ["a", "b", "c"]
-new = [None] * (2 * len(slots))
-for i in range(len(slots)):
-    new[i] = ??[i]
-print(new)
-```
-answer: slots
-wrong[new]: Copying `new[i]` into itself leaves every slot None.
-hint: The items come from the old block.
-hint: The old block is called `slots`.
-right: `new[i] = slots[i]` copies each of the n items: O(n) for this one append.
-wrong: `slots[i]`: each item is read from the old block and written into the new one.
+Every call has a bigger t than the call before.
 
-=== task: cells medium
-title: Adding one against doubling
-prompt: A dynamic array starts with capacity 1. How many items are copied in total for n appends, when it grows by one slot each time, and when it doubles?
-labels: grow by 1, n = 5 | double, n = 5 | grow by 1, n = 9 | double, n = 9
-answer: 10 | 7 | 36 | 15
-wrong[4 | 7 | 8 | 15]: Growing by one slot copies every item on every append after the first: 1 + 2 + 3 + 4 = 10.
-wrong[10 | 15 | 36 | 31]: Doubling copies at sizes 1, 2 and 4 for n = 5: 7. For n = 9, add 8: 15.
-hint: Grow by 1: copies 1 + 2 + ... + (n − 1).
-hint: Double: copies 1 + 2 + 4 + ..., up to the biggest power of 2 below n.
-right: Adding one slot: 10 and 36 (n(n − 1) / 2, O(n²)). Doubling: 7 and 15 (under 2n, O(n)).
-wrong: Grow by 1: 1 + 2 + 3 + 4 = 10 and 1 + ... + 8 = 36. Double: 1 + 2 + 4 = 7 and 1 + 2 + 4 + 8 = 15.
+The times arrive in order, so appending them to a list keeps it sorted. The requests that are too old are all at the front, and once a request is too old, it stays too old. So keep a `start` index that only moves forward, past the requests that are too old: the answer is the number of times from start to the end of the list.
 
-=== task: order medium
-title: An append that grows
-prompt: Put the steps of an append to a full dynamic array in order.
-items:
-- see that size equals the capacity
-- make a new block twice as big
-- copy every item into the new block
-- switch to the new block
-- write the new item into slot `size` and add 1 to size
-hint: Nothing is copied until there's somewhere to copy to.
-hint: The new item goes in last, into a free slot.
-right: Notice it's full, allocate double, copy, switch, then write: the copy is the O(n) part, and it's rare.
-wrong: Check for full, make the new block, copy the items, start using the new block, then add the item.
+**Example:** `run(["RecentCounter", "ping", "ping", "ping", "ping"], [[], [1], [100], [3001], [3002]])` returns `[None, 1, 2, 3, 3]`: at 3002, the window is 2 to 3002, which leaves out the request at 1.
 
-=== task: predict medium
-title: Two ways to grow
-code:
-```python
-def copies(n, doubling):
-    capacity = 1
-    size = 0
-    total = 0
-    for i in range(n):
-        if size == capacity:
-            total += size
-            if doubling:
-                capacity *= 2
-            else:
-                capacity += 1
-        size += 1
-    return total
-
-print(copies(8, True), copies(8, False))
-```
-wrong[7 7]: Growing by one slot copies every item on every append after the first: 1 + 2 + ... + 7 = 28.
-wrong[15 28]: With doubling, 8 appends grow at sizes 1, 2 and 4: 1 + 2 + 4 = 7. The 8th append still fits.
-wrong[28 7]: It's the other way round: doubling copies less.
-hint: Doubling grows at sizes 1, 2, 4.
-hint: Adding one slot grows at every size from 1 to 7.
-right: 7 copies with doubling and 28 with adding one. For n = 1,000 that's 1,023 against 499,500.
-wrong: Doubling: 1 + 2 + 4 = 7. Adding one: 1 + 2 + 3 + 4 + 5 + 6 + 7 = 28.
-
-=== task: mcq medium
-title: Why double?
-prompt: Why do dynamic arrays grow by a factor, like doubling, rather than by one slot at a time?
-* Doubling keeps the total copies under 2n, so append is O(1) amortized; growing by one copies n(n − 1) / 2 items, O(n²) in all :: Right. A factor makes the copies rare; a fixed step makes them constant.
-- Doubling uses less memory :: Doubling can leave up to half the slots empty. It's faster, not smaller.
-- Growing by one slot is impossible :: It's possible, but slow: every append after the first would copy everything.
-- Doubling avoids copying altogether :: It still copies, but rarely: at sizes 1, 2, 4, 8, ...
-hint: Count the copies for n appends both ways.
-hint: 1 + 2 + 4 + ... versus 1 + 2 + 3 + ...
-right: Growth by a factor: total copies O(n), amortized O(1) appends. Growth by a fixed step: O(n²) for n appends.
-wrong: Doubling makes the expensive copies rare: fewer than 2n in total. Adding one slot copies on nearly every append: n(n − 1) / 2.
-
-=== task: multi medium
-title: True about Python lists
-prompt: Choose **every** true sentence about Python's `list`.
-* It's a dynamic array :: Right. It grows by moving to bigger blocks.
-* `append` is O(1) amortized :: Right. Growth is rare enough to average out.
-* `len` is O(1), because the size is stored :: Right. Nothing is counted.
-* It often has free slots at the end, waiting for appends :: Right. Its capacity is usually a bit more than its size.
-- Every `append` copies the whole list :: Only the rare appends that make it grow copy everything.
-- `insert(0, x)` is O(1), because the list can grow :: Growing doesn't help: every item still shifts right, O(n).
-hint: Think about size, capacity, and what shifts.
-hint: Four of them are true.
-right: A list is a dynamic array with spare capacity: append is O(1) amortized and `len` O(1). Appends rarely copy, and inserting at the front always shifts.
-wrong: True: dynamic array, amortized O(1) append, O(1) `len`, spare slots. False: appends rarely copy, and `insert(0, x)` is O(n).
-
-=== task: code medium
-title: Append with growth
-prompt: Write `append_dynamic(slots, size, x)` for a dynamic array kept as a list `slots` (its capacity is `len(slots)`) and a `size`. If the array is full (`size == len(slots)`), make a new list twice as long (at least 1 slot), copy the items into it, and use it from now on. Then write x into slot `size`. Return the slots and the new size as a tuple, `(slots, size + 1)`.
-
-For example, `append_dynamic([1, 2], 2, 3)` returns `([1, 2, 3, None], 3)`.
+**Constraints:** 1 ≤ t ≤ 10⁹, the times are strictly increasing, and there are at most 10⁴ calls.
 starter:
 ```python
-def append_dynamic(slots, size, x):
-    # your code here
-    return slots, size
+class RecentCounter:
+    def __init__(self):
+        self.times = []
+        self.start = 0
+
+    def ping(self, t):
+        self.times.append(t)
+        return len(self.times)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RecentCounter":
+            counter = RecentCounter()
+            results.append(None)
+        elif command == "ping":
+            results.append(counter.ping(args[0]))
+    return results
 ```
 solution:
 ```python
-def append_dynamic(slots, size, x):
-    if size == len(slots):
-        new = [None] * max(1, 2 * len(slots))
-        for i in range(size):
-            new[i] = slots[i]
-        slots = new
-    slots[size] = x
-    return slots, size + 1
+class RecentCounter:
+    def __init__(self):
+        self.times = []
+        self.start = 0
+
+    def ping(self, t):
+        self.times.append(t)
+        while self.times[self.start] < t - 3000:
+            self.start += 1
+        return len(self.times) - self.start
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RecentCounter":
+            counter = RecentCounter()
+            results.append(None)
+        elif command == "ping":
+            results.append(counter.ping(args[0]))
+    return results
 ```
 tests:
-- append_dynamic([1, 2], 2, 3)
-- append_dynamic([1, None], 1, 2)
-- append_dynamic([], 0, "a")
-- append_dynamic([5, 6, 7, None], 3, 8)
-fail[1]: The array is full, so it grows to 4 slots, then 3 goes into slot 2.
-fail[2]: There's a free slot, so no growth: `([1, 2], 2)`.
-fail[3]: An empty block of 0 slots grows to 1 slot.
-error[IndexError]: Grow before writing, to at least 1 slot: when `size == len(slots)`, slot `size` doesn't exist yet, and 2 × 0 is still 0.
-hint: Check `size == len(slots)` first.
-hint: Grow to `max(1, 2 * len(slots))` slots and copy the items.
-hint: Write `slots[size] = x` and return `slots, size + 1`.
-right: O(1) when there's room, O(n) when it grows: amortized O(1). This is what Python's `append` does inside.
-wrong: If full, make a block twice as big (at least 1) and copy; then write x into slot `size` and return `(slots, size + 1)`.
+- run(["RecentCounter", "ping", "ping", "ping", "ping"], [[], [1], [100], [3001], [3002]])
+- run(["RecentCounter", "ping"], [[], [5]])
+- run(["RecentCounter", "ping", "ping", "ping"], [[], [1], [5000], [10000]])
+- run(["RecentCounter", "ping", "ping", "ping"], [[], [1000], [4000], [4001]])
+- run(["RecentCounter", "ping", "ping", "ping", "ping", "ping", "ping"], [[], [10], [20], [3010], [3011], [3020], [7000]])
+- sum(run(["RecentCounter"] + ["ping"] * 10000, [[]] + [[i * 3 + i % 3 + 1] for i in range(10000)])[1:])
+fail[2]: One request: 1.
+fail[3]: Each request is more than 3000 after the one before, so each window holds only itself.
+fail[4]: At 4000, the window starts at 1000, which counts. At 4001, it starts at 1001, which leaves 1000 out.
+fail[5]: At 7000, every earlier request is too old.
+fail[6]: 10,000 requests. Counting the whole list on every ping takes far too long; move start forward instead.
+edges:
+- one ping :: commands.count("ping") == 1 :: run(["RecentCounter", "ping"], [[], [7]])
+- a request drops out of the window :: commands.count("ping") > 1 and inputs[-1][0] - inputs[1][0] > 3000 :: run(["RecentCounter", "ping", "ping"], [[], [1], [3002]])
+- every request stays in the window :: commands.count("ping") > 1 and inputs[-1][0] - inputs[1][0] <= 3000 :: run(["RecentCounter", "ping", "ping"], [[], [1], [3001]])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one ping, on average over all the calls; n is the number of pings.
+why_time: Each ping appends once, and start passes each request at most once over all the pings: O(n) for n pings, O(1) each on average.
+why_space: The list keeps every time.
+hint: In `__init__`: `self.times = []` and `self.start = 0`.
+hint: In ping: append t, then while `self.times[self.start] < t - 3000`, add 1 to start.
+hint: Return `len(self.times) - self.start`.
+right: The times are sorted because they arrive in order, so the old ones form a block at the front, and a start index that never moves back passes each of them once.
+wrong: Append t. Move start forward past every time below t − 3000. Return the number of times from start to the end.
 
-=== task: code hard
-title: A DynamicArray class
-prompt: Write a class `DynamicArray` with `self.slots` (starting as `[None]`, capacity 1) and `self.size` (starting at 0), and these methods:
-- `append(self, x)`: if full, move to a block twice as big, copying the items with a loop; then store x and add 1 to the size,
-- `get(self, i)`: return the item at index i (assume 0 ≤ i < size),
-- `set(self, i, x)`: replace the item at index i.
+=== task: code easy
+title: Find Smallest Letter Greater Than Target
+leetcode: 744 | Find Smallest Letter Greater Than Target | find-smallest-letter-greater-than-target
+patterns: ordered
+prompt: letters is sorted from "a" to "z", possibly with repeats, and holds at least two different letters. Write `next_greatest_letter(letters, target)` that returns the smallest letter in letters that's greater than target. If there's none, return the first letter, `letters[0]`.
 
-Appending n items must be O(n) in total, so grow by **doubling**. The tests make arrays and call their methods.
+The list is sorted, so don't scan it. `bisect_right(letters, target)`, from the `bisect` module, is the index of the first letter greater than target, found by binary search in O(log n). If that index is the length of the list, every letter is at most target.
+
+**Example 1:** `next_greatest_letter(["c", "f", "j"], "a")` returns `"c"`.
+
+**Example 2:** `next_greatest_letter(["c", "f", "j"], "c")` returns `"f"`: the answer must be greater than "c", not equal to it.
+
+**Example 3:** `next_greatest_letter(["x", "x", "y", "y"], "z")` returns `"x"`.
+
+**Constraints:** 2 ≤ `len(letters)` ≤ 10⁴, letters is sorted and holds at least two different lowercase letters, and target is a lowercase letter.
 starter:
 ```python
-class DynamicArray:
-    def __init__(self):
-        self.slots = [None]
-        self.size = 0
-
+def next_greatest_letter(letters, target):
     # your code here
+    return letters[0]
 ```
 solution:
 ```python
-class DynamicArray:
-    def __init__(self):
-        self.slots = [None]
-        self.size = 0
+from bisect import bisect_right
 
-    def append(self, x):
-        if self.size == len(self.slots):
-            new = [None] * (2 * len(self.slots))
-            for i in range(self.size):
-                new[i] = self.slots[i]
-            self.slots = new
-        self.slots[self.size] = x
-        self.size += 1
 
-    def get(self, i):
-        return self.slots[i]
-
-    def set(self, i, x):
-        self.slots[i] = x
+def next_greatest_letter(letters, target):
+    i = bisect_right(letters, target)
+    if i == len(letters):
+        return letters[0]
+    return letters[i]
 ```
 tests:
-- (lambda a: [a.append(5), a.append(6), a.append(7), a.size, a.get(2), a.get(0)][3:])(DynamicArray())
-- (lambda a: [a.size, len(a.slots)])(DynamicArray())
-- (lambda a: [a.append("x"), a.set(0, "y"), a.get(0), a.slots][2:])(DynamicArray())
-- (lambda a: [[a.append(i) for i in range(9)], a.size, a.get(8), a.get(3)][1:])(DynamicArray())
-speed: setup=a = DynamicArray() | call=[a.append(i) for i in range(n)] | target=O(n)
+- next_greatest_letter(["c", "f", "j"], "a")
+- next_greatest_letter(["c", "f", "j"], "c")
+- next_greatest_letter(["x", "x", "y", "y"], "z")
+- next_greatest_letter(["a", "b"], "a")
+- next_greatest_letter(["c", "f", "f", "j"], "f")
+- next_greatest_letter(["a"] * 5000 + ["m"] * 4999 + ["z"], "m")
+fail[2]: "c" itself doesn't count: the next letter is "f".
+fail[3]: Nothing is greater than "z", so the answer goes round to the first letter.
+fail[4]: "b" is the only letter greater than "a".
+fail[5]: Both "f"s are equal to the target; the first greater letter is "j".
+fail[6]: 10,000 letters: the first one greater than "m" is the last.
+speed: setup=letters = ["a"] * (n - 1) + ["b"] | call=next_greatest_letter(letters, "a") | target=O(log n)
 slow:
 ```python
-class DynamicArray:
-    def __init__(self):
-        self.slots = [None]
-        self.size = 0
-
-    def append(self, x):
-        if self.size == len(self.slots):
-            new = [None] * (len(self.slots) + 1)
-            for i in range(self.size):
-                new[i] = self.slots[i]
-            self.slots = new
-        self.slots[self.size] = x
-        self.size += 1
-
-    def get(self, i):
-        return self.slots[i]
-
-    def set(self, i, x):
-        self.slots[i] = x
+def next_greatest_letter(letters, target):
+    for c in letters:
+        if c > target:
+            return c
+    return letters[0]
 ```
-fail[1]: After appending 5, 6 and 7 the size is 3, item 2 is 7 and item 0 is still 5.
-fail[2]: A new array has size 0 and one slot.
-fail[3]: `set(0, "y")` replaces the "x", so `get(0)` is "y" and the slots are `["y"]`.
-fail[4]: After 9 appends (0 to 8) the size is 9, item 8 is 8 and item 3 is 3: the copies kept every item in place.
-error[AttributeError]: Define all three methods: `append`, `get` and `set`.
-hint: In `append`, check `self.size == len(self.slots)` first.
-hint: Grow to `2 * len(self.slots)` slots, copying the items with a loop.
-hint: `get` and `set` read and write `self.slots[i]`.
-right: Doubling keeps the copies under 2n, so n appends are O(n) and each is O(1) amortized. Growing by one slot would make n appends O(n²), which the speed check catches.
-wrong: `append` grows by doubling when full and writes into slot `self.size`; `get` returns `self.slots[i]`; `set` writes it.
+fail[speed]: Scanning from the start is O(n). letters is sorted, so `bisect_right` finds the place in O(log n).
+edges:
+- a target past every letter :: target >= letters[-1] :: next_greatest_letter(["a", "b"], "c")
+- a target equal to a letter :: target < letters[-1] and target in letters :: next_greatest_letter(["a", "b"], "a")
+- a target between letters :: target < letters[-1] and target not in letters :: next_greatest_letter(["a", "c"], "b")
+edge_count: 2
+complexity: time=O(log n) | space=O(1)
+complexity_note: n is the length of letters.
+why_time: One binary search.
+why_space: One index.
+hint: `from bisect import bisect_right`.
+hint: `i = bisect_right(letters, target)`.
+hint: If `i == len(letters)`, return `letters[0]`; otherwise return `letters[i]`.
+right: bisect_right goes past every letter equal to the target, so it lands on the first one greater, and the wrap-round case is when it lands past the end.
+wrong: `i = bisect_right(letters, target)`. Return `letters[0]` if i is the length of letters, otherwise `letters[i]`.
 
-=== task: code hard
-title: Shrink when sparse
-prompt: To give memory back, a dynamic array can shrink when most of its slots are empty. Write `shrink_if_sparse(slots, size)`: if the capacity (`len(slots)`) is more than 1 and `size` is at most a quarter of it (`size <= len(slots) // 4`), return a new list half as long with the items copied in. Otherwise return `slots` unchanged.
+=== task: code easy
+title: Maximum Number of Operations With the Same Score I
+leetcode: 3038 | Maximum Number of Operations With the Same Score I | maximum-number-of-operations-with-the-same-score-i
+patterns: total
+prompt: One operation deletes the first two numbers of nums, and its **score** is their sum. Operations go on while nums has at least two numbers, and every operation must have the same score as the first. Write `max_operations(nums)` that returns how many operations you can do.
 
-For example, `shrink_if_sparse([1, None, None, None, None, None, None, None], 1)` returns `[1, None, None, None]`.
+Deleting from the front with `pop(0)` moves every other number each time: O(n) per delete, O(n²) in all. Don't delete anything. Move an index i forward by 2 for each operation, and compare `nums[i] + nums[i + 1]` with the first score.
+
+**Example 1:** `max_operations([3, 2, 1, 4, 5])` returns `2`: 3 + 2 = 5 and 1 + 4 = 5, and then only 5 is left.
+
+**Example 2:** `max_operations([1, 5, 3, 3, 4, 1, 3, 2, 2, 3])` returns `2`: 4 + 1 = 5 isn't 6.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 100, and 1 ≤ `nums[i]` ≤ 1000.
 starter:
 ```python
-def shrink_if_sparse(slots, size):
+def max_operations(nums):
     # your code here
-    return slots
+    return 1
 ```
 solution:
 ```python
-def shrink_if_sparse(slots, size):
-    if len(slots) > 1 and size <= len(slots) // 4:
-        new = [None] * (len(slots) // 2)
-        for i in range(size):
-            new[i] = slots[i]
-        return new
-    return slots
+def max_operations(nums):
+    score = nums[0] + nums[1]
+    count = 0
+    i = 0
+    while i + 1 < len(nums) and nums[i] + nums[i + 1] == score:
+        count += 1
+        i += 2
+    return count
 ```
 tests:
-- shrink_if_sparse([1, None, None, None, None, None, None, None], 1)
-- shrink_if_sparse([1, 2, None, None], 2)
-- shrink_if_sparse([None], 0)
-- shrink_if_sparse([9, None, None, None], 1)
-- shrink_if_sparse([None, None], 0)
-fail[1]: 1 item in 8 slots is under a quarter: shrink to 4 slots.
-fail[2]: 2 items in 4 slots is half full, not a quarter: keep it.
-fail[3]: A capacity of 1 never shrinks.
-fail[4]: 1 item in 4 slots is exactly a quarter: shrink to 2 slots.
-hint: The condition is `len(slots) > 1 and size <= len(slots) // 4`.
-hint: The new block has `len(slots) // 2` slots.
-hint: Copy the `size` items across.
-right: Shrinking only at a quarter (to half) leaves room to grow again, so a mix of appends and pops can't make the array copy itself on every step.
-wrong: When the capacity is above 1 and the array is at most a quarter full, copy the items into a block half as big and return it; otherwise return the old one.
+- max_operations([3, 2, 1, 4, 5])
+- max_operations([1, 5, 3, 3, 4, 1, 3, 2, 2, 3])
+- max_operations([5, 3])
+- max_operations([1, 1, 1])
+- max_operations([2, 2, 2, 2, 2, 2])
+- max_operations([i % 2 * 999 + 1 for i in range(100)])
+fail[2]: The third pair, 4 and 1, sums to 5, not 6: stop at 2.
+fail[3]: Two numbers make one operation.
+fail[4]: The 1 left over can't make a pair: 1.
+fail[5]: Every pair sums to 4: 3 operations.
+fail[6]: 100 numbers that alternate 1 and 1000: all 50 pairs sum to 1001.
+speed: setup=nums = [1] * n | call=max_operations(nums) | target=O(n)
+slow:
+```python
+def max_operations(nums):
+    nums = list(nums)
+    score = nums[0] + nums[1]
+    count = 0
+    while len(nums) >= 2:
+        a = nums.pop(0)
+        b = nums.pop(0)
+        if a + b != score:
+            break
+        count += 1
+    return count
+```
+fail[speed]: `pop(0)` moves every number left in the list, so n / 2 operations cost O(n²) in all. Move an index forward by 2 instead.
+edges:
+- two numbers :: len(nums) == 2 :: max_operations([4, 6])
+- an odd number of numbers :: len(nums) > 2 and len(nums) % 2 == 1 :: max_operations([1, 1, 1])
+- an even number of numbers :: len(nums) > 2 and len(nums) % 2 == 0 :: max_operations([1, 1, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of nums.
+why_time: The index moves forward 2 at a time, at most n / 2 times.
+why_space: The score, a count and an index.
+hint: `score = nums[0] + nums[1]`, `count = 0` and `i = 0`.
+hint: While `i + 1 < len(nums)` and `nums[i] + nums[i + 1] == score`, add 1 to count and 2 to i.
+right: An index that moves forward does the deleting for free: the numbers before it count as gone, and the total work is one step per pair.
+wrong: Score the first pair. Move i forward 2 at a time while the pair at i and i + 1 has that score, counting the pairs.
 
-=== task: code hard
-title: Insert into a dynamic array
-prompt: Write `insert_dynamic(slots, size, i, x)` that inserts x at index i of a dynamic array: if it's full, grow by doubling (at least 1 slot) and copy; then shift the items from the end back to i one slot right, write x into slot i, and return `(slots, size + 1)`.
+=== task: code easy
+title: Find the Number of Winning Players
+leetcode: 3238 | Find the Number of Winning Players | find-the-number-of-winning-players
+patterns: buckets
+prompt: n players pick coloured balls: `pick[i] = [x, y]` means player x picked a ball of colour y, and the colours go from 0 to 10. Player i **wins** by picking at least i + 1 balls of one colour, so player 0 wins with any ball. Write `winning_player_count(n, pick)` that returns how many players win.
 
-For example, `insert_dynamic([1, 3], 2, 1, 2)` returns `([1, 2, 3, None], 3)`.
+Keep a list of counts for each player: `balls[x][y]` is how many balls of colour y player x picked. Make it with `[[0] * 11 for _ in range(n)]`, so that every player gets a list of their own.
+
+**Example 1:** `winning_player_count(4, [[0, 0], [1, 0], [1, 0], [2, 1], [2, 1], [2, 0]])` returns `2`: player 0 has a ball, and player 1 has 2 balls of colour 0. Player 2 has only 2 balls of colour 1, and player 3 has none.
+
+**Example 2:** `winning_player_count(5, [[1, 1], [1, 2], [1, 3], [1, 4]])` returns `0`.
+
+**Example 3:** `winning_player_count(5, [[1, 1], [2, 4], [2, 4], [2, 4]])` returns `1`.
+
+**Constraints:** 2 ≤ n ≤ 10, 1 ≤ `len(pick)` ≤ 100, 0 ≤ x ≤ n − 1, and 0 ≤ y ≤ 10.
 starter:
 ```python
-def insert_dynamic(slots, size, i, x):
-    # your code here
-    return slots, size
-```
-solution:
-```python
-def insert_dynamic(slots, size, i, x):
-    if size == len(slots):
-        new = [None] * max(1, 2 * len(slots))
-        for k in range(size):
-            new[k] = slots[k]
-        slots = new
-    j = size
-    while j > i:
-        slots[j] = slots[j - 1]
-        j -= 1
-    slots[i] = x
-    return slots, size + 1
-```
-tests:
-- insert_dynamic([1, 3], 2, 1, 2)
-- insert_dynamic([1, 3, None, None], 2, 0, 0)
-- insert_dynamic([], 0, 0, "a")
-- insert_dynamic([4, None], 1, 1, 5)
-fail[1]: Full, so grow to 4 slots; then 3 shifts right and 2 goes into slot 1.
-fail[2]: There's room: 1 and 3 shift right, and 0 goes in front.
-fail[3]: An empty block grows to 1 slot, and "a" goes into it.
-fail[4]: Inserting at index `size` shifts nothing.
-forbid[insert(]: Grow and shift by hand instead of using `insert`.
-hint: First grow if `size == len(slots)`, exactly like an append.
-hint: Then shift: `j = size`, and while `j > i`, `slots[j] = slots[j - 1]`.
-hint: Write x into slot i and return `(slots, size + 1)`.
-right: Growing is O(n) but rare; the shifting is O(n − i) every time. Inserting into a dynamic array is O(n), even though appending is O(1) amortized.
-wrong: Grow by doubling if full; shift the items from `size - 1` down to i one slot right; write x at i; return `(slots, size + 1)`.
-
-=== task: code hard
-title: The average cost of an append
-prompt: Write `average_cost(n)` that returns, rounded to 2 decimal places, the average cost of n appends to a dynamic array that starts with capacity 1 and doubles: count 1 step for each write, plus 1 step for each copied item, then divide by n.
-
-For example, `average_cost(5)` returns 2.4: 5 writes plus 7 copies is 12 steps, and 12 / 5 = 2.4.
-starter:
-```python
-def average_cost(n):
-    capacity = 1
-    size = 0
-    steps = 0
+def winning_player_count(n, pick):
     # your code here
     return 0
 ```
 solution:
 ```python
-def average_cost(n):
-    capacity = 1
-    size = 0
-    steps = 0
-    for i in range(n):
-        if size == capacity:
-            steps += size
-            capacity *= 2
-        steps += 1
-        size += 1
-    return round(steps / n, 2)
+def winning_player_count(n, pick):
+    balls = [[0] * 11 for _ in range(n)]
+    for player, colour in pick:
+        balls[player][colour] += 1
+    winners = 0
+    for player in range(n):
+        if max(balls[player]) > player:
+            winners += 1
+    return winners
 ```
 tests:
-- average_cost(5)
-- average_cost(1)
-- average_cost(2)
-- average_cost(4)
-- average_cost(9)
-- average_cost(1000)
-fail[1]: 5 writes and 1 + 2 + 4 = 7 copies: 12 steps, 12 / 5 = 2.4.
-fail[2]: One append, no copy: 1 step on average.
-fail[5]: 9 writes and 15 copies: 24 / 9 = 2.67.
-fail[6]: 1,000 writes and 1,023 copies: about 2.02 per append. The average stays under 3 for every n.
-error[ZeroDivisionError]: The tests use n of at least 1, so divide by `n`.
-hint: Simulate the appends as in `copies_for`.
-hint: Count 1 step per append, plus `size` steps when it grows.
-hint: Return `round(steps / n, 2)`.
-right: The average never reaches 3, whatever n is: that's what "O(1) amortized" means.
-wrong: For each append: if full, add `size` copies and double; add 1 for the write. Return the total divided by n, rounded to 2 places.
+- winning_player_count(4, [[0, 0], [1, 0], [1, 0], [2, 1], [2, 1], [2, 0]])
+- winning_player_count(5, [[1, 1], [1, 2], [1, 3], [1, 4]])
+- winning_player_count(5, [[1, 1], [2, 4], [2, 4], [2, 4]])
+- winning_player_count(2, [[0, 10]])
+- winning_player_count(3, [[2, 5], [2, 5], [2, 6], [2, 5], [1, 0], [1, 1]])
+- winning_player_count(10, [[i % 10, i * i % 11] for i in range(100)])
+fail[2]: Player 1 picked four colours, one ball each, and needs 2 balls of one colour.
+fail[3]: Player 2 has 3 balls of colour 4, more than 2.
+fail[4]: Player 0 wins with a single ball, even of colour 10.
+fail[5]: Player 2 has three balls of colour 5. Player 1 has two balls, but of different colours.
+fail[6]: 10 players and 100 picks: count each player's colours on their own.
+edges:
+- one pick :: len(pick) == 1 :: winning_player_count(2, [[1, 0]])
+- a player with several colours :: len(pick) > 1 and any(len(set(c for p, c in pick if p == q)) > 1 for q in range(n)) :: winning_player_count(2, [[1, 0], [1, 1]])
+- one colour per player :: len(pick) > 1 and all(len(set(c for p, c in pick if p == q)) <= 1 for q in range(n)) :: winning_player_count(2, [[1, 3], [1, 3]])
+edge_count: 2
+complexity: time=O(n + p) | space=O(n)
+complexity_options: O(n + p); O(n × p)
+complexity_note: n is the number of players and p the number of picks. The 11 colours are a fixed number.
+why_time: One count per pick, then one look at each player's 11 counts.
+why_space: 11 counts for each player.
+hint: `balls = [[0] * 11 for _ in range(n)]`.
+hint: For each `player, colour` in pick, add 1 to `balls[player][colour]`.
+hint: Player i wins when `max(balls[i]) > i`.
+right: A separate list of counts for each player keeps their colours apart, so each pick is one O(1) update.
+wrong: Count the balls per player per colour in a list of lists. Count the players whose biggest count is more than their number.
 
-=== task: predict hard
-title: When does it grow?
-code:
+=== task: code easy
+title: Max Pair Sum in an Array
+leetcode: 2815 | Max Pair Sum in an Array | max-pair-sum-in-an-array
+patterns: buckets
+prompt: The **largest digit** of a number is its biggest decimal digit: 2373's is 7. Write `max_sum(nums)` that returns the biggest sum of two numbers from nums, at different positions, that have the same largest digit, or −1 if no two numbers share one.
+
+Sort the numbers into 10 buckets by their largest digit, `groups[d]`, with `int(max(str(x)))` as the digit. Then the best pair in a bucket is its two biggest numbers.
+
+**Example 1:** `max_sum([112, 131, 411])` returns `-1`: the largest digits are 2, 3 and 4.
+
+**Example 2:** `max_sum([2536, 1613, 3366, 162])` returns `5902`: all four have 6, and 2536 + 3366 is the best pair.
+
+**Example 3:** `max_sum([51, 71, 17, 24, 42])` returns `88`: 71 + 17.
+
+**Constraints:** 2 ≤ `len(nums)` ≤ 100, and 1 ≤ `nums[i]` ≤ 10⁴.
+starter:
 ```python
-capacity = 1
-size = 0
-for i in range(6):
-    if size == capacity:
-        capacity *= 2
-        print("grow to", capacity)
-    size += 1
-print(size, capacity)
+def max_sum(nums):
+    # your code here
+    return -1
 ```
-wrong[grow to 2\ngrow to 4\ngrow to 8\ngrow to 16\n6 16]: After growing to 8, the 5th and 6th appends fit: no 4th growth.
-wrong[grow to 2\ngrow to 4\n6 4]: The 5th append finds size 4 and capacity 4, so it grows to 8.
-wrong[grow to 1\ngrow to 2\ngrow to 4\n6 8]: The capacity starts at 1, and doubling 1 gives 2.
-hint: Growth happens at sizes 1, 2 and 4.
-hint: After 6 appends: size 6, capacity 8.
-right: Three growths, to 2, 4 and 8, for six appends; slots 6 and 7 are still free.
-wrong: Appends 2, 3 and 5 find the array full and double it: 2, 4, 8. The others fit.
-
-=== task: predict hard
-title: The total work
-code:
+solution:
 ```python
-capacity = 1
-size = 0
-work = 0
-for i in range(16):
-    if size == capacity:
-        work += size
-        capacity *= 2
-    work += 1
-    size += 1
-print(work, work / 16)
+def max_sum(nums):
+    groups = [[] for _ in range(10)]
+    for x in nums:
+        groups[int(max(str(x)))].append(x)
+    best = -1
+    for group in groups:
+        if len(group) >= 2:
+            group.sort()
+            best = max(best, group[-1] + group[-2])
+    return best
 ```
-wrong[16 1.0]: The copies count too: 1 + 2 + 4 + 8 = 15 of them.
-wrong[31 1.94]: `work / 16` isn't rounded: 31 / 16 is 1.9375.
-wrong[47 2.9375]: The 16th append still fits into the block of 16: there's no copy of 16 items.
-hint: 16 writes, plus the copies at sizes 1, 2, 4 and 8.
-hint: 16 + 15.
-right: 31 steps for 16 appends: under 2 per append on average. Doubling keeps the average below 3 for any n.
-wrong: 16 writes + 15 copies = 31, and 31 / 16 = 1.9375.
-
-=== task: cells hard
-title: Copies so far
-prompt: A dynamic array starts with capacity 1 and doubles when full. How many items have been copied in total after each number of appends?
-labels: 1 append | 4 appends | 5 appends | 16 appends
-answer: 0 | 3 | 7 | 15
-wrong[1 | 4 | 5 | 16]: Copies happen only when the array grows, not on every append.
-wrong[0 | 7 | 7 | 31]: After 4 appends, the growths were at sizes 1 and 2: 3 copies. The 4th append fits into the block of 4.
-hint: Growth happens at sizes 1, 2, 4, 8 and copies that many items.
-hint: After 16 appends: 1 + 2 + 4 + 8.
-right: 0, 3, 7 and 15: each total is one less than the capacity after those appends (1, 4, 8, 16), so it's always less than 2n.
-wrong: 1 append: no copy. 4: 1 + 2 = 3. 5: 1 + 2 + 4 = 7. 16: 1 + 2 + 4 + 8 = 15.
-
-=== task: mcq hard
-title: The worst single append
-prompt: A dynamic array holds n items and is full. What does the next append cost, and what is the average cost of an append?
-* That append is O(n), but the average over many appends is O(1) :: Right. It copies all n items, but such appends are rare.
-- That append is O(1), like every append :: It has to copy all n items into the new block.
-- Every append is O(n), because the array might be full :: Most appends find a free slot and cost O(1).
-- That append is O(log n), and the average is O(log n) :: Nothing is halved: the copy touches every item.
-hint: What does growing copy?
-hint: How often does growing happen?
-right: Worst case O(n), amortized O(1). If one slow append would be a problem (in a game, say), that's worth knowing, even though the average is fine.
-wrong: The growing append copies all n items, O(n). Spread over all the appends, the average stays O(1).
-
-=== task: multi hard
-title: Growth strategies
-prompt: Choose **every** growth strategy that keeps append O(1) amortized.
-* Double the capacity when full :: Right. Total copies under 2n.
-* Grow the capacity by 50% when full :: Right. Any factor above 1 keeps the copies O(n) in total.
-* Grow by about an eighth plus a few slots, like CPython :: Right. Still a factor: the copies add up to O(n).
-- Add 1 slot when full :: n(n − 1) / 2 copies: O(n) per append on average.
-- Add 100 slots when full :: Still a fixed step: the copies grow like n² / 200, O(n²) in total.
-- Never grow; refuse appends when full :: That's a static array: it can't take more items at all.
-hint: Does the step grow with the array, or stay fixed?
-hint: Three of them grow by a factor.
-right: Growing by a factor (2, 1.5, or 1.125 plus a bit) makes the copies a geometric series: O(n) total. A fixed step makes them O(n²).
-wrong: Factors work: ×2, ×1.5, CPython's about ×1.125. Fixed steps (+1, +100) don't, and refusing isn't growing.
-
-=== task: parsons hard
-title: The append method
-prompt: Arrange the lines so that `append` grows the array by doubling when it's full, then adds the item, and the program prints:
-
-```output
-3 4 [5, 6, 7, None]
-```
-
-Not every line is needed.
-lines:
+tests:
+- max_sum([112, 131, 411])
+- max_sum([2536, 1613, 3366, 162])
+- max_sum([51, 71, 17, 24, 42])
+- max_sum([5, 5])
+- max_sum([10000, 1000, 9, 90])
+- max_sum([(i * 7919) % 10000 + 1 for i in range(100)])
+fail[2]: All four numbers have 6 as their largest digit: the two biggest are 3366 and 2536.
+fail[3]: 71 and 17 share 7, and 24 and 42 share 4: 88 beats 66.
+fail[4]: Two equal numbers: 5 + 5.
+fail[5]: 10000 and 1000 both have largest digit 1: 11,000.
+fail[6]: 100 numbers: put each in its bucket once.
+speed: setup=nums = [i % 9000 + 1000 for i in range(n)] | call=max_sum(nums) | target=O(n log n)
+slow:
 ```python
-class DynamicArray:
+def max_sum(nums):
+    best = -1
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if max(str(nums[i])) == max(str(nums[j])):
+                best = max(best, nums[i] + nums[j])
+    return best
+```
+fail[speed]: Trying every pair is O(n²). Each number belongs in one bucket, by its largest digit, so sort them into buckets in one pass.
+edges:
+- two numbers :: len(nums) == 2 :: max_sum([3, 30])
+- no shared largest digit :: len(nums) > 2 and len(set(max(str(x)) for x in nums)) == len(nums) :: max_sum([1, 2, 3])
+- a shared largest digit :: len(nums) > 2 and len(set(max(str(x)) for x in nums)) < len(nums) :: max_sum([1, 2, 21])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One pass fills the buckets, and sorting them all is O(n log n) at most.
+why_space: The buckets hold the n numbers.
+hint: `groups = [[] for _ in range(10)]`, and the largest digit of x is `int(max(str(x)))`.
+hint: For each bucket with at least 2 numbers, sort it and add its last two.
+hint: Keep the biggest such sum, starting from −1.
+right: Numbers can only pair within their own bucket, so after one pass to sort them into buckets, each bucket needs only its two biggest.
+wrong: Bucket the numbers by largest digit. For each bucket with 2 or more numbers, take the sum of its two biggest; return the best, or −1.
+
+=== task: code medium
+title: Find the Sequence of Strings Appeared on the Screen
+leetcode: 3324 | Find the Sequence of Strings Appeared on the Screen | find-the-sequence-of-strings-appeared-on-the-screen
+patterns: append
+prompt: A keyboard has two keys. Key 1 adds the letter "a" to the end of the text on the screen, and key 2 changes the last letter to the next one in the alphabet: "c" becomes "d", and "z" becomes "a". The screen starts empty. Write `string_sequence(target)` that returns every string that appears on the screen, in order, when target is typed with as few key presses as possible.
+
+The fewest presses type each letter of target in turn: key 1 for an "a", then key 2 until it's the right letter. Keep the screen as a list of letters: key 1 is `screen.append("a")`, and key 2 changes `screen[-1]`, both O(1). After every press, append `"".join(screen)` to the answer.
+
+**Example 1:** `string_sequence("abc")` returns `["a", "aa", "ab", "aba", "abb", "abc"]`.
+
+**Example 2:** `string_sequence("he")` returns `["a", "b", "c", "d", "e", "f", "g", "h", "ha", "hb", "hc", "hd", "he"]`.
+
+**Constraints:** 1 ≤ `len(target)` ≤ 400, and target holds lowercase letters.
+starter:
+```python
+def string_sequence(target):
+    # your code here
+    return [target]
+```
+solution:
+```python
+def string_sequence(target):
+    screen = []
+    shown = []
+    for ch in target:
+        screen.append("a")
+        shown.append("".join(screen))
+        while screen[-1] != ch:
+            screen[-1] = chr(ord(screen[-1]) + 1)
+            shown.append("".join(screen))
+    return shown
+```
+tests:
+- string_sequence("abc")
+- string_sequence("he")
+- string_sequence("a")
+- string_sequence("z")
+- string_sequence("ba")
+- (lambda r: [len(r), r[-1][-6:], sum(len(x) for x in r)])(string_sequence("az" * 50))
+fail[2]: "h" takes 8 presses: an "a" and seven changes. Then "e" takes 5 more.
+fail[3]: One press: `["a"]`.
+fail[4]: 26 strings, "a" to "z".
+fail[5]: "b" needs an "a" and one change, and then the second letter is an "a" already.
+fail[6]: "az" 50 times: 1,350 strings appear on the screen.
+edges:
+- one letter :: len(target) == 1 :: string_sequence("c")
+- a "z" in target :: len(target) > 1 and "z" in target :: string_sequence("az")
+- no "z" :: len(target) > 1 and "z" not in target :: string_sequence("ab")
+edge_count: 2
+complexity: time=O(n²) | space=O(n²)
+complexity_note: n is the length of target. Each string on the screen has up to n letters, and up to 26 strings appear for each letter of target.
+why_time: Each of the up to 26n presses joins the screen into a string of up to n letters.
+why_space: The answer holds up to 26n strings of up to n letters.
+hint: `screen = []` and `shown = []`.
+hint: For each letter ch of target: append "a" to screen and record the screen. Then while `screen[-1] != ch`, set `screen[-1]` to `chr(ord(screen[-1]) + 1)` and record the screen again.
+hint: Record the screen with `shown.append("".join(screen))`.
+right: Both keys act on the end of the screen, so a list with append and `screen[-1]` makes each press O(1); only recording the strings costs their length.
+wrong: Keep the screen as a list. For each target letter, append "a" and record, then move the last letter forward to the target letter, recording after each step.
+
+=== task: code medium
+title: Decode the Slanted Ciphertext
+leetcode: 2075 | Decode the Slanted Ciphertext | decode-the-slanted-ciphertext
+patterns: append
+prompt: To encode a text, it's written into a grid with `rows` rows, one character per cell, along diagonals that go down and to the right: the first from (0, 0), the next from (0, 1), then (0, 2) and onwards. Cells that aren't used are spaces, and the grid has no more columns than it needs: its last column isn't empty. The grid is then read row by row to make `encoded_text`. Write `decode_ciphertext(encoded_text, rows)` that returns the original text, which has no spaces at its end.
+
+The grid has `cols = len(encoded_text) // rows` columns, and cell (r, c) is `encoded_text[r * cols + c]`. Read the diagonals in order: for each starting column, step down and to the right while you're inside the grid, appending each character to a list. The unused cells after the end of the text come out as spaces at the end of the list: pop them off the end, then join.
+
+**Example 1:** `decode_ciphertext("ch   ie   pr", 3)` returns `"cipher"`: the grid's rows are "ch  ", " ie " and "  pr".
+
+**Example 2:** `decode_ciphertext("iveo    eed   l te   olc", 4)` returns `"i love leetcode"`.
+
+**Example 3:** `decode_ciphertext("coding", 1)` returns `"coding"`.
+
+**Constraints:** 0 ≤ `len(encoded_text)` ≤ 10⁶, 1 ≤ rows ≤ 1000, encoded_text holds lowercase letters and spaces, and it's the encoding of exactly one text.
+starter:
+```python
+def decode_ciphertext(encoded_text, rows):
+    # your code here
+    return encoded_text
+```
+solution:
+```python
+def decode_ciphertext(encoded_text, rows):
+    cols = len(encoded_text) // rows
+    out = []
+    for start in range(cols):
+        r = 0
+        c = start
+        while r < rows and c < cols:
+            out.append(encoded_text[r * cols + c])
+            r += 1
+            c += 1
+    while len(out) > 0 and out[-1] == " ":
+        out.pop()
+    return "".join(out)
+```
+tests:
+- decode_ciphertext("ch   ie   pr", 3)
+- decode_ciphertext("iveo    eed   l te   olc", 4)
+- decode_ciphertext("coding", 1)
+- decode_ciphertext("", 5)
+- decode_ciphertext("ab  ", 2)
+- (lambda t: [len(t), t[:10], t[-10:]])(decode_ciphertext(("ab cd" * 1000)[0::2] + " " + " " + ("ab cd" * 1000)[1::2], 2))
+fail[2]: Read along each diagonal, starting from each column of row 0 in turn, then drop the spaces at the end.
+fail[3]: One row: the text is the grid itself.
+fail[4]: An empty grid holds an empty text.
+fail[5]: The space in the middle is part of the text: only the spaces at the end come off.
+fail[6]: A grid of 2 rows and 2,501 columns.
+edges:
+- one row :: rows == 1 :: decode_ciphertext("ab", 1)
+- an empty text :: rows > 1 and len(encoded_text) == 0 :: decode_ciphertext("", 2)
+- several rows :: rows > 1 and len(encoded_text) > 0 :: decode_ciphertext("a  b", 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of encoded_text.
+why_time: Each cell is read at most once, and each space at the end is popped once.
+why_space: The list of characters, then the string.
+hint: `cols = len(encoded_text) // rows`.
+hint: For start in `range(cols)`: with `r = 0` and `c = start`, while `r < rows and c < cols`, append `encoded_text[r * cols + c]` and add 1 to both r and c.
+hint: While the list isn't empty and its last character is a space, `pop()` it. Return `"".join(out)`.
+right: Cell (r, c) is at r × cols + c, so the diagonals are read without building the grid, and the spaces come off the end of the list in O(1) each.
+wrong: cols = the length // rows. For each start column, walk down and right, appending `encoded_text[r * cols + c]`. Pop the spaces at the end, then join.
+
+=== task: code medium
+title: Decoded String at Index
+leetcode: 880 | Decoded String at Index | decoded-string-at-index
+patterns: doubling
+prompt: s is decoded onto a tape, one character at a time: a letter is written at the end of the tape, and a digit d makes the whole tape so far appear d times in a row. Write `decode_at_index(s, k)` that returns the k-th letter of the tape, counting from 1.
+
+The tape can have more than 10¹⁸ letters, so don't build it. Work out its length first: +1 for a letter, ×d for a digit. Then go through s backwards, undoing each step on the length. A tape repeated d times has the same letter at position k as the tape before it had at position k mod its length. So at each step, set `k %= size`; if k is then 0 at a letter, that letter is the last one on the tape so far, and it's the answer. Then undo the step: divide size by a digit, or take 1 off it for a letter.
+
+**Example 1:** `decode_at_index("leet2code3", 10)` returns `"o"`: the tape is "leetleetcodeleetleetcodeleetleetcode".
+
+**Example 2:** `decode_at_index("ha22", 5)` returns `"h"`: the tape is "hahahaha".
+
+**Example 3:** `decode_at_index("a2345678999999999999999", 1)` returns `"a"`.
+
+**Constraints:** 2 ≤ `len(s)` ≤ 100, s holds lowercase letters and digits from 2 to 9 and starts with a letter, 1 ≤ k ≤ 10⁹, k is at most the tape's length, and the tape has fewer than 2⁶³ letters.
+starter:
+```python
+def decode_at_index(s, k):
+    # your code here
+    return s[0]
+```
+solution:
+```python
+def decode_at_index(s, k):
+    size = 0
+    for ch in s:
+        if ch.isdigit():
+            size *= int(ch)
+        else:
+            size += 1
+    for ch in reversed(s):
+        k %= size
+        if k == 0 and ch.isalpha():
+            return ch
+        if ch.isdigit():
+            size //= int(ch)
+        else:
+            size -= 1
+```
+tests:
+- decode_at_index("leet2code3", 10)
+- decode_at_index("ha22", 5)
+- decode_at_index("a2345678999999999999999", 1)
+- decode_at_index("ab", 2)
+- decode_at_index("a2b3", 6)
+- decode_at_index("abcdefghijklmnopqrstuvwxyz" + "9" * 8, 987654321)
+fail[2]: Position 5 of "hahahaha" is position 1 of "ha": "h".
+fail[3]: The tape is "a" repeated over 8 × 10¹⁸ times, and its first letter is "a".
+fail[4]: The second letter of "ab".
+fail[5]: The tape is "aab" three times: position 6 is the end of the second copy, "b".
+fail[6]: 26 letters repeated 9⁸ times: about 1.1 billion letters, far too many to build.
+edges:
+- k is 1 :: k == 1 :: decode_at_index("ab2", 1)
+- no digits :: k > 1 and not any(c.isdigit() for c in s) :: decode_at_index("abc", 2)
+- digits :: k > 1 and any(c.isdigit() for c in s) :: decode_at_index("ab2", 3)
+edge_count: 2
+complexity: time=O(n) | space=O(1)
+complexity_note: n is the length of s.
+why_time: One pass forward for the length, and one pass back.
+why_space: The size and k: the tape is never built.
+hint: First pass: `size = 0`, then for each ch, `size *= int(ch)` for a digit and `size += 1` for a letter.
+hint: Second pass, over `reversed(s)`: `k %= size`, and if `k == 0` and ch is a letter, return ch.
+hint: Then undo the step: `size //= int(ch)` for a digit, `size -= 1` for a letter.
+right: Every digit repeats the whole tape, so position k of the longer tape is position k mod the old length of the shorter one, and walking back undoes one step at a time without building the tape.
+wrong: Work out the tape's length. Walk s backwards: `k %= size`, and return the letter when k is 0 at a letter; divide size by each digit and take 1 off for each letter.
+
+=== task: code medium
+title: Circular Permutation in Binary Representation
+leetcode: 1238 | Circular Permutation in Binary Representation | circular-permutation-in-binary-representation
+patterns: doubling + append
+prompt: Write `circular_permutation(n, start)` that returns an ordering of all the numbers from 0 to 2ⁿ − 1 that begins with start, where each number differs from the next in exactly one bit of its binary form, and the last number differs from the first in exactly one bit too.
+
+Build the order by doubling, and return this particular one. Start with [0]. For each bit b from 0 to n − 1, append the list so far in reverse order, with bit b set in each number (`x | (1 << b)`): [0] becomes [0, 1], then [0, 1, 3, 2], then [0, 1, 3, 2, 6, 7, 5, 4]. The list and its reflected copy meet at two numbers that differ only in bit b, and the ends of the new list differ only in bit b too. Then rotate the list so it starts at start: `order[i:] + order[:i]`, with i the index of start.
+
+**Example 1:** `circular_permutation(2, 3)` returns `[3, 2, 0, 1]`.
+
+**Example 2:** `circular_permutation(3, 2)` returns `[2, 6, 7, 5, 4, 0, 1, 3]`.
+
+**Constraints:** 1 ≤ n ≤ 16, and 0 ≤ start < 2ⁿ.
+starter:
+```python
+def circular_permutation(n, start):
+    # your code here
+    return list(range(2 ** n))
+```
+solution:
+```python
+def circular_permutation(n, start):
+    order = [0]
+    for bit in range(n):
+        top = 1 << bit
+        for i in range(len(order) - 1, -1, -1):
+            order.append(order[i] | top)
+    i = order.index(start)
+    return order[i:] + order[:i]
+```
+tests:
+- circular_permutation(2, 3)
+- circular_permutation(3, 2)
+- circular_permutation(1, 0)
+- circular_permutation(1, 1)
+- circular_permutation(2, 0)
+- (lambda p: [len(p), p[:5], p[-3:]])(circular_permutation(14, 12345))
+fail[2]: The order is [0, 1, 3, 2, 6, 7, 5, 4], rotated to start at 2.
+fail[3]: `[0, 1]`.
+fail[4]: [0, 1], rotated to start at 1.
+fail[5]: 3 comes before 2: going from 1 straight to 2 would change two bits.
+fail[6]: 16,384 numbers for n = 14.
+edges:
+- n is 1 :: n == 1 :: circular_permutation(1, 0)
+- start is 0 :: n > 1 and start == 0 :: circular_permutation(2, 0)
+- start isn't 0 :: n > 1 and start != 0 :: circular_permutation(2, 1)
+edge_count: 2
+complexity: time=O(2ⁿ) | space=O(2ⁿ)
+complexity_note: The answer has 2ⁿ numbers.
+why_time: Each round doubles the list, so all the appends add up to less than 2 × 2ⁿ; finding start and rotating are O(2ⁿ) too.
+why_space: The order and the rotated answer hold 2ⁿ numbers each.
+hint: `order = [0]`. For each bit in `range(n)`: `top = 1 << bit`, and for i from `len(order) - 1` down to 0, append `order[i] | top`.
+hint: `i = order.index(start)`, then return `order[i:] + order[:i]`.
+right: Reflecting the list and setting a new bit doubles it while keeping every pair of neighbours one bit apart, and all the doubling costs O(2ⁿ).
+wrong: Start with [0]. For each bit, append the list reversed with that bit set. Rotate so that start comes first.
+
+=== task: code medium
+title: Find Mirror Score of a String
+leetcode: 3412 | Find Mirror Score of a String | find-mirror-score-of-a-string
+patterns: buckets + ordered
+prompt: Each lowercase letter has a **mirror**, the letter in the same place counting from the other end of the alphabet: "a" and "z" are mirrors, "b" and "y", and onwards. Go through s from left to right. At each index i, look for the closest index j < i that isn't marked yet, where `s[j]` is the mirror of `s[i]`. If there is one, mark both i and j and add i − j to the score. Write `calculate_score(s)` that returns the final score.
+
+Keep a bucket for each letter, holding that letter's indexes that aren't marked: `waiting = [[] for _ in range(26)]`. Indexes are appended from left to right, so each bucket is sorted, and the closest unmarked mirror is the **last** index in the mirror letter's bucket: pop it. If the mirror's bucket is empty, append i to its own letter's bucket.
+
+**Example 1:** `calculate_score("aczzx")` returns `5`: the first "z" pairs with the "a" at 0 (2 − 0), the second "z" finds nothing, and "x" pairs with the "c" at 1 (4 − 1).
+
+**Example 2:** `calculate_score("abcdef")` returns `0`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, and s holds lowercase letters.
+starter:
+```python
+def calculate_score(s):
+    # your code here
+    return 0
+```
+solution:
+```python
+def calculate_score(s):
+    waiting = [[] for _ in range(26)]
+    score = 0
+    for i in range(len(s)):
+        c = ord(s[i]) - 97
+        mirror = 25 - c
+        if len(waiting[mirror]) > 0:
+            score += i - waiting[mirror].pop()
+        else:
+            waiting[c].append(i)
+    return score
+```
+tests:
+- calculate_score("aczzx")
+- calculate_score("abcdef")
+- calculate_score("a")
+- calculate_score("az")
+- calculate_score("aazz")
+- calculate_score("abc" * 3000 + "zyx" * 3000)
+fail[2]: No letter's mirror comes before it.
+fail[3]: One letter: 0.
+fail[4]: "z" pairs with the "a" right before it: 1.
+fail[5]: The first "z" pairs with the closer "a", at 1: 1. The second pairs with the "a" at 0: 3.
+fail[6]: 9,000 letters, then their mirrors. Searching back from each index takes far too long; a bucket hands over its last index straight away.
+edges:
+- one letter :: len(s) == 1 :: calculate_score("m")
+- a letter and its mirror :: len(s) > 1 and any(chr(219 - ord(c)) in s for c in s) :: calculate_score("az")
+- no mirrored pair :: len(s) > 1 and not any(chr(219 - ord(c)) in s for c in s) :: calculate_score("ab")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each index is appended to a bucket at most once and popped at most once.
+why_space: The buckets hold up to n indexes.
+hint: Letter number c, with 0 for "a", has the mirror `25 - c`.
+hint: For each i: if `waiting[mirror]` isn't empty, add `i - waiting[mirror].pop()` to the score.
+hint: Otherwise append i to `waiting[c]`.
+right: Each bucket fills from left to right, so its last index is the closest one, and taking it with `pop()` is O(1). Marked indexes leave their bucket, so they're never found again.
+wrong: Keep 26 buckets of unmarked indexes. For each index, pop the last index from the mirror letter's bucket and add the distance, or append the index to its own letter's bucket.
+
+=== task: code medium
+title: Range Frequency Queries
+leetcode: 2080 | Range Frequency Queries | range-frequency-queries
+patterns: buckets + ordered
+prompt: Write a class `RangeFreqQuery`:
+
+- `RangeFreqQuery(arr)` stores the list arr.
+- `query(left, right, value)` returns how many times value appears in arr from index left to index right, both included.
+
+Counting through the range for every query is too slow. Instead, in `__init__`, keep the positions of each value in a dictionary of lists: go through arr once, and append each index to its value's list. Each list is then sorted, and the count inside a range is `bisect_right(pos, right) - bisect_left(pos, left)`.
+
+**Example:** `run(["RangeFreqQuery", "query", "query"], [[[12, 33, 4, 56, 22, 2, 34, 33, 22, 12, 34, 56]], [1, 2, 4], [0, 11, 33]])` returns `[None, 1, 2]`: 4 appears once in positions 1 to 2, and 33 twice in the whole list.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 10⁵, 1 ≤ `arr[i]`, value ≤ 10⁴, 0 ≤ left ≤ right < `len(arr)`, and there are at most 10⁵ queries.
+starter:
+```python
+class RangeFreqQuery:
+    def __init__(self, arr):
+        self.arr = arr
+
+    def query(self, left, right, value):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RangeFreqQuery":
+            finder = RangeFreqQuery(args[0])
+            results.append(None)
+        elif command == "query":
+            results.append(finder.query(args[0], args[1], args[2]))
+    return results
+```
+solution:
+```python
+from bisect import bisect_left, bisect_right
+
+
+class RangeFreqQuery:
+    def __init__(self, arr):
+        self.where = {}
+        for i in range(len(arr)):
+            if arr[i] not in self.where:
+                self.where[arr[i]] = []
+            self.where[arr[i]].append(i)
+
+    def query(self, left, right, value):
+        if value not in self.where:
+            return 0
+        pos = self.where[value]
+        return bisect_right(pos, right) - bisect_left(pos, left)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "RangeFreqQuery":
+            finder = RangeFreqQuery(args[0])
+            results.append(None)
+        elif command == "query":
+            results.append(finder.query(args[0], args[1], args[2]))
+    return results
+```
+tests:
+- run(["RangeFreqQuery", "query", "query"], [[[12, 33, 4, 56, 22, 2, 34, 33, 22, 12, 34, 56]], [1, 2, 4], [0, 11, 33]])
+- run(["RangeFreqQuery", "query", "query"], [[[1, 2, 3]], [0, 2, 7], [1, 1, 2]])
+- run(["RangeFreqQuery", "query"], [[[5]], [0, 0, 5]])
+- run(["RangeFreqQuery", "query", "query", "query"], [[[4, 1, 4, 1, 4]], [0, 0, 4], [4, 4, 4], [1, 3, 4]])
+- run(["RangeFreqQuery", "query", "query", "query"], [[[2, 2, 2, 2, 2, 2]], [0, 5, 2], [2, 3, 2], [1, 4, 3]])
+- sum(run(["RangeFreqQuery"] + ["query"] * 5000, [[[i * 7 % 50 + 1 for i in range(20000)]]] + [[i % 1000, 19999 - i % 1500, i % 50 + 1] for i in range(5000)])[1:])
+fail[2]: 7 never appears: 0. 2 appears once, at position 1.
+fail[3]: One number, asked about itself: 1.
+fail[4]: A range of one position at each end, then the middle, which holds one 4.
+fail[5]: Every position holds 2, and 3 never appears.
+fail[6]: 20,000 numbers and 5,000 queries over most of the list. Counting through each range takes far too long.
+edges:
+- a value that never appears :: any(i[2] not in inputs[0][0] for c, i in zip(commands[1:], inputs[1:])) :: run(["RangeFreqQuery", "query"], [[[1, 2]], [0, 1, 3]])
+- a range of one position :: all(i[2] in inputs[0][0] for i in inputs[1:]) and any(i[0] == i[1] for i in inputs[1:]) :: run(["RangeFreqQuery", "query"], [[[1, 2]], [1, 1, 2]])
+- longer ranges only :: all(i[2] in inputs[0][0] and i[0] < i[1] for i in inputs[1:]) :: run(["RangeFreqQuery", "query"], [[[1, 2]], [0, 1, 1]])
+edge_count: 2
+complexity: time=O(log n) | space=O(n)
+complexity_note: Give the time of one query; n is the length of arr. Setting up is O(n), once.
+why_time: Two binary searches in one value's list of positions.
+why_space: Every position is stored once, in its value's list.
+hint: In `__init__`: `self.where = {}`. For each i, if `arr[i]` isn't a key yet, set `self.where[arr[i]] = []`; then append i to it.
+hint: In query: if value isn't in where, return 0.
+hint: Otherwise set `pos = self.where[value]`, and return `bisect_right(pos, right) - bisect_left(pos, left)`.
+right: Each value's positions go into its list from left to right, so every list is sorted, and two binary searches count the positions inside the range.
+wrong: Map each value to the list of its positions, appended in order. A query is `bisect_right(pos, right) - bisect_left(pos, left)`, or 0 for a value that never appears.
+
+=== task: code medium
+title: Number of Matching Subsequences
+leetcode: 792 | Number of Matching Subsequences | number-of-matching-subsequences
+patterns: buckets + total
+prompt: A word is a **subsequence** of s if it can be made by deleting letters from s without changing the order of the rest: "ace" is a subsequence of "abcde". Write `num_matching_subseq(s, words)` that returns how many words, counting repeats, are subsequences of s.
+
+Checking each word against s from the start costs O(len(s)) per word. Instead, go through s once, with every word waiting in the bucket of the letter it needs next. A bucket holds pairs `(word, i)`: the word waits for `word[i - 1]`, and once that letter comes, it has matched i letters. Start each word as `(w, 1)` in the bucket for `w[0]`. For each letter ch of s, take the whole bucket for ch and put an empty one in its place. Each pair in it has now matched one more letter: if that was the word's last letter, count it; otherwise put it in the bucket for its next letter, `w[i]`, as `(w, i + 1)`.
+
+**Example 1:** `num_matching_subseq("abcde", ["a", "bb", "acd", "ace"])` returns `3`: "bb" needs two b's.
+
+**Example 2:** `num_matching_subseq("dsahjpjauf", ["ahjpjau", "ja", "ahbwzgqnuk", "tnmlanowax"])` returns `2`.
+
+**Constraints:** 1 ≤ `len(s)` ≤ 5 × 10⁴, 1 ≤ `len(words)` ≤ 5000, and each word has 1 to 50 letters. All the letters are lowercase.
+starter:
+```python
+def num_matching_subseq(s, words):
+    # your code here
+    return 0
+```
+solution:
+```python
+def num_matching_subseq(s, words):
+    waiting = [[] for _ in range(26)]
+    for w in words:
+        waiting[ord(w[0]) - 97].append((w, 1))
+    matched = 0
+    for ch in s:
+        c = ord(ch) - 97
+        ready = waiting[c]
+        waiting[c] = []
+        for w, i in ready:
+            if i == len(w):
+                matched += 1
+            else:
+                waiting[ord(w[i]) - 97].append((w, i + 1))
+    return matched
+```
+tests:
+- num_matching_subseq("abcde", ["a", "bb", "acd", "ace"])
+- num_matching_subseq("dsahjpjauf", ["ahjpjau", "ja", "ahbwzgqnuk", "tnmlanowax"])
+- num_matching_subseq("a", ["a", "b", "aa"])
+- num_matching_subseq("abc", ["abc", "abc", "cba"])
+- num_matching_subseq("aaa", ["a", "aa", "aaa", "aaaa"])
+- num_matching_subseq("".join(chr(97 + (i * 7) % 26) for i in range(10000)), ["".join(chr(97 + (i * j) % 26) for j in range(i % 20 + 1)) for i in range(1500)])
+fail[2]: "ahjpjau" and "ja" fit in order; the other two need letters that s doesn't have.
+fail[3]: "a" matches; "b" isn't in s, and "aa" needs two a's.
+fail[4]: Both copies of "abc" count; "cba" needs its letters in the wrong order.
+fail[5]: "aaaa" needs one more "a" than s has.
+fail[6]: 10,000 letters and 1,500 words. Going through s again for every word takes far too long.
+edges:
+- one word :: len(words) == 1 :: num_matching_subseq("ab", ["b"])
+- a word longer than s :: len(words) > 1 and any(len(w) > len(s) for w in words) :: num_matching_subseq("ab", ["a", "abc"])
+- every word no longer than s :: len(words) > 1 and all(len(w) <= len(s) for w in words) :: num_matching_subseq("ab", ["a", "ba"])
+edge_count: 2
+complexity: time=O(n + L) | space=O(w)
+complexity_options: O(n + L); O(n × w); O(w)
+complexity_note: n is the length of s, w the number of words, and L the total number of letters in the words.
+why_time: Each letter of s takes one bucket, and each word moves once for each of its letters: L moves in all.
+why_space: Each word is in exactly one bucket at a time, as one pair.
+hint: `waiting = [[] for _ in range(26)]`, and put `(w, 1)` in the bucket for `w[0]`.
+hint: For each ch in s: `ready = waiting[c]`, then `waiting[c] = []`, before moving anyone.
+hint: For each `(w, i)` in ready: if `i == len(w)`, count it; otherwise append `(w, i + 1)` to the bucket for `w[i]`.
+right: A word only ever moves forward through its own letters, so all the moves add up to the total length of the words, and s is read once.
+wrong: Bucket the words by the letter they need next. For each letter of s, empty its bucket: words that are finished count, and the others move to the bucket of their next letter.
+
+=== task: code medium
+title: Online Election
+leetcode: 911 | Online Election | online-election
+patterns: ordered
+prompt: Write a class `TopVotedCandidate`:
+
+- `TopVotedCandidate(persons, times)`: vote i went to candidate `persons[i]` at time `times[i]`, and times is strictly increasing.
+- `q(t)` returns the candidate who was leading at time t, counting the votes cast at time t. On a tie, the candidate with the most recent vote leads.
+
+Work out the leader after every vote once, in `__init__`, and append it to a list leaders, so the leader after vote i is `leaders[i]`. Then each query is a search: the last vote at or before t is at index `bisect_right(times, t) - 1`.
+
+**Example:** `run(["TopVotedCandidate", "q", "q", "q", "q", "q", "q"], [[[0, 1, 1, 0, 0, 1, 0], [0, 5, 10, 15, 20, 25, 30]], [3], [12], [25], [15], [24], [8]])` returns `[None, 0, 1, 1, 0, 0, 1]`: at 25, candidates 0 and 1 have 3 votes each, and 1 had the most recent vote.
+
+**Constraints:** 1 ≤ `len(persons)` ≤ 5000, `len(times) == len(persons)`, 0 ≤ `persons[i]` < `len(persons)`, 0 ≤ `times[i]` ≤ 10⁹, `times[0]` ≤ t ≤ 10⁹, and there are at most 10⁴ queries.
+starter:
+```python
+class TopVotedCandidate:
+    def __init__(self, persons, times):
+        self.persons = persons
+        self.times = times
+
+    def q(self, t):
+        return self.persons[0]
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TopVotedCandidate":
+            election = TopVotedCandidate(args[0], args[1])
+            results.append(None)
+        elif command == "q":
+            results.append(election.q(args[0]))
+    return results
+```
+solution:
+```python
+from bisect import bisect_right
+
+
+class TopVotedCandidate:
+    def __init__(self, persons, times):
+        self.times = times
+        self.leaders = []
+        votes = [0] * len(persons)
+        leader = persons[0]
+        for p in persons:
+            votes[p] += 1
+            if votes[p] >= votes[leader]:
+                leader = p
+            self.leaders.append(leader)
+
+    def q(self, t):
+        return self.leaders[bisect_right(self.times, t) - 1]
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TopVotedCandidate":
+            election = TopVotedCandidate(args[0], args[1])
+            results.append(None)
+        elif command == "q":
+            results.append(election.q(args[0]))
+    return results
+```
+tests:
+- run(["TopVotedCandidate", "q", "q", "q", "q", "q", "q"], [[[0, 1, 1, 0, 0, 1, 0], [0, 5, 10, 15, 20, 25, 30]], [3], [12], [25], [15], [24], [8]])
+- run(["TopVotedCandidate", "q", "q"], [[[0], [5]], [5], [1000]])
+- run(["TopVotedCandidate", "q", "q", "q"], [[[0, 1], [1, 2]], [1], [2], [9]])
+- run(["TopVotedCandidate", "q", "q", "q", "q"], [[[2, 2, 0, 0, 1], [3, 6, 9, 12, 15]], [3], [11], [12], [15]])
+- run(["TopVotedCandidate", "q", "q", "q", "q"], [[[1, 0, 0, 1, 1, 0], [0, 10, 20, 30, 40, 50]], [9], [20], [40], [1000000000]])
+- sum(run(["TopVotedCandidate"] + ["q"] * 10000, [[[i * i % 7 for i in range(5000)], [i * 3 for i in range(5000)]]] + [[i * 7 % 15000] for i in range(10000)])[1:])
+fail[2]: One vote: candidate 0 leads from time 5 on.
+fail[3]: At time 2, the tie goes to candidate 1, who voted last.
+fail[4]: Candidate 0 catches up at 12 and leads on the tie, with the most recent vote.
+fail[5]: The lead changes back and forth. After every vote, at 10⁹, it's a tie that 0 wins with the last vote.
+fail[6]: 5,000 votes and 10,000 queries. Counting the votes again for every query takes far too long.
+edges:
+- one vote :: len(inputs[0][0]) == 1 :: run(["TopVotedCandidate", "q"], [[[0], [1]], [1]])
+- a query at the time of a vote :: len(inputs[0][0]) > 1 and any(i[0] in inputs[0][1] for i in inputs[1:]) :: run(["TopVotedCandidate", "q"], [[[0, 1], [1, 2]], [2]])
+- queries between votes only :: len(inputs[0][0]) > 1 and all(i[0] not in inputs[0][1] for i in inputs[1:]) :: run(["TopVotedCandidate", "q"], [[[0, 1], [1, 3]], [2]])
+edge_count: 2
+complexity: time=O(log n) | space=O(n)
+complexity_note: Give the time of one query; n is the number of votes. Setting up is O(n), once.
+why_time: One binary search in times.
+why_space: The leaders and the vote counts have n entries each.
+hint: In `__init__`: `votes = [0] * len(persons)` and `leader = persons[0]`. For each p in persons, add 1 to `votes[p]`; if `votes[p] >= votes[leader]`, set leader to p. Append leader to `self.leaders`.
+hint: `>=` makes a tie go to the candidate who has the newest vote.
+hint: In q: return `self.leaders[bisect_right(self.times, t) - 1]`.
+right: The leader can only change when a vote arrives, so one list, built in vote order, holds every answer, and the times are sorted, so a binary search finds the last vote at or before t.
+wrong: Work out the leader after each vote, with ties going to the new vote's candidate. Answer `q(t)` with the leader at index `bisect_right(times, t) - 1`.
+
+=== task: code medium
+title: Design Exam Scores Tracker
+leetcode: 3709 | Design Exam Scores Tracker | design-exam-scores-tracker
+patterns: ordered
+prompt: Write a class `ExamTracker` for a student's exam scores:
+
+- `record(time, score)` records an exam at time with score. Every call has a bigger time than the one before.
+- `total_score(start_time, end_time)` returns the total score of the exams from start_time to end_time, both included, or 0 if there are none. end_time is never later than the last time recorded.
+
+Append each time to a list times, which stays sorted, and keep running totals in a second list: `totals[i]` is the total of the first i scores, starting from `totals = [0]`. The exams in a range are the ones from index `bisect_left(times, start_time)` up to, but not including, `bisect_right(times, end_time)`, and their total is the difference of two running totals.
+
+**Example:** `run(["ExamTracker", "record", "total_score", "record", "total_score", "total_score", "total_score", "total_score"], [[], [1, 98], [1, 1], [5, 99], [1, 3], [1, 5], [3, 4], [2, 5]])` returns `[None, None, 98, None, 98, 197, 0, 99]`.
+
+**Constraints:** 1 ≤ time, score ≤ 10⁹, 1 ≤ start_time ≤ end_time ≤ the last time recorded, the first call is a record, and there are at most 10⁵ calls.
+starter:
+```python
+class ExamTracker:
     def __init__(self):
-        self.slots = [None]
-        self.size = 0
+        self.times = []
+        self.totals = [0]
 
-    def append(self, x):
-        if self.size == len(self.slots):
-            new = [None] * (2 * len(self.slots))
-            for i in range(self.size):
-                new[i] = self.slots[i]
-            self.slots = new
-        self.slots[self.size] = x
-        self.size += 1
+    def record(self, time, score):
+        pass
 
-a = DynamicArray()
-for x in [5, 6, 7]:
-    a.append(x)
-print(a.size, len(a.slots), a.slots)
+    def total_score(self, start_time, end_time):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ExamTracker":
+            tracker = ExamTracker()
+            results.append(None)
+        elif command == "record":
+            results.append(tracker.record(args[0], args[1]))
+        elif command == "total_score":
+            results.append(tracker.total_score(args[0], args[1]))
+    return results
 ```
-distractors:
+solution:
 ```python
-            new = [None] * (len(self.slots) + 1)
-        self.slots.append(x)
+from bisect import bisect_left, bisect_right
+
+
+class ExamTracker:
+    def __init__(self):
+        self.times = []
+        self.totals = [0]
+
+    def record(self, time, score):
+        self.times.append(time)
+        self.totals.append(self.totals[-1] + score)
+
+    def total_score(self, start_time, end_time):
+        lo = bisect_left(self.times, start_time)
+        hi = bisect_right(self.times, end_time)
+        return self.totals[hi] - self.totals[lo]
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "ExamTracker":
+            tracker = ExamTracker()
+            results.append(None)
+        elif command == "record":
+            results.append(tracker.record(args[0], args[1]))
+        elif command == "total_score":
+            results.append(tracker.total_score(args[0], args[1]))
+    return results
 ```
-hint: Grow only when `self.size == len(self.slots)`.
-hint: After growing (or not), write into slot `self.size` and add 1.
-right: Two growths (1 → 2 → 4) for three appends, with one free slot left. Growing by one slot would copy on nearly every append, and `self.slots.append` would sidestep the array we're building.
-wrong: In `append`: if full, make a block twice as big, copy the items, switch to it; then `self.slots[self.size] = x` and `self.size += 1`.
+tests:
+- run(["ExamTracker", "record", "total_score", "record", "total_score", "total_score", "total_score", "total_score"], [[], [1, 98], [1, 1], [5, 99], [1, 3], [1, 5], [3, 4], [2, 5]])
+- run(["ExamTracker", "record", "total_score"], [[], [7, 50], [7, 7]])
+- run(["ExamTracker", "record", "record", "record", "total_score", "total_score"], [[], [2, 10], [4, 20], [6, 30], [3, 5], [1, 6]])
+- run(["ExamTracker", "record", "record", "total_score", "record", "total_score"], [[], [1, 1000000000], [2, 1000000000], [1, 2], [3, 1], [2, 3]])
+- run(["ExamTracker", "record", "total_score", "total_score", "record", "total_score"], [[], [10, 5], [1, 9], [10, 10], [20, 6], [11, 19]])
+- sum(x for x in run(["ExamTracker"] + ["record", "total_score"] * 5000, [[]] + [x for i in range(5000) for x in ([i * 2 + 1, i % 100 + 1], [i % 3000 + 1, i * 2 + 1])]) if x is not None)
+fail[2]: One exam, and a range that's exactly its time.
+fail[3]: From 3 to 5 holds only the exam at 4. From 1 to 6 holds all three.
+fail[4]: Two scores of 10⁹ add up to more than a 32-bit number can hold; Python's integers have no limit.
+fail[5]: No exam from 1 to 9, exactly one at 10, and none from 11 to 19.
+fail[6]: 5,000 records and 5,000 totals. Adding up the scores in each range takes far too long.
+edges:
+- one record :: commands.count("record") == 1 :: run(["ExamTracker", "record", "total_score"], [[], [3, 7], [3, 3]])
+- a range of one time :: commands.count("record") > 1 and any(c == "total_score" and i[0] == i[1] for c, i in zip(commands, inputs)) :: run(["ExamTracker", "record", "record", "total_score"], [[], [1, 5], [2, 6], [2, 2]])
+- longer ranges only :: commands.count("record") > 1 and all(i[0] < i[1] for c, i in zip(commands, inputs) if c == "total_score") :: run(["ExamTracker", "record", "record", "total_score"], [[], [1, 5], [2, 6], [1, 2]])
+edge_count: 2
+complexity: time=O(log n) | space=O(n)
+complexity_note: Give the time of one call, with n exams recorded.
+why_time: record makes two appends, O(1), and total_score makes two binary searches.
+why_space: times holds n numbers and totals n + 1.
+hint: In record: `self.times.append(time)` and `self.totals.append(self.totals[-1] + score)`.
+hint: In total_score: `lo = bisect_left(self.times, start_time)` and `hi = bisect_right(self.times, end_time)`.
+hint: Return `self.totals[hi] - self.totals[lo]`.
+right: The times arrive in order, so the list is sorted without any sorting, and running totals built with append turn the sum of any range into one subtraction.
+wrong: Append each time and a running total. For a range, binary search both ends and subtract the running totals.
+
+=== task: code medium
+title: Longest Uploaded Prefix
+leetcode: 2424 | Longest Uploaded Prefix | longest-uploaded-prefix
+patterns: total
+prompt: Videos numbered 1 to n are uploaded to a server one at a time, in any order. The **uploaded prefix** of length i is there when videos 1 to i have all been uploaded. Write a class `LUPrefix`:
+
+- `LUPrefix(n)` starts with nothing uploaded.
+- `upload(video)` uploads that video. Each video is uploaded at most once.
+- `longest()` returns the length of the longest uploaded prefix.
+
+Keep a list of flags, uploaded, and the prefix length so far. The prefix only ever grows, so after each upload, move it forward while the next video is there. One upload can move it a long way, but it moves at most n times over all the uploads.
+
+**Example:** `run(["LUPrefix", "upload", "longest", "upload", "longest", "upload", "longest"], [[4], [3], [], [1], [], [2], []])` returns `[None, None, 0, None, 1, None, 3]`: once video 2 arrives, videos 1, 2 and 3 are all there.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ video ≤ n, the videos are all different, there are at most 2 × 10⁵ calls, and at least one of them is longest.
+starter:
+```python
+class LUPrefix:
+    def __init__(self, n):
+        self.uploaded = [False] * (n + 2)
+        self.prefix = 0
+
+    def upload(self, video):
+        self.uploaded[video] = True
+
+    def longest(self):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "LUPrefix":
+            server = LUPrefix(args[0])
+            results.append(None)
+        elif command == "upload":
+            results.append(server.upload(args[0]))
+        elif command == "longest":
+            results.append(server.longest())
+    return results
+```
+solution:
+```python
+class LUPrefix:
+    def __init__(self, n):
+        self.uploaded = [False] * (n + 2)
+        self.prefix = 0
+
+    def upload(self, video):
+        self.uploaded[video] = True
+        while self.uploaded[self.prefix + 1]:
+            self.prefix += 1
+
+    def longest(self):
+        return self.prefix
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "LUPrefix":
+            server = LUPrefix(args[0])
+            results.append(None)
+        elif command == "upload":
+            results.append(server.upload(args[0]))
+        elif command == "longest":
+            results.append(server.longest())
+    return results
+```
+tests:
+- run(["LUPrefix", "upload", "longest", "upload", "longest", "upload", "longest"], [[4], [3], [], [1], [], [2], []])
+- run(["LUPrefix", "upload", "longest"], [[1], [1], []])
+- run(["LUPrefix", "longest", "upload", "longest"], [[3], [], [2], []])
+- run(["LUPrefix", "upload", "upload", "longest", "upload", "longest"], [[3], [3], [2], [], [1], []])
+- run(["LUPrefix", "upload", "longest", "upload", "upload", "longest", "upload", "longest"], [[5], [1], [], [4], [2], [], [3], []])
+- sum(x for x in run(["LUPrefix"] + ["upload", "longest"] * 10000, [[10000]] + [x for i in range(10000) for x in ([(i ^ 1) + 1], [])]) if x)
+fail[2]: One video, uploaded: 1.
+fail[3]: Video 1 never arrives, so the prefix stays 0.
+fail[4]: 3 and 2 arrive first, and the prefix jumps to 3 once 1 arrives.
+fail[5]: The prefix goes to 1, then to 2 once 2 arrives, then to 4 when 3 fills the gap.
+fail[6]: 10,000 videos with a longest call after each upload. Counting from video 1 every time takes far too long.
+edges:
+- one video :: inputs[0][0] == 1 :: run(["LUPrefix", "upload", "longest"], [[1], [1], []])
+- video 1 never uploaded :: inputs[0][0] > 1 and [1] not in inputs[1:] :: run(["LUPrefix", "upload", "longest"], [[2], [2], []])
+- video 1 uploaded :: inputs[0][0] > 1 and [1] in inputs[1:] :: run(["LUPrefix", "upload", "longest"], [[2], [1], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: Give the time of one call, on average over all the calls; n is the number of videos.
+why_time: The prefix moves forward at most n times in all, so all the uploads together cost O(n + calls).
+why_space: One flag per video.
+hint: `self.uploaded = [False] * (n + 2)` and `self.prefix = 0`. The extra slot at the end is never set, so the loop below always stops.
+hint: In upload: set the flag, then `while self.uploaded[self.prefix + 1]:` add 1 to `self.prefix`.
+hint: longest returns `self.prefix`.
+right: The prefix never moves back, so the loops of all the uploads together pass each video once: one upload can be slow, but on average each call is O(1).
+wrong: Flag each uploaded video. After each upload, move the prefix forward while the next video is flagged. longest returns the prefix.
+
+=== task: code hard
+title: Online Majority Element In Subarray
+leetcode: 1157 | Online Majority Element In Subarray | online-majority-element-in-subarray
+patterns: buckets + ordered
+prompt: Write a class `MajorityChecker`:
+
+- `MajorityChecker(arr)` stores the list arr.
+- `query(left, right, threshold)` returns the number that appears at least threshold times in arr from index left to index right, or −1 if none does. threshold is always more than half the length of the range, so at most one number can qualify.
+
+Keep the positions of each value in a list of its own, appended in order, so each list is sorted and `bisect_right(pos, right) - bisect_left(pos, left)` counts a value inside a range in O(log n). Then split the queries by length, with short the smallest number whose square is at least n:
+
+- A range of at most 2 × short positions is counted directly, with a dictionary.
+- In a longer range, the answer appears at least threshold times, which is more than short, so it appears more than short times in the whole list, and fewer than n / short values do that. Sort the values once by how often they appear in arr, most often first, and try them in that order, stopping once a value's total is below threshold.
+
+**Example:** `run(["MajorityChecker", "query", "query", "query"], [[[1, 1, 2, 2, 1, 1]], [0, 5, 4], [0, 3, 3], [2, 3, 2]])` returns `[None, 1, -1, 2]`.
+
+**Constraints:** 1 ≤ `len(arr)` ≤ 2 × 10⁴, 1 ≤ `arr[i]` ≤ 2 × 10⁴, 0 ≤ left ≤ right < `len(arr)`, threshold ≤ right − left + 1, 2 × threshold > right − left + 1, and there are at most 10⁴ queries.
+starter:
+```python
+class MajorityChecker:
+    def __init__(self, arr):
+        self.arr = arr
+
+    def query(self, left, right, threshold):
+        return -1
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MajorityChecker":
+            checker = MajorityChecker(args[0])
+            results.append(None)
+        elif command == "query":
+            results.append(checker.query(args[0], args[1], args[2]))
+    return results
+```
+solution:
+```python
+from bisect import bisect_left, bisect_right
+
+
+class MajorityChecker:
+    def __init__(self, arr):
+        self.arr = arr
+        self.where = {}
+        for i in range(len(arr)):
+            if arr[i] not in self.where:
+                self.where[arr[i]] = []
+            self.where[arr[i]].append(i)
+        self.common = sorted(self.where, key=lambda v: -len(self.where[v]))
+        self.short = 1
+        while self.short * self.short < len(arr):
+            self.short += 1
+
+    def query(self, left, right, threshold):
+        if right - left + 1 <= 2 * self.short:
+            seen = {}
+            for i in range(left, right + 1):
+                x = self.arr[i]
+                seen[x] = seen.get(x, 0) + 1
+                if seen[x] >= threshold:
+                    return x
+            return -1
+        for value in self.common:
+            pos = self.where[value]
+            if len(pos) < threshold:
+                break
+            if bisect_right(pos, right) - bisect_left(pos, left) >= threshold:
+                return value
+        return -1
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MajorityChecker":
+            checker = MajorityChecker(args[0])
+            results.append(None)
+        elif command == "query":
+            results.append(checker.query(args[0], args[1], args[2]))
+    return results
+```
+tests:
+- run(["MajorityChecker", "query", "query", "query"], [[[1, 1, 2, 2, 1, 1]], [0, 5, 4], [0, 3, 3], [2, 3, 2]])
+- run(["MajorityChecker", "query"], [[[7]], [0, 0, 1]])
+- run(["MajorityChecker", "query", "query"], [[[3, 1, 3, 2, 3]], [0, 4, 3], [0, 3, 3]])
+- run(["MajorityChecker", "query", "query", "query"], [[[5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6]], [0, 15, 9], [4, 19, 9], [0, 19, 11]])
+- run(["MajorityChecker", "query", "query", "query", "query"], [[[i % 3 + 1 for i in range(30)] + [2] * 30], [0, 59, 31], [20, 59, 21], [0, 29, 16], [30, 30, 1]])
+- sum(run(["MajorityChecker"] + ["query"] * 2000, [[[9 if i % 5 else i % 7 + 1 for i in range(4000)]]] + [[i % 400, 3999 - i % 300, (4000 - i % 300 - i % 400) // 2 + 1 + (i * 37) % ((4000 - i % 300 - i % 400) // 2)] for i in range(2000)])[1:])
+fail[2]: One number, 7, asked about once.
+fail[3]: 3 appears 3 times in the whole list, but only twice in the first four.
+fail[4]: In positions 0 to 15, 5 appears 10 times; in 4 to 19, 6 does. In all 20 positions, each appears 10 times, one short of 11.
+fail[5]: The 2s at the end make 2 the answer for the long ranges. In the first 30 numbers, no number appears 16 times.
+fail[6]: 4,000 numbers and 2,000 long ranges. Counting each range directly takes far too long.
+edges:
+- a range of one position :: any(i[0] == i[1] for i in inputs[1:]) :: run(["MajorityChecker", "query"], [[[4, 5]], [1, 1, 1]])
+- a range of the whole list :: all(i[0] < i[1] for i in inputs[1:]) and any(i[0] == 0 and i[1] == len(inputs[0][0]) - 1 for i in inputs[1:]) :: run(["MajorityChecker", "query"], [[[4, 4]], [0, 1, 2]])
+- shorter ranges :: all(i[0] < i[1] and (i[0] > 0 or i[1] < len(inputs[0][0]) - 1) for i in inputs[1:]) :: run(["MajorityChecker", "query"], [[[4, 4, 5]], [0, 1, 2]])
+edge_count: 2
+complexity: time=O(√n × log n) | space=O(n)
+complexity_options: O(√n × log n); O(log n)
+complexity_note: Give the time of one query; n is the length of arr. Setting up is O(n log n), once.
+why_time: A short range is counted directly, in O(√n). In a long range, fewer than √n values appear often enough, and each costs two binary searches.
+why_space: Every position is stored once, in its value's list.
+hint: In `__init__`: build `self.where`, a dictionary from each value to its positions, appended in order. Then `self.common = sorted(self.where, key=lambda v: -len(self.where[v]))`.
+hint: `self.short = 1`, then `while self.short * self.short < len(arr):` add 1 to it.
+hint: If `right - left + 1 <= 2 * self.short`, count the range in a dictionary, and return the first value whose count reaches threshold, or −1.
+hint: Otherwise, go through self.common: stop and return −1 once a value's whole list is shorter than threshold, and return the value if `bisect_right(pos, right) - bisect_left(pos, left) >= threshold`.
+right: A value's positions are a sorted bucket, so counting it in any range is two binary searches, and a long range leaves only the few common values to try, most common first.
+wrong: Keep the positions of each value, appended in order. Count short ranges directly. For long ranges, try the values from most to least common overall, until one's total is below threshold, counting each inside the range with two binary searches.
+
+=== task: code hard
+title: Minimum Number of Removals to Make Mountain Array
+leetcode: 1671 | Minimum Number of Removals to Make Mountain Array | minimum-number-of-removals-to-make-mountain-array
+patterns: append + ordered
+prompt: A **mountain** is a list of at least 3 numbers that strictly increase up to a peak, which isn't at either end, and strictly decrease after it. Write `minimum_mountain_removals(nums)` that returns the fewest numbers to remove from nums to leave a mountain.
+
+The mountain you keep is a rising run that ends at some peak i, then a falling run that starts there. A run here is a subsequence: numbers in their order, not necessarily side by side. So work out `up[i]`, the length of the longest rising run that ends at `nums[i]`, and `down[i]`, the longest falling run that starts there.
+
+Get up with **tails**: `tails[k]` is the smallest last number of any rising run of length k + 1 found so far. For each x, `k = bisect_left(tails, x)`: x either extends the longest run, with append, or replaces `tails[k]`, and the longest run ending at x has length k + 1. down is the same, worked out on the reversed list. The answer is n minus the best `up[i] + down[i] - 1`, over the peaks i with `up[i] >= 2` and `down[i] >= 2`.
+
+**Example 1:** `minimum_mountain_removals([1, 3, 1])` returns `0`.
+
+**Example 2:** `minimum_mountain_removals([2, 1, 1, 5, 6, 2, 3, 1])` returns `3`: removing the numbers at positions 0, 1 and 5 leaves [1, 5, 6, 3, 1].
+
+**Constraints:** 3 ≤ `len(nums)` ≤ 1000, 1 ≤ `nums[i]` ≤ 10⁹, and a mountain can always be made.
+starter:
+```python
+def minimum_mountain_removals(nums):
+    # your code here
+    return 0
+```
+solution:
+```python
+from bisect import bisect_left
+
+
+def rising_lengths(nums):
+    tails = []
+    lengths = []
+    for x in nums:
+        i = bisect_left(tails, x)
+        if i == len(tails):
+            tails.append(x)
+        else:
+            tails[i] = x
+        lengths.append(i + 1)
+    return lengths
+
+
+def minimum_mountain_removals(nums):
+    n = len(nums)
+    up = rising_lengths(nums)
+    down = rising_lengths(nums[::-1])[::-1]
+    best = 0
+    for i in range(1, n - 1):
+        if up[i] >= 2 and down[i] >= 2:
+            best = max(best, up[i] + down[i] - 1)
+    return n - best
+```
+tests:
+- minimum_mountain_removals([1, 3, 1])
+- minimum_mountain_removals([2, 1, 1, 5, 6, 2, 3, 1])
+- minimum_mountain_removals([4, 3, 2, 1, 1, 2, 3, 1])
+- minimum_mountain_removals([1, 2, 3, 4, 4, 3, 2, 1])
+- minimum_mountain_removals([9, 8, 1, 7, 6, 5, 4, 3, 2, 1])
+- minimum_mountain_removals([(i * 7919) % 1000 + 1 for i in range(1000)])
+fail[2]: Keeping 1, 5, 6, 3, 1 removes 3 numbers.
+fail[3]: The best mountain has 4 numbers, like 1, 2, 3, 1: remove the other 4.
+fail[4]: One of the two 4s has to go, since a mountain strictly rises and falls.
+fail[5]: 1, 7, 6, 5, 4, 3, 2, 1, with the peak at 7: only 9 and 8 go.
+fail[6]: 1,000 numbers. Comparing every pair of positions to find the runs is O(n²); tails do it in O(n log n).
+edges:
+- three numbers :: len(nums) == 3 :: minimum_mountain_removals([1, 2, 1])
+- equal numbers :: len(nums) > 3 and len(set(nums)) < len(nums) :: minimum_mountain_removals([1, 2, 2, 1])
+- all different :: len(nums) > 3 and len(set(nums)) == len(nums) :: minimum_mountain_removals([1, 4, 3, 2])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Two passes, each with one binary search per number.
+why_space: tails, up and down hold up to n numbers each.
+hint: Write `rising_lengths(nums)`: for each x, `k = bisect_left(tails, x)`; append x if `k == len(tails)`, otherwise set `tails[k] = x`; record k + 1.
+hint: `up = rising_lengths(nums)` and `down = rising_lengths(nums[::-1])[::-1]`.
+hint: For i from 1 to n − 2, if `up[i] >= 2 and down[i] >= 2`, try `up[i] + down[i] - 1`.
+hint: `bisect_left`, not `bisect_right`, keeps the runs strictly rising: an equal number replaces a tail instead of extending the run.
+right: tails only ever gets an append at its end or a smaller number in its sorted place, so it stays sorted, and each run's length is one binary search away.
+wrong: With tails and `bisect_left`, work out the longest strictly rising run ending at each index, and the same from the right. Take the best `up + down - 1` where both are at least 2, and subtract it from n.
+
+=== task: code hard
+title: Length of the Longest Increasing Path
+leetcode: 3288 | Length of the Longest Increasing Path | length-of-the-longest-increasing-path
+patterns: append + ordered
+prompt: coordinates holds n different points [x, y]. An **increasing path** is a sequence of points in which each point has a strictly bigger x and a strictly bigger y than the point before it. Write `max_path_length(coordinates, k)` that returns the length of the longest increasing path that includes `coordinates[k]`.
+
+A path through point k is a path among the points below and to the left of it (smaller x and smaller y), then point k, then a path among the points above and to the right. So split the points into those two groups and find the longest path in each. For a group: sort the points by x, and points with equal x by y from biggest to smallest. Then the longest path is the longest strictly rising run of the y values, found with tails and `bisect_left`. Sorting equal x by falling y stops two points with the same x from both being picked.
+
+**Example 1:** `max_path_length([[3, 1], [2, 2], [4, 1], [0, 0], [5, 3]], 1)` returns `3`: (0, 0), (2, 2), (5, 3).
+
+**Example 2:** `max_path_length([[2, 1], [7, 0], [5, 6]], 2)` returns `2`: (2, 1), (5, 6).
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 0 ≤ x, y ≤ 10⁹, the points are all different, and 0 ≤ k < n.
+starter:
+```python
+def max_path_length(coordinates, k):
+    # your code here
+    return 1
+```
+solution:
+```python
+from bisect import bisect_left
+
+
+def longest_rise(points):
+    points.sort(key=lambda p: (p[0], -p[1]))
+    tails = []
+    for x, y in points:
+        i = bisect_left(tails, y)
+        if i == len(tails):
+            tails.append(y)
+        else:
+            tails[i] = y
+    return len(tails)
+
+
+def max_path_length(coordinates, k):
+    xk, yk = coordinates[k]
+    below = []
+    above = []
+    for x, y in coordinates:
+        if x < xk and y < yk:
+            below.append([x, y])
+        elif x > xk and y > yk:
+            above.append([x, y])
+    return longest_rise(below) + 1 + longest_rise(above)
+```
+tests:
+- max_path_length([[3, 1], [2, 2], [4, 1], [0, 0], [5, 3]], 1)
+- max_path_length([[2, 1], [7, 0], [5, 6]], 2)
+- max_path_length([[5, 5]], 0)
+- max_path_length([[1, 1], [1, 2], [2, 3]], 2)
+- max_path_length([[0, 0], [1, 5], [2, 1], [3, 3], [4, 2], [5, 6], [6, 4]], 3)
+- max_path_length([[(i * 7919) % 3001, (i * 104729) % 2999] for i in range(3000)], 1500)
+fail[2]: (7, 0) can't come before (5, 6): its x is bigger, and its y smaller.
+fail[3]: One point is a path of length 1.
+fail[4]: (1, 1) and (1, 2) have the same x, so only one of them can be on the path: 2.
+fail[5]: Below (3, 3): (0, 0), then (2, 1). Above it: (5, 6). That's 4 points.
+fail[6]: 3,000 points. Comparing every pair of points takes far too long: sort, then use tails.
+edges:
+- one point :: len(coordinates) == 1 :: max_path_length([[1, 1]], 0)
+- points with the same x :: len(coordinates) > 1 and len(set(p[0] for p in coordinates)) < len(coordinates) :: max_path_length([[1, 1], [1, 2]], 0)
+- every x different :: len(coordinates) > 1 and len(set(p[0] for p in coordinates)) == len(coordinates) :: max_path_length([[1, 1], [2, 2]], 0)
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the number of points.
+why_time: Sorting each group is O(n log n), and tails take one binary search per point.
+why_space: The two groups and tails hold up to n points between them.
+hint: Split the points into below (x < xk and y < yk) and above (x > xk and y > yk). No other point can share a path with point k.
+hint: Write `longest_rise(points)`: sort with `key=lambda p: (p[0], -p[1])`, run tails over the y values with `bisect_left`, and return `len(tails)`.
+hint: Return `longest_rise(below) + 1 + longest_rise(above)`.
+right: Sorting by x turns the two conditions into one: a strictly rising run of y values, which tails find with a list that stays sorted as it grows.
+wrong: Keep the points strictly below and left of point k, and those strictly above and right. In each group, sort by x, and by falling y for equal x, then find the longest strictly rising run of y with tails. Add both lengths and 1.
+
+=== task: code hard
+title: Count Integers in Intervals
+leetcode: 2276 | Count Integers in Intervals | count-integers-in-intervals
+patterns: ordered + total
+prompt: Write a class `CountIntervals`:
+
+- `CountIntervals()` starts with no intervals.
+- `add(left, right)` adds the interval of whole numbers from left to right, both included.
+- `count()` returns how many whole numbers are in at least one interval.
+
+Keep the intervals merged and in order: two lists, starts and ends, where interval i covers `starts[i]` to `ends[i]`, no two intervals overlap, and both lists are sorted. Keep the count in total, updated by every add. To add [left, right], the first interval that could overlap it is the first with an end of at least left: `bisect_left(self.ends, left)`. Walk forward from there while the intervals start at or before right, growing [left, right] to cover each one and taking its size off total. Then put the merged interval in their place: insert it if nothing overlapped, or overwrite the first of them and delete the rest. Each interval is merged away at most once in all.
+
+**Example:** `run(["CountIntervals", "add", "add", "count", "add", "count"], [[], [2, 3], [7, 10], [], [5, 8], []])` returns `[None, None, None, 6, None, 8]`: [5, 8] merges with [7, 10] into [5, 10], which adds 5 and 6.
+
+**Constraints:** 1 ≤ left ≤ right ≤ 10⁹, there are at most 10⁵ calls in all, and at least one of them is count.
+starter:
+```python
+class CountIntervals:
+    def __init__(self):
+        self.starts = []
+        self.ends = []
+        self.total = 0
+
+    def add(self, left, right):
+        pass
+
+    def count(self):
+        return self.total
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CountIntervals":
+            covered = CountIntervals()
+            results.append(None)
+        elif command == "add":
+            results.append(covered.add(args[0], args[1]))
+        elif command == "count":
+            results.append(covered.count())
+    return results
+```
+solution:
+```python
+from bisect import bisect_left
+
+
+class CountIntervals:
+    def __init__(self):
+        self.starts = []
+        self.ends = []
+        self.total = 0
+
+    def add(self, left, right):
+        i = bisect_left(self.ends, left)
+        j = i
+        while j < len(self.starts) and self.starts[j] <= right:
+            left = min(left, self.starts[j])
+            right = max(right, self.ends[j])
+            self.total -= self.ends[j] - self.starts[j] + 1
+            j += 1
+        if j == i:
+            self.starts.insert(i, left)
+            self.ends.insert(i, right)
+        else:
+            self.starts[i] = left
+            self.ends[i] = right
+            if j > i + 1:
+                del self.starts[i + 1:j]
+                del self.ends[i + 1:j]
+        self.total += right - left + 1
+
+    def count(self):
+        return self.total
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CountIntervals":
+            covered = CountIntervals()
+            results.append(None)
+        elif command == "add":
+            results.append(covered.add(args[0], args[1]))
+        elif command == "count":
+            results.append(covered.count())
+    return results
+```
+tests:
+- run(["CountIntervals", "add", "add", "count", "add", "count"], [[], [2, 3], [7, 10], [], [5, 8], []])
+- run(["CountIntervals", "add", "count"], [[], [1, 1000000000], []])
+- run(["CountIntervals", "add", "add", "count", "add", "count"], [[], [5, 10], [6, 8], [], [1, 20], []])
+- run(["CountIntervals", "add", "add", "count"], [[], [1, 2], [3, 4], []])
+- run(["CountIntervals", "add", "add", "add", "add", "count", "add", "count"], [[], [1, 3], [10, 12], [20, 22], [30, 32], [], [2, 31], []])
+- run(["CountIntervals"] + ["add", "count"] * 2000, [[]] + [x for i in range(2000) for x in ([i * 400000 + 1, i * 400000 + 100000 + i % 7 * 70000], [])])[-6:]
+fail[2]: One interval of 10⁹ numbers: count them, don't list them.
+fail[3]: [6, 8] is inside [5, 10], so it adds nothing. [1, 20] then covers everything.
+fail[4]: [1, 2] and [3, 4] touch but don't overlap: 4 numbers either way.
+fail[5]: [2, 31] overlaps all four intervals and merges them into [1, 32].
+fail[6]: 2,000 intervals up to 10⁹, some overlapping their neighbours. Keeping every number in a set takes far too long.
+edges:
+- one add :: commands.count("add") == 1 :: run(["CountIntervals", "add", "count"], [[], [1, 2], []])
+- overlapping intervals :: commands.count("add") > 1 and any(inputs[i][0] <= inputs[j][1] and inputs[j][0] <= inputs[i][1] for i in range(len(commands)) for j in range(i) if commands[i] == "add" and commands[j] == "add") :: run(["CountIntervals", "add", "add", "count"], [[], [1, 3], [2, 5], []])
+- no overlaps :: commands.count("add") > 1 and not any(inputs[i][0] <= inputs[j][1] and inputs[j][0] <= inputs[i][1] for i in range(len(commands)) for j in range(i) if commands[i] == "add" and commands[j] == "add") :: run(["CountIntervals", "add", "add", "count"], [[], [1, 2], [4, 5], []])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: Give the time of one add, with n intervals stored; count is O(1).
+why_time: Finding the place is O(log n), and the merging is O(1) on average, since each interval is merged away once. An insert or a delete in the lists can shift up to n entries: O(n).
+why_space: Two numbers for each stored interval.
+hint: `i = bisect_left(self.ends, left)` and `j = i`.
+hint: While `j < len(self.starts)` and `self.starts[j] <= right`: grow left and right with min and max, take `self.ends[j] - self.starts[j] + 1` off total, and add 1 to j.
+hint: If `j == i`, insert left into starts and right into ends at i. Otherwise set `starts[i]` and `ends[i]`, and if `j > i + 1`, delete positions i + 1 to j − 1 from both, with `del self.starts[i + 1:j]`.
+hint: Add `right - left + 1` to total. count returns total.
+right: The intervals are kept sorted and apart, so the ones a new interval touches sit next to each other: one binary search finds them, one walk passes them, and each is removed at most once.
+wrong: Keep sorted lists of starts and ends. For add, binary search the first end that's at least left, merge forward every interval that starts at or before right while keeping the total up to date, and write back the merged interval. count returns the total.
+
+=== task: code hard
+title: Data Stream as Disjoint Intervals
+leetcode: 352 | Data Stream as Disjoint Intervals | data-stream-as-disjoint-intervals
+patterns: ordered + total
+prompt: Numbers from 0 to 10⁴ arrive one at a time. Write a class `SummaryRanges`:
+
+- `SummaryRanges()` starts with no numbers.
+- `add_num(value)` adds a number.
+- `get_intervals()` returns the numbers so far as a sorted list of intervals [start, end], each holding consecutive numbers, with no two intervals touching or overlapping.
+
+Keep the intervals in two sorted lists, starts and ends, as for counting integers in intervals. A new value joins every interval that covers it or touches it: those with an end of at least value − 1 and a start of at most value + 1. Find the first with `bisect_left(self.ends, value - 1)`, merge forward while the start is at most value + 1, and put the merged interval in their place. get_intervals then makes the answer from the two lists, in time that depends on the number of intervals, not the number of values.
+
+**Example:** `run(["SummaryRanges", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals"], [[], [1], [], [3], [], [7], [], [2], [], [6], []])` returns `[None, None, [[1, 1]], None, [[1, 1], [3, 3]], None, [[1, 1], [3, 3], [7, 7]], None, [[1, 3], [7, 7]], None, [[1, 3], [6, 7]]]`.
+
+**Constraints:** 0 ≤ value ≤ 10⁴, there are at most 3 × 10⁴ calls in all, and at most 100 of them are get_intervals.
+starter:
+```python
+class SummaryRanges:
+    def __init__(self):
+        self.starts = []
+        self.ends = []
+
+    def add_num(self, value):
+        pass
+
+    def get_intervals(self):
+        return []
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "SummaryRanges":
+            ranges = SummaryRanges()
+            results.append(None)
+        elif command == "add_num":
+            results.append(ranges.add_num(args[0]))
+        elif command == "get_intervals":
+            results.append(ranges.get_intervals())
+    return results
+```
+solution:
+```python
+from bisect import bisect_left
+
+
+class SummaryRanges:
+    def __init__(self):
+        self.starts = []
+        self.ends = []
+
+    def add_num(self, value):
+        i = bisect_left(self.ends, value - 1)
+        j = i
+        lo = value
+        hi = value
+        while j < len(self.starts) and self.starts[j] <= value + 1:
+            lo = min(lo, self.starts[j])
+            hi = max(hi, self.ends[j])
+            j += 1
+        if j == i:
+            self.starts.insert(i, lo)
+            self.ends.insert(i, hi)
+        else:
+            self.starts[i] = lo
+            self.ends[i] = hi
+            if j > i + 1:
+                del self.starts[i + 1:j]
+                del self.ends[i + 1:j]
+
+    def get_intervals(self):
+        result = []
+        for i in range(len(self.starts)):
+            result.append([self.starts[i], self.ends[i]])
+        return result
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "SummaryRanges":
+            ranges = SummaryRanges()
+            results.append(None)
+        elif command == "add_num":
+            results.append(ranges.add_num(args[0]))
+        elif command == "get_intervals":
+            results.append(ranges.get_intervals())
+    return results
+```
+tests:
+- run(["SummaryRanges", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals", "add_num", "get_intervals"], [[], [1], [], [3], [], [7], [], [2], [], [6], []])
+- run(["SummaryRanges", "add_num", "add_num", "get_intervals"], [[], [4], [4], []])
+- run(["SummaryRanges", "add_num", "add_num", "get_intervals"], [[], [0], [1], []])
+- run(["SummaryRanges", "add_num", "add_num", "add_num", "get_intervals"], [[], [10], [8], [9], []])
+- run(["SummaryRanges", "add_num", "add_num", "add_num", "add_num", "get_intervals", "add_num", "get_intervals"], [[], [5], [1], [9], [3], [], [2], []])
+- (lambda r: [len(r[3001]), r[-1]])(run(["SummaryRanges"] + ["add_num"] * 3000 + ["get_intervals"] + ["add_num"] * 300 + ["get_intervals"], [[]] + [[i + i // 10] for i in range(3000)] + [[]] + [[i * 11 + 10] for i in range(300)] + [[]]))
+fail[2]: Adding 4 a second time changes nothing.
+fail[3]: 0 and 1 touch: `[[0, 1]]`.
+fail[4]: 9 fills the gap between 8 and 10 and joins them.
+fail[5]: 2 joins [1, 1] and [3, 3] into [1, 3].
+fail[6]: 3,300 values that end up as one interval. Checking a list of all the values for repeats, or building the intervals from all the values, takes far too long.
+edges:
+- one value :: commands.count("add_num") == 1 :: run(["SummaryRanges", "add_num", "get_intervals"], [[], [5], []])
+- a value added twice :: commands.count("add_num") > 1 and len(set(i[0] for c, i in zip(commands, inputs) if c == "add_num")) < commands.count("add_num") :: run(["SummaryRanges", "add_num", "add_num", "get_intervals"], [[], [5], [5], []])
+- different values :: commands.count("add_num") > 1 and len(set(i[0] for c, i in zip(commands, inputs) if c == "add_num")) == commands.count("add_num") :: run(["SummaryRanges", "add_num", "add_num", "get_intervals"], [[], [5], [7], []])
+edge_count: 2
+complexity: time=O(k) | space=O(k)
+complexity_options: O(k); O(k log k)
+complexity_note: Give the time of one call, with k intervals stored.
+why_time: add_num finds its place in O(log k), merges at most two intervals, and may shift up to k entries to insert or delete. get_intervals makes k pairs.
+why_space: Two numbers per interval.
+hint: `i = bisect_left(self.ends, value - 1)`, `j = i`, `lo = value` and `hi = value`.
+hint: While `j < len(self.starts)` and `self.starts[j] <= value + 1`: widen lo and hi with min and max, and add 1 to j.
+hint: If `j == i`, insert lo and hi at i. Otherwise overwrite position i, and delete positions i + 1 to j − 1 if there are any.
+hint: get_intervals builds `[self.starts[i], self.ends[i]]` for every i.
+right: The stored intervals stay sorted and apart, so a value can only touch the ones around its place: one binary search finds them, and get_intervals never looks at single values.
+wrong: Keep sorted starts and ends. For add_num, binary search the first end that's at least value − 1, merge forward every interval that starts at or before value + 1 into [lo, hi], and write it back. get_intervals pairs up the two lists.
+
+=== task: code hard
+title: Closest Room
+leetcode: 1847 | Closest Room | closest-room
+patterns: buckets + ordered
+prompt: `rooms[i] = [room_id, size]`, with every room_id different, and `queries[j] = [preferred, min_size]`. The answer to a query is the id of a room with size at least min_size whose id is closest to preferred, the smaller id on a tie, or −1 if no room is big enough. Write `closest_room(rooms, queries)` that returns the answers, in the order of the queries.
+
+Answer the queries from the biggest min_size to the smallest. Then the rooms that are big enough only ever grow in number: before each query, add the rooms with size at least its min_size, biggest first, to a sorted collection of ids, and find the ids on either side of preferred.
+
+Inserting into one sorted list would shift up to n ids each time. Keep the ids in **blocks** instead: a list of sorted lists, each holding at most 2 × load ids, with load the smallest number whose square is at least n, and every id in a block smaller than every id in the next. To add an id, find the first block whose last id is at least it (or use the last block), `insort` it there, and split the block into two halves if it gets too big. To search, walk the blocks to the first whose last id is at least preferred, and `bisect_left` inside it. The id before is the one before it in that block, or the last id of the block before.
+
+**Example 1:** `closest_room([[2, 2], [1, 2], [3, 2]], [[3, 1], [3, 3], [5, 2]])` returns `[3, -1, 3]`.
+
+**Example 2:** `closest_room([[1, 4], [2, 3], [3, 5], [4, 1], [5, 2]], [[2, 3], [2, 4], [2, 5]])` returns `[2, 1, 3]`: for [2, 4], rooms 1 and 3 are both 1 away, and 1 is smaller.
+
+**Constraints:** 1 ≤ n ≤ 10⁵ rooms, 1 ≤ k ≤ 10⁴ queries, the room ids are all different, and every id, size, preferred and min_size is from 1 to 10⁷.
+starter:
+```python
+def closest_room(rooms, queries):
+    # your code here
+    return [-1] * len(queries)
+```
+solution:
+```python
+from bisect import bisect_left, insort
+
+
+def add_id(blocks, x, load):
+    if len(blocks) == 0:
+        blocks.append([x])
+        return
+    b = 0
+    while b < len(blocks) - 1 and blocks[b][-1] < x:
+        b += 1
+    insort(blocks[b], x)
+    if len(blocks[b]) > 2 * load:
+        half = len(blocks[b]) // 2
+        blocks[b:b + 1] = [blocks[b][:half], blocks[b][half:]]
+
+
+def nearest_id(blocks, preferred):
+    before = -1
+    after = -1
+    for block in blocks:
+        if block[-1] < preferred:
+            before = block[-1]
+            continue
+        i = bisect_left(block, preferred)
+        after = block[i]
+        if i > 0:
+            before = block[i - 1]
+        break
+    if after == -1:
+        return before
+    if before == -1 or after - preferred < preferred - before:
+        return after
+    return before
+
+
+def closest_room(rooms, queries):
+    rooms = sorted(rooms, key=lambda r: -r[1])
+    order = sorted(range(len(queries)), key=lambda j: -queries[j][1])
+    load = 1
+    while load * load < len(rooms):
+        load += 1
+    blocks = []
+    answer = [-1] * len(queries)
+    i = 0
+    for j in order:
+        preferred, min_size = queries[j]
+        while i < len(rooms) and rooms[i][1] >= min_size:
+            add_id(blocks, rooms[i][0], load)
+            i += 1
+        answer[j] = nearest_id(blocks, preferred)
+    return answer
+```
+tests:
+- closest_room([[2, 2], [1, 2], [3, 2]], [[3, 1], [3, 3], [5, 2]])
+- closest_room([[1, 4], [2, 3], [3, 5], [4, 1], [5, 2]], [[2, 3], [2, 4], [2, 5]])
+- closest_room([[7, 1]], [[7, 2]])
+- closest_room([[2, 5], [6, 5]], [[4, 1], [5, 1], [1, 6]])
+- closest_room([[10, 1], [20, 2], [30, 3], [40, 4]], [[25, 3], [25, 1], [100, 2], [1, 4]])
+- sum(closest_room([[(i * 7919) % 100000 + 1, (i * 31) % 997 + 1] for i in range(1500)], [[(j * 104729) % 100000 + 1, (j * 17) % 997 + 1] for j in range(1500)]))
+fail[2]: For [2, 4], rooms 1 and 3 are equally close, and the smaller id wins.
+fail[3]: No room has size 2: −1.
+fail[4]: 4 is as close to 2 as to 6, so 2 wins; 5 is closer to 6. No room has size 6.
+fail[5]: For [25, 3], rooms 30 and 40 are big enough, and 30 is closer. For [1, 4], only room 40 is.
+fail[6]: 1,500 rooms and 1,500 queries. Checking every room for every query takes far too long.
+edges:
+- one room :: len(rooms) == 1 :: closest_room([[5, 5]], [[3, 1]])
+- a query no room fits :: len(rooms) > 1 and any(q[1] > max(r[1] for r in rooms) for q in queries) :: closest_room([[1, 1], [2, 1]], [[1, 2]])
+- every query fits some room :: len(rooms) > 1 and all(q[1] <= max(r[1] for r in rooms) for q in queries) :: closest_room([[1, 1], [2, 1]], [[1, 1]])
+edge_count: 2
+complexity: time=O((n + k) × √n) | space=O(n + k)
+complexity_options: O((n + k) × √n); O(n × k); O(n + k)
+complexity_note: n is the number of rooms and k the number of queries.
+why_time: Sorting is O(n log n + k log k). Each add walks about √n blocks and shifts at most 2√n ids, and each search walks the blocks once and binary searches one of them.
+why_space: The sorted rooms, the blocks and the answers.
+hint: `rooms = sorted(rooms, key=lambda r: -r[1])`, and `order = sorted(range(len(queries)), key=lambda j: -queries[j][1])`.
+hint: For each query index j in order, add rooms while `i < len(rooms) and rooms[i][1] >= min_size`, then search.
+hint: To add x: with no blocks yet, start one, `[x]`. Otherwise move b forward while `b < len(blocks) - 1 and blocks[b][-1] < x`, then `insort(blocks[b], x)`. If that block now has more than 2 × load ids, replace it with its two halves: `blocks[b:b + 1] = [block[:half], block[half:]]`.
+hint: To search for p: walk the blocks. A block whose last id is below p makes that id the best "before" so far. In the first block that isn't, `i = bisect_left(block, p)` gives "after" as `block[i]`, and "before" as `block[i - 1]` if i > 0. Return the closer of the two, "before" on a tie.
+right: Answering the queries from the biggest min_size makes the set of rooms that fit only grow, and blocks of about √n sorted ids keep both inserting and searching near O(√n) instead of O(n).
+wrong: Sort the rooms by size and the queries by min_size, both biggest first. Insert the ids of the rooms that fit into a list of sorted blocks, splitting any block that gets too big, and for each query find the nearest ids on either side of preferred, taking the smaller on a tie.
+
+=== task: code hard
+title: Find Products of Elements of Big Array
+leetcode: 3145 | Find Products of Elements of Big Array | find-products-of-elements-of-big-array
+patterns: doubling
+prompt: The **powerful array** of a positive whole number x is the list of powers of 2 that add up to x, smallest first: 11 gives [1, 2, 8]. big_nums is the powerful arrays of 1, 2, 3 and onwards, one after another: it starts [1, 2, 1, 2, 4, 1, 4, 2, 4, 1, 2, 4, 8]. Each query [start, end, mod] asks for the product of big_nums from index start to index end, modulo mod. Write `find_products_of_elements(queries)` that returns the answers.
+
+Every item is a power of 2, so the product is 2 to the power of the sum of their exponents, and `pow(2, power, mod)` finishes it. With `exponent_total(i)`, the sum of the exponents of the first i items, the power is `exponent_total(end + 1) - exponent_total(start)`.
+
+big_nums is far too long to build, so count blocks of whole numbers whose sizes are powers of 2. Start at x = 0, which adds nothing. For each bit b from 50 down to 0, look at the 2ᵇ numbers from x to x + 2ᵇ − 1. Each has the bits already set in x, plus the bits of a number from 0 to 2ᵇ − 1, and the numbers from 0 to 2ᵇ − 1 have b × 2ᵇ⁻¹ set bits in all, 2ᵇ⁻¹ at each of the b positions. If the whole block fits in what's left of i, add its items and their exponents, and set bit b in x. At the end, x is the first number whose items don't all fit: add the exponents of its lowest set bits until i is used up.
+
+**Example 1:** `find_products_of_elements([[1, 3, 7]])` returns `[4]`: the items from 1 to 3 are [2, 1, 2], and 4 mod 7 is 4.
+
+**Example 2:** `find_products_of_elements([[2, 5, 3], [7, 7, 4]])` returns `[2, 2]`: [1, 2, 4, 1] has product 8, and 8 mod 3 is 2; item 7 is 2.
+
+**Constraints:** 1 ≤ `len(queries)` ≤ 500, 0 ≤ start ≤ end ≤ 10¹⁵, and 1 ≤ mod ≤ 10⁵.
+starter:
+```python
+def find_products_of_elements(queries):
+    # your code here
+    return [1] * len(queries)
+```
+solution:
+```python
+def exponent_total(i):
+    x = 0
+    ones = 0
+    places = 0
+    total = 0
+    for b in range(50, -1, -1):
+        block = 1 << b
+        count = ones * block + b * block // 2
+        if count <= i:
+            i -= count
+            total += places * block + b * (b - 1) // 2 * (block // 2)
+            x += block
+            ones += 1
+            places += b
+    b = 0
+    while i > 0:
+        if x >> b & 1:
+            total += b
+            i -= 1
+        b += 1
+    return total
+
+
+def find_products_of_elements(queries):
+    answer = []
+    for start, end, mod in queries:
+        power = exponent_total(end + 1) - exponent_total(start)
+        answer.append(pow(2, power, mod))
+    return answer
+```
+tests:
+- find_products_of_elements([[1, 3, 7]])
+- find_products_of_elements([[2, 5, 3], [7, 7, 4]])
+- find_products_of_elements([[0, 0, 5]])
+- find_products_of_elements([[0, 3, 1]])
+- find_products_of_elements([[0, 12, 100000], [5, 9, 7]])
+- find_products_of_elements([[10 ** 15 - 5, 10 ** 15, 99991], [123456789012, 987654321098, 100000], [0, 10 ** 15, 65536], [999999999999, 999999999999, 13]])
+fail[2]: [1, 2, 4, 1] has product 8, and 8 mod 3 is 2. Item 7 is the 2 from 6 = 2 + 4.
+fail[3]: Item 0 is 1, the powerful array of 1, and 1 mod 5 is 1.
+fail[4]: Anything modulo 1 is 0.
+fail[5]: The exponents of the first 13 items add up to 15, and 2¹⁵ = 32768. Items 5 to 9 are [1, 4, 2, 4, 1]: 2⁵ = 32, and 32 mod 7 is 4.
+fail[6]: Positions up to 10¹⁵. Building big_nums that far takes far too long.
+edges:
+- one query :: len(queries) == 1 :: find_products_of_elements([[0, 1, 10]])
+- a query with mod 1 :: len(queries) > 1 and any(q[2] == 1 for q in queries) :: find_products_of_elements([[0, 1, 1], [0, 0, 5]])
+- no mod of 1 :: len(queries) > 1 and all(q[2] > 1 for q in queries) :: find_products_of_elements([[0, 1, 10], [2, 2, 3]])
+edge_count: 2
+complexity: time=O(q × log M) | space=O(q)
+complexity_options: O(q × log M); O(M); O(q × M); O(q)
+complexity_note: q is the number of queries and M the biggest end, up to 10¹⁵.
+why_time: Each exponent_total looks at about 50 bits, one block of doubling size each, and pow is O(log power).
+why_space: The answers.
+hint: `exponent_total(i)` keeps x, ones (the number of bits set in x), places (the sum of their positions) and total. For b from 50 down to 0: `block = 1 << b`, and the block holds `count = ones * block + b * block // 2` items.
+hint: If `count <= i`: take count off i, add `places * block + b * (b - 1) // 2 * (block // 2)` to total, then add block to x, 1 to ones and b to places.
+hint: After the loop, go through x's bits from b = 0 upwards, adding b to total for each set bit, until i is 0.
+hint: Each answer is `pow(2, exponent_total(end + 1) - exponent_total(start), mod)`.
+right: The numbers from x to x + 2ᵇ − 1 repeat the bits of 0 to 2ᵇ − 1 under x's own bits, so whole blocks whose sizes double are counted with formulas, and position 10¹⁵ is reached in about 50 steps.
+wrong: A product of powers of 2 is 2 to the sum of their exponents. Find the sum of the exponents of the first i items by taking whole blocks of 2ᵇ numbers from the top bit down, then the lowest bits of the number that's cut off. Answer `pow(2, difference, mod)`.
+
+=== task: code hard
+title: Find Array Given Subset Sums
+leetcode: 1982 | Find Array Given Subset Sums | find-array-given-subset-sums
+patterns: doubling + total
+prompt: A list of n whole numbers, some of which may be negative, has 2ⁿ **subset sums**: the sums of every choice of its items, including 0 for choosing none. You're given them in sums, in any order. Write `recover_array(n, sums)` that returns a list of n numbers with exactly these subset sums. If several lists work, return any of them: the tests check the subset sums of your answer.
+
+Undo the doubling one number at a time. Sort sums. The difference between the two smallest, `d = sums[1] - sums[0]`, is the size of one of the numbers. Split the sorted sums into pairs: the smallest sum s not yet used goes to a list without, and the first unused copy of s + d after it goes to with_d. Then the number is d if 0 is in without, and the rest of the list has the subset sums without; otherwise it's −d, and the rest has the sums with_d. The partner of each sum comes later than the partner before it, so its search can carry on from where the last one stopped. Each step halves the list, so all the steps together cost less than twice the first.
+
+**Example 1:** `recover_array(2, [0, 0, 0, 0])` returns `[0, 0]`.
+
+**Example 2:** `recover_array(3, [-3, -2, -1, 0, 0, 1, 2, 3])` can return `[1, 2, -3]`: its subset sums are 0, 1, 2, 3, −3, −2, −1 and 0. [−1, −2, 3] works too, in any order.
+
+**Constraints:** 1 ≤ n ≤ 15, `len(sums) == 2ⁿ`, −10⁴ ≤ `sums[i]` ≤ 10⁴, and some list always works.
+starter:
+```python
+def recover_array(n, sums):
+    # your code here
+    return [0] * n
+```
+solution:
+```python
+def recover_array(n, sums):
+    sums = sorted(sums)
+    answer = []
+    for step in range(n):
+        d = sums[1] - sums[0]
+        without = []
+        with_d = []
+        used = [False] * len(sums)
+        j = 0
+        for i in range(len(sums)):
+            if used[i]:
+                continue
+            without.append(sums[i])
+            j = max(j, i + 1)
+            while used[j] or sums[j] != sums[i] + d:
+                j += 1
+            used[j] = True
+            with_d.append(sums[j])
+        if 0 in without:
+            answer.append(d)
+            sums = without
+        else:
+            answer.append(-d)
+            sums = with_d
+    return answer
+```
+tests:
+- recover_array(2, [0, 0, 0, 0])
+- (lambda a: [len(a), sorted(sum(a[j] for j in range(len(a)) if m >> j & 1) for m in range(1 << len(a)))])(recover_array(3, [-3, -2, -1, 0, 0, 1, 2, 3]))
+- (lambda a: [len(a), sorted(sum(a[j] for j in range(len(a)) if m >> j & 1) for m in range(1 << len(a)))])(recover_array(4, [0, 0, 5, 5, 4, -1, 4, 9, 9, -1, 4, 3, 4, 8, 3, 8]))
+- recover_array(1, [0, -7])
+- (lambda a: [len(a), sorted(sum(a[j] for j in range(len(a)) if m >> j & 1) for m in range(1 << len(a)))])(recover_array(3, [0, 2, 2, 4, -1, 1, 1, 3]))
+- (lambda s: (lambda a: [len(a), sorted((lambda f: f(f, a))(lambda f, xs: [0] if len(xs) == 0 else [v + d for v in f(f, xs[1:]) for d in (0, xs[0])])) == sorted(s)])(recover_array(12, s)))([sum([7, -3, 12, 0, 5, -9, 1, 4, -6, 10, 2, -8][j] for j in range(12) if m >> j & 1) for m in range(4096)])
+fail[2]: The subset sums of your list, sorted, must be −3, −2, −1, 0, 0, 1, 2 and 3.
+fail[3]: Your list's 16 subset sums must match the given ones, repeats included.
+fail[4]: One number: the sums are 0 and −7, so the number is −7.
+fail[5]: Your list's subset sums must be −1, 0, 1, 1, 2, 2, 3 and 4.
+fail[6]: 12 numbers and 4,096 sums. Taking each partner out with `remove` searches the list every time, which takes far too long.
+edges:
+- one number :: n == 1 :: recover_array(1, [0, 4])
+- no negative sums :: n > 1 and min(sums) >= 0 :: recover_array(2, [0, 1, 2, 3])
+- a negative sum :: n > 1 and min(sums) < 0 :: recover_array(2, [0, -1, 2, 1])
+edge_count: 2
+complexity: time=O(2ⁿ × n) | space=O(2ⁿ)
+complexity_options: O(2ⁿ × n); O(4ⁿ)
+complexity_note: The input has 2ⁿ sums.
+why_time: Sorting the 2ⁿ sums is O(2ⁿ × n). After that, each step is linear in its list, and the lists halve: 2ⁿ + 2ⁿ⁻¹ and onwards adds up to less than 2 × 2ⁿ.
+why_space: The sorted sums and the two halves.
+hint: `sums = sorted(sums)`. For each of the n steps: `d = sums[1] - sums[0]`, and `used = [False] * len(sums)`.
+hint: For each i that isn't used: append `sums[i]` to without. Move j, starting from `max(j, i + 1)`, forward until `sums[j] == sums[i] + d` and `used[j]` is False; mark it used and append it to with_d.
+hint: If 0 is in without, the number is d and `sums = without`; otherwise it's −d and `sums = with_d`.
+right: The two smallest sums differ by the size of a number, and splitting by that size halves the sums while keeping both halves sorted, so each step is linear and the halving makes all the steps O(2ⁿ) after the sort.
+wrong: Sort. Repeat n times: d is the gap between the two smallest sums; pair each smallest unused s with an unused s + d, into without and with_d; choose d or −d by which half holds 0, and carry on with that half.
+
+=== task: code hard
+title: Leveled Task Queue
+patterns: buckets + total
+prompt: Write a class `TaskQueue` that hands out tasks by level, lowest level first:
+
+- `TaskQueue(levels)` makes an empty queue with levels 0 to levels − 1.
+- `add(task, level)` adds the task, a number, at that level. A task is never added below the level of the last task taken.
+- `take()` removes and returns the task with the lowest level, the one added first among equals, or −1 if no task is waiting.
+- `cancel(task)` removes the task and returns `True` if it's waiting, and returns `False` if it isn't (it was taken, cancelled or never added).
+
+Keep a bucket for each level, `[[] for _ in range(levels)]`, and add each task to the end of its bucket. Don't take tasks with `pop(0)`: keep `heads[level]`, the index of the first task in the bucket not looked at yet. Keep low, the lowest level that can still have waiting tasks: since nothing is added below the last level taken, low only moves forward, so all the takes together pass each level once. Cancelling can't find a task inside a bucket quickly, so keep a dictionary waiting of the tasks still waiting: cancel deletes from it, and take skips any task that isn't in it. When waiting is empty, take returns −1 straight away, without moving low.
+
+**Example:** `run(["TaskQueue", "add", "add", "add", "take", "cancel", "take", "take", "add", "take"], [[5], [10, 3], [11, 1], [12, 3], [], [10], [], [], [13, 4], []])` returns `[None, None, None, None, 11, True, 12, -1, None, 13]`: 11 is at the lowest level. 10 is cancelled, so 12 comes next, and then the queue is empty until 13 arrives.
+
+**Constraints:** 1 ≤ levels ≤ 10⁵, the tasks are different numbers from 1 to 10⁹, there are at most 10⁵ calls, and add's level is never below the level of the last task taken.
+starter:
+```python
+class TaskQueue:
+    def __init__(self, levels):
+        self.buckets = [[] for _ in range(levels)]
+        self.heads = [0] * levels
+        self.waiting = {}
+        self.low = 0
+
+    def add(self, task, level):
+        pass
+
+    def take(self):
+        return -1
+
+    def cancel(self, task):
+        return False
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TaskQueue":
+            queue = TaskQueue(args[0])
+            results.append(None)
+        elif command == "add":
+            results.append(queue.add(args[0], args[1]))
+        elif command == "take":
+            results.append(queue.take())
+        elif command == "cancel":
+            results.append(queue.cancel(args[0]))
+    return results
+```
+solution:
+```python
+class TaskQueue:
+    def __init__(self, levels):
+        self.buckets = [[] for _ in range(levels)]
+        self.heads = [0] * levels
+        self.waiting = {}
+        self.low = 0
+
+    def add(self, task, level):
+        self.buckets[level].append(task)
+        self.waiting[task] = level
+
+    def take(self):
+        if len(self.waiting) == 0:
+            return -1
+        while True:
+            bucket = self.buckets[self.low]
+            while self.heads[self.low] < len(bucket):
+                task = bucket[self.heads[self.low]]
+                self.heads[self.low] += 1
+                if task in self.waiting:
+                    del self.waiting[task]
+                    return task
+            self.low += 1
+
+    def cancel(self, task):
+        if task in self.waiting:
+            del self.waiting[task]
+            return True
+        return False
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TaskQueue":
+            queue = TaskQueue(args[0])
+            results.append(None)
+        elif command == "add":
+            results.append(queue.add(args[0], args[1]))
+        elif command == "take":
+            results.append(queue.take())
+        elif command == "cancel":
+            results.append(queue.cancel(args[0]))
+    return results
+```
+tests:
+- run(["TaskQueue", "add", "add", "add", "take", "cancel", "take", "take", "add", "take"], [[5], [10, 3], [11, 1], [12, 3], [], [10], [], [], [13, 4], []])
+- run(["TaskQueue", "take", "cancel"], [[3], [], [7]])
+- run(["TaskQueue", "add", "add", "add", "take", "take", "take"], [[2], [4, 1], [5, 1], [6, 0], [], [], []])
+- run(["TaskQueue", "add", "take", "cancel", "add", "cancel", "cancel", "take"], [[4], [1, 2], [], [1], [2, 3], [2], [2], []])
+- run(["TaskQueue", "add", "add", "take", "add", "add", "take", "take", "take"], [[10], [1, 0], [2, 9], [], [3, 0], [4, 5], [], [], []])
+- sum(x for x in run(["TaskQueue"] + ["add"] * 3000 + ["take"] * 2000 + ["add", "take"] * 1000, [[20000]] + [[i + 1, 19999 - (i * 7) % 3000] for i in range(3000)] + [[]] * 2000 + [x for i in range(1000) for x in ([3001 + i, 19999], [])])[3001:] if x is not None)
+fail[2]: Nothing was added: take returns −1, and there's nothing to cancel.
+fail[3]: 6 is at level 0; then 4 and 5, both at level 1, in the order they were added.
+fail[4]: Task 1 was taken, so it can't be cancelled. Task 2 is cancelled once; the second cancel finds nothing, and so does take.
+fail[5]: Task 3 is added at level 0 after task 1 was taken from level 0, and it comes out before 4 and 2.
+fail[6]: 20,000 levels and 6,000 calls, with every task near the top level. Searching the levels from 0 on every take takes far too long.
+edges:
+- take on an empty queue :: commands[1] == "take" :: run(["TaskQueue", "take"], [[2], []])
+- a cancel :: commands[1] != "take" and "cancel" in commands :: run(["TaskQueue", "add", "cancel", "take"], [[2], [5, 1], [5], []])
+- no cancels :: commands[1] != "take" and "cancel" not in commands :: run(["TaskQueue", "add", "take"], [[2], [5, 1], []])
+edge_count: 2
+complexity: time=O(1) | space=O(L + n)
+complexity_options: O(L + n); O(L × n)
+complexity_note: Give the time of one call, on average over all the calls, after the O(L) setup; L is the number of levels and n the number of tasks added.
+why_time: low moves forward at most L times in all, and each head passes each task once, so all the calls together cost O(L + n + calls).
+why_space: The buckets hold every task added, and heads has one slot per level.
+hint: add: append the task to `self.buckets[level]` and set `self.waiting[task] = level`.
+hint: take: if waiting is empty, return −1. Otherwise loop: in `self.buckets[self.low]`, while `self.heads[self.low]` is inside the bucket, read the task there and add 1 to the head; if that task is in waiting, delete it from waiting and return it. When the bucket runs out, add 1 to low.
+hint: cancel: if the task is in waiting, delete it and return True; otherwise return False.
+right: Tasks only move forward through their bucket, and the lowest level only moves up, so every step of every take is paid for once in all, and cancelled tasks are skipped instead of searched for.
+wrong: Bucket the tasks by level, with a head index for each bucket and a dictionary of waiting tasks. take returns −1 if nothing waits; otherwise it moves through the buckets from low, skipping cancelled tasks, and returns the first waiting one. cancel deletes from the dictionary.
+
+=== task: code hard
+title: Decoded Letters
+patterns: doubling + ordered
+prompt: s is decoded onto a tape, as in Decoded String at Index: a letter is written at the end of the tape, and a digit d makes the whole tape so far appear d times in a row. Write `decoded_letters(s, ks)` that returns a string with the k-th letter of the tape, counting from 1, for each k in ks, in order.
+
+There can be 10⁵ positions to look up, so don't walk back through all of s for each one. Record the tape's length after every character of s in a list lengths: it only grows, so it's sorted. Stop recording once the length reaches the biggest k, because later characters can't change the letters before it. Then, for each k, `i = bisect_left(lengths, k)` is the first step whose tape reaches position k. If `s[i]` is a letter, it's the answer: that step wrote position k. If it's a digit, position k is in a repeat of the tape before it, which had `lengths[i - 1]` letters, so set k to `(k - 1) % lengths[i - 1] + 1` and search again among the steps before i only.
+
+Each digit at least doubles the tape, so for k up to 10⁹, a lookup searches again about 30 times at most.
+
+**Example 1:** `decoded_letters("leet2code3", [10, 1, 36])` returns `"ole"`: the tape is "leetleetcodeleetleetcodeleetleetcode".
+
+**Example 2:** `decoded_letters("ha22", [5, 8, 1])` returns `"hah"`: the tape is "hahahaha".
+
+**Constraints:** 1 ≤ `len(s)` ≤ 10⁵, s holds lowercase letters and digits from 2 to 9 and starts with a letter, 1 ≤ `len(ks)` ≤ 10⁵, and each k is from 1 to 10⁹ and at most the tape's length.
+starter:
+```python
+def decoded_letters(s, ks):
+    # your code here
+    return s[0] * len(ks)
+```
+solution:
+```python
+from bisect import bisect_left
+
+
+def decoded_letters(s, ks):
+    biggest = max(ks)
+    lengths = []
+    size = 0
+    for ch in s:
+        if ch.isdigit():
+            size *= int(ch)
+        else:
+            size += 1
+        lengths.append(size)
+        if size >= biggest:
+            break
+    letters = []
+    for k in ks:
+        i = bisect_left(lengths, k)
+        while s[i].isdigit():
+            k = (k - 1) % lengths[i - 1] + 1
+            i = bisect_left(lengths, k, 0, i)
+        letters.append(s[i])
+    return "".join(letters)
+```
+tests:
+- decoded_letters("leet2code3", [10, 1, 36])
+- decoded_letters("ha22", [5, 8, 1])
+- decoded_letters("a", [1])
+- decoded_letters("ab2", [1, 2, 3, 4])
+- decoded_letters("a2b3c", [6, 7, 9, 10])
+- (lambda t: [len(t), t[:20], t.count("a")])(decoded_letters("".join(chr(97 + i % 26) + ("2" if i % 9 == 8 else "") for i in range(300)), [(i * 7919) % 1000000000 + 1 for i in range(2000)]))
+fail[2]: Positions 5, 8 and 1 of "hahahaha".
+fail[3]: One letter, asked for once.
+fail[4]: The tape is "abab".
+fail[5]: The tape is "aabaabaab" and then "c": positions 6 and 9 are "b"s, 7 is an "a", and 10 is the "c".
+fail[6]: A tape that doubles 33 times, and 2,000 positions. Walking back through all of s for each one takes far too long.
+edges:
+- one position :: len(ks) == 1 :: decoded_letters("ab2", [3])
+- no digits :: len(ks) > 1 and not any(c.isdigit() for c in s) :: decoded_letters("abc", [1, 3])
+- digits :: len(ks) > 1 and any(c.isdigit() for c in s) :: decoded_letters("ab2", [1, 4])
+edge_count: 2
+complexity: time=O(n + q × log K × log n) | space=O(n + q)
+complexity_options: O(n + q × log K × log n); O(n × q); O(n + q)
+complexity_note: n is the length of s, q the number of positions asked for, and K the biggest of them.
+why_time: Recording the lengths is one pass. Each lookup searches at most about log₂ K times, since each digit at least doubles the tape, and each search is a binary search over at most n lengths.
+why_space: The lengths and the answer.
+hint: `biggest = max(ks)`. Go through s, updating size (+1 for a letter, ×d for a digit), appending it to lengths, and stopping once `size >= biggest`.
+hint: For each k: `i = bisect_left(lengths, k)`.
+hint: While `s[i]` is a digit: `k = (k - 1) % lengths[i - 1] + 1`, then `i = bisect_left(lengths, k, 0, i)`.
+hint: The letter `s[i]` is the answer for this k.
+right: The lengths only grow, so binary search finds the step that made any position, and every repeat sends k back into a tape at most half as long: a few searches per lookup instead of a walk through all of s.
+wrong: Record the tape's length after each character, stopping at the biggest k. For each k, binary search the first length at least k; while that step is a digit, reduce k modulo the length before it (counting from 1) and search the earlier steps. The letter found is the answer.
