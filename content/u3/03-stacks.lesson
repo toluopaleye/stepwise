@@ -1,7 +1,7 @@
 === lesson
 id: ds-stacks
 title: Stacks
-summary: A stack only lets you reach its top: the last item pushed is the first one popped. You'll use a Python list as a stack, wrap it in a class, and use stacks for undo and redo, for checking that brackets match, for evaluating postfix expressions, and to see how Python runs function calls. Every stack operation is O(1).
+summary: A stack only lets you reach its top: the last item pushed is the first one popped. You'll use a Python list as a stack, wrap it in a class, and use stacks for undo and redo, for checking that brackets match, for evaluating postfix expressions, to see how Python runs function calls, and to cancel neighbours that clash, like asteroids that collide. Every stack operation is O(1).
 
 === learn
 ### Last in, first out
@@ -39,6 +39,27 @@ c b
 
 The top must be the **end**. Using the front, with `insert(0, x)` and `pop(0)`, gives the same last-in-first-out order, but every push and pop shifts all the other items: O(n). A singly linked list also makes a good stack: push and pop at its head, both O(1).
 
+**Following a list of commands.** Many problems hand you a list of commands to carry out on a stack: push this, pop that, look at the top. Loop over the commands, and before popping, check that the command can do anything at all. When a command needs the top two items, they're `stack[-1]` and `stack[-2]`. Whatever is left on the stack at the end is often the answer, read from the bottom up:
+```python
+def browse(actions):
+    pages = ["home"]
+    for a in actions:
+        if a == "back":
+            if len(pages) > 1:
+                pages.pop()
+        else:
+            pages.append(a)
+    return pages
+
+print(browse(["news", "sport", "back", "mail"]))
+print(browse(["back", "back"]))
+```
+```output
+['home', 'news', 'mail']
+['home']
+```
+A back button can't go back past the first page, so `back` only pops when there's more than one page. The pages left, from the bottom up, are the history.
+
 ### A Stack class
 A class gives the operations their names and keeps the list inside it, so no code reaches into the middle by accident:
 ```python
@@ -71,6 +92,38 @@ print(s.pop(), s.peek(), s.size(), s.is_empty())
 ```
 3 went on last, so it comes off first. After that, 2 is on top, and two items are left.
 
+**Keeping extra information with each item.** A class can answer more questions in O(1) if each entry also keeps the answer as it was when the entry was pushed. To know the largest item at any moment, push pairs: the item, and the largest item from the bottom up to it. The largest of the whole stack is in the pair on top, and after a pop, the pair below already knows the largest of what's left:
+```python
+class MaxStack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, x):
+        best = x
+        if self.items and self.items[-1][1] > best:
+            best = self.items[-1][1]
+        self.items.append((x, best))
+
+    def pop(self):
+        return self.items.pop()[0]
+
+    def largest(self):
+        return self.items[-1][1]
+
+s = MaxStack()
+for x in [3, 7, 2]:
+    s.push(x)
+print(s.largest())
+s.pop()
+s.pop()
+print(s.largest())
+```
+```output
+7
+3
+```
+A single variable for the largest item wouldn't work: once 7 is popped, it can't tell what the largest was before 7 arrived. Each pair remembers it. The pairs double the space, but that's still O(n).
+
 ### Undo and redo
 An editor's Undo is a stack: every change is pushed, and Undo pops the most recent change and reverses it. Redo is a second stack: each undone change is pushed onto it, and Redo pops it back. Typing something new empties the redo stack, because the undone changes no longer fit after it.
 
@@ -85,6 +138,21 @@ An editor's Undo is a stack: every change is pushed, and Undo pops the most rece
 | type "there" | I am there | I, am, there | (empty) |
 
 The second Undo pushes "am" on top of "here", so Redo brings back "am" first: the last change undone is the first one redone. Example 1 builds this editor.
+
+**Pouring one stack into another.** Moving every item from one stack onto another, popping each one and pushing it, reverses their order: the item that was on top ends up at the bottom. That's how two stacks can make a **queue**, which serves items in the order they arrived. New items are pushed onto an `inbox` stack. To take the oldest item, look at an `outbox` stack, and if it's empty, pour the whole inbox into it first, which puts the oldest item on top:
+```python
+inbox = [1, 2, 3]
+outbox = []
+while inbox:
+    outbox.append(inbox.pop())
+print(outbox)
+print(outbox.pop())
+```
+```output
+[3, 2, 1]
+1
+```
+1 arrived first, and after the pour it's on top of the outbox. Pouring n items is O(n), but each item is poured only once, from the inbox to the outbox, so over many operations each item costs O(1): O(1) amortized, like the copies of a growing dynamic array. Pour only when the outbox is empty, or items will come out in the wrong order.
 
 ### Matching brackets
 Brackets in code and in maths must match: every opening bracket, `(`, `[` or `{`, is closed later by the same kind, and pairs can't cross. `([])` is fine, but `([)]` isn't. A stack checks this in one pass:
@@ -104,7 +172,8 @@ def balanced(text):
                 return False
     return not stack
 
-for t in ["([]{})", "([)]", "(()", "a[b(c)d]e", "())"]:
+tests = ["([]{})", "([)]", "(()", "a[b(c)d]e", "())"]
+for t in tests:
     print(t, balanced(t))
 ```
 ```output
@@ -123,6 +192,31 @@ a[b(c)d]e True
 | `)` | pop `[`, but `)` needs `(` | mismatch: False |
 
 The most recently opened bracket has to be closed first: that's last in, first out. Animation 1 checks a string that matches.
+
+**Pushing positions, not characters.** Push the **position** of each opening bracket instead of the character. You can still check its kind with `text[i]`, and a match now tells you where a pair starts and ends. Positions left on the stack at the end belong to brackets that were never closed, and a closing bracket that finds the stack empty has no partner:
+```python
+def pairs(text):
+    stack = []
+    found = []
+    unmatched = []
+    for i in range(len(text)):
+        if text[i] == "(":
+            stack.append(i)
+        elif text[i] == ")":
+            if stack:
+                found.append((stack.pop(), i))
+            else:
+                unmatched.append(i)
+    return found, unmatched + stack
+
+print(pairs("(a(b))c)("))
+```
+```output
+([(2, 4), (0, 5)], [7, 8])
+```
+The inner pair, from 2 to 4, is found first, because it closes first. The `)` at 7 found the stack empty, and the `(` at 8 was still on the stack at the end.
+
+**Depth.** The stack's size is how deeply nested the current position is: one level for each bracket that's still open. With only one kind of bracket, the stack holds nothing but copies of `(`, so a count, `depth`, does the same job: add 1 for `(` and take 1 away for `)`.
 
 ### Evaluating postfix expressions
 In **postfix** notation, also called Reverse Polish notation, each operator comes after its two numbers: `3 4 +` means 3 + 4, and `3 4 + 2 *` means (3 + 4) × 2. There are no brackets and no rules about which operator goes first, and a stack works it out in one pass:
@@ -155,8 +249,73 @@ print(eval_postfix("10 2 3 * -".split()))
 ```
 The first pop gives the **second** number, `b`, because it was pushed last. For `+` and `*` the order doesn't matter, but for `-` it does: `10 2 3 * -` is 10 − (2 × 3) = 4, so it's `a - b`. Calculators and programming languages use this idea: an ordinary expression is turned into postfix, then a stack evaluates it. Animation 2 evaluates `3 4 + 2 *`.
 
+**Dividing.** For `/`, many problems want a whole number, rounded towards zero: 7 / 2 is 3, and −7 / 2 is −3. Python's `//` rounds down instead, so `-7 // 2` is −4. `int(a / b)` divides and then drops the fraction, which rounds towards zero:
+```python
+print(7 // 2, -7 // 2)
+print(int(7 / 2), int(-7 / 2))
+```
+```output
+3 -4
+3 -3
+```
+
+**Precedence with a stack of terms.** An ordinary expression such as `3+2*2` without brackets doesn't need postfix. `*` and `/` come before `+` and `-`, so keep a stack of **terms**: the numbers that get added up at the end. After a `+`, push the next number; after a `-`, push it negated; after a `*`, pop the last term, multiply it by the next number, and push the result. The answer is the sum of the stack:
+```python
+def evaluate(tokens):
+    stack = [tokens[0]]
+    for i in range(1, len(tokens), 2):
+        op = tokens[i]
+        x = tokens[i + 1]
+        if op == "+":
+            stack.append(x)
+        elif op == "-":
+            stack.append(-x)
+        else:
+            stack.append(stack.pop() * x)
+    return sum(stack)
+
+print(evaluate([3, "+", 2, "*", 2]))
+print(evaluate([10, "-", 2, "*", 3, "+", 1]))
+```
+```output
+7
+5
+```
+The tokens alternate between numbers and operators, so the loop takes them two at a time. In 10 − 2 × 3 + 1, the terms are 10, then −2, which the `*` turns into −6, then 1: their sum is 5. `/` works like `*`, with `int(a / b)`. Each operator does O(1) work, so the whole expression is O(n).
+
 ### The call stack
 Python runs functions with a stack. Each call pushes a **frame**, which holds that call's local variables. When the call returns, its frame is popped, and the function that called it carries on where it left off. So the most recent call always finishes first. You traced the call stack in the Recursion lesson. It's also why a recursive function with no base case fails with `RecursionError`: the call stack keeps growing until it reaches Python's limit, about 1,000 frames. Any recursive function can be rewritten as a loop with a stack of your own, which is how depth-first search works in Unit 4.
+
+**A stack of your own for nested input.** When the input is nested, such as brackets inside brackets, each level can be handled like a function call. When a new level opens, push what you were working on and start afresh; when the level closes, pop what you saved and combine the finished inner result into it. You decoded strings such as `3[a2[c]]` with recursion in the Recursion lesson; here's the same with a stack:
+```python
+def decode(s):
+    stack = []
+    text = ""
+    count = 0
+    for ch in s:
+        if ch.isdigit():
+            count = count * 10 + int(ch)
+        elif ch == "[":
+            stack.append((text, count))
+            text = ""
+            count = 0
+        elif ch == "]":
+            before, times = stack.pop()
+            text = before + text * times
+        else:
+            text += ch
+    return text
+
+print(decode("3[a2[c]]"))
+print(decode("2[ab]3[x]"))
+```
+```output
+accaccacc
+ababxxx
+```
+At `[`, the text so far and the repeat count are saved, and the inner text starts empty. At `]`, the saved pair comes back, and the inner text, repeated, goes on the end of the text that came before. The stack holds one pair for each level that's open, and nothing here can reach Python's recursion limit, however deep the nesting goes.
+
+The same idea handles a log of function calls: a call pushes the function, a return pops it, and the function on top is the one running now.
 
 ### The cost table
 
@@ -169,13 +328,119 @@ Python runs functions with a stack. Each call pushes a **frame**, which holds th
 | evaluate a postfix expression of n tokens | O(n) |
 | space for n items | O(n) |
 
+### Solving problems with stacks
+The rest of this lesson is about solving problems with stacks, the way the tasks do. Seven patterns cover the tasks. Six of them are steps above, and the seventh, cancelling against the top, comes next. A clue in the question usually tells you which one you need:
+
+| Pattern | Clue in the question |
+| --- | --- |
+| A Python list is a stack | a list of commands to carry out in order: push, pop, back, undo |
+| A Stack class | a class whose methods must all be O(1), or must answer a question about the whole stack |
+| Undo and redo | undo and redo, back and forward, or a queue or deque built only from stacks |
+| Matching brackets | brackets that must match, their positions, or how deeply they nest |
+| Evaluating postfix expressions | working out the value of an expression, with operators and their precedence |
+| The call stack | nested input: levels inside levels, function calls and returns |
+| Cancelling against the top | neighbours that cancel, collide or merge, and new neighbours that then meet |
+
+After the patterns come the combinations that need two of them, and then two steps for the second part of every task: edge cases, and time and space.
+
+The tests call a function `run`, which passes the input to your function and returns its answer. For a class, `run(commands, inputs)` plays out a series of calls, the first command making the object; where a task uses LeetCode's command names, such as `"getMin"`, `run` calls the matching method, `get_min`. Keep `run` as it is.
+
+### Cancelling against the top
+In some problems, two neighbours can cancel each other: two equal letters next to each other disappear, a bracket meets its partner, two asteroids flying towards each other collide. Removing a pair can make two new neighbours meet, which may cancel too. A stack handles this in one pass. Its items are the survivors so far, in order, and its top is the survivor right before the new item. Compare each new item with the top: if they clash, pop the top, and keep comparing the new item with the next top for as long as they clash; otherwise push the new item:
+```python
+def merge(values):
+    stack = []
+    for x in values:
+        while stack and stack[-1] == x:
+            stack.pop()
+            x = x * 2
+        stack.append(x)
+    return stack
+
+print(merge([2, 2, 4, 8, 3, 3]))
+print(merge([1, 1, 1]))
+```
+```output
+[16, 6]
+[2, 1]
+```
+Here two equal neighbours merge into one of double the value, as in the game 2048. The second 2 merges with the first into a 4, which meets the 4 on top and becomes an 8, which meets the 8 and becomes 16: a chain reaction, all inside the `while` loop for one new item. In [1, 1, 1], the first two make a 2, and the third 1 meets the 2, which is different, so it stays.
+
+- The `while` loop runs inside the `for` loop, but each item is pushed once and popped at most once, so the whole pass is O(n).
+- Removing a pair from a Python list or a string shifts everything after it: O(n) for each removal, and O(n²) in all. Searching again from the start after each removal is O(n²) too. The stack never shifts anything.
+- Often only some pairs clash: an asteroid moving right meets one moving left, but two moving the same way never meet, so the check looks at both items before popping.
+- When it takes k equal items in a row to cancel, push pairs, `[item, count]`: a new item that matches the top adds 1 to its count, and the pair is popped when the count reaches k.
+
+### Combining patterns
+Many tasks need two patterns at once:
+
+- **A class with two stacks** (design + two). The class keeps two stacks and moves items between them, only when it has to. A queue pours its inbox into its outbox when the outbox is empty. A queue that knows its smallest item keeps pairs in both stacks, each with the smallest item so far. A stack that can roll back keeps a second stack, a log of what to undo.
+- **Brackets that open a new level** (brackets + nested). Each opening bracket pushes the work done so far and starts a new level, and its closing bracket finishes the level: pop the saved work and combine the inner result into it, by reversing it or by working out a function call.
+- **Brackets in a calculation** (calc + nested). An opening bracket saves the running result and the sign or operator in front of the bracket, and the calculation inside starts again from scratch. The closing bracket combines the inner value with what was saved, as if the whole bracket were a single number.
+- **A program with a call stack** (simulate + nested). A machine that runs instructions keeps two stacks: one of values, and one of the places to go back to after each call. `call` pushes where to come back to, and `ret` pops it.
+
+### Edge cases to test
+Once your code passes the examples, look for inputs that could break it: the smallest, emptiest, most extreme or most unusual inputs the problem allows. For the tasks here, try:
+
+| Edge case | Example | What can go wrong |
+| --- | --- | --- |
+| an empty stack | a pop with nothing there | an `IndexError` |
+| one item | `run("a")` | reading `stack[-2]` |
+| everything cancels | `run("abba")` | returning None, not `""` |
+| a closing bracket first | `run(")(")` | popping an empty stack |
+| crossing brackets | `run("([)]")` | counting instead of matching kinds |
+| dividing negative numbers | −7 / 2 | `//` rounds down, not towards zero |
+| deep nesting | thousands of levels | recursion reaches Python's limit |
+| a chain reaction | 2, 2 and 4 merging into 8 | checking the top only once |
+
+Each task asks you for 1 to 3 tests like these, each a different kind of edge case.
+
+### Time and space of a stack solution
+**Time.** Count the pushes and pops:
+
+| The code | Time |
+| --- | --- |
+| push, pop or peek on a Python list | O(1); push is O(1) amortized |
+| one pass where each item is pushed once and popped at most once | O(n), even with a `while` loop inside |
+| pouring one stack into another only when it's empty | O(1) amortized for each item |
+| looking through the whole stack, for its smallest item, say | O(n); keep pairs for O(1) |
+| copying a whole stack | O(n) |
+
+**Space.** Count what the code keeps, besides its input:
+
+| The code keeps | Space |
+| --- | --- |
+| a stack that can hold every item | O(n) |
+| a count in place of a stack, for one kind of bracket | O(1) |
+| pairs: each item with its extra information | O(n) |
+| the answer, built as a new list or string | O(n) |
+
 === keypoints
 - A stack is LIFO: push puts an item on top, pop takes the top item off, and peek looks at it. Only the top can be reached.
 - In Python, use a list with its end as the top: `append(x)`, `pop()`, `stack[-1]`, `len(stack)`, all O(1). Don't use the front: `insert(0, x)` and `pop(0)` are O(n).
 - Check that a stack isn't empty before popping or peeking: an empty list is falsy, so `if stack:`.
-- Matching brackets: push each opening bracket; a closing bracket must match the top, which is popped; the stack must end empty.
-- Postfix: push numbers; an operator pops `b`, then `a`, and pushes `a op b`.
-- Undo and redo, the back button, and Python's call stack are all stacks.
+- A class can keep extra information with each entry, such as the largest item so far, so its answer is still O(1) after any pop.
+- Pouring one stack into another reverses it. Two stacks make a queue: pour the inbox into the outbox only when the outbox is empty, for O(1) amortized.
+- Matching brackets: push each opening bracket, or its position; a closing bracket must match the top, which is popped; the stack must end empty. With one kind of bracket, a depth count is enough.
+- Postfix: push numbers; an operator pops `b`, then `a`, and pushes `a op b`. Without brackets, a stack of terms does `*` and `/` before `+` and `-`. `int(a / b)` rounds towards zero.
+- Nested input works like function calls: push what you were doing when a level opens, and pop and combine when it closes. Your own stack has no recursion limit.
+- When neighbours cancel or merge, compare each new item with the top, popping while they clash: each item is pushed once and popped at most once, so it's O(n).
+- Patterns: following a list of commands; a class with extra information; two stacks; matching brackets; working out expressions; nested levels; and cancelling against the top.
+- Combinations: a class with two stacks; brackets that open a new level; brackets in a calculation; and a program with a call stack.
+
+=== patterns
+- simulate | A Python list is a stack
+- design | A Stack class
+- two | Undo and redo
+- brackets | Matching brackets
+- calc | Evaluating postfix expressions
+- nested | The call stack
+- cancel | Cancelling against the top
+combos:
+- design + two | A class with two stacks
+- brackets + nested | Brackets that open a new level
+- calc + nested | Brackets in a calculation
+- simulate + nested | A program with a call stack
 
 === example: Undo and redo
 intro: An editor that keeps the words typed so far as a stack, so Undo can pop the last word, and a second stack of undone words for Redo.
@@ -302,277 +567,586 @@ print(stack.pop())
 13: A number: push {t}.
 14: One number is left on the stack: the answer, {stack[-1]}.
 
-=== task: predict easy
-title: Push, push, push, pop
-code:
+=== task: code easy
+title: Baseball Game
+leetcode: 682 | Baseball Game | baseball-game
+patterns: simulate
+prompt: You're keeping score in a baseball game with strange rules. Each string in `operations` is one of these:
+
+- an integer x: record a new score of x,
+- `"+"`: record a new score, the sum of the last two scores,
+- `"D"`: record a new score, double the last score,
+- `"C"`: cancel the last score, removing it from the record.
+
+Write `cal_points(operations)` that returns the sum of all the scores on the record after every operation.
+
+The record is a stack: a new score is pushed, `"C"` pops the last one, and the last two scores are `stack[-1]` and `stack[-2]`. Convert number strings with `int`.
+
+**Example 1:** `run(["5", "2", "C", "D", "+"])` returns 30: the record goes 5; 5, 2; 5; 5, 10; 5, 10, 15, which adds up to 30.
+
+**Example 2:** `run(["1", "C"])` returns 0: the only score is cancelled.
+
+**Constraints:** 1 ≤ len(operations) ≤ 1000, every integer is from −3 × 10⁴ to 3 × 10⁴, `"+"` always comes after at least two scores and `"C"` and `"D"` after at least one, and every score and the sum fit in 32 bits.
+starter:
 ```python
-stack = []
-stack.append(1)
-stack.append(2)
-stack.append(3)
-x = stack.pop()
-stack.append(4)
-print(x, stack, stack[-1])
+def cal_points(operations):
+    stack = []
+    # your code here
+    return sum(stack)
+
+
+def run(operations):
+    return cal_points(operations)
 ```
-wrong[1 [2, 3, 4] 4]: `pop()` takes the item pushed last, 3, not the first one.
-wrong[3 [1, 2, 3, 4] 4]: `pop()` removes the 3, so it's no longer in the list when 4 is pushed.
-wrong[3 [1, 2, 4] 1]: `stack[-1]` is the top, which is the end of the list: 4.
-hint: The top of the stack is the end of the list.
-hint: After the pop, the stack is `[1, 2]`.
-right: 3 comes off, 4 goes on in its place, and the top is now 4: last in, first out.
-wrong: Pushes give `[1, 2, 3]`; `pop()` returns 3 and leaves `[1, 2]`; pushing 4 gives `[1, 2, 4]`, whose top is 4.
-
-=== task: mcq easy
-title: Which plate comes off?
-prompt: Plates numbered 1, 2 and 3 are pushed onto a stack in that order. Which plate does the first pop take off?
-* 3 :: Right. It went on last, so it's on top.
-- 1 :: The first one in being the first one out is a queue, not a stack.
-- 2 :: A stack can only reach its top item.
-- Any of them :: Only the top item can be taken.
-hint: Which plate is on top?
-hint: Last in, first out.
-right: A stack is LIFO: the last plate pushed, 3, is the first one popped.
-wrong: Pushing 1, 2, 3 leaves 3 on top, and pop always takes the top: 3.
-
-=== task: fill easy
-title: Peek at the top
-prompt: Fill in the blank so that the program shows the top of the stack without removing it, and prints:
-
-```output
-c 3
-```
-code:
+solution:
 ```python
-stack = ["a", "b", "c"]
-print(stack[??], len(stack))
+def cal_points(operations):
+    stack = []
+    for op in operations:
+        if op == "+":
+            stack.append(stack[-1] + stack[-2])
+        elif op == "D":
+            stack.append(2 * stack[-1])
+        elif op == "C":
+            stack.pop()
+        else:
+            stack.append(int(op))
+    return sum(stack)
+
+
+def run(operations):
+    return cal_points(operations)
 ```
-answer: -1
-wrong[0]: Index 0 is the bottom of the stack, "a". The top is the end of the list.
-wrong[3]: The list has indexes 0 to 2, so `stack[3]` raises an IndexError.
-hint: The top of the stack is the last item of the list.
-hint: Which index always means the last item?
-right: `stack[-1]` reads the top in O(1), and the stack keeps all 3 items, because nothing was popped.
-wrong: The top is the last item, `stack[-1]`, which is "c". Peeking doesn't remove it, so the length is still 3.
+tests:
+- run(["5", "2", "C", "D", "+"])
+- run(["5", "-2", "4", "C", "D", "9", "+", "+"])
+- run(["1", "C"])
+- run(["7"])
+- run(["3", "D", "D", "+", "C", "C"])
+- run([x for i in range(250) for x in (str(i % 100 - 50), "D", "+", "C")])
+fail[2]: −2 is a score too: "C" cancels the 4, then "D" doubles −2 to −4.
+fail[3]: The only score is cancelled, so the sum is 0.
+fail[4]: One score, and nothing else.
+fail[5]: "D" doubles 3 to 6, then 6 to 12, "+" adds 6 + 12, and the two "C"s cancel the last two scores.
+fail[6]: 1000 operations.
+edges:
+- one operation :: len(operations) == 1 :: run(["4"])
+- a negative score :: len(operations) > 1 and any(op[0] == "-" for op in operations) :: run(["4", "-2"])
+- a cancel :: len(operations) > 1 and "C" in operations and not any(op[0] == "-" for op in operations) :: run(["4", "C"])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of operations.
+why_time: Each operation is one push or pop, O(1).
+why_space: The stack can hold every score.
+hint: For each op: if it's `"+"`, push `stack[-1] + stack[-2]`; if it's `"D"`, push `2 * stack[-1]`.
+hint: If it's `"C"`, pop. Otherwise it's a number: push `int(op)`.
+right: Every rule only touches the last one or two scores, which are always the top of the stack, so each operation is O(1).
+wrong: Keep the scores on a stack: push int(op) for a number, the sum of the top two for "+", double the top for "D", pop for "C"; return the sum of the stack.
 
 === task: code easy
-title: Reverse with a stack
-prompt: Write `reverse_list(items)` that returns a new list with the items in reverse order, using a stack: push every item, then pop them all into the result. Don't use slicing, `reversed` or `.reverse()`.
+title: Crawler Log Folder
+leetcode: 1598 | Crawler Log Folder | crawler-log-folder
+patterns: simulate
+prompt: A file system logs every time a user changes folder. Each string in `logs` is one of these:
 
-For example, `reverse_list([1, 2, 3])` returns `[3, 2, 1]`.
+- `"../"`: move up to the parent folder, or stay put if already in the main folder,
+- `"./"`: stay in the same folder,
+- `"x/"`: move into the child folder named x, which always exists.
+
+Starting in the main folder, write `min_operations(logs)` that returns how many moves it takes to get back to the main folder after all the logs.
+
+Keep the folders you're inside as a stack: moving into a folder pushes it, and `"../"` pops, but only if the stack isn't empty. The answer is how many folders are left on the stack.
+
+**Example 1:** `run(["d1/", "d2/", "../", "d21/", "./"])` returns 2: you end up in main, then d1, then d21.
+
+**Example 2:** `run(["d1/", "../", "../", "../"])` returns 0: you can't go above the main folder.
+
+**Constraints:** 1 ≤ len(logs) ≤ 1000, each log has 2 to 10 characters, and folder names are lowercase letters and digits.
 starter:
 ```python
-def reverse_list(items):
+def min_operations(logs):
     stack = []
-    result = []
     # your code here
-    return result
+    return len(stack)
+
+
+def run(logs):
+    return min_operations(logs)
 ```
 solution:
 ```python
-def reverse_list(items):
+def min_operations(logs):
     stack = []
-    result = []
-    for x in items:
-        stack.append(x)
-    while stack:
-        result.append(stack.pop())
-    return result
+    for log in logs:
+        if log == "../":
+            if stack:
+                stack.pop()
+        elif log != "./":
+            stack.append(log)
+    return len(stack)
+
+
+def run(logs):
+    return min_operations(logs)
 ```
 tests:
-- reverse_list([1, 2, 3])
-- reverse_list([])
-- reverse_list(["x"])
-- reverse_list(["a", "b", "c", "d"])
-forbid[[::-1]]: Use the stack: push every item, then pop them.
-forbid[reversed(]: Use the stack: push every item, then pop them.
-forbid[.reverse(]: Use the stack: push every item, then pop them.
-fail[1]: Push 1, 2, 3; the pops then give 3, 2, 1.
-fail[3]: One item reversed is the same one item.
-hint: First loop: push every item with `stack.append(x)`.
-hint: Then `while stack:`, append `stack.pop()` to the result.
-right: Every item is pushed once and popped once: O(n). The last item pushed comes off first, which is exactly what reversing needs.
-wrong: Push all the items, then pop until the stack is empty, appending each popped item to the result.
+- run(["d1/", "d2/", "../", "d21/", "./"])
+- run(["d1/", "d2/", "./", "d3/", "../", "d31/"])
+- run(["d1/", "../", "../", "../"])
+- run(["./"])
+- run(["../", "a/", "b/", "../", "c/"])
+- [run(["f" + str(i % 7) + "/" if i % 3 else "../" for i in range(1000)]), run(["../" if i % 5 == 4 else "x/" for i in range(1000)])]
+fail[2]: d1, d2, then d3; "../" leaves d3, then d31: three folders deep.
+fail[3]: After d1, the "../"s take you up once, then keep you in the main folder.
+fail[4]: "./" stays in the main folder.
+fail[5]: The first "../" happens in the main folder, so it does nothing.
+fail[6]: 1000 logs.
+edges:
+- only "./" and "../" :: all(log in ("./", "../") for log in logs) :: run(["../"])
+- back in the main folder at the end :: any(log not in ("./", "../") for log in logs) and min_operations(logs) == 0 :: run(["a/", "../"])
+- ending inside a folder :: min_operations(logs) > 0 :: run(["a/"])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of logs.
+why_time: Each log is at most one push or pop.
+why_space: The stack can hold a folder for every log.
+hint: For each log: if it's `"../"`, pop, but only `if stack:`.
+hint: If it's neither `"../"` nor `"./"`, push it.
+right: The folders you're inside form a path from the main folder, and moving up or down only ever changes its end, which is the top of the stack.
+wrong: Push each folder you move into, pop on "../" when the stack isn't empty, ignore "./", and return the number of folders left on the stack.
 
-=== task: predict easy
-title: Balanced or not?
-code:
+=== task: code easy
+title: Two Stacks in One List
+patterns: design
+prompt: Write a class `TwoStacks` that keeps two stacks, numbered 0 and 1, in a single Python list of a fixed size, `capacity`:
+
+- `TwoStacks(capacity)` makes the list, `[0] * capacity`. It never grows.
+- `push(which, x)` pushes x onto stack `which` and returns True, or returns False if the list is full: the two stacks hold `capacity` items between them.
+- `pop(which)` pops and returns the top of stack `which`, or returns −1 if it's empty.
+- `peek(which)` returns the top of stack `which` without removing it, or −1 if it's empty.
+- `size(which)` returns the number of items on stack `which`.
+
+Stack 0 grows from the left end of the list, and stack 1 from the right end, so neither runs out of room while the other has some to spare. Keep two indexes: `low`, the next free slot for stack 0, starting at 0, and `high`, the next free slot for stack 1, starting at `capacity - 1`. The list is full when `low > high`.
+
+**Example:** `run(["TwoStacks", "push", "push", "push", "peek", "push", "pop"], [[3], [0, 1], [1, 9], [0, 2], [0], [1, 8], [1]])` returns `[None, True, True, True, 2, False, 9]`: three items fill the list, so the fourth push fails.
+
+**Constraints:** 1 ≤ capacity ≤ 10⁴, at most 10⁴ calls, `which` is 0 or 1, and 0 ≤ x ≤ 10⁹.
+starter:
 ```python
-def balanced(text):
-    pairs = {")": "(", "]": "[", "}": "{"}
-    stack = []
-    for ch in text:
-        if ch in "([{":
-            stack.append(ch)
-        elif ch in pairs:
-            if not stack or stack.pop() != pairs[ch]:
-                return False
-    return not stack
+class TwoStacks:
+    def __init__(self, capacity):
+        self.items = [0] * capacity
+        self.low = 0
+        self.high = capacity - 1
 
-print(balanced("{[]}"), balanced("[(])"), balanced("[["), balanced("]"))
+    def push(self, which, x):
+        return False
+
+    def pop(self, which):
+        return -1
+
+    def peek(self, which):
+        return -1
+
+    def size(self, which):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TwoStacks":
+            stacks = TwoStacks(args[0])
+            results.append(None)
+        elif command == "push":
+            results.append(stacks.push(args[0], args[1]))
+        elif command == "pop":
+            results.append(stacks.pop(args[0]))
+        elif command == "peek":
+            results.append(stacks.peek(args[0]))
+        elif command == "size":
+            results.append(stacks.size(args[0]))
+    return results
 ```
-wrong[True True False False]: In `[(])`, the `]` arrives while `(` is on top: the pairs cross, so it's False.
-wrong[True False True False]: `[[` opens two brackets and closes none, so the stack isn't empty at the end: False.
-wrong[True False False True]: `]` arrives with an empty stack: there's nothing for it to close, so False.
-hint: A closing bracket must match the top of the stack.
-hint: At the end, the stack must be empty.
-right: Only `{[]}` passes. `[(])` crosses its pairs, `[[` never closes, and `]` closes something that was never opened.
-wrong: `{[]}`: each closer matches the top, and the stack ends empty: True. `[(])`: `]` meets `(`: False. `[[`: two left over: False. `]`: empty stack: False.
-
-=== task: multi easy
-title: Stacks in the wild
-prompt: Choose **every** situation that works like a stack.
-* An editor's Undo :: Right. The most recent change is undone first.
-* A browser's Back button :: Right. The page you visited last is the first one you go back to.
-* Python's call stack :: Right. The most recent call finishes first.
-* A pile of plates in a cupboard :: Right. You take the top one, which went on last.
-- People queuing at a shop :: First come, first served: that's a queue.
-- A printer printing documents in the order they were sent :: That's first in, first out: a queue too.
-hint: In which ones does the most recent thing come out first?
-hint: Four of them are stacks.
-right: Undo, Back, the call stack and a pile of plates are all last in, first out. Queues are first in, first out.
-wrong: Stacks: Undo, Back, the call stack, the plates. The shop queue and the printer serve the oldest first, so they're queues.
-
-=== task: parsons easy
-title: A Stack class
-prompt: Arrange the lines so that the class works as a stack, with the end of the list as the top, and the program prints:
-
-```output
-z y
-```
-
-Not every line is needed.
-lines:
+solution:
 ```python
-class Stack:
+class TwoStacks:
+    def __init__(self, capacity):
+        self.items = [0] * capacity
+        self.low = 0
+        self.high = capacity - 1
+
+    def push(self, which, x):
+        if self.low > self.high:
+            return False
+        if which == 0:
+            self.items[self.low] = x
+            self.low += 1
+        else:
+            self.items[self.high] = x
+            self.high -= 1
+        return True
+
+    def pop(self, which):
+        if self.size(which) == 0:
+            return -1
+        if which == 0:
+            self.low -= 1
+            return self.items[self.low]
+        self.high += 1
+        return self.items[self.high]
+
+    def peek(self, which):
+        if self.size(which) == 0:
+            return -1
+        if which == 0:
+            return self.items[self.low - 1]
+        return self.items[self.high + 1]
+
+    def size(self, which):
+        if which == 0:
+            return self.low
+        return len(self.items) - 1 - self.high
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "TwoStacks":
+            stacks = TwoStacks(args[0])
+            results.append(None)
+        elif command == "push":
+            results.append(stacks.push(args[0], args[1]))
+        elif command == "pop":
+            results.append(stacks.pop(args[0]))
+        elif command == "peek":
+            results.append(stacks.peek(args[0]))
+        elif command == "size":
+            results.append(stacks.size(args[0]))
+    return results
+```
+tests:
+- run(["TwoStacks", "push", "push", "push", "peek", "peek", "push", "size", "pop", "pop", "pop"], [[3], [0, 1], [1, 9], [0, 2], [0], [1], [1, 8], [0], [1], [1], [1]])
+- run(["TwoStacks", "pop", "peek", "size"], [[2], [0], [1], [1]])
+- run(["TwoStacks", "push", "push", "push", "pop", "push", "peek", "size"], [[2], [1, 5], [1, 6], [0, 7], [1], [0, 7], [0], [1]])
+- run(["TwoStacks", "push", "push", "pop", "push", "peek"], [[1], [0, 4], [1, 4], [0], [1, 4], [1]])
+- run(["TwoStacks", "push", "push", "push", "push", "pop", "size", "size"], [[3], [0, 1], [0, 2], [0, 3], [1, 4], [0], [0], [1]])
+- (lambda r: [r.count(True), r.count(False), sum(x for x in r if type(x) == int), r[-6:]])(run(["TwoStacks"] + [("push", "push", "pop", "push", "peek", "size")[i % 6] for i in range(9000)], [[5000]] + [[i % 2, i] if i % 6 in (0, 1, 3) else [i // 6 % 2] for i in range(9000)]))
+fail[2]: Both stacks are empty: −1 and −1, and a size of 0.
+fail[3]: Stack 1 fills the whole list, so pushing onto stack 0 fails until stack 1 pops.
+fail[4]: A list of one slot holds one item, whichever stack it's on.
+fail[5]: Stack 0 fills the list from the left; stack 1 is still empty.
+fail[6]: A list of 5000 slots and 9000 calls.
+edges:
+- a list of one slot :: inputs[0][0] == 1 :: run(["TwoStacks", "push", "push"], [[1], [0, 5], [1, 6]])
+- a push onto a full list :: inputs[0][0] > 1 and any(r is False for r in run(commands, inputs)) :: run(["TwoStacks", "push", "push", "push"], [[2], [0, 5], [1, 6], [0, 7]])
+- never full :: inputs[0][0] > 1 and not any(r is False for r in run(commands, inputs)) :: run(["TwoStacks", "push", "pop"], [[2], [1, 6], [1]])
+edge_count: 2
+complexity: time=O(1) | space=O(c)
+complexity_options: O(c)
+complexity_note: c is the capacity, and the time is for one call.
+why_time: Each method reads or changes one slot and one index.
+why_space: The list has capacity slots, made at the start.
+hint: push: return False if `self.low > self.high`. For stack 0, write `self.items[self.low] = x` and add 1 to low; for stack 1, write at high and take 1 from high. Return True.
+hint: size: stack 0 has `self.low` items, and stack 1 has `len(self.items) - 1 - self.high`.
+hint: pop and peek: return −1 if the size is 0. Stack 0's top is at `self.low - 1`, and stack 1's at `self.high + 1`; pop moves the index back one step.
+right: Growing from the two ends lets either stack use every free slot, and each index points at its stack's next free slot, so every method is O(1).
+wrong: Grow stack 0 from the left end with an index low, and stack 1 from the right end with an index high; the list is full when low > high; the tops are at low − 1 and high + 1.
+
+=== task: code easy
+title: Implement Queue using Stacks
+leetcode: 232 | Implement Queue using Stacks | implement-queue-using-stacks
+patterns: design + two
+prompt: Write a class `MyQueue`, a queue, first in first out, that uses only two stacks, with only stack operations: push onto the top, pop from the top, look at the top, and size.
+
+- `push(x)` adds x at the back of the queue.
+- `pop()` removes the item at the front and returns it.
+- `peek()` returns the item at the front.
+- `empty()` returns True if the queue is empty.
+
+Push new items onto `inbox`. The front of the queue is the oldest item, at the bottom of inbox. Pouring inbox into `outbox` reverses it and puts the oldest item on top, so pop and peek read `outbox`, pouring first, but only when outbox is empty. Each item is poured once, so every method is O(1) amortized.
+
+**Example:** `run(["MyQueue", "push", "push", "peek", "pop", "empty"], [[], [1], [2], [], [], []])` returns `[None, None, None, 1, 1, False]`.
+
+**Constraints:** 1 ≤ x ≤ 9, at most 100 calls, and pop and peek are only called when the queue isn't empty.
+starter:
+```python
+class MyQueue:
     def __init__(self):
-        self.items = []
+        self.inbox = []
+        self.outbox = []
 
     def push(self, x):
-        self.items.append(x)
+        pass
 
     def pop(self):
-        return self.items.pop()
+        return 0
 
     def peek(self):
-        return self.items[-1]
+        return 0
 
-s = Stack()
-s.push("x")
-s.push("y")
-s.push("z")
-print(s.pop(), s.peek())
-```
-distractors:
-```python
-        return self.items.pop(0)
-        return self.items[0]
-```
-hint: The top is the end of the list.
-hint: `pop()` with no index and `[-1]` both work at the end.
-right: z went on last, so it comes off first, and y is the new top. `pop(0)` and `[0]` would work at the bottom of the stack instead.
-wrong: `push` appends, `pop` returns `self.items.pop()`, and `peek` returns `self.items[-1]`. Then push x, y, z, pop once and peek.
+    def empty(self):
+        return True
 
-=== task: cells easy
-title: The top after each step
-prompt: A stack starts empty. What's on top after each step?
-labels: push 5 | push 7 | pop | push 2
-answer: 5 | 7 | 5 | 2
-wrong[5 | 5 | 7 | 7]: The newest item is always the top: after pushing 7, the top is 7.
-wrong[5 | 7 | 7 | 2]: `pop` takes the top, 7, off, so 5 is on top again.
-hint: Each push puts the new item on top.
-hint: A pop uncovers the item underneath.
-right: 5, then 7 on top of it; popping 7 uncovers 5; then 2 goes on top.
-wrong: push 5: top 5. push 7: top 7. pop removes 7: top 5. push 2: top 2.
 
-=== task: mcq easy
-title: Why the end of the list?
-prompt: Why should a Python list that's used as a stack push and pop at its end, rather than at its front?
-* At the end, `append` and `pop()` are O(1); at the front, `insert(0, x)` and `pop(0)` shift every other item, which is O(n) :: Right. Both ends give last in, first out, but only the end is fast.
-- `pop(0)` doesn't work :: It works, but it moves every other item one place left.
-- A list can only grow at its end :: `insert(0, x)` adds at the front, but it shifts everything else.
-- It makes no difference :: For a big stack, it's O(1) against O(n) on every push and pop.
-hint: What happens to the other items when you insert or remove at the front?
-hint: Think back to the Arrays lesson.
-right: The end of an array is the only place where adding and removing move nothing else. That's why a list's top is its end.
-wrong: Working at the front shifts all the other items on every push and pop: O(n). At the end nothing shifts: O(1).
-
-=== task: predict easy
-title: Popping carefully
-code:
-```python
-stack = [1]
-for i in range(3):
-    if stack:
-        print(stack.pop())
-    else:
-        print("empty")
-```
-wrong[1\n1\n1]: `pop()` removes the item, so after the first pass the list is empty.
-wrong[1]: The loop runs 3 times. On the second and third passes the `else` prints "empty".
-wrong[1\nempty]: `range(3)` gives 3 passes: one pop and two "empty"s.
-hint: What's left in the list after the first pop?
-hint: An empty list is falsy.
-right: One pop, then the empty list makes `if stack:` False twice. Checking first avoids `IndexError: pop from empty list`.
-wrong: Pass 1: the stack is `[1]`, so it pops and prints 1. Passes 2 and 3: the stack is empty, so it prints "empty".
-
-=== task: code medium
-title: Which brackets pair up?
-prompt: A string `s` holds only `(` and `)`, and every bracket has a partner. Write `bracket_pairs(s)` that returns a list of `(open_index, close_index)` tuples, one for each pair, in the order the pairs **close**. Push the index of each `(`; each `)` pairs with the index on top of the stack.
-
-For example, `bracket_pairs("(()())")` returns `[(1, 2), (3, 4), (0, 5)]`.
-starter:
-```python
-def bracket_pairs(s):
-    stack = []
-    pairs = []
-    # your code here
-    return pairs
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MyQueue":
+            queue = MyQueue()
+            results.append(None)
+        elif command == "push":
+            results.append(queue.push(args[0]))
+        elif command == "pop":
+            results.append(queue.pop())
+        elif command == "peek":
+            results.append(queue.peek())
+        elif command == "empty":
+            results.append(queue.empty())
+    return results
 ```
 solution:
 ```python
-def bracket_pairs(s):
-    stack = []
-    pairs = []
-    for i in range(len(s)):
-        if s[i] == "(":
-            stack.append(i)
-        else:
-            pairs.append((stack.pop(), i))
-    return pairs
+class MyQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    def push(self, x):
+        self.inbox.append(x)
+
+    def move(self):
+        if not self.outbox:
+            while self.inbox:
+                self.outbox.append(self.inbox.pop())
+
+    def pop(self):
+        self.move()
+        return self.outbox.pop()
+
+    def peek(self):
+        self.move()
+        return self.outbox[-1]
+
+    def empty(self):
+        return not self.inbox and not self.outbox
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MyQueue":
+            queue = MyQueue()
+            results.append(None)
+        elif command == "push":
+            results.append(queue.push(args[0]))
+        elif command == "pop":
+            results.append(queue.pop())
+        elif command == "peek":
+            results.append(queue.peek())
+        elif command == "empty":
+            results.append(queue.empty())
+    return results
 ```
 tests:
-- bracket_pairs("(()())")
-- bracket_pairs("()")
-- bracket_pairs("")
-- bracket_pairs("((()))")
-- bracket_pairs("()()")
-fail[1]: Push the index of each `(`. Each `)` pairs with the index on top: the most recent `(` that's still open.
-fail[4]: Nested brackets close from the inside out, so the innermost pair, (2, 3), comes first.
-fail[5]: Two pairs side by side: (0, 1), then (2, 3).
-error[IndexError]: Only pop at a `)`, and push the index at every `(`.
-hint: Loop over the indexes with `range(len(s))`.
-hint: At `(`, push i. At `)`, pop the top index and append `(popped, i)`.
-right: Each `(` waits on the stack until its `)` arrives, and the most recent one is always the one that closes next: O(n) for the whole string.
-wrong: Push the index of every `(`. At every `)`, pop the index on top and record the pair (that index, the current index).
+- run(["MyQueue", "push", "push", "peek", "pop", "empty"], [[], [1], [2], [], [], []])
+- run(["MyQueue", "push", "pop", "empty"], [[], [1], [], []])
+- run(["MyQueue", "push", "push", "pop", "push", "pop", "pop", "empty"], [[], [1], [2], [], [3], [], [], []])
+- run(["MyQueue", "push", "peek", "peek", "pop", "empty"], [[], [5], [], [], [], []])
+- run(["MyQueue", "push", "push", "push", "pop", "push", "peek", "pop", "pop", "peek"], [[], [1], [2], [3], [], [4], [], [], [], []])
+- run(["MyQueue"] + [("push", "push", "pop", "peek", "empty")[i % 5] for i in range(99)], [[]] + [[i % 9 + 1] if i % 5 < 2 else [] for i in range(99)])
+fail[2]: One item in and out: the queue is empty again.
+fail[3]: 3 is pushed while 2 is still waiting in the outbox; 2 must still come out first.
+fail[4]: peek doesn't remove the item: it's still there for pop.
+fail[5]: After 1 leaves, 4 arrives behind 2 and 3.
+fail[6]: 99 calls, mixing pushes, pops, peeks and empty.
+edges:
+- one push :: commands.count("push") == 1 :: run(["MyQueue", "push", "pop"], [[], [5], []])
+- a push after a pop :: commands.count("push") > 1 and "pop" in commands and "push" in commands[commands.index("pop"):] :: run(["MyQueue", "push", "push", "pop", "push", "pop", "pop"], [[], [1], [2], [], [3], [], []])
+- every push before the first pop :: commands.count("push") > 1 and ("pop" not in commands or "push" not in commands[commands.index("pop"):]) :: run(["MyQueue", "push", "push", "pop"], [[], [1], [2], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of items in the queue, and the time is amortized, for one call.
+why_time: Each item is pushed onto inbox once, poured once, and popped from outbox once, so each call is O(1) amortized.
+why_space: The two stacks hold the n items between them.
+hint: push appends to inbox. Write a helper `move()`: if outbox is empty, pop everything from inbox onto outbox.
+hint: pop: `self.move()`, then pop outbox. peek: `self.move()`, then return `self.outbox[-1]`.
+hint: empty: True when both stacks are empty.
+right: Pouring reverses the inbox, so the oldest item ends up on top of the outbox, and pouring only into an empty outbox keeps every item in the right order.
+wrong: Push onto inbox; for pop and peek, pour inbox into outbox only when outbox is empty, then use outbox's top; the queue is empty when both stacks are.
 
-=== task: code medium
-title: Evaluate postfix
-prompt: Write `eval_postfix(tokens)` that evaluates a postfix expression given as a list of strings. Each token is a whole number (which may be negative, like "-3") or one of the operators "+", "-" and "*". Push numbers; for an operator, pop b, then pop a, and push `a op b`. Return the one number left at the end.
+=== task: code easy
+title: Remove Outermost Parentheses
+leetcode: 1021 | Remove Outermost Parentheses | remove-outermost-parentheses
+patterns: brackets
+prompt: A valid string of brackets, `(` and `)`, splits into **primitive** parts, each a valid string that can't be split further, such as `(()())` and `(())` in `(()())(())`. Write `remove_outer_parentheses(s)` that removes the outermost pair of brackets from every primitive part, and returns what's left.
 
-For example, `eval_postfix(["3", "4", "+", "2", "*"])` returns 14.
+With one kind of bracket, a count of the open brackets, `depth`, does the stack's job. A `(` at depth 0 opens a primitive part, and a `)` that brings the depth back to 0 closes it. Those are the outermost brackets; keep every other bracket.
+
+**Example 1:** `run("(()())(())")` returns `"()()()"`: the parts `(()())` and `(())` lose their outer brackets.
+
+**Example 2:** `run("()()")` returns `""`.
+
+**Constraints:** s has 1 to 10⁵ characters, all `(` or `)`, and it's valid.
 starter:
 ```python
-def eval_postfix(tokens):
-    stack = []
+def remove_outer_parentheses(s):
+    out = []
+    depth = 0
     # your code here
-    return 0
+    return "".join(out)
+
+
+def run(s):
+    return remove_outer_parentheses(s)
 ```
 solution:
 ```python
-def eval_postfix(tokens):
+def remove_outer_parentheses(s):
+    out = []
+    depth = 0
+    for ch in s:
+        if ch == "(":
+            if depth > 0:
+                out.append(ch)
+            depth += 1
+        else:
+            depth -= 1
+            if depth > 0:
+                out.append(ch)
+    return "".join(out)
+
+
+def run(s):
+    return remove_outer_parentheses(s)
+```
+tests:
+- run("(()())(())")
+- run("(()())(())(()(()))")
+- run("()()")
+- run("()")
+- run("((()))")
+- (lambda t: [len(t), t[:8], t[-8:]])(run("(" + "()" * 5000 + ")" + "((()))" * 1000))
+fail[2]: Three parts: `(()())`, `(())` and `(()(()))`.
+fail[3]: Each part is `()`, which loses both its brackets.
+fail[4]: One part, `()`: nothing is left.
+fail[5]: One part nested three deep: the inside, `(())`, stays.
+fail[6]: 16,002 brackets.
+edges:
+- one primitive part :: sum(1 for i in range(len(s)) if s[:i + 1].count("(") == s[:i + 1].count(")")) == 1 :: run("(())")
+- only pairs :: len(s) > 2 and s == "()" * (len(s) // 2) :: run("()()")
+- several parts, some nested :: sum(1 for i in range(len(s)) if s[:i + 1].count("(") == s[:i + 1].count(")")) > 1 and s != "()" * (len(s) // 2) :: run("()(())")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass, O(1) for each character.
+why_space: The answer can hold almost every character.
+hint: For `(`: keep it if depth > 0, then add 1 to depth.
+hint: For `)`: take 1 from depth first, then keep it if depth > 0.
+right: The stack of a single kind of bracket only ever holds copies of `(`, so its size, the depth, is all it knows, and the brackets at depth 0 are exactly the outer ones.
+wrong: Count the depth: keep a ( only if the depth was already above 0, and a ) only if the depth is still above 0 after it closes.
+
+=== task: code easy
+title: Partner Brackets
+patterns: brackets
+prompt: s is a balanced string of brackets of three kinds, `()`, `[]` and `{}`. Write `partners(s)` that returns a Python list match, where match[i] is the index of the bracket that pairs with the bracket at index i.
+
+Push the **position** of each opening bracket. A closing bracket at i pairs with the position on top of the stack, j, so pop it and fill in both `match[i] = j` and `match[j] = i`. The string is balanced, so the top is always the right partner.
+
+**Example 1:** `run("([]){}")` returns `[3, 2, 1, 0, 5, 4]`: the `(` at 0 pairs with the `)` at 3.
+
+**Example 2:** `run("()")` returns `[1, 0]`.
+
+**Constraints:** s has 0 to 10⁵ characters, all brackets, and it's balanced.
+starter:
+```python
+def partners(s):
+    match = [0] * len(s)
+    stack = []
+    # your code here
+    return match
+
+
+def run(s):
+    return partners(s)
+```
+solution:
+```python
+def partners(s):
+    match = [0] * len(s)
+    stack = []
+    for i in range(len(s)):
+        if s[i] in "([{":
+            stack.append(i)
+        else:
+            j = stack.pop()
+            match[i] = j
+            match[j] = i
+    return match
+
+
+def run(s):
+    return partners(s)
+```
+tests:
+- run("([]){}")
+- run("()")
+- run("")
+- run("{[()]}")
+- run("()[]{}")
+- (lambda r: [len(r), r[:3], r[4998:5003], r[-3:], sum(r[::97])])(run("(" * 5000 + "[]" * 2000 + ")" * 5000))
+fail[2]: One pair: each bracket's partner is the other.
+fail[3]: An empty string: an empty list.
+fail[4]: Three pairs nested inside each other: the first pairs with the last.
+fail[5]: Three pairs side by side.
+fail[6]: 14,000 brackets nested 5000 deep. Searching for each bracket's partner with a count is O(n²); the stack is O(n).
+edges:
+- no brackets :: len(s) == 0 :: run("")
+- pairs side by side only :: len(s) > 0 and all(s[i] in "([{" for i in range(0, len(s), 2)) and all(s[i] in ")]}" for i in range(1, len(s), 2)) :: run("()[]")
+- nested pairs :: len(s) > 0 and any(s[i] in "([{" and s[i + 1] in "([{" for i in range(len(s) - 1)) :: run("([])")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each opening bracket's position is pushed once and popped once.
+why_space: The answer and the stack each hold up to n positions.
+hint: For i in range(len(s)): if `s[i]` is an opening bracket, push i.
+hint: Otherwise `j = stack.pop()`, then `match[i] = j` and `match[j] = i`.
+right: The bracket that closes next is always the one opened last, so the top of a stack of positions is the partner of every closing bracket.
+wrong: Push the position of each opening bracket; at each closing bracket, pop the top position j and record i and j as each other's partners.
+
+=== task: code easy
+title: Check a Postfix Expression
+patterns: calc
+prompt: tokens is a postfix expression, split into tokens: integers, and the operators `+`, `-` and `*`. Write `check_postfix(tokens)` that returns the expression's value, or `"invalid"` if it isn't a valid postfix expression.
+
+Work it out with a stack as usual: push numbers, and let an operator pop b, then a, and push `a op b`. It's invalid if an operator finds fewer than two numbers on the stack, or if anything other than exactly one number is left at the end.
+
+**Example 1:** `run(["2", "3", "+", "4", "*"])` returns 20: (2 + 3) × 4.
+
+**Example 2:** `run(["1", "+"])` returns `"invalid"`: `+` finds only one number.
+
+**Example 3:** `run(["1", "2"])` returns `"invalid"`: two numbers are left, with nothing to combine them.
+
+**Constraints:** there are 1 to 10⁴ tokens, every integer is from −100 to 100, and every value worked out stays from −10⁹ to 10⁹.
+starter:
+```python
+def check_postfix(tokens):
+    stack = []
+    # your code here
+    return "invalid"
+
+
+def run(tokens):
+    return check_postfix(tokens)
+```
+solution:
+```python
+def check_postfix(tokens):
     stack = []
     for t in tokens:
-        if t in ["+", "-", "*"]:
+        if t in ("+", "-", "*"):
+            if len(stack) < 2:
+                return "invalid"
             b = stack.pop()
             a = stack.pop()
             if t == "+":
@@ -583,164 +1157,139 @@ def eval_postfix(tokens):
                 stack.append(a * b)
         else:
             stack.append(int(t))
-    return stack.pop()
+    if len(stack) != 1:
+        return "invalid"
+    return stack[0]
+
+
+def run(tokens):
+    return check_postfix(tokens)
 ```
 tests:
-- eval_postfix(["3", "4", "+", "2", "*"])
-- eval_postfix(["10", "2", "3", "*", "-"])
-- eval_postfix(["7"])
-- eval_postfix(["5", "8", "-"])
-- eval_postfix(["2", "3", "4", "*", "+", "5", "-"])
-- eval_postfix(["-3", "4", "*"])
-fail[1]: 3 4 + gives 7, and 7 2 * gives 14.
-fail[2]: 2 3 * gives 6, then 10 6 - gives 4. The first pop is the second number.
-fail[4]: 5 8 - means 5 − 8 = −3: pop b (8) first, then a (5), and push a − b.
-fail[6]: "-3" is a number, not the "-" operator: only the exact token "-" is an operator.
-error[ValueError]: Only call `int(t)` on numbers: check for the operators first.
-error[IndexError]: An operator pops two numbers, so push every number with `stack.append(int(t))`.
-hint: Loop over the tokens. Numbers: `stack.append(int(t))`.
-hint: Operators: `b = stack.pop()`, then `a = stack.pop()`, then push the result.
-hint: Return `stack.pop()` at the end.
-right: Each token is handled once, with O(1) stack work: O(n). The pop order matters for `-`: the number pushed last is the one taken away.
-wrong: Push each number as an int. For an operator, pop b and then a, and push `a + b`, `a - b` or `a * b`. The last number on the stack is the answer.
+- run(["2", "3", "+", "4", "*"])
+- run(["1", "+"])
+- run(["5"])
+- run(["1", "2"])
+- run(["4", "7", "-", "2", "*"])
+- [run(["1"] + ["2", "+"] * 3000), run(["1"] * 3000 + ["+"] * 3000), run(["3"] * 2000 + ["-"] * 1999)]
+fail[2]: `+` finds only one number on the stack.
+fail[3]: A single number is a valid expression: its value is the number.
+fail[4]: Two numbers are left at the end.
+fail[5]: (4 − 7) × 2: pop b before a, so it's 4 − 7, not 7 − 4.
+fail[6]: 6001 tokens; 3000 ones and 3000 plus signs, which is one plus sign too many; and 2000 threes with 1999 minus signs.
+edges:
+- a single number :: len(tokens) == 1 and tokens[0] not in ("+", "-", "*") :: run(["7"])
+- an operator short of numbers :: check_postfix(tokens) == "invalid" :: run(["7", "-"])
+- a valid expression with operators :: len(tokens) > 1 and check_postfix(tokens) != "invalid" :: run(["7", "2", "-"])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of tokens.
+why_time: Each token is one push, or two pops and a push.
+why_space: The stack can hold every number.
+hint: For an operator: if `len(stack) < 2`, return "invalid". Otherwise `b = stack.pop()`, `a = stack.pop()`, and push the result.
+hint: For a number, push `int(t)`.
+hint: At the end, return "invalid" unless `len(stack) == 1`; otherwise return `stack[0]`.
+right: In postfix, every operator needs two values already on the stack, and a complete expression leaves exactly one value, so the stack's size checks the expression while it works it out.
+wrong: Push numbers; for an operator, return "invalid" if there are fewer than two numbers, else pop b and a and push a op b; at the end the expression is valid only if one number is left.
 
-=== task: predict medium
-title: Order matters
-code:
-```python
-tokens = "8 3 - 2 *".split()
-stack = []
-for t in tokens:
-    if t == "-":
-        b = stack.pop()
-        a = stack.pop()
-        stack.append(a - b)
-    elif t == "*":
-        b = stack.pop()
-        a = stack.pop()
-        stack.append(a * b)
-    else:
-        stack.append(int(t))
-print(stack)
-```
-wrong[[-10]]: `b` is popped first, so it's the 3: `a - b` is 8 − 3 = 5, and then 5 × 2 = 10.
-wrong[10]: `print(stack)` shows the whole list, which holds one number: `[10]`.
-wrong[[5, 2]]: The `*` pops 2 and 5 and pushes their product, so one number is left.
-hint: After `8 3 -` the stack is `[5]`.
-hint: Then 2 is pushed, and `*` multiplies 5 by 2.
-right: `[10]`: (8 − 3) × 2. Each operator replaces the top two numbers with one, so a correct expression ends with exactly one number.
-wrong: Push 8 and 3; `-` pops 3 (b) and 8 (a) and pushes 5; push 2; `*` pops 2 and 5 and pushes 10. The stack is `[10]`.
+=== task: code easy
+title: Who Is Running
+patterns: nested
+prompt: `events` is a log of function calls, in order: `"call name"` means function name starts, called by whichever function is running, and `"return"` means the running function finishes, and the one that called it carries on. A `"return"` when nothing is running is a mistake in the log: ignore it. Write `running(events)` that returns, after each event, the name of the function that's running, or `""` if none is.
 
-=== task: fill medium
-title: Which way round?
-prompt: Fill in the blanks so that the program works out the first number minus the second, the way postfix `10 4 -` does, and prints:
+The running functions are the call stack: a call pushes the name, which is after the first five characters, `"call "`, and a return pops it. The function running is the top.
 
-```output
-6
-```
-code:
-```python
-stack = [10, 4]
-b = stack.pop()
-a = stack.pop()
-print(?? - ??)
-```
-answer: a | b
-wrong[b | a]: `b` was popped first, so it's the 4: 4 − 10 = −6.
-hint: The first pop takes the number that was pushed last: 4.
-hint: 10 − 4 is the first number minus the second.
-right: `a - b`: `a` is the number that was pushed first, 10, and `b` the one pushed second, 4.
-wrong: The pops come out in reverse: `b` is 4 and `a` is 10. The expression is `a - b`.
+**Example 1:** `run(["call main", "call f", "return", "call g", "return", "return"])` returns `["main", "f", "main", "g", "main", ""]`.
 
-=== task: cells medium
-title: The stack while checking
-prompt: The bracket checker from the lesson runs on `(()[`. What does the stack hold after each character? Write it from bottom to top, like `([`.
-labels: after the 1st ( | after the 2nd ( | after ) | after [
-answer: ( | (( | ( | ([
-wrong[( | (( | (( | (([]: A closing bracket pops its partner off the stack: after `)`, one `(` is left.
-wrong[( | (( | ( | []: `[` is pushed on top of what's already there; the `(` stays underneath.
-hint: Opening brackets are pushed; `)` pops the top `(`.
-hint: After `)` only one `(` is left.
-right: `(`, then `((`, then `(` again, then `([`. The stack isn't empty at the end, so `(()[` isn't balanced.
-wrong: Push `(`, push `(`, `)` pops one, push `[`: the stack ends as `([`.
+**Example 2:** `run(["return", "call a"])` returns `["", "a"]`: the first return has nothing to finish.
 
-=== task: order medium
-title: An operator in postfix
-prompt: Put the steps for handling an operator in a postfix expression in order.
-items:
-- Pop the top number: it's b, the second number
-- Pop the next number: it's a, the first number
-- Work out a op b
-- Push the answer
-hint: The number on top was pushed last.
-hint: The answer goes back on the stack for the next operator.
-right: Pop b, pop a, compute `a op b`, push the result: the stack ends one number shorter than it started.
-wrong: First pop b (the top), then pop a, then work out a op b, then push it.
-
-=== task: predict medium
-title: Undo twice, redo once
-code:
-```python
-done = []
-undone = []
-for w in ["red", "green", "blue"]:
-    done.append(w)
-undone.append(done.pop())
-undone.append(done.pop())
-done.append(undone.pop())
-print(done, undone)
-```
-wrong[['red', 'blue'] ['green']]: The second undo pushed "green" on top of "blue", so the redo brings back "green" first.
-wrong[['red'] ['blue', 'green']]: The last line moves "green" back from `undone` to `done`.
-wrong[['red', 'green', 'blue'] []]: Two words were undone, and only one was redone: "blue" is still on the redo stack.
-hint: The two undos pop "blue", then "green".
-hint: Redo pops the top of `undone`: the word undone last.
-right: Undo moved blue, then green, onto `undone`; redo moved green back. The last word undone is the first one redone.
-wrong: After the undos: done `['red']`, undone `['blue', 'green']`. The redo pops "green" back: done `['red', 'green']`, undone `['blue']`.
-
-=== task: mcq medium
-title: Left over
-prompt: After the bracket checker has gone through every character, its stack still holds `(`. What does that mean?
-* A `(` was opened and never closed, so the text isn't balanced :: Right. Every opening bracket must be popped by its partner.
-- A `)` came with nothing to close :: That's caught at the `)` itself, when the stack is empty.
-- The text is balanced, because nothing went wrong on the way :: Leftover openers mean some brackets were never closed.
-- The last character of the text was `(` :: Not necessarily: in `(()`, the last character is `)`.
-hint: What does each item on the stack wait for?
-hint: When is the stack empty at the end?
-right: Each opener on the stack is still waiting for its partner. A balanced text ends with an empty stack.
-wrong: Something left on the stack is an opening bracket that never met its closing bracket: not balanced.
-
-=== task: multi medium
-title: O(1) on a list stack
-prompt: Choose **every** operation that is O(1) on a Python list used as a stack.
-* `stack.append(x)` :: Right. O(1) amortized.
-* `stack.pop()` :: Right. It removes the last item; nothing shifts.
-* `stack[-1]` :: Right. Reading one item.
-* `len(stack)` :: Right. The length is stored.
-- `stack.pop(0)` :: Every other item shifts left: O(n).
-- `x in stack` :: It checks the items one by one: O(n).
-hint: Which ones work at the end, or on a stored number?
-hint: Four of them are.
-right: Push, pop, peek and size all work at the end or read the stored length. The front and searching touch every item.
-wrong: O(1): append, pop(), [-1], len. O(n): pop(0) shifts everything, and `in` searches.
-
-=== task: code medium
-title: Cancel the pairs
-prompt: Write `remove_adjacent(s)` that removes pairs of equal letters standing next to each other, again and again, until none are left, and returns what remains. A removal can bring two equal letters together, and they go too: "abba" → "aa" → "".
-
-Use a stack of letters: if a letter equals the top of the stack, pop the top (the pair cancels); otherwise push the letter. It must be O(n): searching the string again after every removal would make it O(n²).
-
-For example, `remove_adjacent("abbaca")` returns "ca".
+**Constraints:** there are 1 to 10⁴ events, and every name has 1 to 10 lowercase letters and digits.
 starter:
 ```python
-def remove_adjacent(s):
+def running(events):
     stack = []
+    out = []
     # your code here
-    return "".join(stack)
+    return out
+
+
+def run(events):
+    return running(events)
 ```
 solution:
 ```python
-def remove_adjacent(s):
+def running(events):
+    stack = []
+    out = []
+    for event in events:
+        if event == "return":
+            if stack:
+                stack.pop()
+        else:
+            stack.append(event[5:])
+        if stack:
+            out.append(stack[-1])
+        else:
+            out.append("")
+    return out
+
+
+def run(events):
+    return running(events)
+```
+tests:
+- run(["call main", "call f", "return", "call g", "return", "return"])
+- run(["return", "call a"])
+- run(["call a", "call a", "return"])
+- run(["call x"])
+- run(["call a", "call b", "call c", "return", "return", "call d"])
+- (lambda r: [len(r), r[:4], r[-4:], r.count(""), r[5000]])(run(["call f" + str(i % 9) if i % 4 != 3 else "return" for i in range(10000)]))
+fail[2]: The first return has nothing to finish: ignore it.
+fail[3]: A function can call itself: a still runs after the inner a returns.
+fail[4]: One call.
+fail[5]: c returns to b, b returns to a, and a calls d.
+fail[6]: 10,000 events.
+edges:
+- a return with nothing running :: any(events[i] == "return" and sum(1 if e != "return" else -1 for e in events[:i]) <= 0 for i in range(len(events))) :: run(["return"])
+- calls nested deeper than one :: all(events[i] != "return" or sum(1 if e != "return" else -1 for e in events[:i]) > 0 for i in range(len(events))) and any(sum(1 if e != "return" else -1 for e in events[:i + 1]) > 1 for i in range(len(events))) :: run(["call a", "call b"])
+- one function at a time :: all(events[i] != "return" or sum(1 if e != "return" else -1 for e in events[:i]) > 0 for i in range(len(events))) and all(sum(1 if e != "return" else -1 for e in events[:i + 1]) <= 1 for i in range(len(events))) :: run(["call a", "return"])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of events, and reading a name counts as one step.
+why_time: Each event is one push or pop, and reading the top is O(1).
+why_space: The stack and the answer can each hold n names.
+hint: For each event: if it's `"return"`, pop, but only `if stack:`. Otherwise push `event[5:]`.
+hint: Then append `stack[-1]` to out if the stack isn't empty, and `""` if it is.
+right: Functions finish in the opposite order to the order they started, last called first finished, so the running function is always the top of the call stack.
+wrong: Push the name on each call and pop on each return (when anything is running); after each event, record the top of the stack, or "" if it's empty.
+
+=== task: code easy
+title: Remove All Adjacent Duplicates In String
+leetcode: 1047 | Remove All Adjacent Duplicates In String | remove-all-adjacent-duplicates-in-string
+patterns: cancel
+prompt: Two equal letters next to each other in s cancel: both are removed, and the letters on either side become neighbours, which may cancel in turn. Write `remove_duplicates(s)` that returns the string once no two neighbours are equal.
+
+Keep the letters that survive so far on a stack. If the next letter equals the top, they cancel: pop. Otherwise push it.
+
+**Example 1:** `run("abbaca")` returns `"ca"`: bb cancels, which makes aa neighbours, and they cancel too.
+
+**Example 2:** `run("azxxzy")` returns `"ay"`.
+
+**Constraints:** s has 1 to 10⁵ lowercase letters.
+starter:
+```python
+def remove_duplicates(s):
+    stack = []
+    # your code here
+    return "".join(stack)
+
+
+def run(s):
+    return remove_duplicates(s)
+```
+solution:
+```python
+def remove_duplicates(s):
     stack = []
     for ch in s:
         if stack and stack[-1] == ch:
@@ -748,238 +1297,844 @@ def remove_adjacent(s):
         else:
             stack.append(ch)
     return "".join(stack)
+
+
+def run(s):
+    return remove_duplicates(s)
 ```
 tests:
-- remove_adjacent("abbaca")
-- remove_adjacent("abba")
-- remove_adjacent("abc")
-- remove_adjacent("")
-- remove_adjacent("aaa")
-- remove_adjacent("azxxzy")
-speed: setup=s = "ab" * n + "ba" * n | call=remove_adjacent(s) | target=O(n)
-slow:
-```python
-def remove_adjacent(s):
-    changed = True
-    while changed:
-        changed = False
-        for i in range(len(s) - 1):
-            if s[i] == s[i + 1]:
-                s = s[:i] + s[i + 2:]
-                changed = True
-                break
-    return s
-```
-fail[1]: "bb" goes first, which brings the two a's together, and they go too: "ca".
-fail[2]: In "abba" the b's cancel, then the a's: nothing is left.
-fail[3]: No two neighbours are equal, so nothing is removed.
-fail[5]: In "aaa" the first two a's cancel, and the third has no partner: "a".
-fail[6]: "xx" cancels, which brings "zz" together, and then those cancel: "ay".
-error[IndexError]: Check that the stack isn't empty before reading `stack[-1]`.
-hint: Go through the letters with a stack.
-hint: If the stack isn't empty and its top equals the letter, pop; otherwise push the letter.
-hint: At the end, join the stack into a string: `"".join(stack)`.
-right: Each letter is pushed at most once and popped at most once: O(n). A pair that forms after a removal is caught straight away, because the letter before it is on top of the stack.
-wrong: For each letter: if it matches the top, pop (the pair cancels), otherwise push. Return the stack joined into a string.
+- run("abbaca")
+- run("azxxzy")
+- run("a")
+- run("aa")
+- run("aaa")
+- (lambda t: [len(t), t[:6], t[-6:]])(run("ab" * 4000 + "ba" * 4000 + "cd" * 1000))
+fail[2]: xx cancels, which brings z and z together.
+fail[3]: One letter has nothing to cancel with.
+fail[4]: Two equal letters cancel, leaving an empty string.
+fail[5]: The first two a's cancel, and the third is left.
+fail[6]: 18,000 letters, where the middle pair sets off 7999 more. Searching the string again after each removal is O(n²); the stack is O(n).
+edges:
+- one letter :: len(s) == 1 :: run("a")
+- everything cancels :: len(s) > 1 and remove_duplicates(s) == "" :: run("abba")
+- some letters left :: len(s) > 1 and remove_duplicates(s) != "" :: run("abb")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each letter is pushed once and popped at most once.
+why_space: The stack can hold every letter.
+hint: For each ch: if `stack and stack[-1] == ch`, pop; otherwise push ch.
+hint: Return `"".join(stack)`.
+right: The top of the stack is always the survivor right before the next letter, so when a removal makes new neighbours, the next comparison with the new top deals with them.
+wrong: Push each letter unless it equals the top of the stack, in which case pop instead; the stack, joined, is the answer.
 
-=== task: code hard
-title: A stack that knows its minimum
-prompt: Write a class `MinStack` with `push(x)`, `pop()` (which returns the top), `top()` (which returns the top without removing it) and `get_min()` (which returns the smallest value on the stack). All four must be O(1), so don't search the stack for the minimum.
+=== task: code easy
+title: Minimum String Length After Removing Substrings
+leetcode: 2696 | Minimum String Length After Removing Substrings | minimum-string-length-after-removing-substrings
+patterns: cancel
+prompt: s is made of capital letters. One operation removes an `"AB"` or a `"CD"` from it, and the letters on either side then join up, which can make a new `"AB"` or `"CD"`. Write `min_length(s)` that returns the shortest length s can reach.
 
-Keep a second stack, `mins`, the same height as `items`, whose top is always the minimum of everything on the stack: when you push x, also push `min(x, current minimum)` onto `mins`; when you pop, pop `mins` too. Assume `pop`, `top` and `get_min` are only called when the stack isn't empty.
+Keep the letters that survive so far on a stack. A `B` cancels an `A` on top, and a `D` cancels a `C` on top: pop. Any other letter is pushed.
+
+**Example 1:** `run("ABFCACDB")` returns 2: removing AB, then CD, then the new AB, and then the new CD leaves "FC".
+
+**Example 2:** `run("ACBBD")` returns 5: there's nothing to remove.
+
+**Constraints:** s has 1 to 100 capital letters.
 starter:
 ```python
-class MinStack:
-    def __init__(self):
-        self.items = []
-        self.mins = []
-
+def min_length(s):
+    stack = []
     # your code here
+    return len(stack)
+
+
+def run(s):
+    return min_length(s)
 ```
 solution:
 ```python
-class MinStack:
-    def __init__(self):
-        self.items = []
-        self.mins = []
-
-    def push(self, x):
-        self.items.append(x)
-        if self.mins:
-            self.mins.append(min(x, self.mins[-1]))
+def min_length(s):
+    stack = []
+    for ch in s:
+        if stack and stack[-1] + ch in ("AB", "CD"):
+            stack.pop()
         else:
-            self.mins.append(x)
+            stack.append(ch)
+    return len(stack)
 
-    def pop(self):
-        self.mins.pop()
-        return self.items.pop()
 
-    def top(self):
-        return self.items[-1]
-
-    def get_min(self):
-        return self.mins[-1]
+def run(s):
+    return min_length(s)
 ```
 tests:
-- (lambda s: [s.push(5), s.push(3), s.push(7), s.get_min(), s.pop(), s.get_min(), s.pop(), s.get_min()][3:])(MinStack())
-- (lambda s: [s.push(2), s.push(2), s.push(1), s.pop(), s.get_min(), s.pop(), s.get_min()][3:])(MinStack())
-- (lambda s: [s.push(-1), s.top(), s.get_min()][1:])(MinStack())
-- (lambda s: [s.push(4), s.push(9), s.top(), s.get_min()][2:])(MinStack())
-- (lambda s: [s.push(3), s.push(1), s.push(2), s.pop(), s.pop(), s.get_min(), s.top()][3:])(MinStack())
-speed: setup=s = MinStack(); [s.push(n - i) for i in range(n)] | call=[s.get_min() for i in range(n)] | target=O(n)
-slow:
-```python
-class MinStack:
-    def __init__(self):
-        self.items = []
-        self.mins = []
+- run("ABFCACDB")
+- run("ACBBD")
+- run("AB")
+- run("CABD")
+- run("BA")
+- [run("C" * 25 + "AB" * 25 + "D" * 25), run("ACBD" * 25), run("CCADBD" * 16)]
+fail[2]: No AB or CD anywhere, and BA or BD don't count.
+fail[3]: One AB: nothing is left.
+fail[4]: Removing AB from CABD joins C and D, which then cancel too.
+fail[5]: BA is the wrong way round, so it stays.
+fail[6]: Strings of up to 100 letters, the first cancelling completely from the middle out.
+edges:
+- nothing to remove :: "AB" not in s and "CD" not in s :: run("BA")
+- everything removed :: min_length(s) == 0 :: run("CABD")
+- some letters left :: ("AB" in s or "CD" in s) and min_length(s) > 0 :: run("ABC")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each letter is pushed once and popped at most once.
+why_space: The stack can hold every letter.
+hint: For each ch: if the stack isn't empty and `stack[-1] + ch` is `"AB"` or `"CD"`, pop.
+hint: Otherwise push ch. Return the stack's length.
+right: Removing a pair makes its neighbours meet, which is the new top meeting the next letter, so one pass with a stack does every removal, in any order.
+wrong: Push each letter, except that a B popping an A on top, or a D popping a C on top, cancels instead; the answer is the stack's length.
 
-    def push(self, x):
-        self.items.append(x)
+=== task: code medium
+title: Simplify Path
+leetcode: 71 | Simplify Path | simplify-path
+patterns: simulate
+prompt: path is an absolute Unix path, which starts with `/`. Write `simplify_path(path)` that returns its simplest form, by these rules:
 
-    def pop(self):
-        return self.items.pop()
+- `.` means the current folder, and `..` means the parent folder; `..` in the root folder stays in the root.
+- Several slashes in a row, such as `//`, count as one.
+- Any other name, including `...`, is a folder name.
+- The answer starts with a single `/`, has one `/` between folder names, and doesn't end with `/`, unless it's the root, `/`.
 
-    def top(self):
-        return self.items[-1]
+Split the path on `/` and treat the parts as commands on a stack of folder names: an empty part or `.` does nothing, `..` pops if the stack isn't empty, and any other name is pushed. The answer is `"/"` followed by the stack joined with `/`.
 
-    def get_min(self):
-        return min(self.items)
-```
-fail[1]: After pushing 5, 3 and 7, the minimum is 3. Popping 7 leaves it at 3; popping 3 brings back 5.
-fail[2]: Equal values: after popping 1 the minimum is 2 again, and after popping one 2 it's still 2.
-fail[3]: With one value, it's both the top and the minimum.
-fail[5]: Popping 2 and then 1 leaves only 3, which is both the minimum and the top.
-error[IndexError]: Push onto `mins` every time you push onto `items`, and pop both together.
-error[AttributeError]: Define all four methods: `push`, `pop`, `top` and `get_min`.
-hint: In `push`, append x to `items`, and append `min(x, self.mins[-1])` to `mins` (or x itself, if `mins` is empty).
-hint: In `pop`, pop both stacks, and return the value popped from `items`.
-hint: `top` is `self.items[-1]` and `get_min` is `self.mins[-1]`.
-right: `mins` remembers the minimum at every height of the stack, so popping brings the old minimum back for free. Every method is O(1); `min(self.items)` would be O(n) on every call.
-wrong: Keep `mins` the same height as `items`, each entry being the minimum of everything at or below it. Push and pop both together; `get_min` reads the top of `mins`.
+**Example 1:** `run("/home//foo/")` returns `"/home/foo"`.
 
-=== task: code hard
-title: Simplify a path
-prompt: Write `simplify_path(path)` that simplifies a file path that starts with `/`:
-- the parts are separated by `/`; empty parts (from `//`) and `.` (the current folder) are skipped,
-- `..` goes up one folder; at the top folder, `/`, it does nothing,
-- the result starts with `/`, has one `/` between folder names, and doesn't end with `/`.
+**Example 2:** `run("/home/user/Documents/../Pictures")` returns `"/home/user/Pictures"`.
 
-Use a stack of folder names. For example, `simplify_path("/home//user/./docs/../pics/")` returns `"/home/user/pics"`.
+**Example 3:** `run("/.../a/../b/c/../d/./")` returns `"/.../b/d"`.
+
+**Constraints:** path has 1 to 3000 characters: letters, digits, `.`, `/` and `_`, and it's a valid absolute path.
 starter:
 ```python
 def simplify_path(path):
     stack = []
     # your code here
     return "/" + "/".join(stack)
+
+
+def run(path):
+    return simplify_path(path)
 ```
 solution:
 ```python
 def simplify_path(path):
     stack = []
     for part in path.split("/"):
-        if part == "" or part == ".":
-            continue
         if part == "..":
             if stack:
                 stack.pop()
-        else:
+        elif part != "" and part != ".":
             stack.append(part)
     return "/" + "/".join(stack)
+
+
+def run(path):
+    return simplify_path(path)
 ```
 tests:
-- simplify_path("/home//user/./docs/../pics/")
-- simplify_path("/../")
-- simplify_path("/a/b/c/../../d")
-- simplify_path("/")
-- simplify_path("/x/./y/.")
-- simplify_path("/a/../../b")
-fail[1]: "home", "user" and "docs" go on the stack, `..` pops "docs", and "pics" goes on: /home/user/pics.
-fail[2]: `..` at the top folder stays at the top: "/".
-fail[3]: The two `..` pop "c" and then "b", and "d" goes on after "a".
-fail[5]: `.` means "this folder", so it's skipped: /x/y.
-fail[6]: The second `..` comes when the stack is already empty, so it does nothing: /b.
-error[IndexError]: Only pop for `..` when the stack isn't empty.
-hint: `path.split("/")` gives the parts. Skip "" and ".".
-hint: ".." pops the stack, if it isn't empty; any other part is pushed.
+- run("/home/")
+- run("/home//foo/")
+- run("/home/user/Documents/../Pictures")
+- run("/../")
+- run("/.../a/../b/c/../d/./")
+- (lambda t: [len(t), t[:12], t[-12:]])(run("/" + "/".join(["dir", "..", "b" + str(i % 10), ".", "c", "", "..."][i % 7] for i in range(1100))))
+fail[2]: `//` counts as a single slash: splitting gives an empty part, which does nothing.
+fail[3]: `..` leaves Documents, and then Pictures goes in its place.
+fail[4]: `..` in the root folder stays in the root, and the answer is `/`.
+fail[5]: `...` is a folder name, but `.` and `..` aren't.
+fail[6]: A path of 1417 characters.
+edges:
+- the root folder :: simplify_path(path) == "/" :: run("/")
+- a `..` that goes up :: simplify_path(path) != "/" and ".." in path.split("/") :: run("/a/../b")
+- no `..` :: simplify_path(path) != "/" and ".." not in path.split("/") :: run("/a/./b")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of path.
+why_time: Splitting and joining are O(n), and each part is one push or pop.
+why_space: The parts, the stack and the answer each hold up to n characters.
+hint: Loop over `path.split("/")`. If part is `".."`, pop, but only `if stack:`.
+hint: Push part if it's neither `""` nor `"."`.
 hint: Return `"/" + "/".join(stack)`.
-right: One pass over the parts, each pushed and popped at most once: O(n). The stack holds the folders you're inside, the deepest on top, so `..` is one pop.
-wrong: Split on "/", skip empty parts and ".", pop for ".." (when there's something to pop), push everything else, then join the stack with "/" after a leading "/".
+right: Each folder name goes one level down and each `..` one level up, so the folders you end in are a stack, and joining it gives the simplest path.
+wrong: Split the path on /, push folder names, pop on .. when there's anything to pop, ignore empty parts and ., then join the stack with / after a leading /.
 
-=== task: code hard
-title: Decode the string
-prompt: In an encoded string, `k[text]` means text repeated k times, and these can be nested: "3[a2[c]]" means "3[acc]", which is "accaccacc". Write `decode_string(s)`. Each k is a whole number of one or more digits; everything else is lowercase letters and brackets.
+=== task: code medium
+title: Min Stack
+leetcode: 155 | Min Stack | min-stack
+patterns: design
+prompt: Write a class `MinStack`, a stack that can also tell you its smallest item, with every method O(1):
 
-Keep `current`, the text built so far, and `count`, the number being read. At `[`, push `(current, count)` onto a stack and start again with `current = ""` and `count = 0`. At `]`, pop `(before, times)`, and the text becomes `before + current * times`.
+- `push(val)` pushes val.
+- `pop()` removes the top item.
+- `top()` returns the top item.
+- `get_min()` returns the smallest item on the stack.
 
-For example, `decode_string("3[a]2[bc]")` returns "aaabcbc".
+Keep pairs on the stack: each item, with the smallest item from the bottom up to it. `get_min` reads the pair on top, and after a pop, the pair below still knows the smallest of what's left. The tests use LeetCode's command name, `"getMin"`, and `run` calls `get_min`.
+
+**Example:** `run(["MinStack", "push", "push", "push", "getMin", "pop", "top", "getMin"], [[], [-2], [0], [-3], [], [], [], []])` returns `[None, None, None, None, -3, None, 0, -2]`.
+
+**Constraints:** −2³¹ ≤ val ≤ 2³¹ − 1, pop, top and getMin are only called on a stack that isn't empty, and there are at most 3 × 10⁴ calls.
 starter:
 ```python
-def decode_string(s):
-    stack = []
-    current = ""
-    count = 0
-    # your code here
-    return current
+class MinStack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, val):
+        pass
+
+    def pop(self):
+        pass
+
+    def top(self):
+        return 0
+
+    def get_min(self):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MinStack":
+            stack = MinStack()
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "top":
+            results.append(stack.top())
+        elif command == "getMin":
+            results.append(stack.get_min())
+    return results
 ```
 solution:
 ```python
-def decode_string(s):
-    stack = []
-    current = ""
-    count = 0
-    for ch in s:
-        if ch.isdigit():
-            count = count * 10 + int(ch)
-        elif ch == "[":
-            stack.append((current, count))
-            current = ""
-            count = 0
-        elif ch == "]":
-            before, times = stack.pop()
-            current = before + current * times
-        else:
-            current += ch
-    return current
+class MinStack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, val):
+        low = val
+        if self.items and self.items[-1][1] < low:
+            low = self.items[-1][1]
+        self.items.append((val, low))
+
+    def pop(self):
+        self.items.pop()
+
+    def top(self):
+        return self.items[-1][0]
+
+    def get_min(self):
+        return self.items[-1][1]
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MinStack":
+            stack = MinStack()
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "top":
+            results.append(stack.top())
+        elif command == "getMin":
+            results.append(stack.get_min())
+    return results
 ```
 tests:
-- decode_string("3[a]2[bc]")
-- decode_string("3[a2[c]]")
-- decode_string("2[abc]3[cd]ef")
-- decode_string("abc")
-- decode_string("10[x]")
-- decode_string("")
-- decode_string("2[2[2[b]]]")
-fail[1]: 3[a] is "aaa" and 2[bc] is "bcbc".
-fail[2]: The inner 2[c] becomes "cc" first; then 3[acc] repeats it: "accaccacc".
-fail[3]: Letters after the last `]` are added too: "...ef".
-fail[4]: Without brackets, the text stays as it is.
-fail[5]: "10" is one number: build it digit by digit, `count = count * 10 + int(ch)`.
-error[IndexError]: Push at every `[` and pop at every `]`: the brackets always match.
-error[TypeError]: Turn each digit into a number with `int(ch)` before using it in `count`.
-hint: A digit: `count = count * 10 + int(ch)`. A letter: `current += ch`.
-hint: At `[`: push `(current, count)`, then reset `current = ""` and `count = 0`.
-hint: At `]`: `before, times = stack.pop()`, then `current = before + current * times`.
-right: The stack remembers, for every open bracket, the text before it and how many times to repeat what's inside. The innermost bracket closes first, so it's expanded first: last opened, first closed.
-wrong: Read numbers digit by digit and letters into `current`. A `[` saves `(current, count)` on the stack and starts fresh; a `]` pops them and repeats the current piece after the saved text.
+- run(["MinStack", "push", "push", "push", "getMin", "pop", "top", "getMin"], [[], [-2], [0], [-3], [], [], [], []])
+- run(["MinStack", "push", "getMin", "top"], [[], [5], [], []])
+- run(["MinStack", "push", "push", "push", "pop", "getMin", "pop", "getMin"], [[], [2], [2], [1], [], [], [], []])
+- run(["MinStack", "push", "push", "getMin", "push", "getMin", "pop", "pop", "getMin"], [[], [3], [5], [], [1], [], [], [], []])
+- run(["MinStack", "push", "push", "getMin", "top"], [[], [-2147483648], [2147483647], [], []])
+- (lambda r: [r[-1], sum(x for x in r if x is not None) % 1000003, len(r)])(run(["MinStack"] + ["push"] * 4500 + ["getMin", "top", "pop"] * 1500 + ["getMin"], [[]] + [[(i * 7919) % 100003 - 50000] for i in range(4500)] + [[]] * 4501))
+fail[2]: One item is the smallest and the top.
+fail[3]: The smallest item, 2, appears twice: popping one 2 leaves the other.
+fail[4]: The smallest goes from 3 to 1 and back to 3 as 1 is pushed and popped.
+fail[5]: The smallest and largest values allowed.
+fail[6]: 4500 pushes and 4501 more calls. Searching the stack on every getMin is O(n) a call; keep pairs.
+edges:
+- one push :: commands.count("push") == 1 :: run(["MinStack", "push", "getMin"], [[], [4], []])
+- a pop :: commands.count("push") > 1 and "pop" in commands :: run(["MinStack", "push", "push", "pop", "getMin"], [[], [4], [1], [], []])
+- pushes only :: commands.count("push") > 1 and "pop" not in commands :: run(["MinStack", "push", "push", "getMin"], [[], [4], [1], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of items on the stack, and the time is for one call.
+why_time: Each method pushes, pops or reads the top pair.
+why_space: One pair for each item.
+hint: push: `low = val`; if the stack isn't empty and the top pair's smallest is smaller, use that instead. Push `(val, low)`.
+hint: pop pops the pair; top returns `self.items[-1][0]`, and get_min returns `self.items[-1][1]`.
+right: The pair on top knows the smallest item from the bottom up to the top, and popping returns to a pair that already knew the smallest below it, so nothing needs recomputing.
+wrong: Push each value with the smallest value so far (the smaller of it and the top pair's smallest); top and get_min read the two halves of the top pair.
 
-=== task: code hard
-title: Asteroid collisions
-prompt: Asteroids fly along a line, all at the same speed. Each one is a number: its size, with the sign giving its direction (positive moves right, negative moves left). When a right-moving asteroid meets a left-moving one, the smaller one explodes; if they're the same size, both explode. Asteroids moving the same way never meet, and a left-mover never meets a right-mover that's further right than it. Write `collide(asteroids)` that returns the asteroids left after every collision, in order.
+=== task: code medium
+title: Queue With a Minimum
+patterns: design + two
+prompt: Write a class `MinQueue`, a queue, first in first out, that can also tell you its smallest item:
 
-Use a stack of the survivors so far. A left-moving asteroid fights the right-moving asteroids on top of the stack, one at a time.
+- `push(x)` adds x at the back.
+- `pop()` removes the item at the front and returns it, or returns −1 if the queue is empty.
+- `front()` returns the item at the front, or −1 if the queue is empty.
+- `get_min()` returns the smallest item in the queue, or −1 if it's empty.
+- `size()` returns the number of items.
 
-For example, `collide([5, 10, -5])` returns `[5, 10]`.
+Every method must be O(1) amortized. Build the queue from two stacks, `inbox` and `outbox`, poured only when outbox is empty, and keep pairs in both, as in a stack that knows its smallest item: each item with the smallest item from the bottom of its own stack up to it. The queue's smallest item is the smaller of the two tops' smallest values.
+
+**Example:** `run(["MinQueue", "push", "push", "push", "get_min", "pop", "get_min", "pop", "get_min"], [[], [3], [1], [2], [], [], [], [], []])` returns `[None, None, None, None, 1, 3, 1, 1, 2]`.
+
+**Constraints:** at most 10⁴ calls, and 0 ≤ x ≤ 10⁹.
 starter:
 ```python
-def collide(asteroids):
+class MinQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    def push(self, x):
+        pass
+
+    def pop(self):
+        return -1
+
+    def front(self):
+        return -1
+
+    def get_min(self):
+        return -1
+
+    def size(self):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MinQueue":
+            queue = MinQueue()
+            results.append(None)
+        elif command == "push":
+            results.append(queue.push(args[0]))
+        elif command == "pop":
+            results.append(queue.pop())
+        elif command == "front":
+            results.append(queue.front())
+        elif command == "get_min":
+            results.append(queue.get_min())
+        elif command == "size":
+            results.append(queue.size())
+    return results
+```
+solution:
+```python
+class MinQueue:
+    def __init__(self):
+        self.inbox = []
+        self.outbox = []
+
+    def push(self, x):
+        low = x
+        if self.inbox and self.inbox[-1][1] < low:
+            low = self.inbox[-1][1]
+        self.inbox.append((x, low))
+
+    def move(self):
+        if not self.outbox:
+            while self.inbox:
+                x = self.inbox.pop()[0]
+                low = x
+                if self.outbox and self.outbox[-1][1] < low:
+                    low = self.outbox[-1][1]
+                self.outbox.append((x, low))
+
+    def pop(self):
+        if self.size() == 0:
+            return -1
+        self.move()
+        return self.outbox.pop()[0]
+
+    def front(self):
+        if self.size() == 0:
+            return -1
+        self.move()
+        return self.outbox[-1][0]
+
+    def get_min(self):
+        if self.size() == 0:
+            return -1
+        if not self.inbox:
+            return self.outbox[-1][1]
+        if not self.outbox:
+            return self.inbox[-1][1]
+        return min(self.inbox[-1][1], self.outbox[-1][1])
+
+    def size(self):
+        return len(self.inbox) + len(self.outbox)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "MinQueue":
+            queue = MinQueue()
+            results.append(None)
+        elif command == "push":
+            results.append(queue.push(args[0]))
+        elif command == "pop":
+            results.append(queue.pop())
+        elif command == "front":
+            results.append(queue.front())
+        elif command == "get_min":
+            results.append(queue.get_min())
+        elif command == "size":
+            results.append(queue.size())
+    return results
+```
+tests:
+- run(["MinQueue", "push", "push", "push", "get_min", "pop", "get_min", "pop", "get_min", "front"], [[], [3], [1], [2], [], [], [], [], [], []])
+- run(["MinQueue", "pop", "front", "get_min", "size"], [[], [], [], [], []])
+- run(["MinQueue", "push", "push", "pop", "push", "get_min", "pop", "get_min"], [[], [5], [4], [], [6], [], [], []])
+- run(["MinQueue", "push", "push", "pop", "get_min", "size"], [[], [2], [2], [], [], []])
+- run(["MinQueue", "push", "push", "push", "pop", "push", "get_min", "pop", "pop", "get_min"], [[], [1], [5], [0], [], [7], [], [], [], []])
+- (lambda r: [sum(x for x in r if x is not None) % 1000003, r[-6:], len(r)])(run(["MinQueue"] + ["push"] * 1000 + ["push", "get_min", "pop"] * 2000 + ["size"], [[]] + [[(i * 7919) % 10007] for i in range(1000)] + [a for i in range(2000) for a in ([(i * 104729) % 10007], [], [])] + [[]]))
+fail[2]: An empty queue: −1 for pop, front and get_min, and a size of 0.
+fail[3]: 6 arrives while 4 is still in the outbox; the smallest is the smaller of the two stacks' tops.
+fail[4]: Two equal items: popping one leaves the other as the smallest.
+fail[5]: 0 is pushed behind 5 and becomes the smallest, until it leaves.
+fail[6]: A queue of about 1000 items, with 2000 rounds of push, get_min and pop. Searching the queue on every get_min is O(n) a call.
+edges:
+- an empty queue :: "push" not in commands :: run(["MinQueue", "get_min"], [[], []])
+- the smallest item leaves :: "push" in commands and "pop" in commands :: run(["MinQueue", "push", "push", "pop", "get_min"], [[], [1], [5], [], []])
+- pushes only :: "push" in commands and "pop" not in commands :: run(["MinQueue", "push", "push", "get_min"], [[], [5], [1], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of items in the queue, and the time is amortized, for one call.
+why_time: Each item is pushed onto inbox once, poured once and popped once; get_min reads two tops.
+why_space: One pair for each item, in one stack or the other.
+hint: push: like a min stack, push `(x, low)` onto inbox, where low is the smaller of x and the inbox top's smallest.
+hint: Write `move()`: if outbox is empty, pop each item from inbox and push it onto outbox as a pair, with the smallest worked out again for outbox.
+hint: pop and front: return −1 if `self.size() == 0`, else `self.move()` and use outbox's top. get_min: the smaller of the two tops' smallest values, using only the stacks that aren't empty.
+right: Each stack's top pair knows the smallest item in that stack, and every item in the queue is in one of the two stacks, so the queue's smallest is the smaller of two numbers.
+wrong: Keep (item, smallest so far) pairs in an inbox and an outbox; pour inbox into outbox, rebuilding the pairs, only when outbox is empty; the smallest is the smaller of the two tops' smallest values.
+
+=== task: code medium
+title: Minimum Remove to Make Valid Parentheses
+leetcode: 1249 | Minimum Remove to Make Valid Parentheses | minimum-remove-to-make-valid-parentheses
+patterns: brackets
+prompt: s is made of lowercase letters and the brackets `(` and `)`. Remove as few brackets as possible so that every bracket left is matched, and return the result. Several answers can remove the fewest; return the one you get by removing every `)` that has no `(` to match when you reach it, and every `(` still unmatched at the end.
+
+Push the position of each `(`. A `)` pops a position, or, if the stack is empty, it has no partner: mark it for removal. Every position left on the stack at the end is an unmatched `(`: mark those too. Build the answer from a Python list of the characters, with each removed one set to `""`.
+
+**Example 1:** `run("lee(t(c)o)de)")` returns `"lee(t(c)o)de"`: the last `)` has no partner.
+
+**Example 2:** `run("a)b(c)d")` returns `"ab(c)d"`.
+
+**Example 3:** `run("))((")` returns `""`.
+
+**Constraints:** s has 1 to 10⁵ characters, all lowercase letters, `(` or `)`.
+starter:
+```python
+def min_remove_to_make_valid(s):
+    chars = list(s)
+    stack = []
+    # your code here
+    return "".join(chars)
+
+
+def run(s):
+    return min_remove_to_make_valid(s)
+```
+solution:
+```python
+def min_remove_to_make_valid(s):
+    chars = list(s)
+    stack = []
+    for i in range(len(chars)):
+        if chars[i] == "(":
+            stack.append(i)
+        elif chars[i] == ")":
+            if stack:
+                stack.pop()
+            else:
+                chars[i] = ""
+    for i in stack:
+        chars[i] = ""
+    return "".join(chars)
+
+
+def run(s):
+    return min_remove_to_make_valid(s)
+```
+tests:
+- run("lee(t(c)o)de)")
+- run("a)b(c)d")
+- run("))((")
+- run("abc")
+- run("(a(b)")
+- (lambda t: [len(t), t[:9], t[-9:]])(run(")(" * 3000 + "(a)" * 2000 + "((" * 500))
+fail[2]: The `)` after a has no partner yet.
+fail[3]: The two `)` come before any `(`, and the two `(` are never closed: everything goes.
+fail[4]: No brackets: nothing changes.
+fail[5]: The first `(` is never closed.
+fail[6]: 11,998 characters, with 3000 unmatched brackets near the start. Rebuilding the string after each removal is O(n²).
+edges:
+- no brackets :: "(" not in s and ")" not in s :: run("ab")
+- already valid :: ("(" in s or ")" in s) and min_remove_to_make_valid(s) == s :: run("(a)")
+- something removed :: min_remove_to_make_valid(s) != s :: run("a)")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass with a stack, then one pass over what's left on it, then one join.
+why_space: The list of characters and the stack.
+hint: For each i: a `(` pushes i; a `)` pops if the stack isn't empty, and otherwise sets `chars[i] = ""`.
+hint: After the loop, set `chars[i] = ""` for every i still on the stack, then join.
+right: A `)` with an empty stack can never be matched, and a `(` left on the stack was never closed; removing exactly those leaves every other bracket matched.
+wrong: Push the positions of (; a ) with nothing to pop is removed; after the pass, the positions left on the stack are removed too; join what's left.
+
+=== task: code medium
+title: Reverse Substrings Between Each Pair of Parentheses
+leetcode: 1190 | Reverse Substrings Between Each Pair of Parentheses | reverse-substrings-between-each-pair-of-parentheses
+patterns: brackets + nested
+prompt: s is made of lowercase letters and matched brackets. Reverse the letters inside each pair of brackets, starting from the innermost pair, and return the result without any brackets.
+
+Each `(` opens a new level: push a new, empty Python list for it, and append letters to the list on top. A `)` closes its level: pop the list, reverse it, and add its letters to the end of the list below. The bottom list holds the answer.
+
+**Example 1:** `run("(abcd)")` returns `"dcba"`.
+
+**Example 2:** `run("(u(love)i)")` returns `"iloveu"`: love becomes evol, then u evol i becomes iloveu.
+
+**Example 3:** `run("(ed(et(oc))el)")` returns `"leetcode"`.
+
+**Constraints:** s has 1 to 2000 characters, all lowercase letters or brackets, and every bracket is matched.
+starter:
+```python
+def reverse_parentheses(s):
+    stack = [[]]
+    # your code here
+    return "".join(stack[0])
+
+
+def run(s):
+    return reverse_parentheses(s)
+```
+solution:
+```python
+def reverse_parentheses(s):
+    stack = [[]]
+    for ch in s:
+        if ch == "(":
+            stack.append([])
+        elif ch == ")":
+            inner = stack.pop()
+            inner.reverse()
+            stack[-1].extend(inner)
+        else:
+            stack[-1].append(ch)
+    return "".join(stack[0])
+
+
+def run(s):
+    return reverse_parentheses(s)
+```
+tests:
+- run("(abcd)")
+- run("(u(love)i)")
+- run("(ed(et(oc))el)")
+- run("abc")
+- run("a(bc)d(ef)")
+- (lambda t: [len(t), t[:10], t[290:310], t[-10:]])(run("a(" * 300 + "xyz" + ")b" * 300))
+fail[2]: The inner pair is reversed first, and then the outer one reverses everything again.
+fail[3]: Three levels deep.
+fail[4]: No brackets: nothing changes.
+fail[5]: Two pairs side by side, each reversed on its own.
+fail[6]: 603 characters, nested 300 deep.
+edges:
+- no brackets :: "(" not in s :: run("ab")
+- one level of brackets :: "(" in s and all(s[:i].count("(") - s[:i].count(")") <= 1 for i in range(len(s) + 1)) :: run("(ab)(cd)")
+- brackets inside brackets :: any(s[:i].count("(") - s[:i].count(")") > 1 for i in range(len(s) + 1)) :: run("(a(bc))")
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each `)` reverses and copies the level it closes, which can hold up to n letters, and there can be up to n / 2 levels.
+why_space: The lists on the stack hold each letter once.
+hint: For `(`, push `[]`. For a letter, append it to `stack[-1]`.
+hint: For `)`: `inner = stack.pop()`, `inner.reverse()`, then `stack[-1].extend(inner)`.
+right: A bracket's letters must be reversed after the brackets inside it, which is the order levels close in, so reversing each level as it's popped does the inner ones first.
+wrong: Push a new list at each (, append letters to the top list, and at each ) pop the top list, reverse it and add it to the list below; join the bottom list.
+
+=== task: code medium
+title: Evaluate Reverse Polish Notation
+leetcode: 150 | Evaluate Reverse Polish Notation | evaluate-reverse-polish-notation
+patterns: calc
+prompt: tokens is a valid postfix expression, also called Reverse Polish Notation: integers and the operators `+`, `-`, `*` and `/`. Write `eval_rpn(tokens)` that returns its value. Division keeps only the whole number, rounded towards zero.
+
+Push numbers. An operator pops b, then a, and pushes `a op b`. For `/`, use `int(a / b)`, which rounds towards zero; `//` rounds down, which is different for negative answers.
+
+**Example 1:** `run(["2", "1", "+", "3", "*"])` returns 9: (2 + 1) × 3.
+
+**Example 2:** `run(["4", "13", "5", "/", "+"])` returns 6: 4 + 13 / 5 = 4 + 2.
+
+**Constraints:** there are 1 to 10⁴ tokens, every integer is from −200 to 200, there's no division by zero, and every value fits in 32 bits.
+starter:
+```python
+def eval_rpn(tokens):
+    stack = []
+    # your code here
+    return stack[0]
+
+
+def run(tokens):
+    return eval_rpn(tokens)
+```
+solution:
+```python
+def eval_rpn(tokens):
+    stack = []
+    for t in tokens:
+        if t in ("+", "-", "*", "/"):
+            b = stack.pop()
+            a = stack.pop()
+            if t == "+":
+                stack.append(a + b)
+            elif t == "-":
+                stack.append(a - b)
+            elif t == "*":
+                stack.append(a * b)
+            else:
+                stack.append(int(a / b))
+        else:
+            stack.append(int(t))
+    return stack[0]
+
+
+def run(tokens):
+    return eval_rpn(tokens)
+```
+tests:
+- run(["2", "1", "+", "3", "*"])
+- run(["4", "13", "5", "/", "+"])
+- run(["10", "6", "9", "3", "+", "-11", "*", "/", "*", "17", "+", "5", "+"])
+- run(["7", "-2", "/"])
+- run(["3", "-4", "/", "5", "-"])
+- [run(["7"] + [x for i in range(3333) for x in (str(i % 9 + 1), ("*", "+", "/", "-")[i % 4])]), run(["1"] * 3000 + ["+"] * 2999)]
+fail[2]: 13 / 5 is 2, after the fraction is dropped.
+fail[3]: 6 / −132 rounds towards zero, to 0, so the expression is 22.
+fail[4]: 7 / −2 is −3.5, which rounds towards zero to −3; `//` would give −4.
+fail[5]: 3 / −4 is 0, and 0 − 5 is −5.
+fail[6]: 6667 tokens, and 3000 ones added up.
+edges:
+- a single number :: len(tokens) == 1 :: run(["7"])
+- a division :: "/" in tokens :: run(["7", "-2", "/"])
+- no division :: len(tokens) > 1 and "/" not in tokens :: run(["7", "2", "-"])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of tokens.
+why_time: Each token is one push, or two pops and a push.
+why_space: The stack can hold about half the tokens.
+hint: For an operator: `b = stack.pop()`, then `a = stack.pop()`; push a + b, a − b, a × b, or `int(a / b)`.
+hint: Otherwise push `int(t)`. The answer is the one number left.
+right: In postfix, each operator's two values are the top two items on the stack, in order, so one pass works out the whole expression.
+wrong: Push each number; for an operator, pop b then a and push a op b, dividing with int(a / b) so that it rounds towards zero; the last number is the answer.
+
+=== task: code medium
+title: Basic Calculator II
+leetcode: 227 | Basic Calculator II | basic-calculator-ii
+patterns: calc
+prompt: s is a valid expression of non-negative integers and the operators `+`, `-`, `*` and `/`, with spaces anywhere, and no brackets. Write `calculate(s)` that returns its value, with `*` and `/` done before `+` and `-`, and division rounded towards zero.
+
+Keep a stack of terms. Read the digits of each number into `num`. When an operator comes, or the string ends, deal with num using the operator that came before it, `op`, which starts as `"+"`: push num for `+`, push −num for `-`, and for `*` or `/` pop the last term, combine it with num, and push the result. Then remember the new operator and start a new number. The answer is the sum of the stack. Adding an extra `"+"` to the end of s deals with the last number.
+
+**Example 1:** `run("3+2*2")` returns 7.
+
+**Example 2:** `run(" 3+5 / 2 ")` returns 5.
+
+**Constraints:** s has 1 to 3 × 10⁵ characters, it's valid, every integer is from 0 to 2³¹ − 1, and every value worked out fits in 32 bits.
+starter:
+```python
+def calculate(s):
+    stack = []
+    num = 0
+    op = "+"
+    # your code here
+    return sum(stack)
+
+
+def run(s):
+    return calculate(s)
+```
+solution:
+```python
+def calculate(s):
+    stack = []
+    num = 0
+    op = "+"
+    for ch in s + "+":
+        if ch.isdigit():
+            num = num * 10 + int(ch)
+        elif ch in "+-*/":
+            if op == "+":
+                stack.append(num)
+            elif op == "-":
+                stack.append(-num)
+            elif op == "*":
+                stack.append(stack.pop() * num)
+            else:
+                stack.append(int(stack.pop() / num))
+            op = ch
+            num = 0
+    return sum(stack)
+
+
+def run(s):
+    return calculate(s)
+```
+tests:
+- run("3+2*2")
+- run(" 3/2 ")
+- run(" 3+5 / 2 ")
+- run("42")
+- run("14-3/2")
+- [run("+".join(["7*3-10/3+2"] * 2000)), run("999999" + "/3*3" * 1500 + "-" + "1*" * 2000 + "9")]
+fail[2]: Spaces around the number; 3 / 2 is 1.
+fail[3]: 5 / 2 is done first: 3 + 2.
+fail[4]: A single number with no operator at all.
+fail[5]: The term −3 is divided by 2: int(−3 / 2) is −1, so the answer is 13.
+fail[6]: Expressions of about 20,000 characters.
+edges:
+- a single number :: not any(c in s for c in "+-*/") :: run("8")
+- only + and - :: any(c in s for c in "+-") and not any(c in s for c in "*/") :: run("8-3")
+- * or / :: any(c in s for c in "*/") :: run("8/3")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass over the characters; each operator does O(1) work.
+why_space: The stack can hold a term for every number.
+hint: For ch in `s + "+"`: digits build `num = num * 10 + int(ch)`.
+hint: At an operator: push num for op "+", −num for "-", `stack.pop() * num` for "*", and `int(stack.pop() / num)` for "/". Then `op = ch` and `num = 0`.
+right: Multiplication and division only ever change the last term, which is the top of the stack, so they happen before the terms are added up at the end.
+wrong: Read each number; when the next operator or the end comes, apply the previous operator: push the number, its negative, or the top combined with it by * or / (int(a / b)); the answer is the sum of the stack.
+
+=== task: code medium
+title: Exclusive Time of Functions
+leetcode: 636 | Exclusive Time of Functions | exclusive-time-of-functions
+patterns: nested
+prompt: A program runs n functions, numbered 0 to n − 1, on one processor. Each log is `"id:start:t"`, meaning function id starts at the beginning of time t, or `"id:end:t"`, meaning it ends at the end of time t. Functions call each other, and themselves, like a call stack: the one on top is running. Write `exclusive_time(n, logs)` that returns a Python list of how many units of time each function ran for itself, not counting the time spent in the functions it called.
+
+Keep the call stack, and `prev`, the time the running function started its current stretch. On a start at t, the function on top, if any, has run from prev up to t: add t − prev to it, push the new one, and set prev = t. On an end at t, the top has run from prev to the end of t, which is t − prev + 1: add it, pop, and set prev = t + 1.
+
+**Example 1:** `run(2, ["0:start:0", "1:start:2", "1:end:5", "0:end:6"])` returns `[3, 4]`: function 0 runs at times 0, 1 and 6, and function 1 at times 2 to 5.
+
+**Example 2:** `run(1, ["0:start:0", "0:start:2", "0:end:5", "0:start:6", "0:end:6", "0:end:7"])` returns `[8]`: function 0 calls itself, and every unit counts for it.
+
+**Constraints:** 1 ≤ n ≤ 100, there are 2 to 500 logs, timestamps are from 0 to 10⁹, no two starts or two ends share a timestamp, and every start has its end.
+starter:
+```python
+def exclusive_time(n, logs):
+    times = [0] * n
+    stack = []
+    prev = 0
+    # your code here
+    return times
+
+
+def run(n, logs):
+    return exclusive_time(n, logs)
+```
+solution:
+```python
+def exclusive_time(n, logs):
+    times = [0] * n
+    stack = []
+    prev = 0
+    for log in logs:
+        parts = log.split(":")
+        fid = int(parts[0])
+        t = int(parts[2])
+        if parts[1] == "start":
+            if stack:
+                times[stack[-1]] += t - prev
+            stack.append(fid)
+            prev = t
+        else:
+            times[stack.pop()] += t - prev + 1
+            prev = t + 1
+    return times
+
+
+def run(n, logs):
+    return exclusive_time(n, logs)
+```
+tests:
+- run(2, ["0:start:0", "1:start:2", "1:end:5", "0:end:6"])
+- run(1, ["0:start:0", "0:start:2", "0:end:5", "0:start:6", "0:end:6", "0:end:7"])
+- run(2, ["0:start:0", "0:start:2", "0:end:5", "1:start:6", "1:end:6", "0:end:7"])
+- run(1, ["0:start:0", "0:end:0"])
+- run(3, ["0:start:0", "1:start:1", "2:start:2", "2:end:3", "1:end:4", "0:end:10"])
+- run(100, [str(i % 100) + ":start:" + str(i * 3) for i in range(250)] + [str((249 - i) % 100) + ":end:" + str(750 + i * 7) for i in range(250)])
+fail[2]: A function that calls itself: every stretch counts for function 0.
+fail[3]: Function 1 starts and ends at time 6, which counts as 1 unit.
+fail[4]: A function that starts and ends at time 0 ran for 1 unit.
+fail[5]: Three levels: 2 runs from 2 to 3, 1 runs at 1 and 4, and 0 at 0 and from 5 to 10.
+fail[6]: 500 logs, 250 calls deep.
+edges:
+- one function, no calls inside :: len(logs) == 2 :: run(1, ["0:start:0", "0:end:3"])
+- a function calling itself :: len(logs) > 2 and any(logs[i].split(":")[0] == logs[i + 1].split(":")[0] and ":start:" in logs[i] and ":start:" in logs[i + 1] for i in range(len(logs) - 1)) :: run(1, ["0:start:0", "0:start:1", "0:end:1", "0:end:2"])
+- calls to other functions :: len(logs) > 2 and not any(logs[i].split(":")[0] == logs[i + 1].split(":")[0] and ":start:" in logs[i] and ":start:" in logs[i + 1] for i in range(len(logs) - 1)) :: run(2, ["0:start:0", "1:start:1", "1:end:1", "0:end:2"])
+edge_count: 2
+complexity: time=O(m) | space=O(m)
+complexity_options: O(m)
+complexity_note: m is the number of logs, and splitting a log counts as one step.
+why_time: Each log is one push or one pop, with O(1) arithmetic.
+why_space: The call stack can hold half the logs.
+hint: Split each log on `":"`: the id, the kind and the time, with `int` for the numbers.
+hint: start: if the stack isn't empty, `times[stack[-1]] += t - prev`; push the id; `prev = t`.
+hint: end: `times[stack.pop()] += t - prev + 1`; `prev = t + 1`.
+right: Only the function on top of the call stack is running, so every stretch of time between two logs belongs to the top, and prev marks where that stretch began.
+wrong: Keep the call stack and the time the current stretch began; on a start, give the stretch so far to the top, push, and move prev; on an end, give the stretch up to the end of t to the top, pop, and move prev to t + 1.
+
+=== task: code medium
+title: Asteroid Collision
+leetcode: 735 | Asteroid Collision | asteroid-collision
+patterns: cancel
+prompt: Asteroids fly along a line, listed in order of position. A positive number is an asteroid moving right, a negative one is moving left, and its absolute value is its size. When two meet, the smaller one explodes; if they're the same size, both explode. Two asteroids moving the same way never meet. Write `asteroid_collision(asteroids)` that returns the asteroids left once there are no more collisions, in order.
+
+Keep the survivors on a stack. Only an asteroid moving left can hit one, and only one moving right, on top. While a left-mover meets a right-mover on top: if the top is smaller, it explodes, so pop it and keep going; if they're the same size, both explode; if the top is bigger, the new one explodes. If the new one survives, push it.
+
+**Example 1:** `run([5, 10, -5])` returns `[5, 10]`: −5 hits 10 and explodes.
+
+**Example 2:** `run([8, -8])` returns `[]`.
+
+**Example 3:** `run([10, 2, -5])` returns `[10]`: −5 destroys 2, then explodes against 10.
+
+**Constraints:** there are 2 to 10⁴ asteroids, every value is from −1000 to 1000, and none is 0.
+starter:
+```python
+def asteroid_collision(asteroids):
     stack = []
     # your code here
     return stack
+
+
+def run(asteroids):
+    return asteroid_collision(asteroids)
 ```
 solution:
 ```python
-def collide(asteroids):
+def asteroid_collision(asteroids):
     stack = []
     for a in asteroids:
         alive = True
@@ -994,156 +2149,1180 @@ def collide(asteroids):
         if alive:
             stack.append(a)
     return stack
+
+
+def run(asteroids):
+    return asteroid_collision(asteroids)
 ```
 tests:
-- collide([5, 10, -5])
-- collide([8, -8])
-- collide([10, 2, -5])
-- collide([-2, -1, 1, 2])
-- collide([1, -2, -2, -2])
-- collide([])
-- collide([3, 5, -6, 2])
-fail[1]: -5 meets 10 first and explodes, so 5 and 10 are left.
-fail[2]: Equal sizes: both explode.
-fail[3]: -5 destroys 2, then meets 10 and explodes.
-fail[4]: The left-movers are on the left and the right-movers on the right: they never meet.
-fail[5]: The first -2 destroys 1; nothing is left to stop the other two -2s.
-fail[7]: -6 destroys 5 and then 3, and 2 moves right, away from it.
-error[IndexError]: Check that the stack isn't empty before reading `stack[-1]`.
-hint: Push right-movers. A left-mover `a` keeps fighting while the top of the stack is a right-mover.
-hint: Top smaller than `-a`: pop it and fight on. Equal: pop it, and `a` explodes too. Bigger: `a` explodes.
-hint: If `a` survives every fight, push it.
-right: Each asteroid is pushed once and popped at most once: O(n), even though one asteroid can destroy many in a row.
-wrong: Keep survivors on a stack. A left-mover pops smaller right-movers off the top; it stops when it meets a bigger one (it explodes), an equal one (both explode), or no right-mover (it survives and is pushed).
+- run([5, 10, -5])
+- run([8, -8])
+- run([10, 2, -5])
+- run([-2, -1, 1, 2])
+- run([1, -2, -2, -2])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([i % 50 + 1 for i in range(5000)] + [-(i * 7 % 60 + 1) for i in range(5000)]))
+fail[2]: Two of the same size: both explode.
+fail[3]: −5 destroys 2, then explodes against 10.
+fail[4]: The left-movers are all to the left of the right-movers, so nothing meets.
+fail[5]: The first −2 destroys 1, and the others have nothing to hit.
+fail[6]: 10,000 asteroids. Searching again from the start after every collision is O(n²).
+edges:
+- nothing meets :: not any(asteroids[i] > 0 and asteroids[j] < 0 for i in range(len(asteroids)) for j in range(i + 1, len(asteroids))) :: run([-1, 2])
+- everything explodes :: asteroid_collision(asteroids) == [] :: run([3, -3])
+- some survive a collision :: any(asteroids[i] > 0 and asteroids[j] < 0 for i in range(len(asteroids)) for j in range(i + 1, len(asteroids))) and asteroid_collision(asteroids) != [] :: run([5, -3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of asteroids.
+why_time: Each asteroid is pushed at most once and popped at most once.
+why_space: The stack can hold every asteroid.
+hint: For each a: `alive = True`. While alive and `a < 0` and the stack's top is positive: compare `stack[-1]` with `-a`.
+hint: Top smaller: pop and keep going. Equal: pop, and `alive = False`. Top bigger: `alive = False`.
+hint: If alive, push a.
+right: A left-mover can only ever hit the right-movers to its left, nearest first, which is the top of the stack and then the ones below it.
+wrong: For each asteroid moving left, pop the smaller right-movers on top of the stack, stop at a bigger one or an equal one (popping that too), and push it only if it survives; push right-movers.
 
-=== task: predict hard
-title: The call stack at work
-code:
+=== task: code medium
+title: Remove All Adjacent Duplicates in String II
+leetcode: 1209 | Remove All Adjacent Duplicates in String II | remove-all-adjacent-duplicates-in-string-ii
+patterns: cancel
+prompt: Whenever k equal letters stand next to each other in s, they're removed, and the letters on either side join up. Write `remove_duplicates(s, k)` that returns what's left once that can't happen any more.
+
+Keep a stack of pairs, `[letter, count]`, one for each run of equal letters that survives so far. A letter equal to the top pair's letter adds 1 to its count, and the pair is popped when the count reaches k. Any other letter pushes a new pair `[letter, 1]`. At the end, write each letter out count times.
+
+**Example 1:** `run("deeedbbcccbdaa", 3)` returns `"aa"`: eee and ccc go, then bbb, then ddd.
+
+**Example 2:** `run("pbbcggttciiippooaais", 2)` returns `"ps"`.
+
+**Constraints:** s has 1 to 10⁵ lowercase letters, and 2 ≤ k ≤ 10⁴.
+starter:
 ```python
-def f(n):
-    if n == 0:
-        print("base")
-        return 0
-    print("push", n)
-    r = f(n - 1) + n
-    print("pop", n, r)
-    return r
-
-f(2)
-```
-wrong[push 2\npop 2 2\npush 1\npop 1 1\nbase]: f(2) can't finish until f(1) returns: the whole of f(1) runs in the middle of f(2).
-wrong[push 2\npush 1\nbase\npop 2 3\npop 1 1]: The most recent call finishes first: f(1) prints "pop" before f(2) does.
-wrong[push 2\npush 1\nbase\npop 1 1\npop 2 2]: f(2) adds its own n to what f(1) returned: 1 + 2 = 3.
-hint: Each call prints "push" before calling the next one, and "pop" after that call returns.
-hint: The calls finish in the opposite order to the one they started in.
-right: The calls pile up on the call stack, 2, then 1, then 0, and come off in reverse: 0, then 1, then 2. Last in, first out.
-wrong: f(2) prints push 2 and calls f(1), which prints push 1 and calls f(0), which prints base and returns 0. f(1) returns 0 + 1 = 1 (pop 1 1), and f(2) returns 1 + 2 = 3 (pop 2 3).
-
-=== task: predict hard
-title: Token by token
-code:
-```python
-tokens = "6 2 3 + -".split()
-stack = []
-for t in tokens:
-    if t == "+":
-        b = stack.pop()
-        a = stack.pop()
-        stack.append(a + b)
-    elif t == "-":
-        b = stack.pop()
-        a = stack.pop()
-        stack.append(a - b)
-    else:
-        stack.append(int(t))
-    print(stack)
-```
-wrong[[6]\n[6, 2]\n[6, 2, 3]\n[8, 3]\n[5]]: `+` adds the **top** two numbers, 2 and 3, not the bottom two.
-wrong[[6]\n[6, 2]\n[6, 2, 3]\n[6, 5]\n[-1]]: `b` is the top (5) and `a` is under it (6): a − b = 6 − 5 = 1.
-wrong[[6]\n[2]\n[3]\n[5]\n[1]]: Numbers are pushed on top of the others; they don't replace them.
-hint: The stack is printed after every token.
-hint: `+` turns `[6, 2, 3]` into `[6, 5]`.
-right: 6 − (2 + 3) = 1. Postfix needs no brackets: the order of the tokens decides that the + happens first.
-wrong: Push 6, 2 and 3. `+` pops 3 and 2 and pushes 5: `[6, 5]`. `-` pops 5 (b) and 6 (a) and pushes 6 − 5 = 1: `[1]`.
-
-=== task: cells hard
-title: Undo and redo, step by step
-prompt: The `Editor` from the lesson's first example runs these lines. What does `e.text()` show after each step?
-
-```python
-e = Editor()
-e.type_word("a")
-e.type_word("b")
-e.undo()               # step 1
-e.type_word("c")       # step 2
-e.undo()               # step 3
-e.redo()               # step 4
-```
-labels: after step 1 | after step 2 | after step 3 | after step 4
-answer: a | a c | a | a c
-wrong[a | a c | a | a b]: Typing "c" in step 2 emptied the redo stack, so "b" can't come back. Step 4 redoes the last undo, which removed "c".
-wrong[a | a b c | a b | a b c]: Step 1 undid "b", so it isn't in the text when "c" is typed.
-hint: Typing a word empties the redo stack.
-hint: After step 3, the redo stack holds only "c".
-right: a → a c → a → a c. Once something new is typed, the old undone words are gone for good: the redo stack only ever holds what was undone since the last typing.
-wrong: Step 1 undoes "b": "a". Step 2 types "c" and empties the redo stack: "a c". Step 3 undoes "c": "a". Step 4 redoes "c": "a c".
-
-=== task: mcq hard
-title: Why RecursionError?
-prompt: Why does a recursive function with no base case stop with a `RecursionError`, instead of running forever?
-* Every call pushes a frame onto the call stack, and none ever returns, so the stack grows until it reaches Python's limit, about 1,000 frames :: Right. The limit is on how many calls are waiting at the same time.
-- Python only allows a function to be called 1,000 times in a program :: A function can be called millions of times, as long as the calls return. The limit is on calls that are waiting at once.
-- The computer runs out of time :: It's not about time: the error comes from how deep the call stack is.
-- Recursion is a kind of loop, and Python stops loops after 1,000 passes :: Loops have no such limit. This is about the call stack.
-hint: What happens on the call stack each time the function calls itself?
-hint: Which calls are still waiting when the error happens?
-right: Without a base case, no call ever returns, so frames pile up on the call stack until Python refuses to push another one.
-wrong: Each call waits on the call stack for the call it made. With no base case none of them finish, and Python stops when about 1,000 are waiting.
-
-=== task: multi hard
-title: Jobs for a stack
-prompt: Choose **every** job that a stack is the right tool for.
-* Checking that HTML tags such as `<b>` and `</b>` are properly nested :: Right. Like brackets: the most recent open tag must close first.
-* Undoing the most recent change :: Right. The last change made is the first one undone.
-* Evaluating a postfix expression :: Right. Numbers wait on the stack for their operator.
-* Reversing the letters of a word :: Right. Push them all, then pop them all.
-- Serving customers in the order they arrived :: First in, first out: that's a queue.
-- Finding the largest number in a list :: One pass with a running maximum is enough; nothing has to wait in a last-in-first-out order.
-hint: Does the most recent thing need to come out first?
-hint: Four of them do.
-right: Stacks fit whenever the latest thing must be dealt with first: nesting, undo, postfix and reversing.
-wrong: Stack jobs: nested tags, undo, postfix, reversing. A shop queue needs first in, first out, and a maximum needs no stack.
-
-=== task: parsons hard
-title: Brackets that match
-prompt: Arrange the lines so that `balanced` checks the brackets with a stack, and the program prints:
-
-```output
-True False False
-```
-
-Not every line is needed.
-lines:
-```python
-def balanced(text):
-    pairs = {")": "(", "]": "[", "}": "{"}
+def remove_duplicates(s, k):
     stack = []
-    for ch in text:
-        if ch in "([{":
-            stack.append(ch)
-        elif ch in pairs:
-            if not stack or stack.pop() != pairs[ch]:
-                return False
-    return not stack
+    # your code here
+    out = []
+    for ch, count in stack:
+        out.append(ch * count)
+    return "".join(out)
 
-print(balanced("{[()]}"), balanced("(("), balanced("())"))
+
+def run(s, k):
+    return remove_duplicates(s, k)
 ```
-distractors:
+solution:
 ```python
-    return True
-            if stack.pop() != pairs[ch]:
+def remove_duplicates(s, k):
+    stack = []
+    for ch in s:
+        if stack and stack[-1][0] == ch:
+            stack[-1][1] += 1
+            if stack[-1][1] == k:
+                stack.pop()
+        else:
+            stack.append([ch, 1])
+    out = []
+    for ch, count in stack:
+        out.append(ch * count)
+    return "".join(out)
+
+
+def run(s, k):
+    return remove_duplicates(s, k)
 ```
-hint: A closing bracket with an empty stack has nothing to match.
-hint: At the end, the brackets are balanced only if nothing is left on the stack.
-right: `return not stack` catches brackets that were never closed, like `((`, and `not stack or ...` catches a closer with nothing to close, like the last `)` in `())`.
-wrong: Push openers; for a closer, return False if the stack is empty or the popped bracket isn't its partner; at the end, `return not stack`.
+tests:
+- run("abcd", 2)
+- run("deeedbbcccbdaa", 3)
+- run("pbbcggttciiippooaais", 2)
+- run("aaa", 3)
+- run("abbbaaac", 3)
+- [(lambda t: [len(t), t[:10], t[-10:]])(run("".join(ch * (i % 4 + 1) for i, ch in enumerate("abcdefghij" * 1000)), 3)), run("ab" * 3000 + "ba" * 3000, 2)]
+fail[2]: eee and ccc go first, which brings bbb and then ddd together.
+fail[3]: Pairs keep cancelling until only p and s are left.
+fail[4]: Three a's with k = 3: nothing is left.
+fail[5]: bbb goes, joining a with aaa: four a's, of which three go.
+fail[6]: 10,000 letters with k = 3, and 12,000 that cancel completely with k = 2.
+edges:
+- nothing removed :: remove_duplicates(s, k) == s :: run("abc", 2)
+- everything removed :: len(s) > 0 and remove_duplicates(s, k) == "" :: run("aabb", 2)
+- some removed :: remove_duplicates(s, k) != s and remove_duplicates(s, k) != "" :: run("abbc", 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each letter changes the top pair once, and each pair is pushed and popped at most once.
+why_space: The stack can hold a pair for every letter.
+hint: For each ch: if the stack isn't empty and `stack[-1][0] == ch`, add 1 to `stack[-1][1]`, and pop if it's now k.
+hint: Otherwise push `[ch, 1]`.
+right: The top pair is the run right before the next letter, so the count says how close it is to k, and popping it lets the run below meet the letters that follow.
+wrong: Keep [letter, count] pairs; a matching letter adds to the top pair's count and pops it at k; any other letter pushes a new pair; join each letter times its count.
+
+=== task: code hard
+title: Stack Machine
+patterns: simulate + nested
+prompt: A stack machine runs a program: a Python list of instructions, carried out one at a time, starting at instruction 0. It keeps a stack of numbers, and a call stack of places to come back to:
+
+- `push x`: push the integer x.
+- `pop`: throw away the top number.
+- `dup`: push a copy of the top number.
+- `over`: push a copy of the number below the top.
+- `swap`: swap the top two numbers.
+- `add`, `sub`, `mul`: pop b, then a, and push a + b, a − b or a × b.
+- `jz k`: pop the top number, and if it's 0, go to instruction k.
+- `jmp k`: go to instruction k.
+- `call k`: push the number of the next instruction onto the call stack, and go to instruction k.
+- `ret`: pop the call stack and go back there; if the call stack is empty, the machine stops.
+- `halt`: stop.
+
+The machine also stops when it goes past the last instruction. If an instruction needs more numbers than the stack holds, the machine stops with an error. Write `run_machine(program)` that returns the stack, bottom first, when the machine stops, or `"error"`.
+
+Keep `pc`, the number of the next instruction, and loop while it's inside the program: split the instruction into its words, add 1 to pc, then carry the instruction out, changing pc for a jump, a call or a return.
+
+**Example 1:** `run(["push 2", "push 3", "add", "dup", "mul"])` returns `[25]`.
+
+**Example 2:** `run(["push 1", "add"])` returns `"error"`.
+
+**Example 3:** `run(["push 5", "call 3", "halt", "dup", "jz 11", "dup", "push 1", "sub", "call 3", "mul", "ret", "pop", "push 1", "ret"])` returns `[120]`: instructions 3 to 13 work out the factorial of the number on top, calling themselves for one less.
+
+**Constraints:** the program has 1 to 1000 instructions, every x is from −10⁹ to 10⁹, every k is from 0 to the number of instructions, and the machine stops after at most 10⁵ instructions.
+starter:
+```python
+def run_machine(program):
+    data = []
+    calls = []
+    pc = 0
+    while 0 <= pc < len(program):
+        parts = program[pc].split()
+        op = parts[0]
+        pc += 1
+        # your code here
+    return data
+
+
+def run(program):
+    return run_machine(program)
+```
+solution:
+```python
+def run_machine(program):
+    data = []
+    calls = []
+    pc = 0
+    while 0 <= pc < len(program):
+        parts = program[pc].split()
+        op = parts[0]
+        pc += 1
+        if op == "push":
+            data.append(int(parts[1]))
+        elif op == "halt":
+            break
+        elif op == "jmp":
+            pc = int(parts[1])
+        elif op == "call":
+            calls.append(pc)
+            pc = int(parts[1])
+        elif op == "ret":
+            if not calls:
+                break
+            pc = calls.pop()
+        elif op in ("pop", "dup", "jz"):
+            if not data:
+                return "error"
+            if op == "pop":
+                data.pop()
+            elif op == "dup":
+                data.append(data[-1])
+            elif data.pop() == 0:
+                pc = int(parts[1])
+        else:
+            if len(data) < 2:
+                return "error"
+            b = data.pop()
+            a = data.pop()
+            if op == "add":
+                data.append(a + b)
+            elif op == "sub":
+                data.append(a - b)
+            elif op == "mul":
+                data.append(a * b)
+            elif op == "swap":
+                data.append(b)
+                data.append(a)
+            else:
+                data.append(a)
+                data.append(b)
+                data.append(a)
+    return data
+
+
+def run(program):
+    return run_machine(program)
+```
+tests:
+- run(["push 2", "push 3", "add", "dup", "mul"])
+- run(["push 1", "add"])
+- run(["push 5", "push 0", "over", "add", "swap", "push 1", "sub", "dup", "jz 11", "swap", "jmp 2", "pop", "halt"])
+- run(["push 5", "call 3", "halt", "dup", "jz 11", "dup", "push 1", "sub", "call 3", "mul", "ret", "pop", "push 1", "ret"])
+- run(["push 7", "ret", "push 8"])
+- [run(["push 1500", "push 0", "over", "add", "swap", "push 1", "sub", "dup", "jz 11", "swap", "jmp 2", "pop", "halt"]), run(["push 25", "call 3", "halt", "dup", "jz 11", "dup", "push 1", "sub", "call 3", "mul", "ret", "pop", "push 1", "ret"]), run(["push 0", "jz 3", "push 9", "push 4", "jmp 6", "push 5"]), run(["push 3", "push 4", "swap", "over", "sub", "pop", "pop", "pop"])]
+fail[2]: add needs two numbers, and there's one.
+fail[3]: A loop that adds up 5 + 4 + 3 + 2 + 1, with over, swap, jz and jmp.
+fail[4]: The factorial of 5, with call and ret: the call stack holds where each call came from.
+fail[5]: ret with an empty call stack stops the machine before push 8.
+fail[6]: A loop of about 13,500 instructions, the factorial of 25, a jump to the end, and an error from a pop on an empty stack.
+edges:
+- an error :: run_machine(program) == "error" :: run(["add"])
+- a call :: run_machine(program) != "error" and any(p.startswith("call") for p in program) :: run(["call 2", "halt", "push 4", "ret"])
+- no calls :: run_machine(program) != "error" and not any(p.startswith("call") for p in program) :: run(["push 4"])
+edge_count: 2
+complexity: time=O(s) | space=O(s)
+complexity_options: O(s)
+complexity_note: s is the number of instructions the machine carries out, and each one counts as one step.
+why_time: Each instruction carried out is O(1).
+why_space: Each instruction pushes at most one number or one place to come back to.
+hint: Handle push, halt, jmp and call first. call pushes pc, which already points at the next instruction, then jumps to k.
+hint: ret: break if calls is empty, otherwise `pc = calls.pop()`.
+hint: Before pop, dup and jz, return "error" if data is empty; before add, sub, mul, swap and over, return "error" if it holds fewer than two numbers.
+right: The call stack works like Python's own: each call remembers where to come back to, and the most recent call returns first, so recursion in the machine's program works too.
+wrong: Loop while pc is inside the program: read the instruction, move pc on, check that the stack has enough numbers (returning "error" if not), and carry it out, with jumps setting pc, call pushing the place to come back to, and ret popping it.
+
+=== task: code hard
+title: Deque From Two Stacks
+patterns: design + two
+prompt: Write a class `StackDeque`, a deque that adds and removes items at both ends, built from two stacks with only stack operations:
+
+- `push_front(x)` adds x at the front.
+- `push_back(x)` adds x at the back.
+- `pop_front()` removes and returns the front item, or returns −1 if the deque is empty.
+- `pop_back()` removes and returns the back item, or returns −1 if the deque is empty.
+- `size()` returns the number of items.
+
+Keep `front`, a stack whose top is the front item, and `back`, a stack whose top is the back item. Pushing and popping at an end is O(1) while that end's stack has items. When it runs out, refill it from the other stack, but take only **half**: pop the top half of the other stack onto a temporary stack, pour the rest, its bottom half, onto the empty stack, then pour the temporary stack back. Moving everything instead would make the next pop at the other end move it all back again: O(n) for every pop, when the pops alternate between the ends. Taking half keeps every method O(1) amortized.
+
+**Example:** `run(["StackDeque", "push_back", "push_back", "push_front", "pop_back", "pop_front", "pop_front", "pop_front"], [[], [1], [2], [0], [], [], [], []])` returns `[None, None, None, None, 2, 0, 1, -1]`.
+
+**Constraints:** at most 2 × 10⁴ calls, and 0 ≤ x ≤ 10⁹.
+starter:
+```python
+class StackDeque:
+    def __init__(self):
+        self.front = []
+        self.back = []
+
+    def refill(self, empty, full):
+        pass
+
+    def push_front(self, x):
+        pass
+
+    def push_back(self, x):
+        pass
+
+    def pop_front(self):
+        return -1
+
+    def pop_back(self):
+        return -1
+
+    def size(self):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "StackDeque":
+            deque = StackDeque()
+            results.append(None)
+        elif command == "push_front":
+            results.append(deque.push_front(args[0]))
+        elif command == "push_back":
+            results.append(deque.push_back(args[0]))
+        elif command == "pop_front":
+            results.append(deque.pop_front())
+        elif command == "pop_back":
+            results.append(deque.pop_back())
+        elif command == "size":
+            results.append(deque.size())
+    return results
+```
+solution:
+```python
+class StackDeque:
+    def __init__(self):
+        self.front = []
+        self.back = []
+
+    def refill(self, empty, full):
+        keep = len(full) // 2
+        temp = []
+        for _ in range(keep):
+            temp.append(full.pop())
+        while full:
+            empty.append(full.pop())
+        while temp:
+            full.append(temp.pop())
+
+    def push_front(self, x):
+        self.front.append(x)
+
+    def push_back(self, x):
+        self.back.append(x)
+
+    def pop_front(self):
+        if not self.front:
+            self.refill(self.front, self.back)
+        if not self.front:
+            return -1
+        return self.front.pop()
+
+    def pop_back(self):
+        if not self.back:
+            self.refill(self.back, self.front)
+        if not self.back:
+            return -1
+        return self.back.pop()
+
+    def size(self):
+        return len(self.front) + len(self.back)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "StackDeque":
+            deque = StackDeque()
+            results.append(None)
+        elif command == "push_front":
+            results.append(deque.push_front(args[0]))
+        elif command == "push_back":
+            results.append(deque.push_back(args[0]))
+        elif command == "pop_front":
+            results.append(deque.pop_front())
+        elif command == "pop_back":
+            results.append(deque.pop_back())
+        elif command == "size":
+            results.append(deque.size())
+    return results
+```
+tests:
+- run(["StackDeque", "push_back", "push_back", "push_front", "pop_back", "pop_front", "pop_front", "pop_front"], [[], [1], [2], [0], [], [], [], []])
+- run(["StackDeque", "pop_front", "pop_back", "size"], [[], [], [], []])
+- run(["StackDeque", "push_front", "push_front", "push_front", "pop_back", "pop_back", "size"], [[], [1], [2], [3], [], [], []])
+- run(["StackDeque", "push_back", "pop_front", "push_front", "pop_back", "size"], [[], [5], [], [6], [], []])
+- run(["StackDeque", "push_back", "push_back", "push_back", "push_back", "pop_front", "pop_back", "push_front", "pop_back", "pop_front", "pop_front", "size"], [[], [1], [2], [3], [4], [], [], [9], [], [], [], []])
+- (lambda r: [len(r), r[6000:6006], r[-6:], sum(x for x in r if x is not None)])(run(["StackDeque"] + ["push_back"] * 6000 + ["pop_front", "pop_back"] * 3000 + ["size"], [[]] + [[i * 7] for i in range(6000)] + [[]] * 6001))
+fail[2]: An empty deque: −1 from both ends, and a size of 0.
+fail[3]: Three items pushed at the front, then taken from the back: the back stack refills from the front stack.
+fail[4]: The only item leaves from the front; the next one arrives at the front and leaves from the back.
+fail[5]: Pops at both ends in turn, with a push at the front in between.
+fail[6]: 6000 items, then 6000 pops alternating between the ends. Moving every item on each refill is O(n) a pop; take half.
+edges:
+- an empty deque :: not any(c.startswith("push") for c in commands) :: run(["StackDeque", "pop_back"], [[], []])
+- pops at both ends :: any(c.startswith("push") for c in commands) and "pop_front" in commands and "pop_back" in commands :: run(["StackDeque", "push_back", "push_back", "pop_front", "pop_back"], [[], [1], [2], [], []])
+- pops at one end only :: any(c.startswith("push") for c in commands) and not ("pop_front" in commands and "pop_back" in commands) :: run(["StackDeque", "push_front", "pop_front"], [[], [1], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of items, and the time is amortized, for one call.
+why_time: Refilling m items costs O(m), but leaves both stacks about half full, so at least m / 2 more calls come before the next refill: O(1) each, amortized.
+why_space: The two stacks hold the n items, and the temporary stack at most half of them.
+hint: pop_front: if front is empty, `self.refill(self.front, self.back)`; then return −1 if front is still empty, or pop it.
+hint: refill(empty, full): `keep = len(full) // 2`; pop keep items from full onto temp; pop the rest of full onto empty; then pop everything from temp back onto full.
+hint: pop_back is the same with the two stacks swapped.
+right: Taking half of the other stack leaves items on both sides, so the next pop at either end is cheap, and each refill is paid for by the pops that come after it.
+wrong: Keep a front stack and a back stack; when the one you need to pop from is empty, move the bottom half of the other onto it, using a temporary stack to keep the top half in order; otherwise push and pop at the tops.
+
+=== task: code hard
+title: Stack With Checkpoints
+patterns: design + two
+prompt: Write a class `CheckpointStack`, a stack that can save its state and go back to it:
+
+- `push(x)` pushes x.
+- `pop()` pops and returns the top item, or returns −1 if the stack is empty.
+- `top()` returns the top item, or −1 if the stack is empty.
+- `checkpoint()` saves the stack as it is now. Checkpoints nest: a later checkpoint is inside an earlier one.
+- `rollback()` puts the stack back as it was at the most recent checkpoint, drops that checkpoint, and returns True, or returns False if there's no checkpoint.
+- `commit()` drops the most recent checkpoint, keeping every change made since, and returns True, or returns False if there's none.
+- `size()` returns the number of items.
+
+Copying the whole stack at each checkpoint is O(n). Instead, keep a second stack, `log`, of how to undo each change made while any checkpoint is open: after a push, undoing means popping, which `None` stands for; after popping x, it means pushing x back. A checkpoint saves the log's current length on a third stack, `marks`. Rollback undoes log entries, newest first, back to that length. Commit drops the mark but keeps the log, because an earlier checkpoint might still need to undo those changes; when no marks are left, the log can be emptied.
+
+**Example:** `run(["CheckpointStack", "push", "checkpoint", "push", "pop", "pop", "size", "rollback", "top", "size"], [[], [1], [], [2], [], [], [], [], [], []])` returns `[None, None, None, None, 2, 1, 0, True, 1, 1]`.
+
+**Constraints:** at most 10⁴ calls, and 0 ≤ x ≤ 10⁹.
+starter:
+```python
+class CheckpointStack:
+    def __init__(self):
+        self.items = []
+        self.log = []
+        self.marks = []
+
+    def push(self, x):
+        pass
+
+    def pop(self):
+        return -1
+
+    def top(self):
+        return -1
+
+    def checkpoint(self):
+        pass
+
+    def rollback(self):
+        return False
+
+    def commit(self):
+        return False
+
+    def size(self):
+        return 0
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CheckpointStack":
+            stack = CheckpointStack()
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "top":
+            results.append(stack.top())
+        elif command == "checkpoint":
+            results.append(stack.checkpoint())
+        elif command == "rollback":
+            results.append(stack.rollback())
+        elif command == "commit":
+            results.append(stack.commit())
+        elif command == "size":
+            results.append(stack.size())
+    return results
+```
+solution:
+```python
+class CheckpointStack:
+    def __init__(self):
+        self.items = []
+        self.log = []
+        self.marks = []
+
+    def push(self, x):
+        self.items.append(x)
+        if self.marks:
+            self.log.append(None)
+
+    def pop(self):
+        if not self.items:
+            return -1
+        x = self.items.pop()
+        if self.marks:
+            self.log.append(x)
+        return x
+
+    def top(self):
+        if not self.items:
+            return -1
+        return self.items[-1]
+
+    def checkpoint(self):
+        self.marks.append(len(self.log))
+
+    def rollback(self):
+        if not self.marks:
+            return False
+        mark = self.marks.pop()
+        while len(self.log) > mark:
+            undo = self.log.pop()
+            if undo is None:
+                self.items.pop()
+            else:
+                self.items.append(undo)
+        return True
+
+    def commit(self):
+        if not self.marks:
+            return False
+        self.marks.pop()
+        if not self.marks:
+            self.log = []
+        return True
+
+    def size(self):
+        return len(self.items)
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "CheckpointStack":
+            stack = CheckpointStack()
+            results.append(None)
+        elif command == "push":
+            results.append(stack.push(args[0]))
+        elif command == "pop":
+            results.append(stack.pop())
+        elif command == "top":
+            results.append(stack.top())
+        elif command == "checkpoint":
+            results.append(stack.checkpoint())
+        elif command == "rollback":
+            results.append(stack.rollback())
+        elif command == "commit":
+            results.append(stack.commit())
+        elif command == "size":
+            results.append(stack.size())
+    return results
+```
+tests:
+- run(["CheckpointStack", "push", "checkpoint", "push", "pop", "pop", "size", "rollback", "top", "size"], [[], [1], [], [2], [], [], [], [], [], []])
+- run(["CheckpointStack", "rollback", "commit", "pop", "top"], [[], [], [], [], []])
+- run(["CheckpointStack", "push", "checkpoint", "push", "checkpoint", "push", "rollback", "top", "commit", "rollback", "size"], [[], [1], [], [2], [], [3], [], [], [], [], []])
+- run(["CheckpointStack", "push", "checkpoint", "checkpoint", "push", "commit", "top", "rollback", "top", "size"], [[], [5], [], [], [6], [], [], [], [], []])
+- run(["CheckpointStack", "push", "push", "checkpoint", "pop", "pop", "push", "rollback", "top", "size"], [[], [1], [2], [], [], [], [9], [], [], []])
+- (lambda r: [len(r), r.count(True), r.count(False), r[-4:], sum(x for x in r if type(x) == int)])(run(["CheckpointStack"] + ["push"] * 3000 + ["checkpoint", "push", "pop", "pop", "rollback", "top"] * 1000 + ["size"], [[]] + [[i] for i in range(3000)] + [a for i in range(1000) for a in ([], [i], [], [], [], [])] + [[]]))
+fail[2]: No checkpoints: rollback and commit return False, and an empty stack gives −1.
+fail[3]: Rollback undoes the inner checkpoint; commit then drops the outer one, so there's nothing left to roll back.
+fail[4]: Committing the inner checkpoint keeps the push of 6 in the log, so rolling back the outer one still undoes it.
+fail[5]: Items popped after a checkpoint come back on rollback, in their old order.
+fail[6]: 3000 items and 1000 checkpoints, each rolled back. Copying the stack at each checkpoint is O(n) a checkpoint.
+edges:
+- no checkpoints :: "checkpoint" not in commands :: run(["CheckpointStack", "push", "rollback"], [[], [1], []])
+- several checkpoints :: commands.count("checkpoint") > 1 :: run(["CheckpointStack", "checkpoint", "checkpoint", "rollback"], [[], [], [], []])
+- one checkpoint :: commands.count("checkpoint") == 1 :: run(["CheckpointStack", "checkpoint", "push", "rollback"], [[], [], [4], []])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of calls, and the time is amortized, for one call.
+why_time: Each change adds at most one log entry, and each entry is undone at most once, so rollbacks cost O(1) amortized for each change.
+why_space: The items, the log and the marks each grow by at most one entry a call.
+hint: push: append x, and if `self.marks`, append None to the log. pop: return −1 if the stack is empty; pop x, and if there are marks, append x to the log; return x.
+hint: checkpoint: `self.marks.append(len(self.log))`.
+hint: rollback: return False if there are no marks. Pop the mark; while the log is longer than it, pop an entry: None means pop the stack, anything else means push it back. Return True.
+hint: commit: return False if there are no marks. Pop the mark, and when no marks are left, empty the log. Return True.
+right: The log holds the opposite of every change since the oldest open checkpoint, so undoing entries newest first walks the stack back in time, and each change is logged once and undone at most once.
+wrong: Log how to undo every push (pop) and pop (push x back) while a checkpoint is open; a checkpoint saves the log's length; rollback undoes entries back to that length; commit only drops the saved length.
+
+=== task: code hard
+title: Count Balanced Substrings
+patterns: brackets
+prompt: s is made of brackets of three kinds, `()`, `[]` and `{}`. A **balanced** substring is a non-empty run of neighbouring characters in which every bracket is matched, such as `[()]` or `()()`. Write `count_balanced(s)` that returns how many substrings of s are balanced. Substrings at different places count separately, even if they're the same.
+
+Match the brackets with a stack of positions. When the bracket at j closes the one at i, every balanced substring that ends at j is either s[i..j] itself, or a balanced substring that ends right before i, followed by s[i..j]. So if `ends[x]` is the number of balanced substrings that end right before position x, then `ends[j + 1] = ends[i] + 1`, and the answer is the sum of those values. A closing bracket that doesn't match the top, or finds the stack empty, can't be inside any balanced substring: empty the stack, so that nothing is matched across it.
+
+**Example 1:** `run("()()")` returns 3: the two pairs, and the whole string.
+
+**Example 2:** `run("([)]")` returns 0.
+
+**Example 3:** `run("{}[()]")` returns 4: `{}`, `()`, `[()]` and `{}[()]`.
+
+**Constraints:** s has 1 to 10⁵ characters, all brackets.
+starter:
+```python
+def count_balanced(s):
+    opening = {")": "(", "]": "[", "}": "{"}
+    ends = [0] * (len(s) + 1)
+    stack = []
+    total = 0
+    # your code here
+    return total
+
+
+def run(s):
+    return count_balanced(s)
+```
+solution:
+```python
+def count_balanced(s):
+    opening = {")": "(", "]": "[", "}": "{"}
+    ends = [0] * (len(s) + 1)
+    stack = []
+    total = 0
+    for j in range(len(s)):
+        ch = s[j]
+        if ch in "([{":
+            stack.append(j)
+        elif stack and s[stack[-1]] == opening[ch]:
+            i = stack.pop()
+            ends[j + 1] = ends[i] + 1
+            total += ends[j + 1]
+        else:
+            stack = []
+    return total
+
+
+def run(s):
+    return count_balanced(s)
+```
+tests:
+- run("()()")
+- run("([)]")
+- run("(())")
+- run("(")
+- run("{}[()]")
+- [run("()" * 8000 + "[" + "(){}" * 2000 + "]"), run("((" * 3000 + "]" + "{}" * 3000)]
+fail[2]: `)` doesn't match `[`, so nothing is balanced.
+fail[3]: The inner pair and the whole string.
+fail[4]: A single bracket can't be balanced.
+fail[5]: `{}`, `()`, `[()]` and `{}[()]`.
+fail[6]: 24,002 brackets with over 40 million balanced substrings, and a string where a stray `]` splits everything. Checking every substring is O(n²) at least.
+edges:
+- nothing balanced :: count_balanced(s) == 0 :: run("([)]")
+- pairs side by side only :: count_balanced(s) > 0 and all(s[i] in "([{" for i in range(0, len(s), 2)) and all(s[i] in ")]}" for i in range(1, len(s), 2)) :: run("()[]")
+- brackets inside brackets :: count_balanced(s) > 0 and any(s[i] in "([{" and s[i + 1] in "([{" for i in range(len(s) - 1)) :: run("[()]")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: Each position is pushed once and popped at most once, and emptying the stack only drops positions already pushed.
+why_space: The stack and the list of ends.
+hint: For each j: if `s[j]` is an opening bracket, push j.
+hint: For a closing bracket: if the stack isn't empty and `s[stack[-1]] == opening[ch]`, `i = stack.pop()`, `ends[j + 1] = ends[i] + 1`, and add it to total.
+hint: Otherwise set `stack = []`.
+right: Each balanced substring that ends at j starts with the pair that ends at j, or with balanced substrings right before that pair, so ends[j + 1] builds on ends[i] in O(1).
+wrong: Match brackets with a stack of positions; for each pair from i to j, the balanced substrings ending at j number one more than those ending right before i; add them up; a mismatch empties the stack.
+
+=== task: code hard
+title: Nested Function Calls
+patterns: brackets + nested
+prompt: expr is an expression made of integers, which can be negative, and calls of four functions, `add`, `mul`, `max` and `min`, each with one or more arguments separated by commas, and no spaces. add adds its arguments, mul multiplies them, and max and min return the largest and the smallest. Write `evaluate(expr)` that returns its value. Calls can be nested 5000 deep, deeper than Python lets a recursive function go, so use a stack of your own.
+
+Keep a stack of frames, each `[name, args]`: the function being called, and its arguments' values so far. Start with a frame for the whole expression, `["", []]`. A name pushes a new frame, and its `(` is skipped. A number is read, minus sign and all, and appended to the top frame's args. A `)` pops the top frame, works out the call with `apply(name, args)`, and appends the value to the args of the frame below. Commas are skipped. The answer is the only value in the bottom frame.
+
+**Example 1:** `run("add(1,mul(2,3),max(4,5,6))")` returns 13: 1 + 6 + 6.
+
+**Example 2:** `run("-7")` returns -7.
+
+**Constraints:** expr has 1 to 4 × 10⁴ characters, it's valid, calls are nested at most 5000 deep, and every value worked out is from −10¹⁸ to 10¹⁸.
+starter:
+```python
+def apply(name, args):
+    if name == "add":
+        return sum(args)
+    if name == "max":
+        return max(args)
+    if name == "min":
+        return min(args)
+    product = 1
+    for a in args:
+        product *= a
+    return product
+
+
+def evaluate(expr):
+    stack = [["", []]]
+    i = 0
+    # your code here
+    return stack[0][1][0]
+
+
+def run(expr):
+    return evaluate(expr)
+```
+solution:
+```python
+def apply(name, args):
+    if name == "add":
+        return sum(args)
+    if name == "max":
+        return max(args)
+    if name == "min":
+        return min(args)
+    product = 1
+    for a in args:
+        product *= a
+    return product
+
+
+def evaluate(expr):
+    stack = [["", []]]
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch.isalpha():
+            j = i
+            while expr[j] != "(":
+                j += 1
+            stack.append([expr[i:j], []])
+            i = j + 1
+        elif ch == "-" or ch.isdigit():
+            j = i + 1
+            while j < len(expr) and expr[j].isdigit():
+                j += 1
+            stack[-1][1].append(int(expr[i:j]))
+            i = j
+        elif ch == ")":
+            name, args = stack.pop()
+            stack[-1][1].append(apply(name, args))
+            i += 1
+        else:
+            i += 1
+    return stack[0][1][0]
+
+
+def run(expr):
+    return evaluate(expr)
+```
+tests:
+- run("add(1,mul(2,3),max(4,5,6))")
+- run("-7")
+- run("min(3,-2,8)")
+- run("mul(add(1,2),add(3,4))")
+- run("max(add(-5,5),min(mul(2,3),4))")
+- [run("add(" * 5000 + "1" + ")" * 5000), run("add(" + ",".join("mul(" + str(i) + ",2)" for i in range(1500)) + ")"), run("min(" * 2000 + "-3,max(9,4)" + ",7)" * 2000)]
+fail[2]: A number with no function at all; the minus sign is part of it.
+fail[3]: A negative argument.
+fail[4]: Arguments that are calls themselves.
+fail[5]: add(−5, 5) is 0, and min(mul(2, 3), 4) is 4.
+fail[6]: Calls nested 5000 and 2000 deep, and an add of 1500 calls. Working out the innermost call and rebuilding the string each time is O(n²).
+edges:
+- a single number :: "(" not in expr :: run("5")
+- calls inside calls :: any(expr[:i].count("(") - expr[:i].count(")") > 1 for i in range(len(expr) + 1)) :: run("add(1,mul(2,3))")
+- one level of calls :: "(" in expr and all(expr[:i].count("(") - expr[:i].count(")") <= 1 for i in range(len(expr) + 1)) :: run("max(2,7)")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of expr.
+why_time: Each character is read once, each frame is pushed and popped once, and apply looks at each argument once.
+why_space: The stack holds a frame for every call that's open.
+hint: A letter: find the `(` after the name with a loop, push `[expr[i:j], []]`, and move i past the `(`.
+hint: A digit or `-`: read up to the last digit, and append `int(expr[i:j])` to `stack[-1][1]`.
+hint: `)`: `name, args = stack.pop()`, then append `apply(name, args)` to `stack[-1][1]`. Skip commas.
+right: A call's value is ready only when its `)` arrives, which is when its frame is on top, so the frames on the stack play the part of Python's call stack, without its depth limit.
+wrong: Keep a stack of [name, args] frames; a name pushes a frame, a number goes onto the top frame's args, and a ) pops the top frame, applies its function and adds the value to the frame below.
+
+=== task: code hard
+title: Basic Calculator
+leetcode: 224 | Basic Calculator | basic-calculator
+patterns: calc + nested
+prompt: s is a valid expression of non-negative integers, `+`, `-`, brackets and spaces. `-` can also mean minus on its own, as in `-(2+3)`, but `+` can't. Write `calculate(s)` that returns its value, without using `eval`.
+
+Keep `result`, the value so far at the current level of brackets, `sign`, +1 or −1 for the number being read, and `num`, its digits so far. At `+` or `-`, add `sign * num` to result, and set sign for the next number. At `(`, a new level starts: push result and sign, then reset them to 0 and +1. At `)`, finish the level's result, then pop the sign and the result that were saved in front of the bracket, and combine them: the outer result plus the outer sign times this level's result.
+
+**Example 1:** `run("1 + 1")` returns 2.
+
+**Example 2:** `run("(1+(4+5+2)-3)+(6+8)")` returns 23.
+
+**Example 3:** `run("-(2+3)")` returns -5.
+
+**Constraints:** s has 1 to 3 × 10⁵ characters, it's valid, `+` is never a sign on its own, there are never two operators in a row, and every number and value worked out fits in 32 bits.
+starter:
+```python
+def calculate(s):
+    stack = []
+    result = 0
+    sign = 1
+    num = 0
+    # your code here
+    return result + sign * num
+
+
+def run(s):
+    return calculate(s)
+```
+solution:
+```python
+def calculate(s):
+    stack = []
+    result = 0
+    sign = 1
+    num = 0
+    for ch in s:
+        if ch.isdigit():
+            num = num * 10 + int(ch)
+        elif ch == "+" or ch == "-":
+            result += sign * num
+            num = 0
+            if ch == "+":
+                sign = 1
+            else:
+                sign = -1
+        elif ch == "(":
+            stack.append(result)
+            stack.append(sign)
+            result = 0
+            sign = 1
+        elif ch == ")":
+            result += sign * num
+            num = 0
+            outer_sign = stack.pop()
+            outer = stack.pop()
+            result = outer + outer_sign * result
+    return result + sign * num
+
+
+def run(s):
+    return calculate(s)
+```
+tests:
+- run("1 + 1")
+- run(" 2-1 + 2 ")
+- run("(1+(4+5+2)-3)+(6+8)")
+- run("-(2+3)")
+- run("1-(-2)")
+- [run("(" * 3000 + "1" + "+1)" * 3000), run("-".join(["(5-(3+1))"] * 2000)), run("2147483647")]
+fail[2]: Spaces between everything.
+fail[3]: Brackets inside brackets.
+fail[4]: The `-` in front of a bracket negates the whole bracket.
+fail[5]: 1 − (−2) is 3: the `-` inside the bracket is a minus on its own.
+fail[6]: Brackets nested 3000 deep, a chain of 2000 bracketed parts, and the largest 32-bit integer. Working out the innermost bracket and rebuilding the string each time is O(n²).
+edges:
+- no brackets :: "(" not in s :: run("4 - 1")
+- a minus before a bracket :: "-(" in s.replace(" ", "") :: run("-(1+2)")
+- brackets without a minus in front :: "(" in s and "-(" not in s.replace(" ", "") :: run("(1+2)-3")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of s.
+why_time: One pass; each bracket pushes or pops two numbers.
+why_space: The stack holds two numbers for each bracket that's open.
+hint: Digits build num. At `+` or `-`: `result += sign * num`, `num = 0`, and sign is 1 or −1.
+hint: At `(`: push result, then sign; set result to 0 and sign to 1.
+hint: At `)`: `result += sign * num` and `num = 0`; pop the outer sign, then the outer result, and set `result = outer + outer_sign * result`.
+right: A bracket is worked out like a whole expression of its own, while the stack keeps what was going on outside it, so closing it turns the bracket into a single number in the outer expression.
+wrong: Keep result, sign and num; + and - fold num into result and set the next sign; ( pushes result and sign and starts a fresh level; ) finishes the level and folds it into the saved result with the saved sign.
+
+=== task: code hard
+title: Minimum Cost to Change the Final Value of Expression
+leetcode: 1896 | Minimum Cost to Change the Final Value of Expression | minimum-cost-to-change-the-final-value-of-expression
+patterns: calc + nested
+prompt: expression is a valid boolean expression of `1`, `0`, `&` (and), `|` (or) and brackets. Brackets are worked out first; otherwise `&` and `|` come in the same order of precedence, going from left to right. One change turns a `1` into `0` or a `0` into `1`, or a `&` into `|` or a `|` into `&`. Write `min_operations_to_flip(expression)` that returns the fewest changes that make the expression's value different.
+
+Use two stacks: `vals`, of pairs `(value, cost)`, where cost is the fewest changes that would flip that part's value, and `ops`, of operators and `(`. A digit is the pair `(digit, 1)`. A `)` pops its `(` and makes the part inside a single pair. Whenever a pair arrives while an operator waits on top of ops, combine it at once with the pair before it, which keeps the order left to right. Combining two pairs with `&`:
+
+- both 1: the value is 1, and flipping either side flips it: cost `min(ca, cb)`.
+- both 0: the value is 0; flip one side and change `&` to `|`: cost `1 + min(ca, cb)`.
+- one of each: the value is 0; flip the 0 side, or change `&` to `|`: cost `min(c0, 1)`, where c0 is the cost of the 0 side.
+
+`|` is the same with 0 and 1 swapped. The answer is the cost in the last pair.
+
+**Example 1:** `run("1&(0|1)")` returns 1: changing `|` to `&` gives 1&(0&1), which is 0.
+
+**Example 2:** `run("(0&0)&(0&0&0)")` returns 3.
+
+**Constraints:** expression has 1 to 10⁵ characters, it's valid, and there are no empty brackets.
+starter:
+```python
+def combine(a, op, b):
+    # a and b are (value, cost) pairs: return the pair for a op b
+    return a
+
+
+def min_operations_to_flip(expression):
+    vals = []
+    ops = []
+    # your code here
+    return vals[-1][1]
+
+
+def run(expression):
+    return min_operations_to_flip(expression)
+```
+solution:
+```python
+def combine(a, op, b):
+    va, ca = a
+    vb, cb = b
+    if op == "&":
+        if va == 1 and vb == 1:
+            return (1, min(ca, cb))
+        if va == 0 and vb == 0:
+            return (0, 1 + min(ca, cb))
+        if va == 0:
+            return (0, min(ca, 1))
+        return (0, min(cb, 1))
+    if va == 0 and vb == 0:
+        return (0, min(ca, cb))
+    if va == 1 and vb == 1:
+        return (1, 1 + min(ca, cb))
+    if va == 1:
+        return (1, min(ca, 1))
+    return (1, min(cb, 1))
+
+
+def min_operations_to_flip(expression):
+    vals = []
+    ops = []
+    for ch in expression:
+        if ch in "(&|":
+            ops.append(ch)
+            continue
+        if ch == ")":
+            ops.pop()
+            item = vals.pop()
+        else:
+            item = (int(ch), 1)
+        if ops and ops[-1] != "(":
+            item = combine(vals.pop(), ops.pop(), item)
+        vals.append(item)
+    return vals[-1][1]
+
+
+def run(expression):
+    return min_operations_to_flip(expression)
+```
+tests:
+- run("1&(0|1)")
+- run("(0&0)&(0&0&0)")
+- run("(0|(1|0&1))")
+- run("1")
+- run("0|0")
+- [run((lambda f: f(f, 12))(lambda f, d: "1" if d == 0 else "(" + f(f, d - 1) + "&|"[d % 2] + f(f, d - 1) + ")")), run("|".join("(1&1&1)" for _ in range(2000))), run("(" * 2000 + "0" + "".join(("&", "|")[i % 2] + "01"[i * 7919 % 3 % 2] + ")" for i in range(2000)))]
+fail[2]: (0 & 0) & (0 & 0 & 0) needs three changes, such as turning it into (0 | 1) | (0 & 0 & 0).
+fail[3]: Inside the brackets, 1 | 0 & 1 goes left to right, as (1 | 0) & 1.
+fail[4]: A single digit takes one change.
+fail[5]: 0 | 0: flip either 0.
+fail[6]: A tree of 1s with & and | taking turns, 12 levels deep; 2000 brackets joined by |; and a chain 2000 brackets deep.
+edges:
+- a single digit :: len(expression) == 1 :: run("0")
+- no brackets :: len(expression) > 1 and "(" not in expression :: run("1&0")
+- brackets :: "(" in expression :: run("(1|0)&1")
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of expression.
+why_time: Each character is pushed and popped at most once, and each combine is O(1).
+why_space: The two stacks can hold every character.
+hint: combine: for `&`, use the three cases in the prompt; for `|`, both 0 costs `min(ca, cb)`, both 1 costs `1 + min(ca, cb)`, and one of each costs `min(c1, 1)`, where c1 is the cost of the 1 side.
+hint: Loop: `(`, `&` and `|` are pushed onto ops. A digit makes `item = (int(ch), 1)`; a `)` pops the `(` from ops and sets `item = vals.pop()`.
+hint: Then, if ops isn't empty and its top isn't `(`, `item = combine(vals.pop(), ops.pop(), item)`. Push item onto vals.
+right: Each part of the expression is summed up by its value and the cheapest way to flip it, and that's enough to work out the same for the part made by joining two of them, so one pass left to right builds the answer.
+wrong: Keep a stack of (value, flip cost) pairs and a stack of operators and brackets; combine each new pair with the one before it as soon as an operator is waiting, using the cases for & and |; a ) turns its bracket into one pair.
+
+=== task: code hard
+title: Towers After k Moves
+patterns: nested
+prompt: In the Towers of Hanoi, n disks, numbered 1, the smallest, to n, start on peg 0 with the largest at the bottom. The shortest solution moves them all to peg 2, one disk at a time and never putting a disk on a smaller one, in 2ⁿ − 1 moves: move the top n − 1 disks to peg 1, move disk n to peg 2, then move the n − 1 disks onto it. Write `towers(n, k)` that returns the three pegs, each a Python list from bottom to top, after the first k moves of that solution.
+
+k can be as large as 2⁶⁰ − 1, far too many moves to make one at a time. Run the recursion with a stack of your own, where each entry is a job: `("solve", m, src, dst, via)`, moving the top m disks from peg src to peg dst, or `("move", m, src, dst, via)`, moving the single disk m. A solve job for m disks takes 2ᵐ − 1 moves. If k is at least that, the whole job happens: the top m disks of src land on dst in the same order, so move them in one go and take 2ᵐ − 1 from k. Otherwise push its three parts, last part first, so that they come off the stack in order. Stop when k reaches 0.
+
+**Example 1:** `run(2, 1)` returns `[[2], [1], []]`: disk 1 moves to peg 1.
+
+**Example 2:** `run(3, 3)` returns `[[3], [2, 1], []]`: disk 1 goes to peg 2, disk 2 to peg 1, and disk 1 onto disk 2.
+
+**Constraints:** 1 ≤ n ≤ 60, and 0 ≤ k ≤ 2ⁿ − 1.
+starter:
+```python
+def towers(n, k):
+    pegs = [list(range(n, 0, -1)), [], []]
+    stack = [("solve", n, 0, 2, 1)]
+    # your code here
+    return pegs
+
+
+def run(n, k):
+    return towers(n, k)
+```
+solution:
+```python
+def towers(n, k):
+    pegs = [list(range(n, 0, -1)), [], []]
+    stack = [("solve", n, 0, 2, 1)]
+    while stack and k > 0:
+        kind, m, src, dst, via = stack.pop()
+        if kind == "move":
+            pegs[dst].append(pegs[src].pop())
+            k -= 1
+        elif m > 0 and k >= 2 ** m - 1:
+            cut = len(pegs[src]) - m
+            pegs[dst] = pegs[dst] + pegs[src][cut:]
+            pegs[src] = pegs[src][:cut]
+            k -= 2 ** m - 1
+        elif m > 0:
+            stack.append(("solve", m - 1, via, dst, src))
+            stack.append(("move", m, src, dst, via))
+            stack.append(("solve", m - 1, src, via, dst))
+    return pegs
+
+
+def run(n, k):
+    return towers(n, k)
+```
+tests:
+- run(2, 1)
+- run(3, 7)
+- run(1, 0)
+- run(3, 3)
+- run(4, 9)
+- [run(60, 2 ** 59), run(50, 10 ** 15 + 12345), run(30, 2 ** 30 - 1), run(45, 123456789012)]
+fail[2]: All 7 moves: every disk ends up on peg 2.
+fail[3]: No moves: everything is still on peg 0.
+fail[4]: Three moves: disk 1 to peg 2, disk 2 to peg 1, and disk 1 onto disk 2.
+fail[5]: Nine moves of four disks.
+fail[6]: 60 disks and 2⁵⁹ moves, 50 disks and over 10¹⁵ moves, and more. Making the moves one at a time takes far too long.
+edges:
+- no moves :: k == 0 :: run(3, 0)
+- every move :: k == 2 ** n - 1 and k > 0 :: run(2, 3)
+- part of the way :: 0 < k < 2 ** n - 1 :: run(2, 2)
+edge_count: 2
+complexity: time=O(n²) | space=O(n)
+complexity_note: n is the number of disks.
+why_time: Only one partly done job is split on each level, so the stack sees O(n) jobs, and each whole job moves at most n disks at once.
+why_space: The stack holds at most three jobs a level, and the pegs hold the n disks.
+hint: Loop while the stack isn't empty and k > 0, popping a job. A move job: `pegs[dst].append(pegs[src].pop())`, and take 1 from k.
+hint: A solve job with m > 0 and `k >= 2 ** m - 1`: `cut = len(pegs[src]) - m`; set `pegs[dst] = pegs[dst] + pegs[src][cut:]` and `pegs[src] = pegs[src][:cut]`, and take 2 ** m − 1 from k.
+hint: A solve job with m > 0 and fewer moves left: push `("solve", m - 1, via, dst, src)`, then `("move", m, src, dst, via)`, then `("solve", m - 1, src, via, dst)`.
+right: The jobs come off the stack in the order their moves happen, and a whole job's result is known without making its moves, so only the one job cut off part of the way needs splitting.
+wrong: Keep a stack of solve and move jobs; make move jobs one disk at a time; do a whole solve job in one go when k covers all 2^m − 1 of its moves; split the others into their three parts, pushed in reverse order.
+
+=== task: code hard
+title: Replace Non-Coprime Numbers in Array
+leetcode: 2197 | Replace Non-Coprime Numbers in Array | replace-non-coprime-numbers-in-array
+patterns: cancel
+prompt: Two neighbouring numbers in nums are **non-coprime** if their greatest common divisor is more than 1. Keep replacing two non-coprime neighbours with their least common multiple until there are none. The result doesn't depend on the order of the replacements. Write `replace_non_coprimes(nums)` that returns it.
+
+Keep the numbers so far on a stack. For each new number x: while the top and x are non-coprime, pop the top and set x to their least common multiple, `top // gcd(top, x) * x`; then push x. A new least common multiple can be non-coprime with the number below it, so keep checking: a chain reaction. gcd uses Euclid's rule: while b > 0, set a, b to b, a % b.
+
+**Example 1:** `run([6, 4, 3, 2, 7, 6, 2])` returns `[12, 7, 6]`: 6 and 4 make 12, which swallows 3 and then 2; later, 6 swallows the last 2.
+
+**Example 2:** `run([2, 2, 1, 1, 3, 3, 3])` returns `[2, 1, 1, 3]`.
+
+**Constraints:** nums has 1 to 10⁵ numbers, 1 ≤ nums[i] ≤ 10⁵, and the final numbers are at most 10⁸.
+starter:
+```python
+def gcd(a, b):
+    while b > 0:
+        a, b = b, a % b
+    return a
+
+
+def replace_non_coprimes(nums):
+    stack = []
+    # your code here
+    return stack
+
+
+def run(nums):
+    return replace_non_coprimes(nums)
+```
+solution:
+```python
+def gcd(a, b):
+    while b > 0:
+        a, b = b, a % b
+    return a
+
+
+def replace_non_coprimes(nums):
+    stack = []
+    for x in nums:
+        while stack and gcd(stack[-1], x) > 1:
+            top = stack.pop()
+            x = top // gcd(top, x) * x
+        stack.append(x)
+    return stack
+
+
+def run(nums):
+    return replace_non_coprimes(nums)
+```
+tests:
+- run([6, 4, 3, 2, 7, 6, 2])
+- run([2, 2, 1, 1, 3, 3, 3])
+- run([1])
+- run([6, 10, 15])
+- run([2, 3, 5, 7, 210])
+- (lambda r: [len(r), r[:6], r[-6:], sum(r)])(run([2, 4, 3, 6, 12, 1, 5, 25, 1, 7, 49, 1] * 800))
+fail[2]: 1 is coprime with everything, so the 1s keep the 2s apart from the 3s.
+fail[3]: One number.
+fail[4]: 6 and 10 make 30, which is non-coprime with 15.
+fail[5]: 210 is non-coprime with 7, 5, 3 and 2 in turn, and swallows them all.
+fail[6]: 9600 numbers. Searching from the start again after each replacement is O(n²).
+edges:
+- nothing replaced :: replace_non_coprimes(nums) == list(nums) :: run([2, 3])
+- everything merges into one :: len(nums) > 1 and len(replace_non_coprimes(nums)) == 1 :: run([2, 4])
+- some replaced :: replace_non_coprimes(nums) != list(nums) and len(replace_non_coprimes(nums)) > 1 :: run([2, 4, 3])
+edge_count: 2
+complexity: time=O(n log M) | space=O(n)
+complexity_options: O(n log M)
+complexity_note: n is the length of nums, and M is the largest value, at most 10⁸; gcd takes O(log M) steps.
+why_time: Each number is pushed once and popped at most once, and each check is one gcd, O(log M).
+why_space: The stack can hold every number.
+hint: For each x: while the stack isn't empty and `gcd(stack[-1], x) > 1`, pop the top and set `x = top // gcd(top, x) * x`.
+hint: Then push x.
+right: Replacing a pair only ever changes the numbers next to the top of the stack, so the while loop does each chain of replacements as it happens.
+wrong: Push each number after merging it into the top while they're non-coprime, replacing the two by their least common multiple each time; the stack is the answer.
+
+=== task: code hard
+title: Robot Collisions
+leetcode: 2751 | Robot Collisions | robot-collisions
+patterns: cancel
+prompt: n robots stand on a line, at different positions. Robot i is at `positions[i]`, has health `healths[i]`, and moves in direction `directions[i]`, `"L"` or `"R"`, all at the same speed. When two robots meet, the one with less health is removed, and the other's health goes down by 1; if their healths are the same, both are removed. Robots moving the same way never meet. Write `survived_robots_healths(positions, healths, directions)` that returns the healths of the robots left at the end, in the order the robots are given.
+
+Go through the robots in order of position, keeping a stack of the right-moving robots that survive so far. A robot moving right is pushed. A robot moving left fights the robots on the stack, top first, while it's still alive: the one with less health loses, and a tie removes both. Keep the healths in a copy of the list, with 0 for a removed robot, and read the survivors off it at the end.
+
+**Example 1:** `run([3, 5, 2, 6], [10, 10, 15, 12], "RLRL")` returns `[14]`: in order of position, the robots at 3 and 5 remove each other, and the robot at 2 beats the one at 6.
+
+**Example 2:** `run([1, 2, 5, 6], [10, 10, 11, 11], "RLRL")` returns `[]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, positions and healths are from 1 to 10⁹, the positions are all different, and every direction is `"L"` or `"R"`.
+starter:
+```python
+def survived_robots_healths(positions, healths, directions):
+    order = sorted(range(len(positions)), key=lambda i: positions[i])
+    health = list(healths)
+    stack = []
+    # your code here
+    survivors = []
+    for h in health:
+        if h > 0:
+            survivors.append(h)
+    return survivors
+
+
+def run(positions, healths, directions):
+    return survived_robots_healths(positions, healths, directions)
+```
+solution:
+```python
+def survived_robots_healths(positions, healths, directions):
+    order = sorted(range(len(positions)), key=lambda i: positions[i])
+    health = list(healths)
+    stack = []
+    for i in order:
+        if directions[i] == "R":
+            stack.append(i)
+            continue
+        while stack and health[i] > 0:
+            j = stack[-1]
+            if health[j] < health[i]:
+                stack.pop()
+                health[j] = 0
+                health[i] -= 1
+            elif health[j] > health[i]:
+                health[j] -= 1
+                health[i] = 0
+            else:
+                stack.pop()
+                health[j] = 0
+                health[i] = 0
+    survivors = []
+    for h in health:
+        if h > 0:
+            survivors.append(h)
+    return survivors
+
+
+def run(positions, healths, directions):
+    return survived_robots_healths(positions, healths, directions)
+```
+tests:
+- run([5, 4, 3, 2, 1], [2, 17, 9, 15, 10], "RRRRR")
+- run([3, 5, 2, 6], [10, 10, 15, 12], "RLRL")
+- run([1, 2, 5, 6], [10, 10, 11, 11], "RLRL")
+- run([7], [4], "L")
+- run([1, 2, 3], [5, 3, 1], "RLL")
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([i * 7919 % 100003 + 1 for i in range(10000)], [i * 104729 % 997 + 1 for i in range(10000)], "".join("RL"[i * 31 % 7 % 2] for i in range(10000))))
+fail[2]: In order of position, the robots at 3 and 5 remove each other, and the robot at 2 beats the one at 6.
+fail[3]: Two ties: no robot is left.
+fail[4]: One robot has nothing to meet.
+fail[5]: The robot at 1 wins two fights, losing 1 health each time.
+fail[6]: 10,000 robots. Searching again from the start after each fight is O(n²).
+edges:
+- no fights :: not any(directions[i] == "R" and directions[j] == "L" and positions[i] < positions[j] for i in range(len(positions)) for j in range(len(positions))) :: run([1, 2], [3, 4], "LR")
+- every robot removed :: survived_robots_healths(positions, healths, directions) == [] :: run([1, 2], [3, 3], "RL")
+- a robot that wins a fight :: any(directions[i] == "R" and directions[j] == "L" and positions[i] < positions[j] for i in range(len(positions)) for j in range(len(positions))) and survived_robots_healths(positions, healths, directions) != [] :: run([1, 2], [5, 3], "RL")
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the number of robots.
+why_time: Sorting by position is O(n log n); after that, each robot is pushed and popped at most once.
+why_space: The order, the healths and the stack.
+hint: For each i in order: if robot i moves right, push i and go on to the next robot.
+hint: Otherwise, while the stack isn't empty and `health[i] > 0`, look at `j = stack[-1]`. If j has less health, pop it, set its health to 0, and take 1 from robot i's; if it has more, take 1 from j's health and set robot i's to 0; if they're equal, pop j and set both to 0.
+right: In order of position, a robot moving left meets the right-movers to its left nearest first, which is the stack from the top down, so every fight happens once, in the right order.
+wrong: Sort the robots by position; push right-movers; each left-mover fights the right-movers on top of the stack while it survives, the weaker one losing and the winner losing 1 health, a tie removing both; report the healths left, in input order.
