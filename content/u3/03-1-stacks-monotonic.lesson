@@ -1,7 +1,7 @@
 === lesson
 id: ds-stacks-monotonic
 title: Monotonic stacks
-summary: A monotonic stack keeps its items in increasing or decreasing order, popping anything that would break the order. That one rule answers "what's the next bigger item?" for every item of a list in O(n), instead of O(n²). You'll find next greater elements, count days until a warmer day, see why a loop inside a loop can still be O(n), and choose between increasing and decreasing stacks.
+summary: A monotonic stack keeps its items in increasing or decreasing order, popping anything that would break the order. That one rule answers "what's the next bigger item?" for every item of a list in O(n), instead of O(n²). You'll find next greater elements, count days until a warmer day, see why a loop inside a loop can still be O(n), choose between increasing and decreasing stacks, go round circular lists, carry counts on the stack, and find how far each item reaches, which counts subarrays in O(n).
 
 === learn
 ### The next greater element
@@ -76,7 +76,7 @@ A `while` loop inside a `for` loop usually means O(n²), but not here. Count the
 So the total is at most n pushes + n pops + n checks that stop a `while`: O(n). One step can pop a lot (index 2 popped two indexes), but then there's less left to pop later. This is the same kind of argument as amortized O(1) appends in the Dynamic arrays lesson: one expensive step is paid for by many cheap ones.
 
 ### Daily temperatures
-Given a list of daily temperatures, how many days do you wait after each day for a warmer one? (0 if a warmer day never comes.) It's the next greater element again, but the answer is the **distance** to it, `i - j`, which is why the stack holds indexes:
+Given a list of daily temperatures, how many days pass after each day before a warmer one? (0 if a warmer day never comes.) It's the next greater element again, but the answer is the **distance** to it, `i - j`, which is why the stack holds indexes:
 ```python
 def daily_temperatures(temps):
     answer = [0] * len(temps)
@@ -98,7 +98,7 @@ Day 0 (21°) waits until day 2 (23°): 2 days. Day 4 (20°) is followed straight
 ### Increasing or decreasing?
 The order of the stack decides what it finds:
 
-| To find, for each item... | Keep the stack | Pop while the top is... | The answer for a popped item is... |
+| To find, for each item | Keep the stack | Pop while the top is | A popped item's answer |
 | --- | --- | --- | --- |
 | the next greater item to the right | decreasing | smaller than x | x |
 | the next smaller item to the right | increasing | bigger than x | x |
@@ -134,6 +134,28 @@ print(previous_greater([4, 2, 6, 3, 5]))
 ```
 `next_smaller` only changes the comparison to `>`. `previous_greater` pops everything that isn't bigger than x (`<=`); whatever is left on top is bigger, and it's the nearest such number to the left.
 
+**Equal values.** The comparison decides what happens to equal values. Popping while the top is smaller, `<`, leaves an equal value on the stack, so an answer has to be strictly bigger. Popping while it's smaller or equal, `<=`, pops equal values too. When a problem says "warmer" or "taller", that's strictly bigger; "at least as tall" includes equal values. Choose `<` or `<=` to match, and check a list with repeated values, such as [3, 3, 4].
+
+**Scanning from the right.** Walking the list from the end turns "previous" into "next". Going right to left with the same loop, the item left on top after popping is the first item to the right that's bigger:
+```python
+def next_greater_from_right(nums):
+    result = [-1] * len(nums)
+    stack = []
+    for i in range(len(nums) - 1, -1, -1):
+        while stack and stack[-1] <= nums[i]:
+            stack.pop()
+        if stack:
+            result[i] = stack[-1]
+        stack.append(nums[i])
+    return result
+
+print(next_greater_from_right([2, 1, 5, 3, 4]))
+```
+```output
+[5, 5, -1, 4, -1]
+```
+It gives the same answers as `next_greater`. Going left to right, a popped item gets its answer when the answer arrives; going right to left, each new item gets its answer straight away, from the top, and the items it pops are the shorter ones it can see over.
+
 ### The cost table
 
 | | Two nested loops | Monotonic stack |
@@ -143,6 +165,241 @@ print(previous_greater([4, 2, 6, 3, 5]))
 
 Monotonic stacks answer "nearest bigger or smaller item to the left or right" questions: stock prices, temperatures, the skyline of buildings, and the largest rectangle under a bar chart.
 
+### Solving problems with monotonic stacks
+Most monotonic stack problems ask, for every item, about its nearest bigger or smaller item on one side. Before writing any code, answer these questions:
+
+1. **What does each item need?** Its nearest bigger or smaller item, on the left or on the right: that item's value, its index, or the distance to it.
+2. **Which way does the stack go?** To find something bigger, keep a decreasing stack and pop the smaller items. To find something smaller, keep an increasing stack and pop the bigger ones.
+3. **Strict or not?** Decide whether an equal item counts as an answer, then choose `<` or `<=` to match.
+4. **Who gets the answer?** Either each popped item gets x as its answer, or x gets the item left on top as its answer, or both.
+5. **What goes on the stack?** Indexes when you need positions or distances, values when the value is enough, and pairs when each entry carries a count too.
+6. **What about the leftovers?** Items still on the stack at the end never found an answer. Give them the default the problem asks for, such as -1 or 0.
+
+Those choices give four patterns:
+
+| Pattern | When x arrives |
+| --- | --- |
+| The popped item's answer | x answers every item it pops |
+| The item left on top | the top after popping answers x |
+| Going round twice | 2n steps for a circular list |
+| Carrying counts | x takes over what it pops |
+
+The first two are in "A stack of numbers still waiting" and "Increasing or decreasing?" above. The next steps show the other two, and two ways to use the first one: waiting for a second bigger item, and walking the indexes in another order.
+
+### Going round twice
+In a **circular** list, the first item comes straight after the last one, like the days of a week that repeats. The next greater element of an item near the end can then be near the start. Going round the list twice finds it:
+
+1. Loop i from 0 to 2n − 1, and read the item `nums[i % n]`: the second lap reads the list again from the start.
+2. Pop and answer as usual. On the second lap, the items still waiting from the first lap get a chance to find their answer among the items at the start.
+3. Push only on the first lap, while `i < n`. By the end of the first lap, every index has been pushed; the second lap only answers.
+```python
+def next_greater_round(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+    for i in range(2 * n):
+        x = nums[i % n]
+        while stack and nums[stack[-1]] < x:
+            result[stack.pop()] = x
+        if i < n:
+            stack.append(i)
+    return result
+
+print(next_greater_round([3, 1, 2]))
+print(next_greater_round([2, 1, 5, 3, 4]))
+```
+```output
+[-1, 2, 3]
+[5, 5, -1, 4, 5]
+```
+Here's the first list, [3, 1, 2], step by step:
+
+| i | i % n | x | popped | stack after |
+| --- | --- | --- | --- | --- |
+| 0 | 0 | 3 | none | 0 |
+| 1 | 1 | 1 | none | 0, 1 |
+| 2 | 2 | 2 | 1: answer 2 | 0, 2 |
+| 3 | 0 | 3 | 2: answer 3 | 0 |
+| 4 | 1 | 1 | none | 0 |
+| 5 | 2 | 2 | none | 0 |
+
+Index 2 finds its answer at i = 3, on the second lap, where the 3 at index 0 is read again. Index 0 holds the biggest value, so it's never popped and keeps -1. An item never answers itself, because it isn't bigger than itself.
+
+For a distance, use the unwrapped i: an index j popped at step i waited i − j steps, even when i is on the second lap. In [2, 1, 5, 3, 4], index 4 is popped by the 5 at i = 7, so it waits 7 − 4 = 3 steps: round to index 0, 1, then 2. It's still O(n): the `for` loop runs 2n times, and each index is pushed once and popped at most once.
+
+### Carrying counts on the stack
+A stack entry can carry more than an item: a count, a total or a maximum for the items it replaced. When x pops entries, it takes over what they carried, so nothing is lost when they leave the stack.
+
+The stock span from the examples can work this way. Each entry is a pair, (price, span): a price, and how many days it covers. When today's price pops an entry, today covers that entry's days too:
+```python
+def spans(prices):
+    result = []
+    stack = []
+    for p in prices:
+        span = 1
+        while stack and stack[-1][0] <= p:
+            span += stack.pop()[1]
+        stack.append((p, span))
+        result.append(span)
+    return result
+
+print(spans([100, 80, 60, 70, 60, 75, 85]))
+```
+```output
+[1, 1, 1, 2, 1, 4, 6]
+```
+On day 5, the 75 pops (60, 1) and (70, 2), and takes over their 1 + 2 = 3 days, plus its own day: a span of 4. No indexes are needed, because the counts say how far back each entry reaches.
+
+**Merging into the top.** Sometimes x doesn't get an entry of its own, but joins the entry on top. Here, equal values share one entry, `[value, count]`, and a repeat adds 1 to the count:
+```python
+def waiting_groups(nums):
+    stack = []
+    for x in nums:
+        while stack and stack[-1][0] < x:
+            stack.pop()
+        if stack and stack[-1][0] == x:
+            stack[-1][1] += 1
+        else:
+            stack.append([x, 1])
+    return stack
+
+print(waiting_groups([5, 3, 3, 4, 4, 2]))
+```
+```output
+[[5, 1], [4, 2], [2, 1]]
+```
+The entries are lists, not tuples, so that a count can change in place. The stack still holds the values waiting for a bigger one, decreasing from the bottom, but each value appears once, with how many times it's waiting. The same idea merges a group into the one in front of it, as when a faster car catches up with a slower one and they drive on together.
+
+What to carry depends on the question: a count of days, a total of sizes, or the largest number of steps among the popped entries, which uses `max` instead of `+`.
+
+### The second greater element
+Some problems need the second bigger item to the right, not the first. An item then waits twice: first for one bigger item, then for another. Two stacks of indexes do it:
+
+1. `first` holds the indexes waiting for their first bigger item, and `second` the indexes waiting for their second.
+2. When x arrives, pop from `second` every index whose value is smaller than x: x is their answer.
+3. Then pop from `first` every index whose value is smaller than x. They've found their first bigger item, so they move to `second`.
+4. Push x's index onto `first`.
+
+Steps 2 and 3 must come in that order: an index that moves to `second` because of x can't be answered by the same x. The moved indexes must also keep their order, so that `second` stays decreasing: pop them off `first` into a temporary list, then push them onto `second` from that list's end. Here's [3, 1, 2, 5, 4]:
+
+| i | x | answered | first after | second after |
+| --- | --- | --- | --- | --- |
+| 0 | 3 | none | 0 | empty |
+| 1 | 1 | none | 0, 1 | empty |
+| 2 | 2 | none | 0, 2 | 1 |
+| 3 | 5 | 1 gets 5 | 3 | 0, 2 |
+| 4 | 4 | 2, 0 get 4 | 3, 4 | empty |
+
+At i = 2, the 2 is index 1's first bigger item, so index 1 moves to `second`. At i = 3, the 5 answers index 1 first, and only then moves indexes 2 and 0 across: the 5 is their first bigger item, so it can't also be their second. At i = 4, the 4 answers both. The answers are [4, 5, 4, -1, -1]. Each index is pushed onto each stack once and popped from each at most once, so it's still O(n).
+
+### Walking in another order
+The stack can walk any sequence of indexes, not only the list from left to right. Suppose that for each index i you want the index j to its right holding the **smallest value at least as big** as nums[i], and the leftmost one if several values tie.
+
+Sort the indexes by (value, index), and find each index's next greater **index** in that order:
+```python
+def next_at_least(nums):
+    n = len(nums)
+    order = sorted(range(n),
+                   key=lambda i: (nums[i], i))
+    result = [-1] * n
+    stack = []
+    for i in order:
+        while stack and stack[-1] < i:
+            result[stack.pop()] = i
+        stack.append(i)
+    return result
+
+print(next_at_least([5, 1, 4, 2, 4]))
+```
+```output
+[-1, 3, 4, 4, -1]
+```
+The order is [1, 3, 2, 4, 0]: the values 1, 2, 4, 4, 5. Every index after i in this order holds a value at least as big as nums[i], or an equal value further right. The first of them that's also to the right of i is the one with the smallest value, and the leftmost on a tie. Index 1 (value 1) gets index 3 (value 2), not index 2 (value 4). The comparison is on indexes, `stack[-1] < i`, because "to the right" means a bigger index. For the largest value at most as big, sort by (−value, index) instead. Sorting costs O(n log n), and the stack pass O(n).
+
+### Combining patterns
+Many problems use two of the patterns at once.
+
+**Next greater round a circle** (the popped item's answer + going round twice). Every circular "next bigger" or "next warmer" question is the code in "Going round twice", or a change to it: count pops instead of writing answers, or look for a second bigger item. Use the unwrapped i for distances, and push only on the first lap.
+
+**How far each item reaches** (the popped item's answer + the item left on top). One pass finds both of an item's neighbours. When x pops an index, x is that index's next bigger item, its right neighbour. After the popping, the top is x's previous item at least as big, its left neighbour. Between its two neighbours, the item is the largest, so it's the largest item of every subarray that starts after its left neighbour and ends before its right one:
+```python
+def reach(nums):
+    n = len(nums)
+    left = [-1] * n
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] < nums[i]:
+            right[stack.pop()] = i
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    return left, right
+
+nums = [2, 5, 1, 5, 3]
+left, right = reach(nums)
+for i in range(len(nums)):
+    count = (i - left[i]) * (right[i] - i)
+    print(nums[i], left[i], right[i], count)
+```
+```output
+2 -1 1 1
+5 -1 5 8
+1 1 3 1
+5 1 5 4
+3 3 5 1
+```
+An item with no left neighbour gets -1, and one with no right neighbour gets n, as if there were walls right outside the list. The item at index i is the largest of (i − left) × (right − i) subarrays: there are i − left places to start, from left + 1 to i, and right − i places to end, from i to right − 1. The first 5 is the largest of 2 × 4 = 8 subarrays. The counts add up to 15, the number of subarrays of 5 items, so every subarray is counted exactly once.
+
+Equal values need care. The left side stops at an equal value, and the right side doesn't, so a subarray with two equal largest items, such as [5, 1, 5], is counted once, for the first 5. Stopping at equal values on both sides would miss it, and stopping on neither would count it twice. right − left − 1 is how many items the item reaches across: the length of the longest subarray where it's the largest. For the smallest item instead, flip the comparison: pop while the top is bigger. Two passes, one for each side, work too.
+
+**Counts and the top** (the item left on top + carrying counts). x takes over the counts it pops, and the entry left on top decides where x's range stops, or carries a count that x builds on. Here, each building gets the total height of the taller buildings it can see looking left from its roof. Those are its left neighbour, then that building's own left neighbour, and every further one along the chain, so each entry carries that total for its own building:
+```python
+def taller_total(heights):
+    result = []
+    stack = []
+    for h in heights:
+        while stack and stack[-1][0] <= h:
+            stack.pop()
+        total = 0
+        if stack:
+            total = stack[-1][0] + stack[-1][1]
+        result.append(total)
+        stack.append((h, total))
+    return result
+
+print(taller_total([6, 2, 5, 3, 4]))
+```
+```output
+[0, 6, 6, 11, 11]
+```
+From the roof of the 3, you see the 5 and, above it, the 6: 5 + 6 = 11. The 4 sees the same two, because the 3 is lower than its roof. Sometimes the count comes from the popped entries, and the top only says whether anything bigger is left: with nothing left on the stack, x starts again from 0.
+
+### Edge cases
+
+| Case | What happens |
+| --- | --- |
+| one item | never popped: it keeps the default |
+| all equal | `<` leaves every one waiting |
+| only going down | the stack holds every index |
+| only going up | each item pops the one before |
+| circular list | push only on the first lap |
+| ties when counting | stop at equal on one side only |
+
+Run a solution by hand on a short list with a repeated value, such as [3, 3, 4], and on a list that only goes down: they catch most mistakes with `<` and `<=`, and with leftovers.
+
+### Time and space
+
+| Problem | Time | Extra space |
+| --- | --- | --- |
+| one side | O(n) | O(n) stack |
+| both sides | O(n) | O(n) |
+| round a circle | O(n): 2n steps | O(n) |
+| sorted order first | O(n log n) | O(n) |
+| one item per call | O(1) amortized | O(n) |
+
+The stack can hold every index, as in a list that only goes down, so the extra space is O(n) in the worst case, on top of the answers. When a class gets one item per call, as a stock spanner does, one call can pop many entries, but each entry is popped once, so each call is O(1) amortized.
+
 === keypoints
 - The **next greater element** of an item is the first item to its right that's bigger than it. Checking every item to the right is O(n²).
 - Walk left to right with a stack of indexes still waiting for their answer. When x arrives, pop every waiting index whose value is smaller than x (x is their answer), then push x's index.
@@ -150,6 +407,24 @@ Monotonic stacks answer "nearest bigger or smaller item to the left or right" qu
 - It's O(n), even with a `while` inside a `for`: each index is pushed once and popped at most once.
 - Store indexes, not values: they say where to write the answer, and give distances like `i - j`.
 - Pop while the top is smaller for "next greater", or bigger for "next smaller". After popping, the top is the previous greater (or smaller) item.
+- Equal values: popping with `<` keeps an equal value waiting, and `<=` pops it. Match the problem's words: "warmer" is strictly bigger. Walking from the right turns "previous" into "next".
+- For a circular list, go round twice: 2n steps reading `nums[i % n]`, pushing only on the first lap, with the unwrapped i for distances.
+- An entry can carry a count, a total or a maximum. When x pops entries, it takes over what they carried; equal values can share one entry with a count.
+- For the second greater element, use two stacks: answer from `second` first, then move the indexes x pops off `first` across, in their order.
+- To find the smallest value at least as big to the right, walk the indexes sorted by (value, index), and find each one's next greater index.
+- One pass finds both neighbours: pops give each index its right neighbour, and the top gives its left one. The item is the largest of (i − left) × (right − i) subarrays; stop at equal values on one side only.
+- Patterns: the popped item's answer; the item left on top; going round twice; and carrying counts.
+- Combinations: next greater round a circle; how far each item reaches; and counts and the top.
+
+=== patterns
+- next | A stack of numbers still waiting
+- prev | Increasing or decreasing?
+- round | Going round twice
+- carry | Carrying counts on the stack
+combos:
+- next + round | Next greater round a circle
+- next + prev | How far each item reaches
+- prev + carry | Counts and the top
 
 === example: Next greater, two ways
 intro: The nested-loop way and the stack way give the same answers. A counter shows how much work each one does on a list that only goes down, the worst case for the nested loops.
@@ -257,651 +532,1628 @@ print(answer)
 8: Day {i} waits for a day warmer than {temps[i]}.
 9: Day 4 is never followed by a warmer day, so it keeps 0.
 
-=== task: predict easy
-title: Next greater, worked out
-code:
+=== task: code easy
+title: Next Greater Element I
+leetcode: 496 | Next Greater Element I | next-greater-element-i
+patterns: next
+prompt: The **next greater element** of a number x in a list is the first number to the right of x that's bigger than x. nums1 and nums2 are lists of different numbers, and every number in nums1 is also in nums2. Write `next_greater_element(nums1, nums2)` that returns a list with, for each number in nums1, its next greater element in nums2, or -1 if it has none.
+
+Walk through nums2 once with a decreasing stack of the numbers still waiting. When x arrives, every number it pops has found its answer, x: write it in a dictionary, `answer[popped] = x`. The numbers are all different, so each one is a key. Then look up each number of nums1 in the dictionary, with -1 for any number that isn't there.
+
+**Example 1:** `run([4, 1, 2], [1, 3, 4, 2])` returns `[-1, 3, -1]`. Nothing after the 4 in nums2 is bigger; the 1 is followed by 3; the 2 is last.
+
+**Example 2:** `run([2, 4], [1, 2, 3, 4])` returns `[3, -1]`.
+
+**Constraints:** 1 ≤ len(nums1) ≤ len(nums2) ≤ 1000, 0 ≤ each number ≤ 10⁴, the numbers in each list are all different, and every number in nums1 is in nums2.
+starter:
 ```python
-def next_greater(nums):
-    result = [-1] * len(nums)
+def next_greater_element(nums1, nums2):
+    answer = {}
     stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] < nums[i]:
-            result[stack.pop()] = nums[i]
-        stack.append(i)
+    # your code here
+    result = []
     return result
 
-print(next_greater([3, 7, 1, 4]))
+
+def run(nums1, nums2):
+    return next_greater_element(nums1, nums2)
 ```
-wrong[[7, -1, 4, 4]]: Nothing comes after the 4, so its answer stays -1.
-wrong[[7, 7, 4, -1]]: 7 is never beaten: no number to its right is bigger, so it keeps -1.
-wrong[[7, -1, 7, -1]]: The next greater element of 1 is the **first** bigger number to its right: 4, which comes before the end.
-hint: For each number, look to its right for the first bigger one.
-hint: 7 and 4 have no bigger number after them.
-right: 3 → 7, 1 → 4, and 7 and 4 keep -1. The stack found all four answers in one pass.
-wrong: The first number bigger than 3 to its right is 7; nothing after 7 is bigger; the first bigger than 1 is 4; nothing comes after 4.
-
-=== task: mcq easy
-title: What's on the stack?
-prompt: While `next_greater` runs, what do the indexes on its stack stand for?
-* Numbers seen so far whose next greater element hasn't turned up yet :: Right. They wait until a bigger number arrives and pops them.
-- Numbers that have already found their answer :: Those have been popped off.
-- The biggest numbers in the whole list :: The stack only knows the numbers seen so far, and only those still waiting.
-- Every number seen so far :: A number is popped as soon as a bigger one arrives.
-hint: When is an index popped?
-hint: What does an index still on the stack not have yet?
-right: The stack is a waiting room: an index stays on it until a bigger number arrives, which is its answer.
-wrong: An index is pushed when its number is seen and popped when a bigger number arrives. So the stack holds the ones still waiting.
-
-=== task: fill easy
-title: Pop the smaller ones
-prompt: Fill in the blank so that `next_greater` pops every waiting number that is smaller than the new one, and the program prints:
-
-```output
-[3, 3, -1, -1]
-```
-code:
+solution:
 ```python
-def next_greater(nums):
-    result = [-1] * len(nums)
+def next_greater_element(nums1, nums2):
+    answer = {}
     stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] ?? nums[i]:
-            result[stack.pop()] = nums[i]
-        stack.append(i)
+    for x in nums2:
+        while stack and stack[-1] < x:
+            answer[stack.pop()] = x
+        stack.append(x)
+    result = []
+    for x in nums1:
+        result.append(answer.get(x, -1))
     return result
 
-print(next_greater([2, 2, 3, 1]))
+
+def run(nums1, nums2):
+    return next_greater_element(nums1, nums2)
 ```
-answer: <
-wrong[>]: That pops the waiting numbers that are **bigger**, which finds the next smaller element instead.
-wrong[<=]: That also pops equal numbers, so the first 2 would get the second 2 as its "greater" element. Greater means strictly bigger.
-hint: A waiting number has found its next greater element when the new number is bigger than it.
-hint: Strictly bigger: equal doesn't count.
-right: `nums[stack[-1]] < nums[i]`: the waiting number is smaller than the new one, so the new one is its next greater element.
-wrong: Pop while the number on top is smaller than the new number: the blank is `<`.
+tests:
+- run([4, 1, 2], [1, 3, 4, 2])
+- run([2, 4], [1, 2, 3, 4])
+- run([5], [5])
+- run([1, 3], [3, 1, 2])
+- run([7, 2, 9], [2, 7, 1, 9])
+- [(lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(1000)), list(range(999, -1, -1)))), (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([i * 7919 % 1000 for i in range(999, -1, -1)], [i * 7919 % 1000 for i in range(1000)]))]
+fail[2]: The 2's next greater element is the 3; the 4 has none.
+fail[3]: One number, with nothing to its right.
+fail[4]: nums1 isn't in the same order as nums2: look each number up.
+fail[5]: The 7's next greater element is the 9, past the smaller 1.
+fail[6]: Lists of 1000 numbers, one of them only going down. Finding each number of nums1 in nums2 and scanning to its right is O(m × n).
+edges:
+- no number has a next greater element :: next_greater_element(nums1, nums2).count(-1) == len(nums1) :: run([2], [1, 2])
+- every number has one :: -1 not in next_greater_element(nums1, nums2) :: run([1], [1, 2])
+- some have one and some don't :: 0 < next_greater_element(nums1, nums2).count(-1) < len(nums1) :: run([1, 2], [1, 2])
+edge_count: 2
+complexity: time=O(m + n) | space=O(n)
+complexity_options: O(m + n); O(m × n); O(m)
+complexity_note: m is the length of nums1 and n the length of nums2.
+why_time: One pass over nums2 pushes and pops each number at most once, and each lookup for nums1 is O(1).
+why_space: The stack and the dictionary each hold up to n numbers.
+hint: Loop `for x in nums2:`, and `while stack and stack[-1] < x:` set `answer[stack.pop()] = x`. Then `stack.append(x)`.
+hint: The numbers are all different, so the stack can hold the numbers themselves, not indexes.
+hint: Build the result with `answer.get(x, -1)` for each x in nums1.
+right: One pass over nums2 answers every number in it, so each number of nums1 is a dictionary lookup instead of a search.
+wrong: Walk nums2 with a decreasing stack; when x pops a number, store x as that number's answer in a dictionary; then look up each number of nums1, with -1 for any number that was never popped.
 
 === task: code easy
-title: One answer by scanning
-prompt: Write `next_greater_of(nums, i)` that returns the next greater element of `nums[i]`: the first number to its right that's bigger than it, or -1 if there isn't one. Scan to the right with a loop.
+title: Answered on Arrival
+patterns: next
+prompt: In a list nums, a number x answers every earlier number whose next greater element it is: the first number to their right that's bigger. Write `answered(nums)` that returns a list with, for each number, how many earlier numbers it answers.
 
-For example, `next_greater_of([2, 1, 5, 3, 4], 3)` returns 4.
+This is the next greater element loop with a different thing to record. Walk left to right with a stack of the indexes still waiting. Each index that x pops has found its answer, x, so count the pops: they're the numbers x answers.
+
+**Example 1:** `run([2, 1, 5, 3, 4])` returns `[0, 0, 2, 0, 1]`. The 5 answers the 2 and the 1; the 4 answers the 3.
+
+**Example 2:** `run([3, 3, 4])` returns `[0, 0, 2]`. The second 3 isn't bigger than the first, so the 4 answers both.
+
+**Constraints:** 1 ≤ len(nums) ≤ 2 × 10⁴, and 0 ≤ each number ≤ 10⁹.
 starter:
 ```python
-def next_greater_of(nums, i):
+def answered(nums):
+    counts = [0] * len(nums)
+    stack = []
     # your code here
-    return -1
+    return counts
+
+
+def run(nums):
+    return answered(nums)
 ```
 solution:
 ```python
-def next_greater_of(nums, i):
-    for j in range(i + 1, len(nums)):
-        if nums[j] > nums[i]:
-            return nums[j]
-    return -1
-```
-tests:
-- next_greater_of([2, 1, 5, 3, 4], 3)
-- next_greater_of([2, 1, 5, 3, 4], 0)
-- next_greater_of([2, 1, 5, 3, 4], 2)
-- next_greater_of([2, 1, 5, 3, 4], 4)
-- next_greater_of([4, 4, 5], 0)
-fail[1]: To the right of the 3 is the 4, which is bigger.
-fail[2]: Scanning right from 2: 1 isn't bigger, 5 is.
-fail[5]: An equal number isn't greater: the answer is the 5.
-hint: Loop `for j in range(i + 1, len(nums)):`.
-hint: Return `nums[j]` at the first `nums[j] > nums[i]`; after the loop, return -1.
-right: One answer costs up to n − i − 1 checks. Doing this for every index gives the O(n²) way; the monotonic stack finds all the answers in O(n).
-wrong: Look at the numbers after index i in order, and return the first one bigger than `nums[i]`, or -1 if none is.
-
-=== task: predict easy
-title: What's left waiting?
-code:
-```python
-nums = [5, 4, 6, 2, 3]
-stack = []
-for i in range(len(nums)):
-    while stack and nums[stack[-1]] < nums[i]:
-        stack.pop()
-    stack.append(i)
-print(stack)
-```
-wrong[[4]]: When 3 (index 4) arrives, it pops the 2 (index 3), but the 6 (index 2) isn't smaller than 3, so it stays.
-wrong[[6, 3]]: The stack holds indexes, not values: index 2 holds 6 and index 4 holds 3.
-wrong[[0, 1, 2, 3, 4]]: The 6 pops the waiting 5 and 4, because they're smaller.
-hint: The 6 at index 2 pops indexes 1 and 0.
-hint: The 3 at index 4 pops index 3, whose value is 2.
-right: `[2, 4]`: the 6 and the 3 never meet a bigger number after them. Their values, 6 then 3, decrease from bottom to top.
-wrong: i = 0, 1: push 0 and 1. i = 2: 6 pops 1 and 0, then is pushed. i = 3: push 3. i = 4: 3 pops index 3 (value 2) but not index 2 (value 6): `[2, 4]`.
-
-=== task: multi easy
-title: Why it's O(n)
-prompt: `next_greater` has a `while` loop inside a `for` loop, yet it's O(n). Choose **every** sentence that helps explain why.
-* Every index is pushed exactly once :: Right. n pushes in all.
-* An index that has been popped never goes back on the stack :: Right. So each index is popped at most once.
-* All the `while` passes together pop at most n indexes :: Right. Each pass pops one, and there are at most n to pop.
-* One step that pops many indexes leaves fewer to pop later :: Right. The work evens out over the whole run.
-- The `while` loop runs at most once for each `i` :: One `i` can pop many indexes; it's the total over all of them that's limited.
-- The list must be sorted first :: Nothing is sorted. The argument works for any list.
-hint: Count pushes and pops over the whole run, not per step.
-hint: Four of them are true.
-right: At most n pushes and n pops, so all the inner loops together do O(n) work: O(n) in total, like amortized appends.
-wrong: Each index is pushed once and popped at most once, so the inner loop's passes add up to at most n. One step can do a lot of popping; it can't happen often.
-
-=== task: parsons easy
-title: The next greater element
-prompt: Arrange the lines so that `next_greater` uses a stack of waiting indexes, and the program prints:
-
-```output
-[5, 5, -1, 4, -1]
-```
-
-Not every line is needed.
-lines:
-```python
-def next_greater(nums):
-    result = [-1] * len(nums)
+def answered(nums):
+    counts = [0] * len(nums)
     stack = []
     for i in range(len(nums)):
         while stack and nums[stack[-1]] < nums[i]:
-            result[stack.pop()] = nums[i]
+            stack.pop()
+            counts[i] += 1
         stack.append(i)
-    return result
+    return counts
 
-print(next_greater([2, 1, 5, 3, 4]))
-```
-distractors:
-```python
-        stack.append(nums[i])
-            result[stack.pop()] = nums[stack[-1]]
-```
-hint: The stack holds indexes, so that the answer can be written into `result`.
-hint: Pop while the waiting number on top is smaller than `nums[i]`.
-right: Each new number first answers every smaller number waiting on the stack, then waits itself. Pushing values instead of indexes would lose track of where the answers go.
-wrong: Start `result` as all -1 and the stack empty. For each i: while the top's number is smaller than `nums[i]`, pop it and set its answer to `nums[i]`; then push i.
 
-=== task: cells easy
-title: Next greater elements
-prompt: What is the next greater element of each number in `[4, 2, 6, 1]`? Write -1 if there isn't one.
-labels: 4 | 2 | 6 | 1
-answer: 6 | 6 | -1 | -1
-wrong[2 | 6 | -1 | -1]: The next greater element must be **bigger**: 2 is smaller than 4, so 4's answer is 6.
-wrong[6 | 6 | -1 | 1]: Nothing comes after the 1, so it has no greater element: -1.
-hint: Look to the right of each number for the first bigger one.
-hint: 6 is the biggest, so it has no answer.
-right: 4 → 6, 2 → 6, and 6 and 1 have nothing bigger after them.
-wrong: Right of 4: 2 (smaller), 6 (bigger): 6. Right of 2: 6. Right of 6: only 1: -1. Right of 1: nothing: -1.
-
-=== task: mcq easy
-title: Increasing or decreasing?
-prompt: To find the next **smaller** element of every number, how should the stack be kept?
-* Increasing from bottom to top: pop while the top is bigger than the new number :: Right. The new number is the next smaller element of every bigger number it pops.
-- Decreasing from bottom to top: pop while the top is smaller than the new number :: That finds the next greater element.
-- Sorted from smallest to biggest before starting :: Nothing is sorted: the order on the stack comes from the popping.
-- It doesn't matter which way :: The direction decides what the stack finds: greater or smaller.
-hint: Which waiting numbers does a new number answer when looking for "next smaller"?
-hint: Those are the bigger ones.
-right: For "next smaller", a new number answers every bigger waiting number, so those are popped, and what's left is increasing.
-wrong: Pop the waiting numbers bigger than the new one: they've found their next smaller element. The stack stays increasing.
-
-=== task: predict easy
-title: A warmer day
-code:
-```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
-    stack = []
-    for i in range(len(temps)):
-        while stack and temps[stack[-1]] < temps[i]:
-            j = stack.pop()
-            answer[j] = i - j
-        stack.append(i)
-    return answer
-
-print(daily_temperatures([30, 31, 29, 33]))
-```
-wrong[[31, 33, 33, 0]]: The answer is the number of days to wait, `i - j`, not the warmer temperature.
-wrong[[1, 2, 1, 1]]: Nothing after day 3 is warmer, so its answer stays 0.
-wrong[[1, 1, 1, 0]]: Day 1 (31) waits until day 3 (33): 2 days, because day 2 (29) is colder.
-hint: Day 0 (30) is followed straight away by 31.
-hint: Day 1 (31) has to wait for the 33 on day 3.
-right: 1, 2, 1, 0: each answer is the distance from a day to its next warmer day.
-wrong: Day 0 → day 1: 1. Day 1 → day 3: 2. Day 2 → day 3: 1. Day 3: never: 0.
-
-=== task: code medium
-title: All the next greater elements
-prompt: Write `next_greater(nums)` that returns a list with the next greater element of every number (-1 where there isn't one). It must be O(n): use a stack of the indexes still waiting for their answer.
-
-For example, `next_greater([2, 1, 5, 3, 4])` returns `[5, 5, -1, 4, -1]`.
-starter:
-```python
-def next_greater(nums):
-    result = [-1] * len(nums)
-    stack = []
-    # your code here
-    return result
-```
-solution:
-```python
-def next_greater(nums):
-    result = [-1] * len(nums)
-    stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] < nums[i]:
-            result[stack.pop()] = nums[i]
-        stack.append(i)
-    return result
+def run(nums):
+    return answered(nums)
 ```
 tests:
-- next_greater([2, 1, 5, 3, 4])
-- next_greater([])
-- next_greater([1, 2, 3])
-- next_greater([3, 2, 1])
-- next_greater([2, 2, 3])
-- next_greater([5, 1, 4, 2, 6])
-speed: setup=nums = list(range(n, 0, -1)) | call=next_greater(nums) | target=O(n)
-slow:
-```python
-def next_greater(nums):
-    result = [-1] * len(nums)
-    stack = []
-    for i in range(len(nums)):
-        for j in range(i + 1, len(nums)):
-            if nums[j] > nums[i]:
-                result[i] = nums[j]
-                break
-    return result
-```
-fail[1]: The 5 answers both the 2 and the 1; the 4 answers the 3.
-fail[3]: In an increasing list, each number's answer is the very next one.
-fail[4]: In a decreasing list, nothing has a bigger number after it: all -1.
-fail[5]: Equal isn't greater: both 2s get the 3.
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: For each i: while the stack isn't empty and `nums[stack[-1]] < nums[i]`, pop the index and set its answer to `nums[i]`.
-hint: Then push i.
-hint: Indexes left on the stack at the end keep -1.
-right: Each index is pushed once and popped at most once: O(n). Scanning to the right for every number would be O(n²) on a list that only goes down.
-wrong: Walk left to right with a stack of waiting indexes; each new number pops and answers the smaller ones, then is pushed itself.
+- run([2, 1, 5, 3, 4])
+- run([5, 4, 3])
+- run([1, 2, 3])
+- run([7])
+- run([3, 3, 4])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(10000, 0, -1)) + [10001] + [i * 7919 % 10007 for i in range(2000)]))
+fail[2]: Numbers that only go down: no number is bigger than one before it, so nothing is answered.
+fail[3]: Numbers that only go up: each one answers the number straight before it.
+fail[4]: One number answers nothing.
+fail[5]: An equal number isn't bigger: the 4 answers both 3s.
+fail[6]: 12,001 numbers: 10,000 going down, then 10,001, which answers all 10,000. Searching to the right of each number for its answer is O(n²).
+edges:
+- nothing is answered :: sum(answered(nums)) == 0 :: run([3, 2, 1])
+- a number answers several :: max(answered(nums)) >= 2 :: run([2, 1, 5])
+- answers, but at most one each :: max(answered(nums)) == 1 :: run([1, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each index is pushed once and popped at most once, and each pop adds 1 to a count.
+why_space: The stack can hold every index, in a list that only goes down, and the answer has n counts.
+hint: Loop `for i in range(len(nums)):`, then `while stack and nums[stack[-1]] < nums[i]:`.
+hint: Inside the `while`, pop and add 1 to `counts[i]`: nums[i] is the answer of the index it popped.
+hint: After the `while`, push i.
+right: x pops exactly the numbers whose next greater element is x, so counting the pops counts the numbers x answers, in one O(n) pass.
+wrong: Run the next greater element loop with a stack of indexes, and each time the number at i pops an index, add 1 to counts[i].
 
-=== task: code medium
-title: Daily temperatures
-prompt: Write `daily_temperatures(temps)` that returns, for each day, how many days you'd wait for a warmer day (0 if none comes). A day with the same temperature isn't warmer. It must be O(n): use a stack of the days still waiting.
+=== task: code easy
+title: Next Cheaper Price
+patterns: next
+prompt: prices[i] is the price of an item on day i. Write `next_cheaper(prices)` that returns a list with, for each day, the first later price that's lower than that day's price, or -1 if no later price is lower.
 
-For example, `daily_temperatures([21, 19, 23, 22, 20, 25])` returns `[2, 1, 3, 2, 1, 0]`.
+This is the next smaller element. Keep an **increasing** stack of the days still waiting for a cheaper price, and pop while the price on top is higher than today's: today's price is their answer.
+
+**Example 1:** `run([8, 4, 6, 2, 3])` returns `[4, 2, 2, -1, -1]`. The 8 is followed by the 4; the 4 and the 6 both find the 2; nothing after the 2 or the 3 is lower.
+
+**Example 2:** `run([10, 1, 10, 5])` returns `[1, -1, 5, -1]`.
+
+**Constraints:** 1 ≤ len(prices) ≤ 2 × 10⁴, and 0 ≤ each price ≤ 10⁹.
 starter:
 ```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
-    stack = []
-    # your code here
-    return answer
-```
-solution:
-```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
-    stack = []
-    for i in range(len(temps)):
-        while stack and temps[stack[-1]] < temps[i]:
-            j = stack.pop()
-            answer[j] = i - j
-        stack.append(i)
-    return answer
-```
-tests:
-- daily_temperatures([21, 19, 23, 22, 20, 25])
-- daily_temperatures([30, 40, 50, 60])
-- daily_temperatures([60, 50, 40])
-- daily_temperatures([20, 20, 21])
-- daily_temperatures([])
-- daily_temperatures([25])
-speed: setup=temps = list(range(n, 0, -1)) | call=daily_temperatures(temps) | target=O(n)
-slow:
-```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
-    stack = []
-    for i in range(len(temps)):
-        for j in range(i + 1, len(temps)):
-            if temps[j] > temps[i]:
-                answer[i] = j - i
-                break
-    return answer
-```
-fail[1]: Day 0 (21) waits 2 days for 23; day 2 (23) waits 3 days for 25.
-fail[2]: Every day is followed straight away by a warmer one: all 1, except the last day, 0.
-fail[3]: It only gets colder, so no day finds a warmer one: all 0.
-fail[4]: Day 1 has the same temperature as day 0, which isn't warmer: day 0 waits 2 days, for the 21.
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: The stack holds day numbers (indexes), so you can work out distances.
-hint: While the day on top is colder than today, pop it as j and set `answer[j] = i - j`.
-hint: Then push today, i.
-right: The same O(n) pattern as next greater, with the answer being a distance, `i - j`: that's why the stack holds indexes.
-wrong: For each day i, pop every waiting day j colder than day i and record `i - j` days; then push i. Days still waiting at the end keep 0.
-
-=== task: predict medium
-title: The stack, step by step
-code:
-```python
-nums = [1, 3, 2, 4]
-stack = []
-for i in range(len(nums)):
-    while stack and nums[stack[-1]] < nums[i]:
-        stack.pop()
-    stack.append(i)
-    print(stack)
-```
-wrong[[0]\n[0, 1]\n[0, 1, 2]\n[0, 1, 2, 3]]: Each new number first pops the waiting numbers smaller than it: 3 pops the 1 at index 0.
-wrong[[1]\n[3]\n[3, 2]\n[4]]: The stack holds indexes, not values.
-wrong[[0]\n[1]\n[1, 2]\n[2, 3]]: 4 is bigger than both 2 and 3, so it pops index 2 and then index 1: only 3 is left.
-hint: At i = 1, the 3 pops index 0 (the 1).
-hint: At i = 3, the 4 pops indexes 2 and 1.
-right: `[0]`, `[1]`, `[1, 2]`, `[3]`: the values on the stack (1; 3; 3, 2; 4) are always decreasing from bottom to top.
-wrong: i = 0: push 0. i = 1: 3 pops 0, push 1. i = 2: 2 is smaller than 3, push 2. i = 3: 4 pops 2 and 1, push 3.
-
-=== task: fill medium
-title: How long to wait?
-prompt: Fill in the blanks so that each day's answer is the number of days until a warmer one, and the program prints:
-
-```output
-[1, 1, 0]
-```
-code:
-```python
-temps = [20, 22, 25]
-answer = [0] * len(temps)
-stack = []
-for i in range(len(temps)):
-    while stack and temps[stack[-1]] < temps[i]:
-        j = stack.pop()
-        answer[j] = ?? - ??
-    stack.append(i)
-print(answer)
-```
-answer: i | j
-wrong[j | i]: That's the distance backwards: `j` is the earlier day, so `j - i` is negative.
-hint: `j` is the waiting day, and `i` is the warmer day that has now arrived.
-hint: The later day minus the earlier day.
-right: `i - j` is how many days after day j the warmer day i comes.
-wrong: Day j waits until day i, which is `i - j` days later.
-
-=== task: cells medium
-title: The stack after each number
-prompt: `next_greater` runs on `[3, 1, 4, 1, 5]`. Which indexes are on its stack after each i? Write them from bottom to top, separated by commas.
-labels: after i = 1 | after i = 2 | after i = 3 | after i = 4
-answer: 0, 1 | 2 | 2, 3 | 4
-wrong[1 | 2 | 3 | 4]: At i = 1 the 1 isn't bigger than the 3, so index 0 stays, with index 1 on top of it.
-wrong[0, 1 | 0, 1, 2 | 0, 1, 2, 3 | 0, 1, 2, 3, 4]: A new number first pops every smaller waiting number: the 4 pops both 1 and 3.
-hint: At i = 2, the 4 pops index 1 (value 1) and index 0 (value 3).
-hint: At i = 4, the 5 pops everything that's waiting.
-right: 0, 1 → 2 → 2, 3 → 4. Each index goes on once and comes off at most once.
-wrong: i = 1: push 1 on top of 0. i = 2: 4 pops 1 and 0, push 2. i = 3: push 3. i = 4: 5 pops 3 and 2, push 4.
-
-=== task: order medium
-title: A new number arrives
-prompt: Put the steps for handling a new number x in `next_greater` in order.
-items:
-- Look at the index on top of the stack
-- If its number is smaller than x, pop it and record x as its answer
-- Repeat until the stack is empty or its top number isn't smaller than x
-- Push x's index
-hint: x answers the waiting numbers before it starts waiting itself.
-hint: The popping goes on as long as the top number is smaller.
-right: Check the top, pop and answer while it's smaller, then push: the stack stays decreasing.
-wrong: Look at the top; pop it and record x while its number is smaller than x; when that stops, push x's index.
-
-=== task: predict medium
-title: Next smaller
-code:
-```python
-def next_smaller(nums):
-    result = [-1] * len(nums)
-    stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] > nums[i]:
-            result[stack.pop()] = nums[i]
-        stack.append(i)
-    return result
-
-print(next_smaller([5, 3, 4, 1]))
-```
-wrong[[-1, 4, -1, -1]]: This version pops while the top is **bigger**, so it finds the next smaller element, not the next greater one.
-wrong[[3, 1, 3, -1]]: The next smaller element of 4 is the first smaller number to its right: 1.
-wrong[[3, 1, 1, 1]]: Nothing comes after the 1, so it keeps -1.
-hint: Look to the right of each number for the first smaller one.
-hint: 3 pops 5; 1 pops 4 and 3.
-right: 5 → 3, 3 → 1, 4 → 1, and 1 → -1. Flipping the comparison flips what the stack finds.
-wrong: 3 arrives and pops 5 (answer 3). 4 is pushed. 1 pops 4 and 3 (answer 1 for both). The 1 never finds a smaller number.
-
-=== task: mcq medium
-title: The cost of the inner loop
-prompt: In `daily_temperatures`, a single day can pop many waiting days at once. Why doesn't that make the function O(n²)?
-* Each day is pushed once and popped at most once, so all the pops over the whole run add up to at most n :: Right. A day that pops a lot uses up waiting days that can't be popped again.
-- The `while` loop never pops more than one day at a time :: It can pop many: a very warm day pops every colder day waiting.
-- Temperatures don't vary much, so few days are popped :: The argument works for any temperatures.
-- It is O(n²), but only on very long lists :: Big O describes how the work grows; here it grows like n.
-hint: How many times can one day be popped?
-hint: Count the pops over the whole run.
-right: The total work is at most n pushes and n pops, whatever the order of the temperatures: O(n).
-wrong: One step may pop many days, but each day can only be popped once in the whole run, so all the popping together is at most n.
-
-=== task: multi medium
-title: True about the decreasing stack
-prompt: Choose **every** true sentence about the stack in `next_greater`.
-* Its values decrease from bottom to top :: Right. Anything smaller than a new number is popped before it's pushed.
-* The top is the waiting number seen most recently :: Right. It was pushed last.
-* An index that has been popped never comes back :: Right. Once it has its answer, it's done.
-* Indexes left at the end have no next greater element :: Right. Their answer stays -1.
-- It holds the numbers sorted from biggest to smallest across the whole list :: It only holds the numbers still waiting, not the whole list.
-- Its size is always 1 at the end :: In a decreasing list, every index is still waiting at the end.
-hint: What happens to smaller numbers when a bigger one arrives?
-hint: Four of them are true.
-right: Decreasing values, most recent on top, each index popped at most once, and the leftovers never find an answer.
-wrong: True: decreasing from bottom to top, the most recent on top, no index popped twice, leftovers keep -1. False: it isn't the whole list sorted, and it can end with many indexes.
-
-=== task: code medium
-title: All the next smaller elements
-prompt: Write `next_smaller(nums)` that returns a list with the next smaller element of every number: the first number to its right that's smaller than it, or -1 if there isn't one. It must be O(n): keep an increasing stack of waiting indexes.
-
-For example, `next_smaller([4, 2, 6, 3, 5])` returns `[2, -1, 3, -1, -1]`.
-starter:
-```python
-def next_smaller(nums):
-    result = [-1] * len(nums)
+def next_cheaper(prices):
+    result = [-1] * len(prices)
     stack = []
     # your code here
     return result
+
+
+def run(prices):
+    return next_cheaper(prices)
 ```
 solution:
 ```python
-def next_smaller(nums):
-    result = [-1] * len(nums)
-    stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] > nums[i]:
-            result[stack.pop()] = nums[i]
-        stack.append(i)
-    return result
-```
-tests:
-- next_smaller([4, 2, 6, 3, 5])
-- next_smaller([1, 2, 3])
-- next_smaller([3, 2, 1])
-- next_smaller([])
-- next_smaller([2, 2, 1])
-speed: setup=nums = list(range(n)) | call=next_smaller(nums) | target=O(n)
-slow:
-```python
-def next_smaller(nums):
-    result = [-1] * len(nums)
-    stack = []
-    for i in range(len(nums)):
-        for j in range(i + 1, len(nums)):
-            if nums[j] < nums[i]:
-                result[i] = nums[j]
-                break
-    return result
-```
-fail[1]: 2 is smaller than 4; 3 is smaller than 6; nothing after 2, 3 or 5 is smaller than them.
-fail[2]: In an increasing list, nothing has a smaller number after it: all -1.
-fail[3]: In a decreasing list, each number's answer is the very next one.
-fail[5]: Equal isn't smaller: both 2s get the 1.
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: The same loop as `next_greater`, with the comparison flipped.
-hint: Pop while `nums[stack[-1]] > nums[i]`, setting each popped index's answer to `nums[i]`.
-hint: Then push i.
-right: An increasing stack, O(n): each index pushed once and popped at most once.
-wrong: Walk left to right; each new number pops and answers the bigger waiting numbers, then is pushed.
-
-=== task: code hard
-title: Stock span
-prompt: The **span** of a stock price on day i is the number of days in a row, ending on day i, on which the price was at most the price on day i. Write `spans(prices)` that returns the span of every day. It must be O(n): keep a decreasing stack of earlier days; for each day, pop the days whose price isn't higher, and the day left on top (if any) is the previous higher price.
-
-For example, `spans([100, 80, 60, 70, 60, 75, 85])` returns `[1, 1, 1, 2, 1, 4, 6]`.
-starter:
-```python
-def spans(prices):
-    result = []
-    stack = []
-    # your code here
-    return result
-```
-solution:
-```python
-def spans(prices):
-    result = []
+def next_cheaper(prices):
+    result = [-1] * len(prices)
     stack = []
     for i in range(len(prices)):
-        while stack and prices[stack[-1]] <= prices[i]:
+        while stack and prices[stack[-1]] > prices[i]:
+            result[stack.pop()] = prices[i]
+        stack.append(i)
+    return result
+
+
+def run(prices):
+    return next_cheaper(prices)
+```
+tests:
+- run([8, 4, 6, 2, 3])
+- run([1, 2, 3])
+- run([5])
+- run([3, 3, 1])
+- run([10, 1, 10, 5])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(1, 10001)) + [0] + [i * 7919 % 10007 for i in range(2000)]))
+fail[2]: Prices that only go up: no later price is ever lower.
+fail[3]: One price.
+fail[4]: An equal price isn't lower: both 3s find the 1.
+fail[5]: The second 10 waits for the 5; the first finds the 1 straight away.
+fail[6]: 12,001 prices: 10,000 going up, then a 0 that's lower than all of them. Scanning ahead from each day is O(n²).
+edges:
+- no price is followed by a lower one :: next_cheaper(prices).count(-1) == len(prices) :: run([1, 2])
+- every day but the last finds one :: len(prices) > 1 and next_cheaper(prices).count(-1) == 1 :: run([3, 2, 1])
+- some days find one and some don't :: 1 < next_cheaper(prices).count(-1) < len(prices) :: run([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of prices.
+why_time: Each day is pushed once and popped at most once.
+why_space: The stack can hold every day, when the prices only go up.
+hint: Loop over the days with `for i in range(len(prices)):`.
+hint: `while stack and prices[stack[-1]] > prices[i]:` set `result[stack.pop()] = prices[i]`.
+hint: After the `while`, push i. Days left on the stack keep -1.
+right: Popping while the top is higher keeps the waiting prices increasing, and each pop hands a day the first lower price after it.
+wrong: Keep an increasing stack of days; when today's price is lower than the price on top, pop that day and give it today's price as its answer; push today; days never popped keep -1.
+
+=== task: code easy
+title: Nearest Shorter on the Left
+patterns: prev
+prompt: heights[i] is the height of the i-th person in a line, all facing the same way. Write `nearest_shorter(heights)` that returns a list with, for each person, the height of the nearest shorter person on their left, or 0 if nobody on their left is shorter.
+
+This uses the item left on top. Keep an increasing stack of heights. For each person, first pop every height that isn't shorter than theirs: those people are hidden from everyone further right by this person. The height left on top, if there is one, is the nearest shorter person. Then push this person's height.
+
+**Example 1:** `run([3, 1, 4, 1, 5])` returns `[0, 0, 1, 0, 1]`. The 4's nearest shorter person is the 1 before it; the second 1 has nobody shorter on its left.
+
+**Example 2:** `run([2, 6, 4, 5])` returns `[0, 2, 2, 4]`. The 4 looks past the taller 6 to the 2.
+
+**Constraints:** 1 ≤ len(heights) ≤ 2 × 10⁴, and 1 ≤ each height ≤ 10⁹.
+starter:
+```python
+def nearest_shorter(heights):
+    result = []
+    stack = []
+    # your code here
+    return result
+
+
+def run(heights):
+    return nearest_shorter(heights)
+```
+solution:
+```python
+def nearest_shorter(heights):
+    result = []
+    stack = []
+    for h in heights:
+        while stack and stack[-1] >= h:
             stack.pop()
         if stack:
-            result.append(i - stack[-1])
+            result.append(stack[-1])
         else:
-            result.append(i + 1)
-        stack.append(i)
+            result.append(0)
+        stack.append(h)
     return result
+
+
+def run(heights):
+    return nearest_shorter(heights)
 ```
 tests:
-- spans([100, 80, 60, 70, 60, 75, 85])
-- spans([10, 20, 30])
-- spans([30, 20, 10])
-- spans([5, 5, 5])
-- spans([])
-- spans([10, 4, 5, 90, 120, 80])
-speed: setup=prices = list(range(n)) | call=spans(prices) | target=O(n)
-slow:
+- run([3, 1, 4, 1, 5])
+- run([1, 2, 3])
+- run([5, 5, 5])
+- run([7])
+- run([2, 6, 4, 5])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([1] + list(range(10000, 1, -1)) + [i * 7919 % 10007 + 1 for i in range(2000)]))
+fail[2]: Heights that only go up: each person's nearest shorter person is straight before them.
+fail[3]: Equal heights aren't shorter, so nobody finds anyone.
+fail[4]: One person.
+fail[5]: The 4 looks past the 6 to the 2; the 5 finds the 4.
+fail[6]: 12,000 heights: a 1, then 10,000 going down, so each looks back past every taller person to the 1. Looking back from each person is O(n²).
+edges:
+- nobody has a shorter person on their left :: nearest_shorter(heights).count(0) == len(heights) :: run([3, 2, 1])
+- everyone but the first has one :: len(heights) > 1 and nearest_shorter(heights).count(0) == 1 :: run([1, 2, 3])
+- some have one and some don't :: 1 < nearest_shorter(heights).count(0) < len(heights) :: run([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of heights.
+why_time: Each height is pushed once and popped at most once.
+why_space: The stack can hold every height, when they only go up.
+hint: Loop `for h in heights:`, and `while stack and stack[-1] >= h:` pop.
+hint: After the popping, append `stack[-1]` to the result if the stack isn't empty, or 0 if it is.
+hint: Then push h.
+right: A person who isn't shorter than a newcomer can never be anyone's answer again, because the newcomer is shorter and nearer, so popping them leaves the nearest shorter person on top.
+wrong: Keep an increasing stack of heights; for each person, pop every height that isn't shorter, take the top (or 0 if the stack is empty) as their answer, then push their height.
+
+=== task: code easy
+title: Hungry Fish
+patterns: carry
+prompt: Fish join the back of a line one at a time, with the sizes in sizes. When a fish joins, it eats the fish in front of it if that fish is smaller, and grows by the eaten fish's size. It keeps eating while the fish in front of it is smaller, and stops at a fish at least as big as itself, or when nobody is left in front. Write `hungry_fish(sizes)` that returns the sizes of the fish left in the line, front first, after every fish has joined.
+
+The line is a stack, with its back as the top. Each entry carries a fish's size so far. When a new fish arrives, pop while the top is smaller, adding each popped size to the new fish, then push its new size.
+
+**Example 1:** `run([4, 2, 3])` returns `[9]`. The 3 eats the 2 and grows to 5; then the 5 eats the 4 and grows to 9.
+
+**Example 2:** `run([10, 1, 1, 1, 2])` returns `[10, 5]`. The 2 eats three 1s, growing to 3, then 4, then 5, but the 10 is too big.
+
+**Constraints:** 1 ≤ len(sizes) ≤ 2 × 10⁴, and 1 ≤ each size ≤ 10⁴.
+starter:
 ```python
-def spans(prices):
+def hungry_fish(sizes):
+    line = []
+    # your code here
+    return line
+
+
+def run(sizes):
+    return hungry_fish(sizes)
+```
+solution:
+```python
+def hungry_fish(sizes):
+    line = []
+    for s in sizes:
+        while line and line[-1] < s:
+            s += line.pop()
+        line.append(s)
+    return line
+
+
+def run(sizes):
+    return hungry_fish(sizes)
+```
+tests:
+- run([4, 2, 3])
+- run([1, 2, 3])
+- run([5])
+- run([3, 3, 3])
+- run([10, 1, 1, 1, 2])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([i * 7919 % 1009 + 1 for i in range(12000)]))
+fail[2]: The 2 eats the 1 and grows to 3. The next fish, a 3, isn't bigger than that, so it can't eat it.
+fail[3]: One fish.
+fail[4]: Fish of equal size don't eat each other.
+fail[5]: The 2 eats three 1s one after another, growing as it goes.
+fail[6]: 12,000 fish; the biggest grows to 1,576,356.
+edges:
+- no fish eats :: len(hungry_fish(sizes)) == len(sizes) :: run([3, 2, 1])
+- one fish is left :: len(sizes) > 1 and len(hungry_fish(sizes)) == 1 :: run([1, 2])
+- some fish eat, and more than one is left :: 1 < len(hungry_fish(sizes)) < len(sizes) :: run([5, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of sizes.
+why_time: Each fish joins the line once and is eaten at most once.
+why_space: The line can hold every fish, when none of them eats.
+hint: Loop `for s in sizes:`, with s as the new fish's size.
+hint: `while line and line[-1] < s:` add `line.pop()` to s.
+hint: After the `while`, push s.
+right: A fish only ever eats from the back of the line, and grows as it eats, so the line is a stack whose entries carry each fish's size so far; each fish is pushed once and popped at most once.
+wrong: Keep the line as a stack; for each new fish, pop every smaller fish at the back, adding its size to the new fish, then push the new fish's size.
+
+=== task: code easy
+title: Rain Before a Wetter Day
+patterns: carry
+prompt: rain[i] is how much rain fell on day i. For each day, look back at the days right before it that each had less rain than it, stopping at the first earlier day with at least as much rain. Write `rain_before(rain)` that returns a list with, for each day, the total rain on those days, or 0 if the day before already had at least as much.
+
+Carry totals on the stack. Each entry is a pair, `(day's rain, total)`, where total is that day's own answer: the rain on the drier days it covers. When a new day pops an entry, it takes over both: the popped day's rain, and the days that day covered.
+
+**Example 1:** `run([3, 1, 2, 5, 4])` returns `[0, 0, 1, 6, 0]`. The 5 covers the 2, which covers the 1, and the 3 before them: 2 + 1 + 3 = 6.
+
+**Example 2:** `run([5, 1, 1, 3])` returns `[0, 0, 0, 2]`. The second 1 has the same rain as the first, so it covers nothing.
+
+**Constraints:** 1 ≤ len(rain) ≤ 2 × 10⁴, and 0 ≤ each amount ≤ 10⁵.
+starter:
+```python
+def rain_before(rain):
     result = []
     stack = []
-    for i in range(len(prices)):
-        span = 1
-        j = i - 1
-        while j >= 0 and prices[j] <= prices[i]:
-            span += 1
-            j -= 1
-        result.append(span)
-    return result
-```
-fail[1]: 75 on day 5 covers days 2 to 5, and the 80 on day 1 stops it: 4. 85 on day 6 covers everything back to the 100: 6.
-fail[2]: Prices that keep rising cover every earlier day: 1, 2, 3.
-fail[3]: Falling prices cover only their own day: all 1.
-fail[4]: Equal prices count ("at most"), so the spans are 1, 2, 3.
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: Pop while `prices[stack[-1]] <= prices[i]`: those days are covered by today.
-hint: If a day is left on top, the span is `i - stack[-1]`; if the stack is empty, it's `i + 1`.
-hint: Then push i.
-right: Each day is pushed once and popped at most once: O(n). Walking back from every day would be O(n²) for prices that keep rising.
-wrong: For each day, pop the earlier days that aren't higher; the span reaches back to the day left on top (or to day 0); then push today.
-
-=== task: code hard
-title: Next greater in a circle
-prompt: The numbers in `nums` stand in a circle: after the last one comes the first again. Write `next_greater_circular(nums)` that returns, for each number, the first bigger number going round the circle from it (-1 if there isn't one). It must be O(n).
-
-Go round twice: for `k` from 0 to `2n − 1`, the number is `nums[k % n]`. Pop and answer smaller waiting indexes as usual, but only push indexes during the first round.
-
-For example, `next_greater_circular([1, 2, 1])` returns `[2, -1, 2]`.
-starter:
-```python
-def next_greater_circular(nums):
-    n = len(nums)
-    result = [-1] * n
-    stack = []
     # your code here
     return result
+
+
+def run(rain):
+    return rain_before(rain)
 ```
 solution:
 ```python
-def next_greater_circular(nums):
-    n = len(nums)
-    result = [-1] * n
+def rain_before(rain):
+    result = []
     stack = []
-    for k in range(2 * n):
-        i = k % n
-        while stack and nums[stack[-1]] < nums[i]:
-            result[stack.pop()] = nums[i]
-        if k < n:
-            stack.append(i)
+    for r in rain:
+        total = 0
+        while stack and stack[-1][0] < r:
+            day_rain, day_total = stack.pop()
+            total += day_rain + day_total
+        result.append(total)
+        stack.append((r, total))
     return result
+
+
+def run(rain):
+    return rain_before(rain)
 ```
 tests:
-- next_greater_circular([1, 2, 1])
-- next_greater_circular([5, 4, 3, 2, 1])
-- next_greater_circular([1, 2, 3, 4, 3])
-- next_greater_circular([7])
-- next_greater_circular([])
-- next_greater_circular([2, 2])
-speed: setup=nums = list(range(n, 0, -1)) | call=next_greater_circular(nums) | target=O(n)
-slow:
+- run([3, 1, 2, 5, 4])
+- run([2, 2, 2])
+- run([7])
+- run([1, 2, 3])
+- run([5, 1, 1, 3])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(1, 6001)) + [i * 7919 % 10007 for i in range(4000)]))
+fail[2]: A day with the same rain stops the look back: equal isn't less.
+fail[3]: One day.
+fail[4]: Rain that only goes up: each day covers every day before it.
+fail[5]: The 3 covers both 1s, and stops at the 5.
+fail[6]: 10,000 days, the first 6000 getting wetter, so each covers every day before it. Looking back day by day is O(n²).
+edges:
+- no day has a drier day straight before it :: all(rain[i] <= rain[i - 1] for i in range(1, len(rain))) :: run([3, 2, 1])
+- rain that only goes up :: len(rain) > 1 and all(rain[i] > rain[i - 1] for i in range(1, len(rain))) :: run([1, 2, 3])
+- ups and downs :: any(rain[i] > rain[i - 1] for i in range(1, len(rain))) and any(rain[i] <= rain[i - 1] for i in range(1, len(rain))) :: run([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of rain.
+why_time: Each day is pushed once and popped at most once, and each pop adds two numbers.
+why_space: The stack can hold a pair for every day, when the rain never goes up.
+hint: For each day's rain r, start with `total = 0`.
+hint: `while stack and stack[-1][0] < r:` pop `(day_rain, day_total)` and add both to total.
+hint: Append total to the result, then push `(r, total)`.
+right: A day that's popped can't be seen past by anyone later, so the day that pops it takes over its rain and everything it covered, and each day's total is built from the pairs it pops.
+wrong: Keep a stack of (rain, total) pairs; for each day, pop every pair with less rain, adding its rain and its total to today's total, then record the total and push today's pair.
+
+=== task: code easy
+title: Warmer Day in a Repeating Week
+patterns: next + round
+prompt: temps[i] is the temperature on day i of a week that repeats forever: after the last day comes the first day again. Write `wait_for_warmer(temps)` that returns a list with, for each day, how many days pass, going round the week, until a warmer day, or 0 if no day is warmer.
+
+Go round twice, as daily temperatures in a circle. Loop i over 2n steps, reading `temps[i % n]`, and keep a stack of the days still waiting. When a day is popped at step i, it waited `i - j` days, using the unwrapped i. Push days only on the first lap.
+
+**Example 1:** `run([21, 19, 23, 22, 20])` returns `[2, 1, 0, 4, 1]`. The 22 waits past the 20, 21 and 19 to the 23: 4 days. The 20 finds the 21 the next day, at the start of the next week.
+
+**Example 2:** `run([26, 24, 25])` returns `[0, 1, 1]`.
+
+**Constraints:** 1 ≤ len(temps) ≤ 10⁴, and 1 ≤ each temperature ≤ 100.
+starter:
 ```python
-def next_greater_circular(nums):
+def wait_for_warmer(temps):
+    n = len(temps)
+    answer = [0] * n
+    stack = []
+    # your code here
+    return answer
+
+
+def run(temps):
+    return wait_for_warmer(temps)
+```
+solution:
+```python
+def wait_for_warmer(temps):
+    n = len(temps)
+    answer = [0] * n
+    stack = []
+    for i in range(2 * n):
+        t = temps[i % n]
+        while stack and temps[stack[-1]] < t:
+            j = stack.pop()
+            answer[j] = i - j
+        if i < n:
+            stack.append(i)
+    return answer
+
+
+def run(temps):
+    return wait_for_warmer(temps)
+```
+tests:
+- run([21, 19, 23, 22, 20])
+- run([30, 30])
+- run([25])
+- run([20, 25])
+- run([26, 24, 25])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([100] + [30 + i * 7919 % 70 for i in range(5000)] + [99] * 3000))
+fail[2]: Equal temperatures aren't warmer, so neither day finds one.
+fail[3]: One day: it's never warmer than itself.
+fail[4]: The warmer day waits for nothing; the other finds it the next day.
+fail[5]: The 25 on the last day finds the 26 by going round to the first day.
+fail[6]: 8001 days, ending with 3000 days of 99 whose warmer day is the 100 at the start of the week. Searching round from each day is O(n²).
+edges:
+- every temperature the same :: len(set(temps)) == 1 :: run([30, 30])
+- no day needs to go round :: len(set(temps)) > 1 and all(w <= len(temps) - 1 - j for j, w in enumerate(wait_for_warmer(temps))) :: run([20, 25])
+- a day goes round to find a warmer one :: any(w > len(temps) - 1 - j for j, w in enumerate(wait_for_warmer(temps))) :: run([25, 20])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of days in the week.
+why_time: 2n steps, and each day is pushed once and popped at most once.
+why_space: The stack can hold every day, and the answer has n numbers.
+hint: Loop `for i in range(2 * n):` and read `t = temps[i % n]`.
+hint: `while stack and temps[stack[-1]] < t:` pop j and set `answer[j] = i - j`.
+hint: Push i only `if i < n`.
+right: The second lap lets the days still waiting at the end of the week find a warmer day at the start, and the unwrapped i makes i − j the number of days waited.
+wrong: Loop twice round the week with i % n, popping the days that are colder than today and giving each i − j as its answer, and push days only on the first lap.
+
+=== task: code easy
+title: Answered Round the Ring
+patterns: next + round
+prompt: The numbers in nums sit in a ring: after the last number comes the first again. A number x answers every number whose next greater element, going round the ring, is x. Write `answered_round(nums)` that returns a list with, for each number, how many numbers it answers.
+
+Combine counting pops with going round twice. Loop i over 2n steps, reading `nums[i % n]`, with a stack of the indexes still waiting. Each index popped at step i is answered by the number at index `i % n`, so add 1 to that index's count. Push indexes only on the first lap.
+
+**Example 1:** `run([2, 1, 5, 3, 4])` returns `[0, 0, 3, 0, 1]`. Going round, the 4 at the end finds the 5, so the 5 answers the 2, the 1 and the 4.
+
+**Example 2:** `run([2, 3, 1])` returns `[1, 1, 0]`. The 1 at the end finds the 2 by going round.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁴, and 0 ≤ each number ≤ 10⁹.
+starter:
+```python
+def answered_round(nums):
+    n = len(nums)
+    counts = [0] * n
+    stack = []
+    # your code here
+    return counts
+
+
+def run(nums):
+    return answered_round(nums)
+```
+solution:
+```python
+def answered_round(nums):
+    n = len(nums)
+    counts = [0] * n
+    stack = []
+    for i in range(2 * n):
+        x = nums[i % n]
+        while stack and nums[stack[-1]] < x:
+            stack.pop()
+            counts[i % n] += 1
+        if i < n:
+            stack.append(i)
+    return counts
+
+
+def run(nums):
+    return answered_round(nums)
+```
+tests:
+- run([2, 1, 5, 3, 4])
+- run([3, 3])
+- run([1])
+- run([5, 1])
+- run([2, 3, 1])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(4000, 0, -1)) + [i * 7919 % 4001 for i in range(4000)]))
+fail[2]: Equal numbers: neither is bigger, so nothing is answered.
+fail[3]: One number answers nothing.
+fail[4]: The 1 finds the 5 by going round, so the 5 answers it.
+fail[5]: The 2 answers the 1 at the end of the ring.
+fail[6]: 8000 numbers: 4000 going down, then 4000 more. Searching round from each number is O(n²).
+edges:
+- nothing is answered :: sum(answered_round(nums)) == 0 :: run([3, 3])
+- a number finds its answer by going round :: any(max(nums[j:]) == nums[j] < max(nums) for j in range(len(nums))) :: run([5, 1])
+- answers without going round :: sum(answered_round(nums)) > 0 and not any(max(nums[j:]) == nums[j] < max(nums) for j in range(len(nums))) :: run([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: 2n steps, and each index is pushed once and popped at most once.
+why_space: The stack can hold every index, and the answer has n counts.
+hint: Loop `for i in range(2 * n):` and read `x = nums[i % n]`.
+hint: `while stack and nums[stack[-1]] < x:` pop, and add 1 to `counts[i % n]`.
+hint: Push i only `if i < n`.
+right: Each number's next greater element going round is whoever pops it, on either lap, so counting the pops at i % n counts the numbers each one answers.
+wrong: Go round the ring twice with i % n and a stack of indexes; each pop adds 1 to the count of the number at i % n; push only on the first lap.
+
+=== task: code easy
+title: Smallest in How Many Subarrays
+patterns: next + prev
+prompt: A subarray is a run of neighbouring numbers in nums, of at least one number. Write `smallest_counts(nums)` that returns a list with, for each number, how many subarrays it's the smallest number of. When a subarray's smallest value appears more than once in it, the subarray counts for the leftmost of them, so the counts add up to the number of subarrays, n(n + 1) / 2.
+
+Find each index's two neighbours, as in "how far each item reaches", but for the smallest. Keep an increasing stack: pop while the top is bigger than nums[i], and i is each popped index's right neighbour. After the popping, the top is i's left neighbour, a number at most as big. Missing neighbours are -1 on the left and n on the right. Then the count is `(i - left) * (right - i)`.
+
+**Example 1:** `run([2, 4, 1, 3])` returns `[2, 1, 6, 1]`. The 1 is the smallest of every subarray that contains it: 3 places to start times 2 places to end.
+
+**Example 2:** `run([2, 1, 2, 1])` returns `[1, 6, 1, 2]`. The subarray [1, 2, 1] counts for the first 1.
+
+**Constraints:** 1 ≤ len(nums) ≤ 2 × 10⁴, and 1 ≤ each number ≤ 10⁴.
+starter:
+```python
+def smallest_counts(nums):
+    n = len(nums)
+    left = [-1] * n
+    right = [n] * n
+    stack = []
+    # your code here
+    counts = []
+    return counts
+
+
+def run(nums):
+    return smallest_counts(nums)
+```
+solution:
+```python
+def smallest_counts(nums):
+    n = len(nums)
+    left = [-1] * n
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] > nums[i]:
+            right[stack.pop()] = i
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    counts = []
+    for i in range(n):
+        counts.append((i - left[i]) * (right[i] - i))
+    return counts
+
+
+def run(nums):
+    return smallest_counts(nums)
+```
+tests:
+- run([2, 4, 1, 3])
+- run([2, 2, 2])
+- run([5])
+- run([1, 2, 3])
+- run([2, 1, 2, 1])
+- (lambda r: [len(r), r[:5], r[-5:], sum([i * c for i, c in enumerate(r)])])(run([i * 7919 % 1000 + 1 for i in range(6000)] + list(range(1, 3001))))
+fail[2]: Equal numbers: each subarray counts for its leftmost 2, so the first 2 gets the 3 subarrays that start with it.
+fail[3]: One number is the smallest of its one subarray.
+fail[4]: Numbers that only go up: each is the smallest of every subarray that starts with it.
+fail[5]: [1, 2, 1] has two 1s, and counts for the first.
+fail[6]: 9000 numbers, ending with 3000 that only go up. Spreading out from each number to see how far it reaches is O(n²).
+edges:
+- all different :: len(set(nums)) == len(nums) :: run([2, 1, 3])
+- all the same :: len(nums) > 1 and len(set(nums)) == 1 :: run([4, 4])
+- some repeated, not all :: 1 < len(set(nums)) < len(nums) :: run([1, 2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: One pass pushes and pops each index at most once, and the counts take one more pass.
+why_space: left, right, the stack and the counts each hold up to n numbers.
+hint: `while stack and nums[stack[-1]] > nums[i]:` set `right[stack.pop()] = i`.
+hint: After the `while`, `if stack:` set `left[i] = stack[-1]`. Then push i.
+hint: The count for i is `(i - left[i]) * (right[i] - i)`.
+hint: Popping only bigger numbers means the left neighbour can be an equal number, but the right one can't, so a subarray with two equal smallest numbers counts once, for the leftmost.
+right: Between its left and right neighbours, a number is the smallest, so it's the smallest of every subarray that starts after one and ends before the other; stopping at equal numbers on the left only counts each subarray exactly once.
+wrong: In one pass with an increasing stack, give each popped index its right neighbour, i, and give i the top left after popping as its left neighbour; the count is (i − left) × (right − i).
+
+=== task: code easy
+title: Nearest Taller Tower
+patterns: next + prev
+prompt: heights[i] is the height of the i-th tower in a row. Write `nearest_taller(heights)` that returns a list with, for each tower, the index of the nearest tower that's taller than it, on either side. If the nearest taller towers on the left and the right are the same distance away, choose the left one. If no tower is taller, use -1.
+
+Find both neighbours. A pass with a decreasing stack, popping while the top is shorter, gives each popped index its nearest taller tower on the right. A second pass, popping while the top isn't taller (`<=`), leaves the nearest taller tower on the left on top. Then compare the two distances.
+
+**Example 1:** `run([3, 1, 4, 1, 5])` returns `[2, 0, 4, 2, -1]`. The first 1 has taller towers 1 step away on both sides, and takes the left one, index 0.
+
+**Example 2:** `run([9, 1, 2, 8])` returns `[-1, 0, 3, 0]`. The 8 looks past the 2 and the 1 to the 9.
+
+**Constraints:** 1 ≤ len(heights) ≤ 2 × 10⁴, and 0 ≤ each height ≤ 10⁹.
+starter:
+```python
+def nearest_taller(heights):
+    n = len(heights)
+    right = [-1] * n
+    left = [-1] * n
+    # your code here
+    answer = []
+    return answer
+
+
+def run(heights):
+    return nearest_taller(heights)
+```
+solution:
+```python
+def nearest_taller(heights):
+    n = len(heights)
+    right = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and heights[stack[-1]] < heights[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and heights[stack[-1]] <= heights[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    answer = []
+    for i in range(n):
+        if left[i] == -1:
+            answer.append(right[i])
+        elif right[i] == -1 or i - left[i] <= right[i] - i:
+            answer.append(left[i])
+        else:
+            answer.append(right[i])
+    return answer
+
+
+def run(heights):
+    return nearest_taller(heights)
+```
+tests:
+- run([3, 1, 4, 1, 5])
+- run([5, 5])
+- run([7])
+- run([1, 2, 3])
+- run([9, 1, 2, 8])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([i * 7919 % 10007 for i in range(5000)] + [10007] * 2000 + list(range(3000, 0, -1))))
+fail[2]: Equal towers aren't taller.
+fail[3]: One tower.
+fail[4]: Each tower finds the next one; the tallest has none.
+fail[5]: The 1 is a tie and takes the left one; the 2 finds the 8 a step away, nearer than the 9.
+fail[6]: 10,000 towers, 2000 of them the tallest, which look all the way along for a taller one. Searching outwards from each tower is O(n²).
+edges:
+- no tower has a taller one :: nearest_taller(heights).count(-1) == len(heights) :: run([5, 5])
+- a valley between two taller towers :: any(heights[i - 1] > heights[i] < heights[i + 1] for i in range(1, len(heights) - 1)) :: run([3, 1, 2])
+- answers, with no valley :: nearest_taller(heights).count(-1) < len(heights) and not any(heights[i - 1] > heights[i] < heights[i + 1] for i in range(1, len(heights) - 1)) :: run([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of heights.
+why_time: Two passes, each pushing and popping every index at most once, then one pass to choose.
+why_space: left, right and the stacks each hold up to n indexes.
+hint: First pass: `while stack and heights[stack[-1]] < heights[i]:` set `right[stack.pop()] = i`.
+hint: Second pass: `while stack and heights[stack[-1]] <= heights[i]:` pop; then `if stack:` set `left[i] = stack[-1]`.
+hint: If left[i] is -1, the answer is right[i]. Otherwise, take left[i] when right[i] is -1 or `i - left[i] <= right[i] - i`, and right[i] if not.
+right: The nearest taller tower is either the nearest on the left or the nearest on the right, and one stack pass finds each, so comparing two distances gives the answer in O(n).
+wrong: Find each tower's nearest taller tower on the right (popped by it) and on the left (left on top after popping the ones that aren't taller), then choose the closer, the left one on a tie, or -1 when neither exists.
+
+=== task: code medium
+title: Daily Temperatures
+leetcode: 739 | Daily Temperatures | daily-temperatures
+patterns: next
+prompt: temperatures[i] is the temperature on day i. Write `daily_temperatures(temperatures)` that returns a list answer where answer[i] is the number of days after day i until a warmer temperature. If no later day is warmer, answer[i] is 0.
+
+Keep a stack of the days still waiting for a warmer day, as indexes. When a warmer day i pops day j, day j waited `i - j` days. Days left on the stack at the end keep 0.
+
+**Example 1:** `run([73, 74, 75, 71, 69, 72, 76, 73])` returns `[1, 1, 4, 2, 1, 1, 0, 0]`.
+
+**Example 2:** `run([30, 40, 50, 60])` returns `[1, 1, 1, 0]`.
+
+**Example 3:** `run([30, 60, 90])` returns `[1, 1, 0]`.
+
+**Constraints:** 1 ≤ len(temperatures) ≤ 10⁵, and 30 ≤ each temperature ≤ 100.
+starter:
+```python
+def daily_temperatures(temperatures):
+    answer = [0] * len(temperatures)
+    stack = []
+    # your code here
+    return answer
+
+
+def run(temperatures):
+    return daily_temperatures(temperatures)
+```
+solution:
+```python
+def daily_temperatures(temperatures):
+    answer = [0] * len(temperatures)
+    stack = []
+    for i in range(len(temperatures)):
+        while stack and temperatures[stack[-1]] < temperatures[i]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+
+def run(temperatures):
+    return daily_temperatures(temperatures)
+```
+tests:
+- run([73, 74, 75, 71, 69, 72, 76, 73])
+- run([30, 40, 50, 60])
+- run([30, 60, 90])
+- run([50])
+- run([70, 70, 71])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([30] * 15000 + [31] + [30 + i * 7919 % 71 for i in range(3000)]))
+fail[2]: Every day is warmer than the day before.
+fail[3]: The last day has nothing after it, so it keeps 0.
+fail[4]: One day.
+fail[5]: Equal temperatures aren't warmer: the first 70 waits 2 days, for the 71.
+fail[6]: 18,001 days: 15,000 days of 30, all waiting for the same 31. Scanning ahead from each day is O(n²).
+edges:
+- no day ever gets warmer :: sum(daily_temperatures(temperatures)) == 0 :: run([50, 40])
+- a day waits more than 1 day :: max(daily_temperatures(temperatures)) > 1 :: run([50, 40, 60])
+- every answer is at most 1 day :: max(daily_temperatures(temperatures)) == 1 :: run([40, 50])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of days.
+why_time: Each day is pushed once and popped at most once.
+why_space: The stack can hold every day, when the temperatures never go up.
+hint: Loop `for i in range(len(temperatures)):`.
+hint: `while stack and temperatures[stack[-1]] < temperatures[i]:` pop j, and set `answer[j] = i - j`.
+hint: After the `while`, push i.
+right: The stack keeps the days still waiting in decreasing order of temperature, so a warmer day answers every colder day on top in turn, and the indexes give the distances.
+wrong: Keep a stack of indexes of the days still waiting; when today is warmer than the day on top, pop it and set its answer to today's index minus its own; then push today.
+
+=== task: code medium
+title: Next Greater Node In Linked List
+leetcode: 1019 | Next Greater Node In Linked List | next-greater-node-in-linked-list
+patterns: next
+prompt: head is the first node of a linked list. Write `next_larger_nodes(head)` that returns a list answer where answer[i] is the value of the next greater node of the i-th node: the first node after it with a strictly larger value. If there's no such node, answer[i] is 0.
+
+The stack needs indexes, which a linked list doesn't have. Walk the list once and copy its values into a Python list, then run the next greater element loop on that list. `run(values)` builds the linked list from values with `from_list` and passes its head.
+
+**Example 1:** `run([2, 1, 5])` returns `[5, 5, 0]`.
+
+**Example 2:** `run([2, 7, 4, 3, 5])` returns `[7, 0, 5, 5, 0]`.
+
+**Constraints:** the list has 1 to 10⁴ nodes, and 1 ≤ each value ≤ 10⁹.
+starter:
+```python
+class ListNode:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = ListNode(x, head)
+    return head
+
+
+def next_larger_nodes(head):
+    answer = []
+    # your code here
+    return answer
+
+
+def run(values):
+    return next_larger_nodes(from_list(values))
+```
+solution:
+```python
+class ListNode:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+
+def from_list(values):
+    head = None
+    for x in reversed(values):
+        head = ListNode(x, head)
+    return head
+
+
+def next_larger_nodes(head):
+    values = []
+    node = head
+    while node is not None:
+        values.append(node.val)
+        node = node.next
+    answer = [0] * len(values)
+    stack = []
+    for i in range(len(values)):
+        while stack and values[stack[-1]] < values[i]:
+            answer[stack.pop()] = values[i]
+        stack.append(i)
+    return answer
+
+
+def run(values):
+    return next_larger_nodes(from_list(values))
+```
+tests:
+- run([2, 1, 5])
+- run([2, 7, 4, 3, 5])
+- run([1])
+- run([3, 3])
+- run([1, 2, 3])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([1] * 9000 + [2] + [i * 7919 % 10007 + 1 for i in range(999)]))
+fail[2]: The 7 has no larger node after it, but the 4 and the 3 both find the 5.
+fail[3]: One node.
+fail[4]: Equal values aren't larger.
+fail[5]: Values that only go up: each node's answer is the next node.
+fail[6]: 10,000 nodes: 9000 ones, all waiting for the same 2. Walking ahead from each node is O(n²).
+edges:
+- no node has a larger one after it :: sum(next_larger_nodes(from_list(values))) == 0 :: run([3, 2])
+- values that only go up :: len(values) > 1 and all(values[i] < values[i + 1] for i in range(len(values) - 1)) :: run([1, 2])
+- some nodes look further ahead :: sum(next_larger_nodes(from_list(values))) > 0 and not all(values[i] < values[i + 1] for i in range(len(values) - 1)) :: run([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of nodes.
+why_time: One walk copies the values, and each index is pushed once and popped at most once.
+why_space: The copied values, the stack and the answer each hold up to n numbers.
+hint: Copy the values: `node = head`, then `while node is not None:` append `node.val` and move to `node.next`.
+hint: Start the answer as `[0] * len(values)`.
+hint: `while stack and values[stack[-1]] < values[i]:` set `answer[stack.pop()] = values[i]`, then push i.
+right: Copying the values into a list gives every node an index, so the stack of waiting indexes can write each answer in its place, in one pass.
+wrong: Walk the linked list to copy its values into a list, then run the next greater element loop with a stack of indexes, writing each popped index's answer, and leave 0 for the rest.
+
+=== task: code medium
+title: Minimum Operations to Convert All Elements to Zero
+leetcode: 3542 | Minimum Operations to Convert All Elements to Zero | minimum-operations-to-convert-all-elements-to-zero
+patterns: prev
+prompt: nums is a list of numbers that are 0 or more. In one operation, you choose a subarray and set every copy of its smallest number to 0, so a subarray that contains a 0 changes nothing. Write `min_operations(nums)` that returns the fewest operations that make every number 0.
+
+Two equal numbers can be set to 0 by the same operation only if nothing between them is smaller: a smaller number, even once it's 0, would be the subarray's smallest instead. Keep an increasing stack of the numbers still open for sharing. When x arrives, pop every number bigger than x: x cuts them off from everything after it. Then look at the top. If it's x, x shares that operation. If not, and x isn't 0, x needs an operation of its own: count it, and push x.
+
+**Example 1:** `run([0, 2])` returns 1.
+
+**Example 2:** `run([3, 1, 2, 1])` returns 3. One operation on [1, 2, 1] sets both 1s to 0, then the 2 and the 3 need one each.
+
+**Example 3:** `run([1, 2, 1, 2, 1, 2])` returns 4. The 1s share one operation, but each 2 is cut off from the others by a 1.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 0 ≤ each number ≤ 10⁵.
+starter:
+```python
+def min_operations(nums):
+    stack = []
+    ops = 0
+    # your code here
+    return ops
+
+
+def run(nums):
+    return min_operations(nums)
+```
+solution:
+```python
+def min_operations(nums):
+    stack = []
+    ops = 0
+    for x in nums:
+        while stack and stack[-1] > x:
+            stack.pop()
+        if x > 0 and (not stack or stack[-1] < x):
+            ops += 1
+            stack.append(x)
+    return ops
+
+
+def run(nums):
+    return min_operations(nums)
+```
+tests:
+- run([0, 2])
+- run([3, 1, 2, 1])
+- run([1, 2, 1, 2, 1, 2])
+- run([0, 0])
+- run([5, 5, 5])
+- [run([i * 7919 % 101 for i in range(15000)]), run(list(range(1, 3001)) + list(range(3000, 0, -1)))]
+fail[2]: The two 1s share an operation; the 2 and the 3 need one each.
+fail[3]: A 1 between each pair of 2s keeps them apart.
+fail[4]: Everything is 0 already.
+fail[5]: One operation on the whole list sets all three 5s to 0.
+fail[6]: 15,000 numbers from 0 to 100, and a mountain that climbs from 1 to 3000 and back down. Simulating the operations one at a time is O(n²).
+edges:
+- every number is 0 :: max(nums) == 0 :: run([0])
+- every number needs its own operation :: max(nums) > 0 and min_operations(nums) == len([x for x in nums if x > 0]) :: run([2, 1])
+- some numbers share an operation :: min_operations(nums) < len([x for x in nums if x > 0]) :: run([2, 3, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each number is pushed at most once and popped at most once.
+why_space: The stack can hold every number, when they only go up.
+hint: Loop `for x in nums:`, and `while stack and stack[-1] > x:` pop.
+hint: After the popping, x needs a new operation `if x > 0 and (not stack or stack[-1] < x)`.
+hint: When it does, add 1 to ops and push x.
+right: An operation can reach two equal numbers only across bigger ones, so a smaller number closes off everything bigger before it, and a number needs a new operation exactly when its value isn't still open on the stack.
+wrong: Keep an increasing stack; pop the numbers bigger than x; if x is positive and not already on top, count a new operation and push x.
+
+=== task: code medium
+title: Car Fleet
+leetcode: 853 | Car Fleet | car-fleet
+patterns: carry
+prompt: n cars drive along a road towards mile target. Car i starts at mile position[i] and drives at speed[i] miles per hour. A car can't pass another car, but it can catch up with it and then drive next to it at the slower car's speed. A **car fleet** is a car, or several cars driving next to each other; a car that catches up with a fleet exactly at the target joins that fleet. Write `car_fleet(target, position, speed)` that returns the number of fleets that arrive at the target.
+
+Go through the cars from the one nearest the target backwards: sort the indexes by position, biggest first. Each car alone would take (target − position) / speed hours. Keep a stack of fleets, each carrying its arrival time, the time of its front car. A car whose time is at most the top fleet's time catches up and merges into it, so nothing is pushed. A car whose time is longer starts a new fleet: push it. Compare times without dividing: d1 / s1 > d2 / s2 is the same as d1 × s2 > d2 × s1, for positive speeds.
+
+**Example 1:** `run(12, [10, 8, 0, 5, 3], [2, 4, 1, 1, 3])` returns 3. The cars at 10 and 8 meet at 12; the car at 0 is alone; the cars at 5 and 3 meet at mile 6.
+
+**Example 2:** `run(10, [3], [3])` returns 1.
+
+**Example 3:** `run(100, [0, 2, 4], [4, 2, 1])` returns 1.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 0 < target ≤ 10⁶, 0 ≤ each position < target, the positions are all different, and 0 < each speed ≤ 10⁶.
+starter:
+```python
+def car_fleet(target, position, speed):
+    stack = []
+    # your code here
+    return len(stack)
+
+
+def run(target, position, speed):
+    return car_fleet(target, position, speed)
+```
+solution:
+```python
+def car_fleet(target, position, speed):
+    order = sorted(range(len(position)), key=lambda i: -position[i])
+    stack = []
+    for i in order:
+        d = target - position[i]
+        s = speed[i]
+        if not stack or d * stack[-1][1] > stack[-1][0] * s:
+            stack.append((d, s))
+    return len(stack)
+
+
+def run(target, position, speed):
+    return car_fleet(target, position, speed)
+```
+tests:
+- run(12, [10, 8, 0, 5, 3], [2, 4, 1, 1, 3])
+- run(10, [3], [3])
+- run(100, [0, 2, 4], [4, 2, 1])
+- run(10, [6, 8], [3, 2])
+- run(10, [0, 4, 2], [2, 1, 3])
+- [run(1000000, [i * 37 for i in range(10000)], [i * 7919 % 1000 + 1 for i in range(10000)]), run(1000000, list(range(5000)), [5000 - i for i in range(5000)])]
+fail[2]: One car is one fleet.
+fail[3]: The cars behind are faster, and catch up with the front car before the target.
+fail[4]: The car behind is faster, but doesn't catch up before the target.
+fail[5]: The cars aren't given in order of position: sort them first.
+fail[6]: 10,000 cars, and 5000 cars that all end up in one fleet. Checking each car against every car in front is O(n²).
+edges:
+- one car :: len(position) == 1 :: run(10, [5], [1])
+- every car is its own fleet :: len(position) > 1 and car_fleet(target, position, speed) == len(position) :: run(10, [0, 5], [1, 1])
+- some cars catch up :: car_fleet(target, position, speed) < len(position) :: run(10, [0, 5], [2, 1])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the number of cars.
+why_time: Sorting is O(n log n); the pass over the cars is O(n).
+why_space: The sorted indexes and the stack each hold up to n items.
+hint: `order = sorted(range(len(position)), key=lambda i: -position[i])` puts the car nearest the target first.
+hint: For each car, d = target − position[i] and s = speed[i]. Push `(d, s)` if the stack is empty or `d * stack[-1][1] > stack[-1][0] * s`.
+hint: The number of fleets is the number of entries on the stack.
+right: A car can only be held up by the fleet straight in front of it, so going back from the target, each car either merges into the fleet on top or starts a slower one, and the stack holds one entry per fleet.
+wrong: Sort the cars by position from the target backwards, work out each car's time to the target, and start a new fleet only when a car's time is longer than the fleet in front's; count the fleets.
+
+=== task: code medium
+title: Online Stock Span
+leetcode: 901 | Online Stock Span | online-stock-span
+patterns: carry
+prompt: Write a class `StockSpanner` that gets a stock's price one day at a time and returns each day's **span**: the number of days in a row, ending today and going back, on which the price was at most today's price.
+
+- `StockSpanner()` starts with no prices.
+- `next(price)` takes today's price and returns today's span.
+
+Keep a stack of (price, span) pairs. When a price arrives, pop every pair whose price is at most today's, adding its span to today's: today covers the days those prices covered. Then push today's pair. `run(commands, inputs)` makes the object and calls `next` with each input, collecting the results, with None for the constructor.
+
+**Example:** `run(["StockSpanner", "next", "next", "next", "next", "next", "next", "next"], [[], [100], [80], [60], [70], [60], [75], [85]])` returns `[None, 1, 1, 1, 2, 1, 4, 6]`. The 75 covers itself, the 60, the 70 and the 60 before it: 4 days.
+
+**Constraints:** 1 ≤ each price ≤ 10⁵, and there are at most 10⁴ calls to `next`.
+starter:
+```python
+class StockSpanner:
+    def __init__(self):
+        self.stack = []
+
+    def next(self, price):
+        span = 1
+        # your code here
+        return span
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "StockSpanner":
+            spanner = StockSpanner()
+            results.append(None)
+        elif command == "next":
+            results.append(spanner.next(args[0]))
+    return results
+```
+solution:
+```python
+class StockSpanner:
+    def __init__(self):
+        self.stack = []
+
+    def next(self, price):
+        span = 1
+        while self.stack and self.stack[-1][0] <= price:
+            span += self.stack.pop()[1]
+        self.stack.append((price, span))
+        return span
+
+
+def run(commands, inputs):
+    results = []
+    for command, args in zip(commands, inputs):
+        if command == "StockSpanner":
+            spanner = StockSpanner()
+            results.append(None)
+        elif command == "next":
+            results.append(spanner.next(args[0]))
+    return results
+```
+tests:
+- run(["StockSpanner", "next", "next", "next", "next", "next", "next", "next"], [[], [100], [80], [60], [70], [60], [75], [85]])
+- run(["StockSpanner", "next"], [[], [5]])
+- run(["StockSpanner", "next", "next", "next"], [[], [1], [2], [3]])
+- run(["StockSpanner", "next", "next", "next"], [[], [7], [7], [7]])
+- run(["StockSpanner", "next", "next", "next", "next"], [[], [3], [1], [2], [4]])
+- (lambda r: [len(r), r[1:6], r[-5:], sum(r[1:])])(run(["StockSpanner"] + ["next"] * 9999, [[]] + [[i + 1] for i in range(6000)] + [[i * 7919 % 100003 + 1] for i in range(3999)]))
+fail[2]: One price has a span of 1.
+fail[3]: Prices that only go up: each span covers every day so far.
+fail[4]: An equal price counts, because the span is the days with a price at most today's.
+fail[5]: The 4 covers all four days: its own, the two the 2 covers, and the 3's.
+fail[6]: 9999 calls: 6000 rising prices, then 3999 more. Looking back over every earlier price on each call is O(n) a call.
+edges:
+- only one price :: len(commands) == 2 :: run(["StockSpanner", "next"], [[], [5]])
+- prices that never go down :: len(commands) > 2 and all(inputs[i][0] <= inputs[i + 1][0] for i in range(1, len(inputs) - 1)) :: run(["StockSpanner", "next", "next"], [[], [1], [2]])
+- a price that goes down :: any(inputs[i][0] > inputs[i + 1][0] for i in range(1, len(inputs) - 1)) :: run(["StockSpanner", "next", "next"], [[], [2], [1]])
+edge_count: 2
+complexity: time=O(1) | space=O(n)
+complexity_note: n is the number of calls to next; the time is for one call, amortized.
+why_time: One call can pop many pairs, but each price is pushed once and popped at most once, so n calls do O(n) work in all: O(1) a call.
+why_space: The stack can hold a pair for every price, when the prices only go down.
+hint: In `next`, start with `span = 1` for today.
+hint: `while self.stack and self.stack[-1][0] <= price:` add `self.stack.pop()[1]` to span.
+hint: Push `(price, span)` and return span.
+right: Once a higher or equal price arrives, the prices it covers can never stop a later span on their own, so it takes over their spans and they leave the stack; each price is popped once, so each call is O(1) amortized.
+wrong: Keep a stack of (price, span) pairs; each new price pops every pair with a price at most its own, adding their spans to its span of 1, then pushes its pair and returns the span.
+
+=== task: code medium
+title: Next Greater Element II
+leetcode: 503 | Next Greater Element II | next-greater-element-ii
+patterns: next + round
+prompt: nums is a circular list: the number after the last one is the first one. Write `next_greater_elements(nums)` that returns a list with the next greater number of every number in nums: the first bigger number after it, going round the list if needed. If there isn't one, use -1.
+
+Go round twice: loop i over 2n steps, reading `nums[i % n]`, with a stack of the indexes still waiting. A popped index's answer is the number at `i % n`. Push indexes only on the first lap.
+
+**Example 1:** `run([1, 2, 1])` returns `[2, -1, 2]`. The last 1 finds the 2 by going round.
+
+**Example 2:** `run([1, 2, 3, 4, 3])` returns `[2, 3, 4, -1, 4]`.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁴, and −10⁹ ≤ each number ≤ 10⁹.
+starter:
+```python
+def next_greater_elements(nums):
     n = len(nums)
     result = [-1] * n
     stack = []
-    for i in range(n):
-        for step in range(1, n):
-            j = (i + step) % n
-            if nums[j] > nums[i]:
-                result[i] = nums[j]
-                break
+    # your code here
     return result
+
+
+def run(nums):
+    return next_greater_elements(nums)
 ```
-fail[1]: The last 1 goes round to the 2 at the start.
-fail[2]: Every number except the 5 finds the 5 by going round; the 5 is the biggest, so -1.
-fail[3]: The last 3 goes round to 1, 2, 3, then 4: its answer is 4.
-fail[6]: Equal isn't greater: neither 2 has a bigger number anywhere.
-error[IndexError]: Use `k % n` to turn the round-twice counter into an index.
-hint: Loop `for k in range(2 * n):` with `i = k % n`.
-hint: Pop and answer as in `next_greater`.
-hint: Push i only when `k < n`, so each index waits only once.
-right: The second round lets the numbers near the end find bigger numbers at the start. Still O(n): 2n steps, and each index pushed and popped at most once.
-wrong: Run the usual next-greater loop over 2n steps, reading `nums[k % n]`, and only push during the first n steps.
+solution:
+```python
+def next_greater_elements(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+    for i in range(2 * n):
+        x = nums[i % n]
+        while stack and nums[stack[-1]] < x:
+            result[stack.pop()] = x
+        if i < n:
+            stack.append(i)
+    return result
 
-=== task: code hard
-title: The largest rectangle
-prompt: A bar chart has bars of width 1 and the given heights. Write `largest_rectangle(heights)` that returns the area of the largest rectangle that fits inside the bars. It must be O(n).
 
-The largest rectangle that uses the full height of bar i stretches left as far as the bar after the nearest lower bar on its left, and right as far as the bar before the nearest lower bar on its right. So:
+def run(nums):
+    return next_greater_elements(nums)
+```
+tests:
+- run([1, 2, 1])
+- run([1, 2, 3, 4, 3])
+- run([5])
+- run([3, 3])
+- run([5, 4, 3, 2, 1])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(6000, 0, -1)) + [i * 7919 % 6007 for i in range(3000)]))
+fail[2]: The last 3 finds the 4 by going round.
+fail[3]: One number.
+fail[4]: Equal numbers aren't greater.
+fail[5]: Numbers that only go down: all but the first find the 5 by going round.
+fail[6]: 9000 numbers, 6000 of them going down. Searching round from each number is O(n²).
+edges:
+- every number the same :: max(nums) == min(nums) :: run([3, 3])
+- a number finds its answer by going round :: any(max(nums[j:]) == nums[j] < max(nums) for j in range(len(nums))) :: run([2, 1])
+- answers without going round :: max(nums) > min(nums) and not any(max(nums[j:]) == nums[j] < max(nums) for j in range(len(nums))) :: run([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: 2n steps, and each index is pushed once and popped at most once.
+why_space: The stack can hold every index, and the answer has n numbers.
+hint: Loop `for i in range(2 * n):` and read `x = nums[i % n]`.
+hint: `while stack and nums[stack[-1]] < x:` set `result[stack.pop()] = x`.
+hint: Push i only `if i < n`. The biggest number is never popped, so it keeps -1.
+right: The second lap shows every waiting number the start of the list again, which is everything that comes after it going round, and pushing only on the first lap keeps it O(n).
+wrong: Loop over 2n steps with i % n and a stack of waiting indexes; pop and answer the smaller numbers on top; push only during the first n steps.
 
-1. find `left[i]`, the index of the previous bar lower than bar i (-1 if none), with an increasing stack walking left to right,
-2. find `right[i]`, the index of the next bar lower than bar i (n if none), walking right to left,
-3. the answer is the biggest `heights[i] * (right[i] - left[i] - 1)`.
+=== task: code medium
+title: Steps to Make Array Non-decreasing
+leetcode: 2289 | Steps to Make Array Non-decreasing | steps-to-make-array-non-decreasing
+patterns: prev + carry
+prompt: In one step, every number in nums that's smaller than the number straight before it is removed, all at the same time. Write `total_steps(nums)` that returns how many steps it takes until nums never goes down.
 
-For example, `largest_rectangle([2, 1, 5, 6, 2, 3])` returns 10: heights 5 and 6 give a rectangle 5 high and 2 wide.
+Work out the step in which each number is removed. A number x is removed by the nearest bigger number on its left, once everything between them has gone. So x is removed one step after the last of the numbers between them, which are the numbers x pops. Keep a stack of (number, step) pairs. Pop while the top is at most x, keeping the largest step popped. Then, if a bigger number is left on top, x goes in step largest + 1. If the stack is empty, nothing bigger is on its left, so x is never removed: step 0. The answer is the largest step of any number.
+
+**Example 1:** `run([5, 3, 4, 4, 7, 3, 6, 11, 8, 5, 11])` returns 3. Step 1 removes both 3s, the 8 and the 5, leaving [5, 4, 4, 7, 6, 11, 11]. Step 2 leaves [5, 4, 7, 11, 11], and step 3 leaves [5, 7, 11, 11], which never goes down.
+
+**Example 2:** `run([4, 5, 7, 7, 13])` returns 0.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 1 ≤ each number ≤ 10⁹.
 starter:
 ```python
-def largest_rectangle(heights):
+def total_steps(nums):
+    stack = []
+    best = 0
+    # your code here
+    return best
+
+
+def run(nums):
+    return total_steps(nums)
+```
+solution:
+```python
+def total_steps(nums):
+    stack = []
+    best = 0
+    for x in nums:
+        steps = 0
+        while stack and stack[-1][0] <= x:
+            steps = max(steps, stack.pop()[1])
+        if stack:
+            steps += 1
+        else:
+            steps = 0
+        best = max(best, steps)
+        stack.append((x, steps))
+    return best
+
+
+def run(nums):
+    return total_steps(nums)
+```
+tests:
+- run([5, 3, 4, 4, 7, 3, 6, 11, 8, 5, 11])
+- run([4, 5, 7, 7, 13])
+- run([1])
+- run([3, 2, 1])
+- run([10, 1, 2, 3, 4, 5])
+- [run([100000] + list(range(1, 8001))), run([i * 7919 % 10007 + 1 for i in range(8000)])]
+fail[2]: The list never goes down: 0 steps.
+fail[3]: One number.
+fail[4]: The 2 and the 1 are removed in the same step, because each step compares with the list as it was at the start of the step.
+fail[5]: The 10 removes one number per step: 5 steps.
+fail[6]: A 100,000 followed by 8000 rising numbers, which takes 8000 steps, and 8000 numbers that take 6. Simulating one step at a time is O(n²).
+edges:
+- the list never goes down :: total_steps(nums) == 0 :: run([1, 2])
+- one step :: total_steps(nums) == 1 :: run([2, 1])
+- several steps :: total_steps(nums) > 1 :: run([3, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each number is pushed once and popped at most once.
+why_space: The stack can hold a pair for every number, when they only go down.
+hint: For each x, start with `steps = 0`, and `while stack and stack[-1][0] <= x:` set `steps = max(steps, stack.pop()[1])`.
+hint: Then `steps += 1` if the stack isn't empty, or `steps = 0` if it is.
+hint: Update the best answer with steps, and push `(x, steps)`.
+right: A number can only be removed after everything between it and the bigger number that removes it, so its step is one more than the largest step it pops, or 0 with nothing bigger left on the stack.
+wrong: Keep a stack of (number, step); for each x, pop the numbers at most x while keeping their largest step, then x's step is that plus 1 if a bigger number remains, or 0 if not; return the largest step.
+
+=== task: code medium
+title: Beautiful Towers II
+leetcode: 2866 | Beautiful Towers II | beautiful-towers-ii
+patterns: prev + carry
+prompt: You build n towers in a row, and tower i can be any whole number of floors from 1 to max_heights[i]. The towers must form a **mountain**: heights that never go down up to some peak, and never go up after it. Write `maximum_sum_of_heights(max_heights)` that returns the largest possible total of the heights.
+
+For a peak at i, each tower on its left is as tall as it can be: the smallest limit from it to the peak. left[i], the best total of towers 0 to i with the peak at i, builds on the nearest smaller limit on the left, j: towers j + 1 to i all get max_heights[i] floors, and the towers up to j total left[j], so `left[i] = left[j] + (i - j) * max_heights[i]`. With no smaller limit on the left, `left[i] = (i + 1) * max_heights[i]`. An increasing stack of indexes finds each j. Do the same from the right for right[i], and the answer is the largest `left[i] + right[i] - max_heights[i]`, which counts the peak once.
+
+**Example 1:** `run([5, 3, 4, 1, 1])` returns 13: heights [5, 3, 3, 1, 1].
+
+**Example 2:** `run([6, 5, 3, 9, 2, 7])` returns 22: heights [3, 3, 3, 9, 2, 2].
+
+**Example 3:** `run([3, 2, 5, 5, 2, 3])` returns 18: heights [2, 2, 5, 5, 2, 2].
+
+**Constraints:** 1 ≤ n ≤ 10⁵, and 1 ≤ each limit ≤ 10⁹.
+starter:
+```python
+def maximum_sum_of_heights(max_heights):
+    n = len(max_heights)
+    left = [0] * n
+    right = [0] * n
+    # your code here
+    best = 0
+    return best
+
+
+def run(max_heights):
+    return maximum_sum_of_heights(max_heights)
+```
+solution:
+```python
+def maximum_sum_of_heights(max_heights):
+    n = len(max_heights)
+    left = [0] * n
+    stack = []
+    for i in range(n):
+        while stack and max_heights[stack[-1]] > max_heights[i]:
+            stack.pop()
+        if stack:
+            j = stack[-1]
+            left[i] = left[j] + (i - j) * max_heights[i]
+        else:
+            left[i] = (i + 1) * max_heights[i]
+        stack.append(i)
+    right = [0] * n
+    stack = []
+    for i in range(n - 1, -1, -1):
+        while stack and max_heights[stack[-1]] > max_heights[i]:
+            stack.pop()
+        if stack:
+            j = stack[-1]
+            right[i] = right[j] + (j - i) * max_heights[i]
+        else:
+            right[i] = (n - i) * max_heights[i]
+        stack.append(i)
+    best = 0
+    for i in range(n):
+        best = max(best, left[i] + right[i] - max_heights[i])
+    return best
+
+
+def run(max_heights):
+    return maximum_sum_of_heights(max_heights)
+```
+tests:
+- run([5, 3, 4, 1, 1])
+- run([6, 5, 3, 9, 2, 7])
+- run([3, 2, 5, 5, 2, 3])
+- run([7])
+- run([1, 2, 3, 4])
+- [run([i * 7919 % 1000003 + 1 for i in range(6000)]), run(list(range(1, 3001)) + list(range(3000, 0, -1)))]
+fail[2]: The peak is the 9, and the towers on each side are cut down to the smallest limit between them and it.
+fail[3]: Two equal limits share the top of the mountain.
+fail[4]: One tower.
+fail[5]: The peak can be the last tower: 1 + 2 + 3 + 4.
+fail[6]: 6000 random limits, and limits that climb to 3000 and back down. Trying every peak and walking both ways is O(n²).
+edges:
+- limits that never go down :: all(max_heights[i] <= max_heights[i + 1] for i in range(len(max_heights) - 1)) :: run([1, 2])
+- limits that never go up :: not all(max_heights[i] <= max_heights[i + 1] for i in range(len(max_heights) - 1)) and all(max_heights[i] >= max_heights[i + 1] for i in range(len(max_heights) - 1)) :: run([2, 1])
+- ups and downs :: any(max_heights[i] < max_heights[i + 1] for i in range(len(max_heights) - 1)) and any(max_heights[i] > max_heights[i + 1] for i in range(len(max_heights) - 1)) :: run([1, 3, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of towers.
+why_time: Two passes, each pushing and popping every index at most once, then one pass for the best peak.
+why_space: left, right and the stack each hold up to n numbers.
+hint: Left pass: `while stack and max_heights[stack[-1]] > max_heights[i]:` pop. The top, if any, is j.
+hint: `left[i] = left[j] + (i - j) * max_heights[i]` when there's a j, and `(i + 1) * max_heights[i]` when there isn't.
+hint: The right pass is the same from the end: `right[i] = right[j] + (j - i) * max_heights[i]`, or `(n - i) * max_heights[i]`.
+hint: The answer is the largest `left[i] + right[i] - max_heights[i]`.
+right: Each side of the peak is a staircase limited by the nearest smaller limit, and the total for that limit is already known, so each tower's total builds on the total of the entry left on top.
+wrong: With an increasing stack, find for each i the nearest smaller limit j on the left and set left[i] = left[j] + (i − j) × max_heights[i]; do the same from the right; the answer is the largest left[i] + right[i] − max_heights[i].
+
+=== task: code medium
+title: Sum of Subarray Minimums
+leetcode: 907 | Sum of Subarray Minimums | sum-of-subarray-minimums
+patterns: next + prev
+prompt: Write `sum_subarray_mins(arr)` that returns the sum of the smallest number of every subarray of arr, modulo 10⁹ + 7.
+
+Count, for each number, the subarrays it's the smallest of, and add `arr[i] * count`. The subarrays where arr[i] is the smallest start after its left neighbour, the nearest smaller number on the left, and end before its right neighbour, the nearest smaller or equal number on the right: `(i - left) * (right - i)` of them. Stopping at an equal number on one side only counts a subarray with two equal smallest numbers once. Use -1 and n for missing neighbours.
+
+**Example 1:** `run([3, 1, 2, 4])` returns 17. The subarrays' smallest numbers are 3, 1, 2, 4, 1, 1, 2, 1, 1, 1.
+
+**Example 2:** `run([11, 81, 94, 43, 3])` returns 444.
+
+**Constraints:** 1 ≤ len(arr) ≤ 3 × 10⁴, and 1 ≤ each number ≤ 3 × 10⁴.
+starter:
+```python
+def sum_subarray_mins(arr):
+    n = len(arr)
+    left = [-1] * n
+    right = [n] * n
+    # your code here
+    total = 0
+    return total % (10 ** 9 + 7)
+
+
+def run(arr):
+    return sum_subarray_mins(arr)
+```
+solution:
+```python
+def sum_subarray_mins(arr):
+    n = len(arr)
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and arr[stack[-1]] >= arr[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and arr[stack[-1]] >= arr[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    total = 0
+    for i in range(n):
+        total += arr[i] * (i - left[i]) * (right[i] - i)
+    return total % (10 ** 9 + 7)
+
+
+def run(arr):
+    return sum_subarray_mins(arr)
+```
+tests:
+- run([3, 1, 2, 4])
+- run([11, 81, 94, 43, 3])
+- run([5])
+- run([2, 2, 2])
+- run([1, 2, 3])
+- run([i * 7919 % 30000 + 1 for i in range(12000)])
+fail[2]: The 3 at the end is the smallest of every subarray that contains it.
+fail[3]: One number.
+fail[4]: Equal numbers: count each subarray once, not once for each 2 in it.
+fail[5]: Numbers that only go up: each subarray's smallest number is its first.
+fail[6]: 12,000 numbers. Working out the smallest number of every subarray is O(n²).
+edges:
+- all different :: len(set(arr)) == len(arr) :: run([2, 1, 3])
+- all the same :: len(arr) > 1 and len(set(arr)) == 1 :: run([4, 4])
+- some repeated, not all :: 1 < len(set(arr)) < len(arr) :: run([1, 2, 1])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of arr.
+why_time: Two stack passes and one pass to add up, each O(n).
+why_space: left, right and the stack each hold up to n indexes.
+hint: Right pass: `while stack and arr[stack[-1]] >= arr[i]:` set `right[stack.pop()] = i`.
+hint: Left pass: `while stack and arr[stack[-1]] >= arr[i]:` pop; then `if stack:` set `left[i] = stack[-1]`.
+hint: Add `arr[i] * (i - left[i]) * (right[i] - i)` for every i, and take `% (10 ** 9 + 7)` at the end.
+right: Every subarray has one smallest number, and each number is the smallest of exactly the subarrays between its neighbours, so adding the number times that count adds every subarray's minimum once.
+wrong: For each number, find the nearest smaller number on the left and the nearest smaller or equal number on the right with two stack passes, then add arr[i] × (i − left) × (right − i), modulo 10⁹ + 7.
+
+=== task: code medium
+title: Maximum Subarray Min-Product
+leetcode: 1856 | Maximum Subarray Min-Product | maximum-subarray-min-product
+patterns: next + prev
+prompt: The **min-product** of a list is its smallest number times its sum: [3, 2, 5] has min-product 2 × (3 + 2 + 5) = 20. Write `max_sum_min_product(nums)` that returns the largest min-product of any subarray of nums, modulo 10⁹ + 7. Find the largest min-product first, then take the remainder.
+
+Try each number as the smallest. All the numbers are positive, so the best subarray with nums[i] as its smallest is the widest one: everything between its left and right neighbours, the nearest smaller numbers on each side. Prefix sums give each subarray's sum in O(1): `prefix[right] - prefix[left + 1]`.
+
+**Example 1:** `run([1, 2, 3, 2])` returns 14: 2 × (2 + 3 + 2).
+
+**Example 2:** `run([2, 3, 3, 1, 2])` returns 18: 3 × (3 + 3).
+
+**Example 3:** `run([3, 1, 5, 6, 4, 2])` returns 60: 4 × (5 + 6 + 4).
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 1 ≤ each number ≤ 10⁷.
+starter:
+```python
+def max_sum_min_product(nums):
+    n = len(nums)
+    prefix = [0] * (n + 1)
+    left = [-1] * n
+    right = [n] * n
+    # your code here
+    best = 0
+    return best % (10 ** 9 + 7)
+
+
+def run(nums):
+    return max_sum_min_product(nums)
+```
+solution:
+```python
+def max_sum_min_product(nums):
+    n = len(nums)
+    prefix = [0] * (n + 1)
+    for i in range(n):
+        prefix[i + 1] = prefix[i] + nums[i]
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] > nums[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] >= nums[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    best = 0
+    for i in range(n):
+        best = max(best, nums[i] * (prefix[right[i]] - prefix[left[i] + 1]))
+    return best % (10 ** 9 + 7)
+
+
+def run(nums):
+    return max_sum_min_product(nums)
+```
+tests:
+- run([1, 2, 3, 2])
+- run([2, 3, 3, 1, 2])
+- run([3, 1, 5, 6, 4, 2])
+- run([7])
+- run([1, 1, 1])
+- [run([i * 7919 % 10000000 + 1 for i in range(8000)]), run([10 ** 7] * 4000)]
+fail[2]: The two 3s together beat the whole list with its 1.
+fail[3]: The 4 reaches across the 5 and the 6, which are bigger.
+fail[4]: One number: 7 × 7.
+fail[5]: Equal numbers: the whole list, 1 × 3.
+fail[6]: 8000 numbers up to 10⁷, and 4000 numbers all 10⁷, whose best min-product is far bigger than 10⁹ + 7. Checking every subarray is O(n²).
+edges:
+- one number :: len(nums) == 1 :: run([4])
+- all the same :: len(nums) > 1 and len(set(nums)) == 1 :: run([2, 2])
+- different numbers :: len(set(nums)) > 1 :: run([1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: The prefix sums, two stack passes and the final pass are each O(n).
+why_space: prefix, left, right and the stack each hold up to n + 1 numbers.
+hint: `prefix[i + 1] = prefix[i] + nums[i]`.
+hint: Find each index's nearest smaller number on the right (pop while the top is bigger) and on the left (pop while the top isn't smaller, then read the top).
+hint: The best is the largest `nums[i] * (prefix[right[i]] - prefix[left[i] + 1])`; take `% (10 ** 9 + 7)` only at the end.
+right: For a fixed smallest number, adding more positive numbers can only raise the sum, so the best subarray is the widest one where it's still the smallest, which its two neighbours mark out.
+wrong: For each number, find its nearest smaller neighbours on both sides with a monotonic stack, use prefix sums for the sum between them, and keep the largest number × sum, taking the remainder at the end.
+
+=== task: code hard
+title: Next Greater Element IV
+leetcode: 2454 | Next Greater Element IV | next-greater-element-iv
+patterns: next
+prompt: The **second greater** number of nums[i] is nums[j] where j > i, nums[j] > nums[i], and exactly one index k between i and j has nums[k] > nums[i]: it's the second number to the right of nums[i] that's bigger than it. Write `second_greater_element(nums)` that returns a list with each number's second greater number, or -1 if it has none.
+
+Use the two stacks from "The second greater element": `first` holds the indexes waiting for their first bigger number, and `second` those waiting for their second. When nums[i] arrives, first pop from `second` every index with a smaller number, and give each one nums[i]. Then pop from `first` every index with a smaller number and move them to `second`, keeping their order by going through a temporary list. Then push i onto `first`.
+
+**Example 1:** `run([2, 4, 0, 9, 6])` returns `[9, 6, 6, -1, -1]`. The 2's bigger numbers to the right are 4, 9 and 6, so its second greater number is 9.
+
+**Example 2:** `run([3, 3])` returns `[-1, -1]`.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 0 ≤ each number ≤ 10⁹.
+starter:
+```python
+def second_greater_element(nums):
+    answer = [-1] * len(nums)
+    first = []
+    second = []
+    # your code here
+    return answer
+
+
+def run(nums):
+    return second_greater_element(nums)
+```
+solution:
+```python
+def second_greater_element(nums):
+    answer = [-1] * len(nums)
+    first = []
+    second = []
+    for i in range(len(nums)):
+        while second and nums[second[-1]] < nums[i]:
+            answer[second.pop()] = nums[i]
+        moved = []
+        while first and nums[first[-1]] < nums[i]:
+            moved.append(first.pop())
+        while moved:
+            second.append(moved.pop())
+        first.append(i)
+    return answer
+
+
+def run(nums):
+    return second_greater_element(nums)
+```
+tests:
+- run([2, 4, 0, 9, 6])
+- run([3, 3])
+- run([1])
+- run([1, 2, 4, 3])
+- run([5, 1, 2, 3])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(6000, 0, -1)) + [i * 7919 % 7001 for i in range(3000)]))
+fail[2]: Equal numbers aren't greater.
+fail[3]: One number.
+fail[4]: The 1's first bigger number is the 2, and its second the 4.
+fail[5]: The 2 has only one bigger number after it, the 3, so it has no second.
+fail[6]: 9000 numbers, 6000 of them going down, whose answers all come from the last 3000. Counting bigger numbers to the right of each number is O(n²).
+edges:
+- no number has a second greater one :: second_greater_element(nums).count(-1) == len(nums) :: run([2, 1, 3])
+- every number but the last two has one :: len(nums) > 2 and second_greater_element(nums).count(-1) == 2 :: run([1, 2, 3])
+- some have one and some don't :: 2 < second_greater_element(nums).count(-1) < len(nums) :: run([1, 3, 2, 4])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each index is pushed onto each stack once and popped from each at most once.
+why_space: The two stacks and the temporary list hold up to n indexes between them.
+hint: Loop over i. First, `while second and nums[second[-1]] < nums[i]:` set `answer[second.pop()] = nums[i]`.
+hint: Then `moved = []`, and `while first and nums[first[-1]] < nums[i]:` append `first.pop()` to moved.
+hint: `while moved:` push `moved.pop()` onto second. Then push i onto first.
+right: An index needs two bigger numbers, so it waits on first until it meets one and on second until it meets another; answering from second before moving stops one number counting twice, and moving in order keeps second decreasing.
+wrong: Keep two stacks of indexes; each new number answers the smaller ones on second, then moves the smaller ones on first over to second in their order, then joins first.
+
+=== task: code hard
+title: Largest Rectangle in Histogram
+leetcode: 84 | Largest Rectangle in Histogram | largest-rectangle-in-histogram
+patterns: next + prev
+prompt: heights[i] is the height of bar i of a histogram, and every bar is 1 wide. Write `largest_rectangle_area(heights)` that returns the area of the largest rectangle inside the histogram.
+
+The largest rectangle is as tall as its shortest bar. For each bar, the widest rectangle of its height reaches from the bar after its left neighbour, the nearest shorter bar on the left, to the bar before its right neighbour, the nearest shorter bar on the right: `right - left - 1` bars wide. Find both neighbours with monotonic stacks, using -1 and n when there's no shorter bar, and keep the largest `heights[i] * (right - left - 1)`.
+
+**Example 1:** `run([2, 1, 5, 6, 2, 3])` returns 10: the 5 and the 6 make a rectangle 5 high and 2 wide.
+
+**Example 2:** `run([2, 4])` returns 4.
+
+**Constraints:** 1 ≤ len(heights) ≤ 10⁵, and 0 ≤ each height ≤ 10⁴.
+starter:
+```python
+def largest_rectangle_area(heights):
     n = len(heights)
     left = [-1] * n
     right = [n] * n
     # your code here
-    return 0
+    best = 0
+    return best
+
+
+def run(heights):
+    return largest_rectangle_area(heights)
 ```
 solution:
 ```python
-def largest_rectangle(heights):
+def largest_rectangle_area(heights):
     n = len(heights)
-    left = [-1] * n
     right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and heights[stack[-1]] > heights[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
     stack = []
     for i in range(n):
         while stack and heights[stack[-1]] >= heights[i]:
@@ -909,226 +2161,748 @@ def largest_rectangle(heights):
         if stack:
             left[i] = stack[-1]
         stack.append(i)
-    stack = []
-    for i in range(n - 1, -1, -1):
-        while stack and heights[stack[-1]] >= heights[i]:
-            stack.pop()
-        if stack:
-            right[i] = stack[-1]
-        stack.append(i)
     best = 0
     for i in range(n):
-        area = heights[i] * (right[i] - left[i] - 1)
-        if area > best:
-            best = area
+        best = max(best, heights[i] * (right[i] - left[i] - 1))
     return best
+
+
+def run(heights):
+    return largest_rectangle_area(heights)
 ```
 tests:
-- largest_rectangle([2, 1, 5, 6, 2, 3])
-- largest_rectangle([2, 4])
-- largest_rectangle([5])
-- largest_rectangle([])
-- largest_rectangle([3, 3, 3])
-- largest_rectangle([2, 1, 2])
-- largest_rectangle([6, 2, 5, 4, 5, 1, 6])
-speed: setup=heights = [5] * n | call=largest_rectangle(heights) | target=O(n)
-slow:
-```python
-def largest_rectangle(heights):
-    best = 0
-    for i in range(len(heights)):
-        lo = i
-        while lo > 0 and heights[lo - 1] >= heights[i]:
-            lo -= 1
-        hi = i
-        while hi < len(heights) - 1 and heights[hi + 1] >= heights[i]:
-            hi += 1
-        area = heights[i] * (hi - lo + 1)
-        if area > best:
-            best = area
-    return best
-```
-fail[1]: The bars 5 and 6 make a rectangle 5 high and 2 wide: 10.
-fail[2]: The 4 alone gives 4; the two bars together give 2 × 2 = 4.
-fail[5]: Three bars of 3 make one rectangle 3 high and 3 wide: 9.
-fail[6]: The lowest bar, 1, stretches across all three bars: 3.
-fail[7]: The bars 5, 4, 5 make a rectangle 4 high and 3 wide: 12.
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: Left pass: pop while the top bar is at least as high as bar i; if a bar is left, it's `left[i]`; push i.
-hint: Right pass: the same, walking with `range(n - 1, -1, -1)`, filling `right[i]`.
-hint: Then the width for bar i is `right[i] - left[i] - 1`.
-right: Two monotonic-stack passes and one loop: O(n). Spreading out from every bar instead would be O(n²) when the bars are all the same height.
-wrong: Find each bar's previous lower bar and next lower bar with increasing stacks, then take the best height × width.
+- run([2, 1, 5, 6, 2, 3])
+- run([2, 4])
+- run([0])
+- run([3, 3, 3])
+- run([6, 2, 5, 4, 5, 1, 6])
+- [run([i * 7919 % 10001 for i in range(10000)]), run(list(range(1, 5001)) + list(range(5000, 0, -1)))]
+fail[2]: The 4 alone, or 2 high across both bars: 4 either way.
+fail[3]: A bar of height 0 makes no rectangle.
+fail[4]: Equal bars: the best rectangle uses all three.
+fail[5]: The best rectangle, 4 high and 3 wide, spans the 5, the 4 and the 5.
+fail[6]: Two histograms of 10,000 bars. Spreading out from each bar to find its rectangle is O(n²).
+edges:
+- every bar the same height :: len(set(heights)) == 1 :: run([2, 2])
+- the best rectangle is one bar :: len(set(heights)) > 1 and largest_rectangle_area(heights) == max(heights) :: run([1, 5])
+- the best rectangle is wider than one bar :: len(set(heights)) > 1 and largest_rectangle_area(heights) > max(heights) :: run([3, 2, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of bars.
+why_time: Two stack passes and one pass for the areas, each O(n).
+why_space: left, right and the stack each hold up to n indexes.
+hint: Right pass: `while stack and heights[stack[-1]] > heights[i]:` set `right[stack.pop()] = i`.
+hint: Left pass: `while stack and heights[stack[-1]] >= heights[i]:` pop; then `if stack:` set `left[i] = stack[-1]`.
+hint: The answer is the largest `heights[i] * (right[i] - left[i] - 1)`.
+right: Every rectangle is limited by its shortest bar, and for each bar the widest rectangle at its height stops at its nearest shorter bars, so n candidates include the largest rectangle.
+wrong: For each bar, find the nearest shorter bar on each side with monotonic stacks, −1 and n if there's none; its rectangle is heights[i] × (right − left − 1); return the largest.
 
 === task: code hard
-title: Remove k digits
-prompt: `num` is a string of digits. Write `remove_k_digits(num, k)` that removes exactly k digits so that the number left is as small as possible, and returns it as a string without leading zeros ("0" if nothing is left).
+title: Number of Visible People in a Queue
+leetcode: 1944 | Number of Visible People in a Queue | number-of-visible-people-in-a-queue
+patterns: next + prev
+prompt: n people stand in a queue from left to right, and their heights are all different. Person i can see person j to their right if everyone between them is shorter than both of them. Write `can_see_persons_count(heights)` that returns a list with how many people each person can see to their right.
 
-Use an increasing stack of digits: while k > 0 and the digit on top is bigger than the next digit, pop it (removing a bigger digit from earlier in the number helps most) and take 1 from k. If k is still above 0 at the end, remove digits from the end. `s.lstrip("0")` removes every 0 from the left end of `s`.
+Walk from the right with a stack of heights: the people someone further left might still see. For person i, pop every shorter person on top. i sees each of them, and after that they're hidden behind i from everyone further left. If someone is left on top, they're taller than i, and i sees them too, but nobody behind them. Then push i's height.
 
-For example, `remove_k_digits("1432219", 3)` returns "1219".
+**Example 1:** `run([10, 6, 8, 5, 11, 9])` returns `[3, 1, 2, 1, 1, 0]`. The 10 sees the 6, the 8 and the 11; the 9 behind the 11 is hidden.
+
+**Example 2:** `run([5, 1, 2, 3, 10])` returns `[4, 1, 1, 1, 0]`.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ each height ≤ 10⁵, and the heights are all different.
 starter:
 ```python
-def remove_k_digits(num, k):
+def can_see_persons_count(heights):
+    n = len(heights)
+    answer = [0] * n
     stack = []
     # your code here
-    return "".join(stack)
+    return answer
+
+
+def run(heights):
+    return can_see_persons_count(heights)
 ```
 solution:
 ```python
-def remove_k_digits(num, k):
+def can_see_persons_count(heights):
+    n = len(heights)
+    answer = [0] * n
     stack = []
-    for d in num:
-        while k > 0 and stack and stack[-1] > d:
+    for i in range(n - 1, -1, -1):
+        seen = 0
+        while stack and stack[-1] < heights[i]:
             stack.pop()
-            k -= 1
-        stack.append(d)
-    while k > 0:
-        stack.pop()
-        k -= 1
-    result = "".join(stack).lstrip("0")
-    if result == "":
-        return "0"
-    return result
+            seen += 1
+        if stack:
+            seen += 1
+        answer[i] = seen
+        stack.append(heights[i])
+    return answer
+
+
+def run(heights):
+    return can_see_persons_count(heights)
 ```
 tests:
-- remove_k_digits("1432219", 3)
-- remove_k_digits("10200", 1)
-- remove_k_digits("10", 2)
-- remove_k_digits("12345", 2)
-- remove_k_digits("54321", 2)
-- remove_k_digits("9", 1)
-- remove_k_digits("112", 1)
-fail[1]: The 4, then the 3, then one 2 are removed, because each is bigger than the digit after it: 1219.
-fail[2]: Removing the 1 leaves "0200", which is "200" without its leading zero.
-fail[3]: Removing every digit leaves nothing: "0".
-fail[4]: The digits only rise, so nothing is popped on the way; the last two digits go: "123".
-fail[5]: Each digit is bigger than the next, so the first two go: "321".
-fail[7]: No digit is followed by a smaller one, so nothing is popped on the way, and the last digit, 2, is removed: "11".
-error[IndexError]: Check `stack` isn't empty before reading `stack[-1]`.
-hint: While `k > 0` and the top digit is bigger than d, pop and take 1 from k. Then push d.
-hint: If k is still above 0, pop from the end k more times.
-hint: Join, strip the leading zeros with `.lstrip("0")`, and return "0" if that leaves nothing.
-right: A bigger digit early in the number costs more than one later on, so each digit pops the bigger digits before it while removals are left: O(n), each digit pushed and popped at most once.
-wrong: Keep an increasing stack: a smaller digit pops bigger ones before it while k lasts. Remove any remaining k from the end, drop leading zeros, and use "0" for an empty result.
+- run([10, 6, 8, 5, 11, 9])
+- run([5, 1, 2, 3, 10])
+- run([7])
+- run([1, 2, 3])
+- run([3, 2, 1])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run(list(range(100000, 90000, -1)) + [(i * 7919) % 15013 + 1 for i in range(5000)]))
+fail[2]: The 5 sees the 1, the 2 and the 3 over each other's heads, and the 10.
+fail[3]: One person sees nobody.
+fail[4]: Heights going up: each person sees the next, who hides everyone behind.
+fail[5]: Heights going down: the person next to you is taller than everyone behind them, so they hide them.
+fail[6]: 15,000 people, the first 10,000 going down, so each looks along the whole rest of the queue. Checking everyone to the right of each person is O(n²).
+edges:
+- heights that only go down :: all(heights[i] > heights[i + 1] for i in range(len(heights) - 1)) :: run([3, 2, 1])
+- heights that only go up :: len(heights) > 1 and all(heights[i] < heights[i + 1] for i in range(len(heights) - 1)) :: run([1, 2, 3])
+- ups and downs :: any(heights[i] > heights[i + 1] for i in range(len(heights) - 1)) and any(heights[i] < heights[i + 1] for i in range(len(heights) - 1)) :: run([2, 1, 3])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of people.
+why_time: Each height is pushed once and popped at most once.
+why_space: The stack can hold every height, when they only go up.
+hint: Loop `for i in range(n - 1, -1, -1):`, starting with `seen = 0`.
+hint: `while stack and stack[-1] < heights[i]:` pop, and add 1 to seen.
+hint: If the stack isn't empty, add 1 for the taller person on top. Then `answer[i] = seen`, and push `heights[i]`.
+right: Someone shorter than i can't be seen past i by anyone further left, so popping them as i sees them leaves a decreasing stack of the people still visible, and the first taller one hides the rest.
+wrong: Go from the right with a decreasing stack of heights; each person sees every shorter person they pop, plus the taller person left on top if there is one; then push their height.
 
-=== task: predict hard
-title: The previous greater element
-code:
+=== task: code hard
+title: Find the Number of Subarrays Where Boundary Elements Are Maximum
+leetcode: 3113 | Find the Number of Subarrays Where Boundary Elements Are Maximum | find-the-number-of-subarrays-where-boundary-elements-are-maximum
+patterns: prev + carry
+prompt: Write `number_of_subarrays(nums)` that returns how many subarrays of nums have a first and a last number that are both equal to the subarray's largest number. A single number counts: it's the first, the last and the largest.
+
+Count, for each number x, the good subarrays that end at x: they start at x itself, or at an equal number on its left with nothing bigger between them. Keep a stack of `[value, count]` entries, decreasing from the bottom, where count is how many copies of that value could still start a good subarray. When x arrives, pop every entry with a smaller value: with x between, they can't start a good subarray that reaches x or anything after it. If the top now has the value x, add 1 to its count; otherwise push `[x, 1]`. The top's count is the number of good subarrays that end at x: add it to the total.
+
+**Example 1:** `run([1, 4, 3, 3, 2])` returns 6: the five single numbers, and [3, 3].
+
+**Example 2:** `run([3, 3, 3])` returns 6.
+
+**Example 3:** `run([1])` returns 1.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 1 ≤ each number ≤ 10⁹.
+starter:
 ```python
-def previous_greater(nums):
-    result = [-1] * len(nums)
+def number_of_subarrays(nums):
     stack = []
-    for i in range(len(nums)):
-        while stack and nums[stack[-1]] <= nums[i]:
+    total = 0
+    # your code here
+    return total
+
+
+def run(nums):
+    return number_of_subarrays(nums)
+```
+solution:
+```python
+def number_of_subarrays(nums):
+    stack = []
+    total = 0
+    for x in nums:
+        while stack and stack[-1][0] < x:
+            stack.pop()
+        if stack and stack[-1][0] == x:
+            stack[-1][1] += 1
+        else:
+            stack.append([x, 1])
+        total += stack[-1][1]
+    return total
+
+
+def run(nums):
+    return number_of_subarrays(nums)
+```
+tests:
+- run([1, 4, 3, 3, 2])
+- run([3, 3, 3])
+- run([1])
+- run([2, 1, 2])
+- run([1, 3, 1, 3])
+- [run([5] * 6000), run([i * 7919 % 50 + 1 for i in range(10000)])]
+fail[2]: Equal numbers: every subarray of [3, 3, 3] counts.
+fail[3]: One number is a subarray on its own.
+fail[4]: The two 2s, with a smaller 1 between them, make a good subarray too.
+fail[5]: The 3s pair up across the 1, but the 1s can't pair up across the bigger 3.
+fail[6]: 6000 equal numbers, where all 18,003,000 subarrays count, and 10,000 numbers from 1 to 50. Checking every subarray is O(n²).
+edges:
+- every number different :: len(set(nums)) == len(nums) :: run([1, 2])
+- a repeat, but only single numbers count :: len(set(nums)) < len(nums) and number_of_subarrays(nums) == len(nums) :: run([1, 3, 1])
+- longer subarrays count too :: number_of_subarrays(nums) > len(nums) :: run([2, 1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Each number pushes or updates one entry, and each entry is popped at most once.
+why_space: The stack can hold an entry for every number, when they only go down.
+hint: Loop `for x in nums:`, and `while stack and stack[-1][0] < x:` pop.
+hint: If `stack and stack[-1][0] == x`, add 1 to `stack[-1][1]`; otherwise push `[x, 1]`.
+hint: Add `stack[-1][1]` to the total.
+right: A number can't be a boundary once something bigger has come after it, so popping keeps only the values still open, and the count on top is how many good subarrays end at the newest copy of its value.
+wrong: Keep a decreasing stack of [value, count]; pop smaller values; an equal value on top gains 1, otherwise push [x, 1]; add the top's count to the answer for every x.
+
+=== task: code hard
+title: Second Warmer Day Round the Week
+patterns: next + round
+prompt: temps[i] is the temperature on day i of a week that repeats forever. For each day, go round the week from the day after it, through the other days, and find the **second** day that's warmer than it. Write `second_warmer(temps)` that returns a list with, for each day, how many days later that second warmer day comes, or 0 if fewer than two other days are warmer.
+
+Combine the second greater element with going round twice. Loop i over 2n steps reading `temps[i % n]`, with the two stacks: answer from `second`, then move the indexes the day pops off `first` across in their order, then push i onto `first`, but only on the first lap. A day j popped from `second` at step i waited `i - j` days. Count it only if `i - j < n`: going round, a day only looks at the n − 1 days after it, so i − j of n or more means its first warmer day has come round again, which doesn't count as a second.
+
+**Example 1:** `run([21, 19, 23, 22, 25])` returns `[3, 2, 0, 4, 0]`. The 22 finds the 25 a day later, then goes round past the 21 and the 19 to the 23, 4 days later. The 23 has only one warmer day.
+
+**Example 2:** `run([24, 20, 22, 26])` returns `[0, 2, 2, 0]`. The 22 finds the 26, then goes round to the 24.
+
+**Constraints:** 1 ≤ len(temps) ≤ 10⁴, and 1 ≤ each temperature ≤ 100.
+starter:
+```python
+def second_warmer(temps):
+    n = len(temps)
+    answer = [0] * n
+    first = []
+    second = []
+    # your code here
+    return answer
+
+
+def run(temps):
+    return second_warmer(temps)
+```
+solution:
+```python
+def second_warmer(temps):
+    n = len(temps)
+    answer = [0] * n
+    first = []
+    second = []
+    for i in range(2 * n):
+        t = temps[i % n]
+        while second and temps[second[-1]] < t:
+            j = second.pop()
+            if i - j < n:
+                answer[j] = i - j
+        moved = []
+        while first and temps[first[-1]] < t:
+            moved.append(first.pop())
+        while moved:
+            second.append(moved.pop())
+        if i < n:
+            first.append(i)
+    return answer
+
+
+def run(temps):
+    return second_warmer(temps)
+```
+tests:
+- run([21, 19, 23, 22, 25])
+- run([30, 30])
+- run([25])
+- run([20, 21, 22])
+- run([24, 20, 22, 26])
+- (lambda r: [len(r), r[:5], r[-5:], sum(r)])(run([99] * 2500 + [100] + list(range(60, 30, -1)) * 50 + [30 + i * 7919 % 70 for i in range(2000)]))
+fail[2]: Equal temperatures aren't warmer.
+fail[3]: One day.
+fail[4]: The 21 has only one warmer day, the 22, even going round.
+fail[5]: The 22 finds its second warmer day, the 24, by going round.
+fail[6]: 6001 days, 2500 of them 99, each with only one warmer day, the 100. Searching round from each day is O(n²).
+edges:
+- no day has two warmer days :: sum(second_warmer(temps)) == 0 :: run([20, 21])
+- a second warmer day found by going round :: any(w > len(temps) - 1 - j for j, w in enumerate(second_warmer(temps))) :: run([22, 20, 21])
+- second warmer days, none going round :: sum(second_warmer(temps)) > 0 and not any(w > len(temps) - 1 - j for j, w in enumerate(second_warmer(temps))) :: run([20, 21, 22])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of days in the week.
+why_time: 2n steps, and each day is pushed onto each stack once and popped from each at most once.
+why_space: The two stacks and the temporary list hold up to n days between them.
+hint: Loop `for i in range(2 * n):` with `t = temps[i % n]`.
+hint: `while second and temps[second[-1]] < t:` pop j, and set `answer[j] = i - j` only `if i - j < n`.
+hint: Move the days that `first` pops, those colder than t, to `second` through a temporary list, so they keep their order.
+hint: Push i onto `first` only `if i < n`.
+right: Going round twice shows every day the n − 1 days after it, the two stacks find its second warmer one among them, and the i − j < n check stops a day's first warmer day counting again on the second lap.
+wrong: Loop over 2n steps with i % n and two stacks; answer from second (only waits under n days), move the days popped off first over to second in order, and push onto first only on the first lap.
+
+=== task: code hard
+title: Subarray With Elements Greater Than Varying Threshold
+leetcode: 2334 | Subarray With Elements Greater Than Varying Threshold | subarray-with-elements-greater-than-varying-threshold
+patterns: next + prev
+prompt: Write `valid_subarray_size(nums, threshold)` that finds a subarray of nums, of some length k, in which every number is greater than threshold / k, and returns k, or -1 if there's no such subarray. Several lengths can work: LeetCode accepts any of them, but here, return the largest.
+
+Try each number as the smallest of a subarray. Between its left and right neighbours, the nearest smaller numbers on each side, nums[i] is the smallest, so the longest subarray with nums[i] as its smallest has length `w = right - left - 1`. That subarray works if `nums[i] > threshold / w`, which is `nums[i] * w > threshold` without dividing. Any subarray that works has a smallest number, whose longest subarray is at least as long and works too, so the largest w that works is the answer.
+
+**Example 1:** `run([1, 3, 4, 3, 1], 6)` returns 3: in [3, 4, 3], every number is greater than 6 / 3 = 2.
+
+**Example 2:** `run([6, 5, 6, 5, 8], 7)` returns 5: every number is greater than 7 / 5. LeetCode's own answer, 1, works too, but it isn't the largest.
+
+**Constraints:** 1 ≤ len(nums) ≤ 10⁵, and 1 ≤ each number, threshold ≤ 10⁹.
+starter:
+```python
+def valid_subarray_size(nums, threshold):
+    n = len(nums)
+    left = [-1] * n
+    right = [n] * n
+    # your code here
+    best = -1
+    return best
+
+
+def run(nums, threshold):
+    return valid_subarray_size(nums, threshold)
+```
+solution:
+```python
+def valid_subarray_size(nums, threshold):
+    n = len(nums)
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] > nums[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and nums[stack[-1]] >= nums[i]:
             stack.pop()
         if stack:
-            result[i] = nums[stack[-1]]
+            left[i] = stack[-1]
+        stack.append(i)
+    best = -1
+    for i in range(n):
+        w = right[i] - left[i] - 1
+        if nums[i] * w > threshold and w > best:
+            best = w
+    return best
+
+
+def run(nums, threshold):
+    return valid_subarray_size(nums, threshold)
+```
+tests:
+- run([1, 3, 4, 3, 1], 6)
+- run([6, 5, 6, 5, 8], 7)
+- run([1], 5)
+- run([10], 5)
+- run([2, 2, 2], 6)
+- [run([i * 7919 % 100000 + 1 for i in range(5000)], 99999), run([i * 7919 % 100000 + 1 for i in range(5000)], 200000), run(list(range(1, 5001)), 6250000)]
+fail[2]: Every length from 1 to 5 works here: return the largest, 5.
+fail[3]: 1 isn't greater than 5 / 1.
+fail[4]: 10 is greater than 5 / 1.
+fail[5]: Greater means strictly greater: 2 isn't greater than 6 / 3.
+fail[6]: 5000 numbers with two thresholds, and the numbers 1 to 5000 with a threshold that only lengths near 2500 meet. Checking every subarray is O(n²).
+edges:
+- no subarray works :: valid_subarray_size(nums, threshold) == -1 :: run([1, 1], 5)
+- the whole list works :: valid_subarray_size(nums, threshold) == len(nums) :: run([3, 3], 5)
+- the largest that works is shorter :: 0 < valid_subarray_size(nums, threshold) < len(nums) :: run([1, 6], 5)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the length of nums.
+why_time: Two stack passes and one pass over the candidates, each O(n).
+why_space: left, right and the stack each hold up to n indexes.
+hint: Right neighbours: pop while `nums[stack[-1]] > nums[i]`; left neighbours: pop while `nums[stack[-1]] >= nums[i]`, then read the top.
+hint: For each i, `w = right[i] - left[i] - 1`.
+hint: Keep the largest w with `nums[i] * w > threshold`, starting from -1.
+right: In any subarray that works, its smallest number reaches at least as far on its own, so each number's longest subarray is a candidate, and checking n of them finds the largest length that works.
+wrong: For each number, find how far it reaches as the smallest with monotonic stacks, w = right − left − 1, and keep the largest w with nums[i] × w > threshold, or −1.
+
+=== task: code hard
+title: Odd Even Jump
+leetcode: 975 | Odd Even Jump | odd-even-jump
+patterns: next
+prompt: From a starting index, you jump forwards through arr. The 1st, 3rd, 5th and every other odd-numbered jump is an **odd** jump: from i, jump to the index j > i with the smallest arr[j] that's at least arr[i]. The 2nd, 4th, 6th and every other even-numbered jump is an **even** jump: from i, jump to the index j > i with the largest arr[j] that's at most arr[i]. In both, if several indexes have that value, jump to the leftmost; if there's no such j, you're stuck. A starting index is **good** if you can reach the last index from it, jumping any number of times, including none. Write `odd_even_jumps(arr)` that returns the number of good starting indexes.
+
+First, find every jump. The odd jump from each index is its next greater index in the order of the indexes sorted by (value, index), as in "Walking in another order"; the even jump uses the order sorted by (−value, index). Then work backwards from the end with two lists: odd[i] says whether you reach the end from i when your next jump is odd, and even[i] when it's even. Both are True at the last index. If the odd jump from i lands on j, odd[i] = even[j], because the jump after it is even; if the even jump lands on j, even[i] = odd[j]. Every start begins with an odd jump, so count the indexes with odd[i] True.
+
+**Example 1:** `run([10, 13, 12, 14, 15])` returns 2: only the starts at the 14 and the 15 reach the end.
+
+**Example 2:** `run([2, 3, 1, 1, 4])` returns 3.
+
+**Example 3:** `run([5, 1, 3, 4, 2])` returns 3.
+
+**Constraints:** 1 ≤ len(arr) ≤ 2 × 10⁴, and 0 ≤ each number < 10⁵.
+starter:
+```python
+def next_jumps(order):
+    result = [-1] * len(order)
+    stack = []
+    # your code here
+    return result
+
+
+def odd_even_jumps(arr):
+    n = len(arr)
+    good = 0
+    # your code here
+    return good
+
+
+def run(arr):
+    return odd_even_jumps(arr)
+```
+solution:
+```python
+def next_jumps(order):
+    result = [-1] * len(order)
+    stack = []
+    for i in order:
+        while stack and stack[-1] < i:
+            result[stack.pop()] = i
         stack.append(i)
     return result
 
-print(previous_greater([3, 5, 2, 4, 1]))
-```
-wrong[[-1, 3, 5, 5, 4]]: The previous greater element must be **bigger**: 3 is smaller than 5, so 5 has none.
-wrong[[-1, -1, 5, 2, 4]]: 2 isn't bigger than 4; the nearest bigger number to the left of 4 is 5.
-wrong[[5, -1, 4, -1, -1]]: That's the next greater element, to the right. This function answers each number with what's left on the stack: a number to its left.
-hint: After popping, the top of the stack is the nearest bigger number to the left.
-hint: The 4 pops the 2, leaving the 5 on top.
-right: 3 and 5 have nothing bigger before them; 2 and 4 both look back to 5; 1 looks back to 4.
-wrong: For each number, pop the earlier numbers that aren't bigger; whatever is left on top is the answer: -1, -1, 5, 5, 4.
 
-=== task: predict hard
-title: The same temperature
-code:
+def odd_even_jumps(arr):
+    n = len(arr)
+    up = next_jumps(sorted(range(n), key=lambda i: (arr[i], i)))
+    down = next_jumps(sorted(range(n), key=lambda i: (-arr[i], i)))
+    odd = [False] * n
+    even = [False] * n
+    odd[n - 1] = True
+    even[n - 1] = True
+    good = 1
+    for i in range(n - 2, -1, -1):
+        if up[i] != -1:
+            odd[i] = even[up[i]]
+        if down[i] != -1:
+            even[i] = odd[down[i]]
+        if odd[i]:
+            good += 1
+    return good
+
+
+def run(arr):
+    return odd_even_jumps(arr)
+```
+tests:
+- run([10, 13, 12, 14, 15])
+- run([2, 3, 1, 1, 4])
+- run([5, 1, 3, 4, 2])
+- run([1])
+- run([1, 1, 1])
+- [run([i * 7919 % 100000 for i in range(5000)]), run([i % 2 * 50000 + i for i in range(2500)])]
+fail[2]: From the 2, an odd jump goes to the 3 and an even jump to the first 1, the leftmost of the largest values at most 3; from there you get stuck.
+fail[3]: From the 3, an odd jump to the 4 and an even jump to the 2 reach the end; the 5 and the 4 are stuck straight away.
+fail[4]: One index: you start at the end, so it's good.
+fail[5]: Equal values: each jump goes to the next 1, the leftmost of the values that tie.
+fail[6]: Lists of 5000 and 2500 numbers. Searching to the right for every jump is O(n²).
+edges:
+- only the last index is good :: odd_even_jumps(arr) == 1 :: run([5, 1])
+- every index is good :: len(arr) > 1 and odd_even_jumps(arr) == len(arr) :: run([1, 2])
+- some good and some not :: 1 < odd_even_jumps(arr) < len(arr) :: run([1, 3, 2])
+edge_count: 2
+complexity: time=O(n log n) | space=O(n)
+complexity_note: n is the length of arr.
+why_time: The two sorts are O(n log n); the stack passes and the backwards pass are O(n).
+why_space: The sorted orders, the jumps and the odd and even lists each hold n items.
+hint: In `next_jumps`, walk `for i in order:`, and `while stack and stack[-1] < i:` set `result[stack.pop()] = i`; then push i.
+hint: `up = next_jumps(sorted(range(n), key=lambda i: (arr[i], i)))`, and `down` the same with `(-arr[i], i)`.
+hint: Set odd and even to True at n − 1, then for i from n − 2 down to 0: `odd[i] = even[up[i]]` if `up[i] != -1`, and `even[i] = odd[down[i]]` if `down[i] != -1`.
+hint: Count the i with odd[i] True.
+right: Sorting by value lines up each jump's candidates, so the next greater index in that order is the jump, and working backwards means every jump lands on an index whose answers are already known.
+wrong: Find each odd jump as the next greater index in the indexes sorted by (value, index), and each even jump the same with (−value, index); fill odd and even backwards from the last index, and count the starts with odd True.
+
+=== task: code hard
+title: Sum of Total Strength of Wizards
+leetcode: 2281 | Sum of Total Strength of Wizards | sum-of-total-strength-of-wizards
+patterns: next + prev
+prompt: strength[i] is the strength of wizard i. The **total strength** of a group of wizards next to each other, a subarray, is its weakest wizard's strength times the sum of all its strengths. Write `total_strength(strength)` that returns the sum of the total strengths of every group, modulo 10⁹ + 7.
+
+Each group is counted for its weakest wizard. Find each wizard's left neighbour, the nearest weaker wizard on the left, and right neighbour, the nearest wizard on the right who's weaker or equal, so a group with two equal weakest wizards counts once, for the right one. Wizard i is the weakest of the groups from l to r with left < l ≤ i ≤ r < right. With `prefix[k]` the sum of the first k strengths, a group's sum is `prefix[r + 1] - prefix[l]`. Adding over every l and r, each `prefix[r + 1]` comes once for each of the `i - left` values of l, and each `prefix[l]` once for each of the `right - i` values of r. pp, the prefix sums of prefix, adds up a run of them in O(1): `pp[b + 1] - pp[a]` is the sum of prefix[a] to prefix[b]. So the groups' sums add up to `(i - left) * (pp[right + 1] - pp[i + 1]) - (right - i) * (pp[i + 1] - pp[left + 1])`, and wizard i adds strength[i] times that.
+
+**Example 1:** `run([1, 3, 1, 2])` returns 44.
+
+**Example 2:** `run([5, 4, 6])` returns 213.
+
+**Constraints:** 1 ≤ len(strength) ≤ 10⁵, and 1 ≤ each strength ≤ 10⁹.
+starter:
 ```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
+def total_strength(strength):
+    n = len(strength)
+    left = [-1] * n
+    right = [n] * n
+    prefix = [0] * (n + 1)
+    pp = [0] * (n + 2)
+    # your code here
+    total = 0
+    return total % (10 ** 9 + 7)
+
+
+def run(strength):
+    return total_strength(strength)
+```
+solution:
+```python
+def total_strength(strength):
+    n = len(strength)
+    right = [n] * n
     stack = []
-    for i in range(len(temps)):
-        while stack and temps[stack[-1]] < temps[i]:
-            j = stack.pop()
-            answer[j] = i - j
+    for i in range(n):
+        while stack and strength[stack[-1]] >= strength[i]:
+            right[stack.pop()] = i
         stack.append(i)
-    return answer
-
-print(daily_temperatures([20, 20, 22, 21, 21, 23]))
-```
-wrong[[1, 1, 3, 1, 1, 0]]: The same temperature isn't warmer: day 0 waits for the 22 on day 2, two days later.
-wrong[[2, 1, 3, 2, 1, 1]]: Nothing comes after the 23, so day 5 keeps 0.
-wrong[[2, 1, 1, 2, 1, 0]]: Day 2 (22) has to wait for the 23 on day 5: the 21s are colder.
-hint: Equal temperatures don't pop each other: both 20s wait for the 22.
-hint: The 23 on day 5 pops days 4, 3 and 2.
-right: 2, 1, 3, 2, 1, 0: equal days wait together, and one warmer day answers them all.
-wrong: Days 0 and 1 (20) are answered by day 2: 2 and 1. Days 2, 3 and 4 are answered by day 5: 3, 2 and 1. Day 5 keeps 0.
-
-=== task: cells hard
-title: Spans of a stock
-prompt: Using the `spans` rule (how many days in a row, ending today, the price was at most today's price), what is the span on each day of the prices `[10, 4, 5, 90, 120, 80]`? Days are numbered from 0.
-labels: day 2 | day 3 | day 4 | day 5
-answer: 2 | 4 | 5 | 1
-wrong[1 | 4 | 5 | 1]: Day 2's price, 5, is at least day 1's 4, so the span covers days 1 and 2: 2.
-wrong[2 | 3 | 4 | 1]: Day 3's 90 covers every day so far, days 0 to 3: 4.
-wrong[2 | 4 | 5 | 6]: Day 5's 80 is lower than day 4's 120, so the span is only the day itself: 1.
-hint: The span stops at the first earlier day with a higher price.
-hint: 90 and 120 are higher than everything before them.
-right: 5 covers back to the 4; 90 and 120 cover every day before them; 80 is stopped at once by the 120.
-wrong: Day 2: 5 ≥ 4 but < 10: 2. Day 3: 90 beats everything: 4. Day 4: 120 beats everything: 5. Day 5: 80 < 120: 1.
-
-=== task: mcq hard
-title: Indexes, not values
-prompt: Why does `daily_temperatures` push indexes onto its stack instead of temperatures?
-* An index gives both where to write the answer and how far apart the two days are, and the temperature can still be read as `temps[j]` :: Right. A temperature alone loses the day it belongs to.
-- Indexes are smaller numbers, so they use less memory :: The point isn't size: a temperature on its own doesn't say which day it came from.
-- Python's lists can't hold temperatures with decimals :: Lists hold any numbers.
-- The comparison only works on indexes :: The comparison reads temperatures, `temps[stack[-1]]`.
-hint: What does the answer for a day need to know?
-hint: Can you get a temperature back from an index? Can you get an index back from a temperature?
-right: From an index you get everything: the value, the place to write the answer, and the distance `i - j`. From a value alone you get none of the last two.
-wrong: The answer is `i - j`, written into `answer[j]`: both need the day's index. The temperature is `temps[j]` whenever it's needed.
-
-=== task: multi hard
-title: Jobs for a monotonic stack
-prompt: Choose **every** problem that a monotonic stack solves in O(n).
-* For each day, the number of days until a warmer day :: Right. Next greater element, with distances.
-* For each stock price, how many days back it beats :: Right. The stock span: previous greater element.
-* The largest rectangle under a bar chart :: Right. Previous and next lower bars.
-* For each number, the next greater number going round a circle :: Right. Go round twice.
-- Sorting a list :: Sorting needs O(n log n) comparisons; a stack pass doesn't sort.
-- Finding the biggest number in the list :: One pass with a running maximum is enough: no stack needed.
-hint: Which ones ask about the nearest bigger or smaller item?
-hint: Four of them do.
-right: "Nearest bigger or smaller item to the left or right" is exactly what a monotonic stack answers in O(n).
-wrong: Monotonic stack: warmer days, stock span, largest rectangle, circular next greater. Sorting and the overall maximum are different problems.
-
-=== task: parsons hard
-title: Days until warmer
-prompt: Arrange the lines so that `daily_temperatures` returns the number of days until a warmer day, and the program prints:
-
-```output
-[1, 1, 4, 2, 1, 1, 0, 0]
-```
-
-Not every line is needed.
-lines:
-```python
-def daily_temperatures(temps):
-    answer = [0] * len(temps)
+    left = [-1] * n
     stack = []
-    for i in range(len(temps)):
-        while stack and temps[stack[-1]] < temps[i]:
-            j = stack.pop()
-            answer[j] = i - j
+    for i in range(n):
+        while stack and strength[stack[-1]] >= strength[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
         stack.append(i)
-    return answer
+    prefix = [0] * (n + 1)
+    for i in range(n):
+        prefix[i + 1] = prefix[i] + strength[i]
+    pp = [0] * (n + 2)
+    for i in range(n + 1):
+        pp[i + 1] = pp[i] + prefix[i]
+    total = 0
+    for i in range(n):
+        lo = left[i]
+        hi = right[i]
+        gain = (i - lo) * (pp[hi + 1] - pp[i + 1]) - (hi - i) * (pp[i + 1] - pp[lo + 1])
+        total += strength[i] * gain
+    return total % (10 ** 9 + 7)
 
-print(daily_temperatures([73, 74, 75, 71, 69, 72, 76, 73]))
+
+def run(strength):
+    return total_strength(strength)
 ```
-distractors:
+tests:
+- run([1, 3, 1, 2])
+- run([5, 4, 6])
+- run([7])
+- run([2, 2])
+- run([1, 2, 3])
+- [run([i * 7919 % 1000000000 + 1 for i in range(6000)]), run([10 ** 9] * 2000)]
+fail[2]: The groups [5], [4], [6], [5, 4], [4, 6] and [5, 4, 6] have total strengths 25, 16, 36, 36, 40 and 60.
+fail[3]: One wizard: 7 × 7.
+fail[4]: Equal strengths: count the group [2, 2] once, for 4 + 4 + 8.
+fail[5]: Strengths that only go up: each group's weakest wizard is its first.
+fail[6]: 6000 wizards with strengths up to 10⁹, and 2000 all of strength 10⁹. Working out every group is O(n²).
+edges:
+- one wizard :: len(strength) == 1 :: run([4])
+- all the same strength :: len(strength) > 1 and len(set(strength)) == 1 :: run([3, 3])
+- different strengths :: len(set(strength)) > 1 :: run([1, 2])
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_note: n is the number of wizards.
+why_time: Two stack passes, two prefix sum passes and one pass to add up, each O(n).
+why_space: left, right, prefix, pp and the stack each hold up to n + 2 numbers.
+hint: Right neighbours: pop while `strength[stack[-1]] >= strength[i]`, setting `right[stack.pop()] = i`. Left neighbours: pop with the same test, then read the top.
+hint: `prefix[i + 1] = prefix[i] + strength[i]`, and `pp[i + 1] = pp[i] + prefix[i]` for i from 0 to n.
+hint: For each i, with lo = left[i] and hi = right[i]: `gain = (i - lo) * (pp[hi + 1] - pp[i + 1]) - (hi - i) * (pp[i + 1] - pp[lo + 1])`, and add `strength[i] * gain`.
+hint: Python's integers don't overflow, so take `% (10 ** 9 + 7)` once, at the end.
+right: Each group is counted once, for its weakest wizard, and prefix sums of prefix sums add up the sums of all the groups between a wizard's neighbours in O(1), so the whole answer is O(n).
+wrong: Find each wizard's nearest weaker neighbour on the left and weaker-or-equal on the right; with prefix sums and their prefix sums, add strength[i] × ((i − left) × Σprefix[r + 1] − (right − i) × Σprefix[l]) for every i, modulo 10⁹ + 7.
+
+=== task: code hard
+title: Maximum and Minimum Sums of at Most Size K Subarrays
+leetcode: 3430 | Maximum and Minimum Sums of at Most Size K Subarrays | maximum-and-minimum-sums-of-at-most-size-k-subarrays
+patterns: next + prev
+prompt: Write `min_max_subarray_sum(nums, k)` that returns the sum, over every subarray of nums with at most k numbers, of its smallest number plus its largest number.
+
+Add up the smallest numbers and the largest numbers separately. nums[i] is the smallest of the subarrays between its neighbours, with a = i − left places to start and b = right − i places to end, but only the subarrays with at most k numbers count. A subarray that starts x places left of i and ends y places right of it has x + y + 1 numbers, so count the pairs with 0 ≤ x < a, 0 ≤ y < b and x + y ≤ k − 1. Add them up in two parts: for x up to k − b, all b ends are near enough; for bigger x, only k − x ends are, which makes an arithmetic series. Then add nums[i] times the count. The starter splits the work: `count_windows(a, b, k)` counts the pairs, and `side_sums(nums, k, sign)` adds up the smallest numbers when sign is 1 and the largest when sign is −1, by comparing `sign * nums[i]` instead of nums[i].
+
+**Example 1:** `run([1, 2, 3], 2)` returns 20. The subarrays [1], [2], [3], [1, 2] and [2, 3] give 2 + 4 + 6 + 3 + 5.
+
+**Example 2:** `run([1, -3, 1], 2)` returns -6.
+
+**Constraints:** 1 ≤ len(nums) ≤ 80,000, 1 ≤ k ≤ len(nums), and −10⁶ ≤ each number ≤ 10⁶.
+starter:
 ```python
-        while stack and temps[stack[-1]] > temps[i]:
-            answer[j] = j - i
+def count_windows(a, b, k):
+    total = 0
+    # your code here
+    return total
+
+
+def side_sums(nums, k, sign):
+    total = 0
+    # your code here
+    return total
+
+
+def min_max_subarray_sum(nums, k):
+    return side_sums(nums, k, 1) + side_sums(nums, k, -1)
+
+
+def run(nums, k):
+    return min_max_subarray_sum(nums, k)
 ```
-hint: A waiting day is answered when today is warmer than it.
-hint: The answer is how many days later: `i - j`.
-right: Each day pops the colder days waiting for it and records how long they waited, then waits itself: O(n).
-wrong: For each day i: while the day on top is colder, pop it as j and set `answer[j] = i - j`; then push i. Return the answers.
+solution:
+```python
+def count_windows(a, b, k):
+    m = min(a, k) - 1
+    if m < 0:
+        return 0
+    t = k - b
+    total = 0
+    full = min(m, t)
+    if full >= 0:
+        total += (full + 1) * b
+    start = max(0, t + 1)
+    if start <= m:
+        cnt = m - start + 1
+        total += cnt * k - (start + m) * cnt // 2
+    return total
+
+
+def side_sums(nums, k, sign):
+    n = len(nums)
+    vals = []
+    for x in nums:
+        vals.append(sign * x)
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and vals[stack[-1]] >= vals[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and vals[stack[-1]] >= vals[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    total = 0
+    for i in range(n):
+        total += nums[i] * count_windows(i - left[i], right[i] - i, k)
+    return total
+
+
+def min_max_subarray_sum(nums, k):
+    return side_sums(nums, k, 1) + side_sums(nums, k, -1)
+
+
+def run(nums, k):
+    return min_max_subarray_sum(nums, k)
+```
+tests:
+- run([1, 2, 3], 2)
+- run([1, -3, 1], 2)
+- run([5], 1)
+- run([1, 2, 3], 3)
+- run([3, 1, 3], 1)
+- [run([i * 7919 % 2000001 - 1000000 for i in range(3000)], 3000), run([i * 7919 % 2000001 - 1000000 for i in range(1000)], 40), run([i % 7 for i in range(1000)], 3)]
+fail[2]: Negative numbers: [1, −3] adds −3 + 1.
+fail[3]: One number is both the smallest and the largest: 5 + 5.
+fail[4]: k = 3 allows every subarray.
+fail[5]: k = 1 allows only single numbers, each counted twice, as the smallest and the largest.
+fail[6]: 3000 numbers with k = 3000, 1000 with k = 40, and 1000 with k = 3. Checking every subarray of up to k numbers is O(n × k).
+edges:
+- k is 1 :: k == 1 :: run([2, 5], 1)
+- k is the whole length :: k == len(nums) and k > 1 :: run([2, 5], 2)
+- k in between :: 1 < k < len(nums) :: run([2, 5, 1], 2)
+edge_count: 2
+complexity: time=O(n) | space=O(n)
+complexity_options: O(n × k)
+complexity_note: n is the length of nums; the time doesn't depend on k.
+why_time: Four stack passes, and each count is a few arithmetic steps, so it's O(n) however big k is.
+why_space: The values, left, right and the stack each hold up to n numbers.
+hint: In count_windows, `m = min(a, k) - 1` is the largest x. For x from 0 to `min(m, k - b)`, there are b ends each.
+hint: For x from `start = max(0, k - b + 1)` to m, there are k − x ends each: with `c = m - start + 1` of them, that's `c * k - (start + m) * c // 2`.
+hint: In side_sums, compare `vals = [sign * x for x in nums]`. Right neighbours: pop while `vals[stack[-1]] >= vals[i]`; left neighbours: pop with the same test, then read the top.
+hint: Add `nums[i] * count_windows(i - left[i], right[i] - i, k)` for every i.
+right: Each subarray's smallest and largest numbers are each counted once, by the number that's its smallest or largest, and counting only the short enough subarrays between a number's neighbours is arithmetic, so it's O(n) however big k is.
+wrong: For each number, find its neighbours for the smallest and for the largest with monotonic stacks; count the subarrays between them with at most k numbers using two arithmetic sums; add the number times each count.
+
+=== task: code hard
+title: Apply Operations to Maximize Score
+leetcode: 2818 | Apply Operations to Maximize Score | apply-operations-to-maximize-score
+patterns: next + prev
+prompt: The **prime score** of a number is how many different primes divide it: 300 = 2 × 2 × 3 × 5 × 5 has prime score 3. You start with a score of 1, and can do this at most k times: choose a subarray of nums you haven't chosen before, take its number with the highest prime score (the leftmost, if several tie), and multiply your score by it. Write `maximum_score(nums, k)` that returns the highest score you can reach, modulo 10⁹ + 7.
+
+1. Work out every prime score with a sieve up to max(nums): for each prime p, add 1 to the score of every multiple of p. A number whose score is still 0 when you reach it is prime.
+2. nums[i] is taken by the subarrays that start after its left neighbour, the nearest index on the left with a prime score at least as high, and end before its right neighbour, the nearest index on the right with a higher prime score: `(i - left) * (right - i)` subarrays.
+3. Multiply by the biggest numbers first. Go through the indexes from the biggest number down, and multiply by nums[i] as many times as it's taken, but no more than the operations left. `pow(nums[i], take, mod)` does that quickly.
+
+**Example 1:** `run([8, 3, 9, 3, 8], 2)` returns 81. The 9 has prime score 1, like the 3s and the 8s, so it's taken by [9] and by [9, 3], where it's the leftmost: 9 × 9.
+
+**Example 2:** `run([19, 12, 14, 6, 10, 18], 3)` returns 4788: 19 × 18 × 14.
+
+**Constraints:** 1 ≤ n ≤ 10⁵, 1 ≤ each number ≤ 10⁵, and 1 ≤ k ≤ min(n × (n + 1) / 2, 10⁹).
+starter:
+```python
+def maximum_score(nums, k):
+    mod = 10 ** 9 + 7
+    n = len(nums)
+    result = 1
+    # your code here
+    return result
+
+
+def run(nums, k):
+    return maximum_score(nums, k)
+```
+solution:
+```python
+def maximum_score(nums, k):
+    mod = 10 ** 9 + 7
+    n = len(nums)
+    top = max(nums)
+    count_of = [0] * (top + 1)
+    for p in range(2, top + 1):
+        if count_of[p] == 0:
+            for multiple in range(p, top + 1, p):
+                count_of[multiple] += 1
+    scores = []
+    for x in nums:
+        scores.append(count_of[x])
+    left = [-1] * n
+    stack = []
+    for i in range(n):
+        while stack and scores[stack[-1]] < scores[i]:
+            stack.pop()
+        if stack:
+            left[i] = stack[-1]
+        stack.append(i)
+    right = [n] * n
+    stack = []
+    for i in range(n):
+        while stack and scores[stack[-1]] < scores[i]:
+            right[stack.pop()] = i
+        stack.append(i)
+    order = sorted(range(n), key=lambda i: -nums[i])
+    result = 1
+    for i in order:
+        if k == 0:
+            break
+        take = min(k, (i - left[i]) * (right[i] - i))
+        result = result * pow(nums[i], take, mod) % mod
+        k -= take
+    return result
+
+
+def run(nums, k):
+    return maximum_score(nums, k)
+```
+tests:
+- run([8, 3, 9, 3, 8], 2)
+- run([19, 12, 14, 6, 10, 18], 3)
+- run([1], 1)
+- run([2, 3], 3)
+- run([10, 10], 2)
+- [run([i * 7919 % 10000 + 1 for i in range(3000)], 4501500), run([i * 7919 % 10000 + 1 for i in range(3000)], 12345)]
+fail[2]: Every number but the 19 has prime score 2. The 18 is the leftmost highest only in [18], so after the 19 and the 18, the 14 comes next.
+fail[3]: 1 has no prime factors; multiplying by it keeps the score at 1.
+fail[4]: Both have prime score 1, so the subarray [2, 3] takes the 2, at the smaller index: 3 × 2 × 2.
+fail[5]: Equal numbers: any 2 of the 3 subarrays give 10 × 10.
+fail[6]: 3000 numbers with k equal to all 4,501,500 subarrays, then k = 12,345. Listing every subarray is O(n²).
+edges:
+- k is 1 :: k == 1 :: run([6, 5], 1)
+- k uses every subarray :: k == len(nums) * (len(nums) + 1) // 2 and k > 1 :: run([6, 5], 3)
+- k in between :: 1 < k < len(nums) * (len(nums) + 1) // 2 :: run([6, 5], 2)
+edge_count: 2
+complexity: time=O(n log n + M log log M) | space=O(n + M)
+complexity_options: O(n log n + M log log M); O(n + M); O(n² log n); O(n √M); O(M)
+complexity_note: n is the length of nums and M its biggest number; each pow takes O(log k), about 30 steps at most.
+why_time: The sieve is O(M log log M), the two stack passes O(n), and sorting the indexes O(n log n).
+why_space: The sieve's scores hold M + 1 numbers; left, right, the stack and the sorted indexes hold n each.
+hint: Sieve: `count_of = [0] * (top + 1)`; for p from 2 to top, if `count_of[p] == 0`, add 1 to `count_of[m]` for every multiple m of p.
+hint: Left neighbours: pop while the top's score is smaller than `scores[i]`, then read the top. Right neighbours: pop while the top's score is smaller, setting `right[stack.pop()] = i`.
+hint: Sort the indexes with `key=lambda i: -nums[i]`. For each, `take = min(k, (i - left[i]) * (right[i] - i))`; multiply the result by `pow(nums[i], take, mod)` and subtract take from k, stopping when k is 0.
+right: Each subarray takes exactly one number, the one whose reach contains it, so the counts say how many times each number can be used, and the product is biggest when it uses the biggest numbers as often as it can.
+wrong: Sieve the prime scores, find how far each index reaches as the leftmost highest prime score with two stack passes, then use the numbers from the biggest down, each as many times as its count allows, with pow modulo 10⁹ + 7.
